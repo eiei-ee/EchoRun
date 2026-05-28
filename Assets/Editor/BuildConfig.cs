@@ -1,5 +1,5 @@
+using System.Collections.Generic;
 using UnityEditor;
-using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -9,62 +9,56 @@ public class BuildConfig
     const string CompanyName = "Eiei-ee";
     const string ProductName = "TempleRun";
 
+    static string[] GetScenePaths()
+    {
+        var list = new List<string>();
+        foreach (var s in EditorBuildSettings.scenes)
+            if (s.enabled)
+                list.Add(s.path);
+
+        if (list.Count == 0)
+        {
+            string path = SceneManager.GetActiveScene().path;
+            if (!string.IsNullOrEmpty(path))
+                list.Add(path);
+        }
+
+        return list.ToArray();
+    }
+
     [MenuItem("Tools/Build Android")]
     static void BuildAndroid()
     {
-        ConfigurePlayerSettings();
+        EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Android, BuildTarget.Android);
+
+        ConfigureBaseSettings();
         ConfigureAndroid();
         EnsureSceneInBuild();
 
-        string outputDir = "Builds/Android";
-        EnsureDirectory(outputDir);
-        string outputPath = $"{outputDir}/TempleRun.apk";
+        string outputPath = "Builds/Android/TempleRun.apk";
+        EnsureDirectory("Builds/Android");
 
-        BuildPlayerOptions opts = new BuildPlayerOptions
-        {
-            scenes = EditorBuildSettingsScene.GetActiveSceneList(EditorBuildSettings.scenes),
-            locationPathName = outputPath,
-            target = BuildTarget.Android,
-            options = BuildOptions.None
-        };
-
-        if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.Android)
-        {
-            EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Android, BuildTarget.Android);
-        }
-
-        BuildPipeline.BuildPlayer(opts);
+        BuildPipeline.BuildPlayer(GetScenePaths(), outputPath, BuildTarget.Android, BuildOptions.None);
         Debug.Log($"Android build complete: {outputPath}");
     }
 
     [MenuItem("Tools/Build WebGL")]
     static void BuildWebGL()
     {
-        ConfigurePlayerSettings();
+        EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.WebGL, BuildTarget.WebGL);
+
+        ConfigureBaseSettings();
         ConfigureWebGL();
         EnsureSceneInBuild();
 
         string outputDir = "Builds/WebGL";
         EnsureDirectory(outputDir);
 
-        BuildPlayerOptions opts = new BuildPlayerOptions
-        {
-            scenes = EditorBuildSettingsScene.GetActiveSceneList(EditorBuildSettings.scenes),
-            locationPathName = outputDir,
-            target = BuildTarget.WebGL,
-            options = BuildOptions.None
-        };
-
-        if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.WebGL)
-        {
-            EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.WebGL, BuildTarget.WebGL);
-        }
-
-        BuildPipeline.BuildPlayer(opts);
+        BuildPipeline.BuildPlayer(GetScenePaths(), outputDir, BuildTarget.WebGL, BuildOptions.None);
         Debug.Log($"WebGL build complete: {outputDir}");
     }
 
-    static void ConfigurePlayerSettings()
+    static void ConfigureBaseSettings()
     {
         PlayerSettings.companyName = CompanyName;
         PlayerSettings.productName = ProductName;
@@ -80,14 +74,9 @@ public class BuildConfig
         PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel22;
         PlayerSettings.Android.targetSdkVersion = AndroidSdkVersions.AndroidApiLevelAuto;
         PlayerSettings.Android.bundleVersionCode = 1;
-
-        // Use default debug keystore
         PlayerSettings.Android.useCustomKeystore = false;
-
-        // App category
         PlayerSettings.Android.androidIsGame = true;
 
-        // Screen
         PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
         PlayerSettings.allowedAutorotateToPortrait = true;
         PlayerSettings.allowedAutorotateToLandscapeLeft = false;
@@ -97,45 +86,26 @@ public class BuildConfig
 
     static void ConfigureWebGL()
     {
-        // Memory: 256MB initial, 2048MB max, geometric growth
         PlayerSettings.WebGL.memorySize = 256;
-        PlayerSettings.WebGL.initialMemorySize = 256;
-        PlayerSettings.WebGL.maximumMemorySize = 2048;
-        PlayerSettings.WebGL.memoryGrowthMode = WebGLMemoryGrowthMode.Geometric;
-        PlayerSettings.WebGL.memoryGeometricGrowthStep = 0.2f;
-        PlayerSettings.WebGL.memoryGeometricGrowthCap = 256;
-
-        // Strip exceptions for smaller build
         PlayerSettings.WebGL.exceptionSupport = WebGLExceptionSupport.None;
-
-        // Gzip compression
         PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Gzip;
         PlayerSettings.WebGL.decompressionFallback = true;
-
-        // Default resolution
-        PlayerSettings.defaultWebScreenWidth = 960;
-        PlayerSettings.defaultWebScreenHeight = 600;
-
-        // Disable threads for compatibility
+        PlayerSettings.WebGL.dataCaching = true;
+        PlayerSettings.WebGL.linkerTarget = WebGLLinkerTarget.Wasm;
         PlayerSettings.WebGL.threadsSupport = false;
 
-        // Data caching for faster reloads
-        PlayerSettings.WebGL.dataCaching = true;
-
-        // Linker target
-        PlayerSettings.WebGL.linkerTarget = WebGLLinkerTarget.Wasm;
+        PlayerSettings.defaultWebScreenWidth = 960;
+        PlayerSettings.defaultWebScreenHeight = 600;
     }
 
     static void EnsureSceneInBuild()
     {
         var scenes = EditorBuildSettings.scenes;
         string currentPath = SceneManager.GetActiveScene().path;
+        if (string.IsNullOrEmpty(currentPath)) return;
 
         foreach (var s in scenes)
-        {
-            if (s.path == currentPath)
-                return;
-        }
+            if (s.path == currentPath) return;
 
         var newScenes = new EditorBuildSettingsScene[scenes.Length + 1];
         scenes.CopyTo(newScenes, 0);
