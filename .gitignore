@@ -1,0 +1,28 @@
+# Unity generated
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+
+# Visual Studio generated
+*.csproj
+*.sln
+*.user
+.vs/
+.vscode/
+
+# Build output
+TempleRun/
+
+# Code extensions
+.codely-cli/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Memory captures
+MemoryCaptures/
