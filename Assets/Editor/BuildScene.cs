@@ -511,7 +511,9 @@ public class BuildScene
         text.fontSize = fontSize;
         text.alignment = align;
         text.color = Color.white;
-        text.font = Font.CreateDynamicFontFromOSFont("Arial", fontSize);
+        Font font = AssetDatabase.LoadAssetAtPath<Font>("Assets/Fonts/arial.ttf");
+        if (font != null) text.font = font;
+        else text.font = Font.CreateDynamicFontFromOSFont("Arial", fontSize);
         return text;
     }
 
