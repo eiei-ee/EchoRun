@@ -19,6 +19,7 @@ TempleRun/
 
 # Code extensions
 .codely-cli/
+.com-unity-codely.json
 
 # OS
 .DS_Store
