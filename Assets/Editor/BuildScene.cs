@@ -8,10 +8,9 @@ public class BuildScene
 {
     // Cached shader found on first use
     private static Shader _cachedShader;
-    private static bool _shaderSearched;
 
     [MenuItem("Tools/Build Scene")]
-    static void Build()
+    public static void Build()
     {
         Debug.Log("=== BUILD SCENE START ===");
 
@@ -25,6 +24,7 @@ public class BuildScene
         EnsureFolder("Assets/Prefabs");
         EnsureFolder("Assets/Prefabs/Materials");
 
+        CreateCharacterMaterials();
         EnsureMainCamera();
         CreatePlayer();
         CreateGroundPlane();
@@ -36,6 +36,7 @@ public class BuildScene
         CreateCoinPrefab();
         CreateObstaclePrefab();
         CreateTrackSegmentPrefab();
+        CreateTurnSegmentPrefabs();
         ConfigureTrackManager();
         CreateUICanvas();
 
@@ -68,8 +69,6 @@ public class BuildScene
         _cachedShader = tmp.GetComponent<MeshRenderer>().sharedMaterial.shader;
         Object.DestroyImmediate(tmp);
         Debug.Log($"Using shader from primitive: {(_cachedShader != null ? _cachedShader.name : "NULL")}");
-
-        _shaderSearched = true;
     }
 
     static Material CreateMaterial(string name, Color color)
@@ -88,6 +87,14 @@ public class BuildScene
         AssetDatabase.CreateAsset(mat, matPath);
         Debug.Log($"Created material: {name} ({_cachedShader.name})");
         return mat;
+    }
+
+    // ── materials ──────────────────────────────────────
+
+    static void CreateCharacterMaterials()
+    {
+        CreateMaterial("CharacterSkinMat", new Color(0.91f, 0.72f, 0.55f));  // peach skin
+        CreateMaterial("CharacterClothMat", new Color(0.17f, 0.24f, 0.31f)); // dark blue-gray
     }
 
     // ── scene objects ──────────────────────────────────
@@ -111,11 +118,21 @@ public class BuildScene
         GameObject player = GameObject.Find("player");
         if (player == null)
         {
-            player = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            player.name = "player";
-            player.transform.position = new Vector3(0, 1.2f, 0);
+            player = new GameObject("player");
+            player.transform.position = new Vector3(0, 1.0f, 0);
         }
 
+        // Clear old visuals if re-running
+        foreach (Transform child in player.transform)
+            Object.DestroyImmediate(child.gameObject);
+        foreach (var c in player.GetComponents<Collider>())
+            Object.DestroyImmediate(c);
+        MeshRenderer oldMR = player.GetComponent<MeshRenderer>();
+        if (oldMR != null) Object.DestroyImmediate(oldMR);
+        MeshFilter oldMF = player.GetComponent<MeshFilter>();
+        if (oldMF != null) Object.DestroyImmediate(oldMF);
+
+        // Rigidbody
         Rigidbody rb = player.GetComponent<Rigidbody>();
         if (rb == null) rb = player.AddComponent<Rigidbody>();
         rb.useGravity = true;
@@ -124,21 +141,103 @@ public class BuildScene
         rb.interpolation = RigidbodyInterpolation.Interpolate;
         rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
 
+        // CapsuleCollider
+        CapsuleCollider cc = player.AddComponent<CapsuleCollider>();
+        cc.height = 2f;
+        cc.radius = 0.5f;
+
+        // PlayerController
         if (player.GetComponent<PlayerController>() == null)
             player.AddComponent<PlayerController>();
 
-        if (player.GetComponent<CapsuleCollider>() == null)
-        {
-            foreach (var c in player.GetComponents<Collider>())
-                Object.DestroyImmediate(c);
-            CapsuleCollider cc = player.AddComponent<CapsuleCollider>();
-            cc.height = 2f;
-            cc.radius = 0.5f;
-        }
+        // ── Character Model Hierarchy ──
+        Material skinMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Prefabs/Materials/CharacterSkinMat.mat");
+        Material clothMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Prefabs/Materials/CharacterClothMat.mat");
 
-        // Apply material with working shader
-        Material mat = CreateMaterial("PlayerMat", new Color(0.2f, 0.5f, 0.9f));
-        if (mat != null) player.GetComponent<MeshRenderer>().material = mat;
+        GameObject model = new GameObject("CharacterModel");
+        model.transform.SetParent(player.transform);
+        model.transform.localPosition = new Vector3(0, -0.55f, 0);
+        model.AddComponent<CharacterAnimator>();
+
+        // Body (Capsule)
+        GameObject body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+        body.name = "Body";
+        body.transform.SetParent(model.transform);
+        body.transform.localPosition = new Vector3(0, 0.9f, 0);
+        body.transform.localScale = new Vector3(0.85f, 0.9f, 0.85f);
+        Object.DestroyImmediate(body.GetComponent<Collider>());
+        if (skinMat != null) body.GetComponent<MeshRenderer>().material = skinMat;
+
+        // Head (Sphere)
+        GameObject head = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        head.name = "Head";
+        head.transform.SetParent(model.transform);
+        head.transform.localPosition = new Vector3(0, 1.72f, 0);
+        head.transform.localScale = new Vector3(0.42f, 0.42f, 0.42f);
+        Object.DestroyImmediate(head.GetComponent<Collider>());
+        if (skinMat != null) head.GetComponent<MeshRenderer>().material = skinMat;
+
+        // Helper for limb creation
+        System.Func<string, Vector3, Vector3, GameObject> CreateLimbSegment = (name, pos, scale) =>
+        {
+            GameObject limb = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            limb.name = name;
+            limb.transform.localPosition = pos;
+            limb.transform.localScale = scale;
+            Object.DestroyImmediate(limb.GetComponent<Collider>());
+            if (clothMat != null) limb.GetComponent<MeshRenderer>().material = clothMat;
+            return limb;
+        };
+
+        // Arms
+        GameObject armUpperL = CreateLimbSegment("Arm_Upper_L",
+            new Vector3(-0.65f, 1.55f, 0), new Vector3(0.2f, 0.6f, 0.2f));
+        armUpperL.transform.SetParent(model.transform, false);
+
+        GameObject armLowerL = CreateLimbSegment("Arm_Lower_L",
+            new Vector3(0, -0.55f, 0), new Vector3(0.18f, 0.5f, 0.18f));
+        armLowerL.transform.SetParent(armUpperL.transform, false);
+
+        GameObject armUpperR = CreateLimbSegment("Arm_Upper_R",
+            new Vector3(0.65f, 1.55f, 0), new Vector3(0.2f, 0.6f, 0.2f));
+        armUpperR.transform.SetParent(model.transform, false);
+
+        GameObject armLowerR = CreateLimbSegment("Arm_Lower_R",
+            new Vector3(0, -0.55f, 0), new Vector3(0.18f, 0.5f, 0.18f));
+        armLowerR.transform.SetParent(armUpperR.transform, false);
+
+        // Legs
+        GameObject legUpperL = CreateLimbSegment("Leg_Upper_L",
+            new Vector3(-0.2f, 0.82f, 0), new Vector3(0.22f, 0.6f, 0.22f));
+        legUpperL.transform.SetParent(model.transform, false);
+
+        GameObject legLowerL = CreateLimbSegment("Leg_Lower_L",
+            new Vector3(0, -0.55f, 0), new Vector3(0.2f, 0.55f, 0.2f));
+        legLowerL.transform.SetParent(legUpperL.transform, false);
+
+        GameObject legUpperR = CreateLimbSegment("Leg_Upper_R",
+            new Vector3(0.2f, 0.82f, 0), new Vector3(0.22f, 0.6f, 0.22f));
+        legUpperR.transform.SetParent(model.transform, false);
+
+        GameObject legLowerR = CreateLimbSegment("Leg_Lower_R",
+            new Vector3(0, -0.55f, 0), new Vector3(0.2f, 0.55f, 0.2f));
+        legLowerR.transform.SetParent(legUpperR.transform, false);
+
+        // Wire CharacterAnimator
+        CharacterAnimator anim = model.GetComponent<CharacterAnimator>();
+        SerializedObject animSo = new SerializedObject(anim);
+        animSo.FindProperty("leftUpperArm").objectReferenceValue = armUpperL.transform;
+        animSo.FindProperty("rightUpperArm").objectReferenceValue = armUpperR.transform;
+        animSo.FindProperty("leftUpperLeg").objectReferenceValue = legUpperL.transform;
+        animSo.FindProperty("rightUpperLeg").objectReferenceValue = legUpperR.transform;
+        animSo.FindProperty("bodyTransform").objectReferenceValue = body.transform;
+        animSo.ApplyModifiedProperties();
+
+        // Wire characterModel on PlayerController
+        PlayerController pc = player.GetComponent<PlayerController>();
+        SerializedObject pcSo = new SerializedObject(pc);
+        pcSo.FindProperty("characterModel").objectReferenceValue = model.transform;
+        pcSo.ApplyModifiedProperties();
 
         EditorUtility.SetDirty(player);
     }
@@ -155,7 +254,7 @@ public class BuildScene
         int layer = LayerMask.NameToLayer("Ground");
         plane.layer = layer;
         plane.transform.position = new Vector3(0, -0.1f, 50f);
-        plane.transform.localScale = new Vector3(3f, 1f, 2f);
+        plane.transform.localScale = new Vector3(20f, 1f, 20f);
 
         // Remove MeshCollider (expensive, and we'll use BoxCollider instead)
         MeshCollider mc = plane.GetComponent<MeshCollider>();
@@ -165,7 +264,7 @@ public class BuildScene
         BoxCollider bc = plane.GetComponent<BoxCollider>();
         if (bc == null) bc = plane.AddComponent<BoxCollider>();
         bc.center = new Vector3(0, 0, 0);
-        bc.size = new Vector3(9f, 1f, 300f);
+        bc.size = new Vector3(300f, 1f, 300f);
 
         // Add GroundFollower to keep ground under player
         GroundFollower gf = plane.GetComponent<GroundFollower>();
@@ -300,17 +399,27 @@ public class BuildScene
 
     static void CreateObstaclePrefab()
     {
-        string path = "Assets/Prefabs/Obstacle.prefab";
+        CreateObstacleType("Assets/Prefabs/Obstacle_Low.prefab", "Obstacle_Low",
+            new Vector3(3f, 1.0f, 0.6f), ObstacleType.Low, new Color(1f, 0.45f, 0.1f));
+        CreateObstacleType("Assets/Prefabs/Obstacle_High.prefab", "Obstacle_High",
+            new Vector3(0.8f, 3.5f, 0.6f), ObstacleType.High, new Color(0.85f, 0.15f, 0.05f));
+        CreateObstacleType("Assets/Prefabs/Obstacle_Barrier.prefab", "Obstacle_Barrier",
+            new Vector3(3.5f, 2.5f, 0.8f), ObstacleType.Side, new Color(0.9f, 0.25f, 0.15f));
+    }
+
+    static void CreateObstacleType(string path, string name, Vector3 scale, ObstacleType type, Color color)
+    {
         DeleteAssetAtPath(path);
 
         GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        go.name = "Obstacle";
+        go.name = name;
         go.tag = "Obstacle";
-        go.transform.localScale = new Vector3(2f, 2.5f, 0.8f);
-        go.AddComponent<Obstacle>();
+        go.transform.localScale = scale;
+        Obstacle obs = go.AddComponent<Obstacle>();
+        obs.type = type;
         go.GetComponent<Collider>().isTrigger = true;
 
-        Material mat = CreateMaterial("ObstacleMat", new Color(1f, 0.2f, 0.1f));
+        Material mat = CreateMaterial(name + "Mat", color);
         if (mat != null) go.GetComponent<MeshRenderer>().material = mat;
 
         PrefabUtility.SaveAsPrefabAsset(go, path);
@@ -324,6 +433,7 @@ public class BuildScene
 
         GameObject seg = new GameObject("TrackSegment");
         seg.layer = LayerMask.NameToLayer("Ground");
+        seg.AddComponent<TrackSegmentData>();
 
         // Ground visual
         GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
@@ -333,6 +443,9 @@ public class BuildScene
         ground.transform.localScale = new Vector3(1.5f, 1f, 2f);
         ground.layer = LayerMask.NameToLayer("Ground");
         Object.DestroyImmediate(ground.GetComponent<Collider>());
+        BoxCollider groundCol = ground.AddComponent<BoxCollider>();
+        groundCol.center = Vector3.zero;
+        groundCol.size = new Vector3(9f, 0.2f, 20f);
 
         Material gm = CreateMaterial("TrackGroundMat", new Color(0.25f, 0.28f, 0.35f));
         if (gm != null) ground.GetComponent<MeshRenderer>().material = gm;
@@ -362,6 +475,74 @@ public class BuildScene
         Object.DestroyImmediate(seg);
     }
 
+    static void CreateTurnSegmentPrefabs()
+    {
+        Material trackMat = CreateMaterial("TrackGroundMat_Turn", new Color(0.25f, 0.28f, 0.35f));
+        Material lineMat = CreateMaterial("LaneLineMat_Turn", Color.white);
+        int groundLayer = LayerMask.NameToLayer("Ground");
+
+        CreateTurnPrefab("Assets/Prefabs/TurnSegment_Right.prefab", "TurnSegment_Right", 1, trackMat, lineMat, groundLayer);
+        CreateTurnPrefab("Assets/Prefabs/TurnSegment_Left.prefab", "TurnSegment_Left", -1, trackMat, lineMat, groundLayer);
+    }
+
+    static void CreateTurnPrefab(string path, string name, int turnDir, Material trackMat, Material lineMat, int groundLayer)
+    {
+        DeleteAssetAtPath(path);
+
+        GameObject seg = new GameObject(name);
+        seg.layer = groundLayer;
+        seg.AddComponent<TrackSegmentData>();
+
+        // Cross-shape geometry: both strips are full segment-length so there are no gaps
+        // Entry strip: full 20 units Z, covering from previous straight through the corner
+        GameObject entry = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        entry.name = "EntryStrip";
+        entry.transform.SetParent(seg.transform);
+        entry.transform.localPosition = new Vector3(0, 0.05f, 10f);
+        entry.transform.localScale = new Vector3(1.5f, 1f, 2f); // 20 units in Z (full segment)
+        entry.layer = groundLayer;
+        Object.DestroyImmediate(entry.GetComponent<MeshCollider>());
+        BoxCollider entryCol = entry.AddComponent<BoxCollider>();
+        entryCol.center = Vector3.zero;
+        entryCol.size = new Vector3(9f, 0.3f, 20f);
+        if (trackMat != null) entry.GetComponent<MeshRenderer>().material = trackMat;
+
+        // Exit strip: full 20 units in exit direction, starting from corner
+        GameObject exitStrip = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        exitStrip.name = "ExitStrip";
+        exitStrip.transform.SetParent(seg.transform);
+        exitStrip.transform.localPosition = new Vector3(turnDir * 10f, 0.05f, 10f); // centered at half the exit length
+        exitStrip.transform.localRotation = Quaternion.Euler(0, 90f, 0);
+        exitStrip.transform.localScale = new Vector3(1.5f, 1f, 2f); // 20 units long in exit direction
+        exitStrip.layer = groundLayer;
+        Object.DestroyImmediate(exitStrip.GetComponent<MeshCollider>());
+        BoxCollider exitCol = exitStrip.AddComponent<BoxCollider>();
+        exitCol.center = Vector3.zero;
+        exitCol.size = new Vector3(9f, 0.3f, 20f);
+        if (trackMat != null) exitStrip.GetComponent<MeshRenderer>().material = trackMat;
+
+        // Lane markers on entry strip
+        for (int i = 0; i < 3; i++)
+        {
+            GameObject m = new GameObject("Lane_" + i);
+            m.transform.SetParent(seg.transform);
+            m.transform.localPosition = new Vector3((i - 1) * 3f, 0.08f, 5f);
+        }
+        for (int i = -1; i <= 1; i += 2)
+        {
+            GameObject line = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            line.name = "LaneLine_" + (i > 0 ? "R" : "L");
+            line.transform.SetParent(seg.transform);
+            line.transform.localPosition = new Vector3(i * 1.5f, 0.08f, 5f);
+            line.transform.localScale = new Vector3(0.15f, 0.02f, 10f);
+            if (lineMat != null) line.GetComponent<MeshRenderer>().material = lineMat;
+            Object.DestroyImmediate(line.GetComponent<Collider>());
+        }
+
+        PrefabUtility.SaveAsPrefabAsset(seg, path);
+        Object.DestroyImmediate(seg);
+    }
+
     // ── track manager wiring ───────────────────────────
 
     static void ConfigureTrackManager()
@@ -370,16 +551,24 @@ public class BuildScene
         if (tm == null) { Debug.LogWarning("TrackManager not found!"); return; }
 
         GameObject coinPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Coin.prefab");
-        GameObject obstaclePrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Obstacle.prefab");
+        GameObject obsLow = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Obstacle_Low.prefab");
+        GameObject obsHigh = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Obstacle_High.prefab");
+        GameObject obsBarrier = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Obstacle_Barrier.prefab");
         GameObject segmentPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/TrackSegment.prefab");
+        GameObject turnLeftPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/TurnSegment_Left.prefab");
+        GameObject turnRightPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/TurnSegment_Right.prefab");
 
         SerializedObject so = new SerializedObject(tm);
         so.FindProperty("coinPrefab").objectReferenceValue = coinPrefab;
         so.FindProperty("trackSegmentPrefab").objectReferenceValue = segmentPrefab;
+        so.FindProperty("turnLeftPrefab").objectReferenceValue = turnLeftPrefab;
+        so.FindProperty("turnRightPrefab").objectReferenceValue = turnRightPrefab;
 
         SerializedProperty obsArr = so.FindProperty("obstaclePrefabs");
-        obsArr.arraySize = 1;
-        obsArr.GetArrayElementAtIndex(0).objectReferenceValue = obstaclePrefab;
+        obsArr.arraySize = 3;
+        obsArr.GetArrayElementAtIndex(0).objectReferenceValue = obsLow;
+        obsArr.GetArrayElementAtIndex(1).objectReferenceValue = obsHigh;
+        obsArr.GetArrayElementAtIndex(2).objectReferenceValue = obsBarrier;
 
         so.ApplyModifiedProperties();
         EditorUtility.SetDirty(tm.gameObject);
@@ -416,58 +605,122 @@ public class BuildScene
         if (ui == null) { Debug.LogWarning("UIManager not found!"); return; }
         SerializedObject so = new SerializedObject(ui);
 
-        // Menu Panel
+        // ═══ Menu Panel ═══
         GameObject menuPanel = CreatePanel("MenuPanel", canvasT, new Color(0, 0, 0, 0.85f));
         Stretch(menuPanel.GetComponent<RectTransform>());
 
-        Text titleText = CreateText("Title", menuPanel.transform, "Temple Run", 72, TextAnchor.MiddleCenter);
-        titleText.color = Color.white;
-        AnchorText(titleText.GetComponent<RectTransform>(), 0.5f, 0.6f, 600, 100);
+        Text titleText = CreateText("Title", menuPanel.transform, "TEMPLE RUN", 80, TextAnchor.MiddleCenter);
+        titleText.color = new Color(1f, 0.85f, 0.1f);
+        titleText.fontStyle = FontStyle.Bold;
+        AddOutline(titleText.gameObject, new Color(0.4f, 0.2f, 0f));
+        AddShadow(titleText.gameObject, new Color(0, 0, 0, 0.8f));
+        RectTransform titleRT = titleText.GetComponent<RectTransform>();
+        AnchorText(titleRT, 0.5f, 0.65f, 700, 110);
 
-        Button startBtn = CreateButton("StartButton", menuPanel.transform, "开始游戏", 36,
-            new Vector2(0.5f, 0.4f), new Vector2(400, 100));
+        Button startBtn = CreateButton("StartButton", menuPanel.transform, "开始游戏", 40,
+            new Vector2(0.5f, 0.38f), new Vector2(460, 120),
+            new Color(0.15f, 0.7f, 0.2f), new Color(0.1f, 0.5f, 0.15f));
 
-        // HUD Panel
+        // FPS selector label
+        Text fpsLabel = CreateText("FpsLabel", menuPanel.transform, "帧率", 30, TextAnchor.MiddleCenter);
+        fpsLabel.color = new Color(0.7f, 0.7f, 0.7f);
+        AnchorText(fpsLabel.GetComponent<RectTransform>(), 0.5f, 0.22f, 200, 40);
+
+        // FPS buttons row
+        Button fps30 = CreateSmallButton("Fps30", menuPanel.transform, "30",
+            new Vector2(0.28f, 0.14f), new Vector2(150, 70),
+            new Color(0.3f, 0.3f, 0.35f));
+        Button fps60 = CreateSmallButton("Fps60", menuPanel.transform, "60",
+            new Vector2(0.5f, 0.14f), new Vector2(150, 70),
+            new Color(0.2f, 0.75f, 1f));
+        Button fps120 = CreateSmallButton("Fps120", menuPanel.transform, "120",
+            new Vector2(0.72f, 0.14f), new Vector2(150, 70),
+            new Color(0.3f, 0.3f, 0.35f));
+
+        // ═══ HUD Panel ═══
         GameObject hudPanel = CreatePanel("HudPanel", canvasT, Color.clear);
 
-        Text scoreText = CreateText("ScoreText", hudPanel.transform, "Score: 0", 40, TextAnchor.UpperLeft);
+        // HUD top bar background
+        GameObject hudBar = CreatePanel("HudBar", hudPanel.transform, new Color(0, 0, 0, 0.45f));
+        RectTransform barRT = hudBar.GetComponent<RectTransform>();
+        barRT.anchorMin = new Vector2(0, 1); barRT.anchorMax = new Vector2(1, 1);
+        barRT.pivot = new Vector2(0.5f, 1);
+        barRT.sizeDelta = new Vector2(0, 110);
+
+        // Score text on HUD
+        Text scoreText = CreateText("ScoreText", hudBar.transform, "Score: 0", 38, TextAnchor.MiddleLeft);
+        scoreText.color = Color.white;
+        scoreText.fontStyle = FontStyle.Bold;
+        AddOutline(scoreText.gameObject, new Color(0, 0, 0, 0.6f));
         RectTransform stRT = scoreText.GetComponent<RectTransform>();
-        stRT.anchorMin = new Vector2(0, 1); stRT.anchorMax = new Vector2(0, 1);
-        stRT.pivot = new Vector2(0, 1);
-        stRT.anchoredPosition = new Vector2(30, -30);
-        stRT.sizeDelta = new Vector2(400, 60);
+        stRT.anchorMin = new Vector2(0, 0.5f); stRT.anchorMax = new Vector2(0, 0.5f);
+        stRT.pivot = new Vector2(0, 0.5f);
+        stRT.anchoredPosition = new Vector2(40, 0);
+        stRT.sizeDelta = new Vector2(500, 50);
 
-        Text coinText = CreateText("CoinText", hudPanel.transform, "0", 36, TextAnchor.UpperRight);
-        coinText.color = Color.yellow;
+        // Coin icon + count on HUD
+        Text coinIcon = CreateText("CoinIcon", hudBar.transform, "$", 42, TextAnchor.MiddleRight);
+        coinIcon.color = new Color(1f, 0.85f, 0.1f);
+        coinIcon.fontStyle = FontStyle.Bold;
+        AddOutline(coinIcon.gameObject, new Color(0.4f, 0.3f, 0f));
+        RectTransform ciRT = coinIcon.GetComponent<RectTransform>();
+        ciRT.anchorMin = new Vector2(1, 0.5f); ciRT.anchorMax = new Vector2(1, 0.5f);
+        ciRT.pivot = new Vector2(1, 0.5f);
+        ciRT.anchoredPosition = new Vector2(-40, 0);
+        ciRT.sizeDelta = new Vector2(180, 50);
+
+        Text coinText = CreateText("CoinText", hudBar.transform, "0", 38, TextAnchor.MiddleRight);
+        coinText.color = new Color(1f, 0.85f, 0.1f);
+        coinText.fontStyle = FontStyle.Bold;
+        AddOutline(coinText.gameObject, new Color(0.4f, 0.3f, 0f));
         RectTransform ctRT = coinText.GetComponent<RectTransform>();
-        ctRT.anchorMin = new Vector2(1, 1); ctRT.anchorMax = new Vector2(1, 1);
-        ctRT.pivot = new Vector2(1, 1);
-        ctRT.anchoredPosition = new Vector2(-30, -30);
-        ctRT.sizeDelta = new Vector2(200, 60);
+        ctRT.anchorMin = new Vector2(1, 0.5f); ctRT.anchorMax = new Vector2(1, 0.5f);
+        ctRT.pivot = new Vector2(1, 0.5f);
+        ctRT.anchoredPosition = new Vector2(-200, 0);
+        ctRT.sizeDelta = new Vector2(160, 50);
 
-        // GameOver Panel
-        GameObject goPanel = CreatePanel("GameOverPanel", canvasT, new Color(0, 0, 0, 0.85f));
+        // ═══ GameOver Panel ═══
+        GameObject goPanel = CreatePanel("GameOverPanel", canvasT, new Color(0, 0, 0, 0.88f));
         Stretch(goPanel.GetComponent<RectTransform>());
 
-        Text goTitle = CreateText("GameOverTitle", goPanel.transform, "Game Over", 64, TextAnchor.MiddleCenter);
-        goTitle.color = Color.red;
-        AnchorText(goTitle.GetComponent<RectTransform>(), 0.5f, 0.65f, 500, 80);
+        Text goTitle = CreateText("GameOverTitle", goPanel.transform, "Game Over", 72, TextAnchor.MiddleCenter);
+        goTitle.color = new Color(1f, 0.2f, 0.15f);
+        goTitle.fontStyle = FontStyle.Bold;
+        AddOutline(goTitle.gameObject, new Color(0.5f, 0.05f, 0f));
+        AddShadow(goTitle.gameObject, new Color(0, 0, 0, 0.8f));
+        RectTransform goTitleRT = goTitle.GetComponent<RectTransform>();
+        AnchorText(goTitleRT, 0.5f, 0.7f, 500, 90);
 
-        Text finalScoreText = CreateText("FinalScoreText", goPanel.transform, "Score: 0", 48, TextAnchor.MiddleCenter);
+        Text finalScoreText = CreateText("FinalScoreText", goPanel.transform, "Score: 0", 52, TextAnchor.MiddleCenter);
         finalScoreText.color = Color.white;
-        AnchorText(finalScoreText.GetComponent<RectTransform>(), 0.5f, 0.5f, 400, 80);
+        finalScoreText.fontStyle = FontStyle.Bold;
+        AddOutline(finalScoreText.gameObject, new Color(0, 0, 0, 0.6f));
+        RectTransform fsRT = finalScoreText.GetComponent<RectTransform>();
+        AnchorText(fsRT, 0.5f, 0.52f, 500, 80);
 
-        Button restartBtn = CreateButton("RestartButton", goPanel.transform, "重新开始", 36,
-            new Vector2(0.5f, 0.35f), new Vector2(400, 100));
+        Text coinResultText = CreateText("CoinResultText", goPanel.transform, "Coins: 0", 42, TextAnchor.MiddleCenter);
+        coinResultText.color = new Color(1f, 0.85f, 0.1f);
+        coinResultText.fontStyle = FontStyle.Bold;
+        AddOutline(coinResultText.gameObject, new Color(0.3f, 0.2f, 0f));
+        RectTransform crRT = coinResultText.GetComponent<RectTransform>();
+        AnchorText(crRT, 0.5f, 0.42f, 400, 70);
+
+        Button restartBtn = CreateButton("RestartButton", goPanel.transform, "再来一局", 40,
+            new Vector2(0.5f, 0.28f), new Vector2(460, 120),
+            new Color(0.15f, 0.7f, 0.2f), new Color(0.1f, 0.5f, 0.15f));
 
         // Wire to UIManager
         so.FindProperty("menuPanel").objectReferenceValue = menuPanel;
         so.FindProperty("startButton").objectReferenceValue = startBtn;
+        so.FindProperty("fps30Button").objectReferenceValue = fps30;
+        so.FindProperty("fps60Button").objectReferenceValue = fps60;
+        so.FindProperty("fps120Button").objectReferenceValue = fps120;
         so.FindProperty("hudPanel").objectReferenceValue = hudPanel;
         so.FindProperty("scoreText").objectReferenceValue = scoreText;
         so.FindProperty("coinText").objectReferenceValue = coinText;
         so.FindProperty("gameOverPanel").objectReferenceValue = goPanel;
         so.FindProperty("finalScoreText").objectReferenceValue = finalScoreText;
+        so.FindProperty("coinResultText").objectReferenceValue = coinResultText;
         so.FindProperty("restartButton").objectReferenceValue = restartBtn;
         so.ApplyModifiedProperties();
 
@@ -517,8 +770,22 @@ public class BuildScene
         return text;
     }
 
+    static void AddOutline(GameObject go, Color color)
+    {
+        Outline outline = go.AddComponent<Outline>();
+        outline.effectColor = color;
+        outline.effectDistance = new Vector2(2.5f, -2.5f);
+    }
+
+    static void AddShadow(GameObject go, Color color)
+    {
+        Shadow shadow = go.AddComponent<Shadow>();
+        shadow.effectColor = color;
+        shadow.effectDistance = new Vector2(3f, -3f);
+    }
+
     static Button CreateButton(string name, Transform parent, string label, int fontSize,
-        Vector2 anchor, Vector2 size)
+        Vector2 anchor, Vector2 size, Color mainColor, Color edgeColor)
     {
         GameObject go = new GameObject(name, typeof(Image), typeof(Button));
         go.transform.SetParent(parent, false);
@@ -528,9 +795,42 @@ public class BuildScene
         rt.sizeDelta = size;
         rt.anchoredPosition = Vector2.zero;
 
-        go.GetComponent<Image>().color = new Color(0.2f, 0.6f, 0.2f);
+        go.GetComponent<Image>().color = mainColor;
 
-        Text labelT = CreateText("Label", rt, label, fontSize, TextAnchor.MiddleCenter);
+        // Button border/depth via inner shadow panel
+        GameObject border = new GameObject("Border", typeof(Image));
+        border.transform.SetParent(go.transform, false);
+        Image borderImg = border.GetComponent<Image>();
+        borderImg.color = edgeColor;
+        RectTransform brt = border.GetComponent<RectTransform>();
+        Stretch(brt);
+        brt.offsetMin = new Vector2(4, 4);
+        brt.offsetMax = new Vector2(-4, -4);
+
+        Text labelT = CreateText("Label", go.transform, label, fontSize, TextAnchor.MiddleCenter);
+        labelT.color = Color.white;
+        labelT.fontStyle = FontStyle.Bold;
+        AddOutline(labelT.gameObject, new Color(0, 0, 0, 0.5f));
+        Stretch(labelT.GetComponent<RectTransform>());
+
+        return go.GetComponent<Button>();
+    }
+
+    static Button CreateSmallButton(string name, Transform parent, string label,
+        Vector2 anchor, Vector2 size, Color color)
+    {
+        GameObject go = new GameObject(name, typeof(Image), typeof(Button));
+        go.transform.SetParent(parent, false);
+        RectTransform rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = anchor;
+        rt.anchorMax = anchor;
+        rt.sizeDelta = size;
+        rt.anchoredPosition = Vector2.zero;
+        go.GetComponent<Image>().color = color;
+
+        Text labelT = CreateText("Label", go.transform, label, 28, TextAnchor.MiddleCenter);
+        labelT.color = Color.white;
+        labelT.fontStyle = FontStyle.Bold;
         Stretch(labelT.GetComponent<RectTransform>());
 
         return go.GetComponent<Button>();

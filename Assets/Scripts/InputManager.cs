@@ -20,32 +20,27 @@ public class InputManager : MonoBehaviour
 
     void Update()
     {
-        _currentSwipe = SwipeDirection.None;
-        bool keyboardUsed = false;
-
         // Keyboard input for editor testing
         if (Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.LeftArrow))
         {
             _currentSwipe = SwipeDirection.Left;
-            keyboardUsed = true;
+            return;
         }
-        else if (Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.RightArrow))
+        if (Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.RightArrow))
         {
             _currentSwipe = SwipeDirection.Right;
-            keyboardUsed = true;
+            return;
         }
-        else if (Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow))
+        if (Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.Space))
         {
             _currentSwipe = SwipeDirection.Up;
-            keyboardUsed = true;
+            return;
         }
-        else if (Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.DownArrow))
+        if (Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.LeftControl))
         {
             _currentSwipe = SwipeDirection.Down;
-            keyboardUsed = true;
+            return;
         }
-
-        if (keyboardUsed) return;
 
         // Touch input
         if (Input.touchCount > 0)
@@ -55,6 +50,10 @@ public class InputManager : MonoBehaviour
             {
                 _touchStart = touch.position;
                 _swipeDetected = false;
+            }
+            else if (touch.phase == TouchPhase.Moved && !_swipeDetected)
+            {
+                DetectSwipe(touch.position);
             }
             else if (touch.phase == TouchPhase.Ended && !_swipeDetected)
             {
@@ -89,5 +88,10 @@ public class InputManager : MonoBehaviour
             _currentSwipe = delta.y > 0 ? SwipeDirection.Up : SwipeDirection.Down;
     }
 
-    public SwipeDirection GetSwipe() => _currentSwipe;
+    public SwipeDirection GetSwipe()
+    {
+        SwipeDirection s = _currentSwipe;
+        _currentSwipe = SwipeDirection.None;
+        return s;
+    }
 }

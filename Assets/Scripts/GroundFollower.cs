@@ -4,21 +4,15 @@ public class GroundFollower : MonoBehaviour
 {
     public Transform player;
     public float colliderLength = 200f;
-    public float updateThreshold = 100f;
-
-    private float _nextSnapZ;
-    private BoxCollider _boxCollider;
+    public float updateThreshold = 30f;
 
     void Start()
     {
-        _boxCollider = GetComponent<BoxCollider>();
         if (player == null)
         {
             GameObject p = GameObject.Find("player");
             if (p != null) player = p.transform;
         }
-        if (player != null)
-            _nextSnapZ = player.position.z + updateThreshold;
     }
 
     void Update()
@@ -26,14 +20,13 @@ public class GroundFollower : MonoBehaviour
         if (player == null) return;
         if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing) return;
 
-        float playerZ = player.position.z;
+        float dx = transform.position.x - player.position.x;
+        float dz = transform.position.z - player.position.z;
+        float dist = Mathf.Sqrt(dx * dx + dz * dz);
 
-        // When player approaches the end, snap the ground forward
-        if (playerZ > _nextSnapZ)
+        if (dist > updateThreshold)
         {
-            float snapZ = playerZ + colliderLength * 0.3f;
-            transform.position = new Vector3(0, -0.1f, snapZ);
-            _nextSnapZ = snapZ - colliderLength * 0.3f + updateThreshold;
+            transform.position = new Vector3(player.position.x, -0.1f, player.position.z);
         }
     }
 }

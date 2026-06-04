@@ -29,6 +29,8 @@ public class BuildConfig
     [MenuItem("Tools/Build Android")]
     static void BuildAndroid()
     {
+        BuildScene.Build();
+
         EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Android, BuildTarget.Android);
 
         ConfigureBaseSettings();
@@ -82,6 +84,8 @@ public class BuildConfig
         PlayerSettings.allowedAutorotateToLandscapeLeft = false;
         PlayerSettings.allowedAutorotateToLandscapeRight = false;
         PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
+
+        QualitySettings.vSyncCount = 0;
     }
 
     static void ConfigureWebGL()
