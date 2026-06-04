@@ -4,7 +4,7 @@ public class PlayerController : MonoBehaviour
 {
     [Header("Lanes")]
     public float laneDistance = 3f;
-    public float laneSwitchSpeed = 15f;
+    public float laneSwitchSpeed = 20f;
 
     [Header("Jump")]
     public float jumpHeight = 3f;
@@ -19,17 +19,23 @@ public class PlayerController : MonoBehaviour
     [Header("Ground Check")]
     public LayerMask groundLayer;
 
-    public int CurrentLane { get; private set; } = 1; // 0=left, 1=center, 2=right
+    [Header("Character Model")]
+    public Transform characterModel;
+
+    public int CurrentLane { get; private set; } = 1;
     public bool IsJumping { get; private set; }
     public bool IsSliding { get; private set; }
+    public Vector3 ForwardDirection { get; private set; } = Vector3.forward;
 
     private float _jumpTimer;
     private float _slideTimer;
     private float _jumpGroundY;
     private float _originalColliderHeight;
-    private Vector3 _originalScale;
+    private Vector3 _originalModelScale = Vector3.one;
     private CapsuleCollider _capsuleCollider;
     private Rigidbody _rb;
+    private TrackSegmentData _lastTurnSegment;
+    private float _laneOffset;
 
     void Start()
     {
@@ -38,9 +44,11 @@ public class PlayerController : MonoBehaviour
         _rb.constraints = RigidbodyConstraints.FreezeRotation;
 
         _capsuleCollider = GetComponent<CapsuleCollider>();
-        _originalScale = transform.localScale;
         if (_capsuleCollider != null)
             _originalColliderHeight = _capsuleCollider.height;
+
+        if (characterModel != null)
+            _originalModelScale = characterModel.localScale;
     }
 
     void Update()
@@ -63,15 +71,26 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
+        UpdateForwardDirection();
+
+        Vector3 forward = ForwardDirection;
+        Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
+
         Vector3 vel = _rb.velocity;
 
-        // Forward
-        vel.z = GameManager.Instance.CurrentSpeed;
+        // Forward speed in facing direction
+        Vector3 forwardVel = forward * GameManager.Instance.CurrentSpeed;
+        vel.x = forwardVel.x;
+        vel.z = forwardVel.z;
 
-        // Lane switching
-        float targetX = (CurrentLane - 1) * laneDistance;
-        float laneX = Mathf.MoveTowards(_rb.position.x, targetX, laneSwitchSpeed * Time.fixedDeltaTime);
-        vel.x = (laneX - _rb.position.x) / Time.fixedDeltaTime;
+        // Lane switching — use tracked scalar offset, not world position projection
+        float targetLateral = (CurrentLane - 1) * laneDistance;
+        float currentOffset = _laneOffset;
+        _laneOffset = Mathf.MoveTowards(currentOffset, targetLateral,
+                                         laneSwitchSpeed * Time.fixedDeltaTime);
+        float lateralVel = (_laneOffset - currentOffset) / Time.fixedDeltaTime;
+        vel.x += right.x * lateralVel;
+        vel.z += right.z * lateralVel;
 
         // Jump
         if (IsJumping)
@@ -90,6 +109,43 @@ public class PlayerController : MonoBehaviour
         }
 
         _rb.velocity = vel;
+    }
+
+    void UpdateForwardDirection()
+    {
+        if (TrackManager.Instance == null) return;
+
+        TrackSegmentData turnSeg = TrackManager.Instance.FindTurnAtPosition(_rb.position);
+        if (turnSeg == null)
+        {
+            _lastTurnSegment = null;
+            return;
+        }
+
+        if (turnSeg == _lastTurnSegment) return;
+
+        Vector3 entryDir = turnSeg.entryDirection;
+        float distPastCorner = Vector3.Dot(_rb.position - turnSeg.turnPointWorld, entryDir);
+
+        if (distPastCorner > 0f)
+        {
+            Vector3 entryRight = Vector3.Cross(Vector3.up, entryDir).normalized;
+            Vector3 exitDir = turnSeg.exitDirection;
+            Vector3 exitRight = Vector3.Cross(Vector3.up, exitDir).normalized;
+
+            float laneOffset = Vector3.Dot(_rb.position - turnSeg.turnPointWorld, entryRight);
+
+            ForwardDirection = exitDir;
+            _laneOffset = laneOffset;
+
+            Vector3 newPos = turnSeg.turnPointWorld
+                + exitDir * distPastCorner
+                + exitRight * laneOffset;
+            newPos.y = _rb.position.y;
+            _rb.position = newPos;
+
+            _lastTurnSegment = turnSeg;
+        }
     }
 
     void HandleInput()
@@ -123,7 +179,8 @@ public class PlayerController : MonoBehaviour
                     _slideTimer = 0f;
                     if (_capsuleCollider != null)
                         _capsuleCollider.height = slideColliderHeight;
-                    transform.localScale = new Vector3(_originalScale.x, slideScaleY, _originalScale.z);
+                    if (characterModel != null)
+                        characterModel.localScale = new Vector3(_originalModelScale.x, slideScaleY, _originalModelScale.z);
                 }
                 break;
         }
@@ -137,7 +194,8 @@ public class PlayerController : MonoBehaviour
         if (_slideTimer >= slideDuration)
         {
             IsSliding = false;
-            transform.localScale = _originalScale;
+            if (characterModel != null)
+                characterModel.localScale = _originalModelScale;
             if (_capsuleCollider != null)
                 _capsuleCollider.height = _originalColliderHeight;
         }
@@ -146,7 +204,6 @@ public class PlayerController : MonoBehaviour
     bool IsGrounded()
     {
         if (_capsuleCollider == null) return false;
-        // Raycast from bottom of capsule, not center
         float halfHeight = _capsuleCollider.height / 2f;
         Vector3 feet = _rb.position + Vector3.down * halfHeight;
         return Physics.Raycast(feet, Vector3.down, 0.3f, groundLayer);
@@ -156,6 +213,20 @@ public class PlayerController : MonoBehaviour
     {
         if (other.CompareTag("Obstacle"))
         {
+            Obstacle obs = other.GetComponent<Obstacle>();
+            if (obs == null) { GameManager.Instance.GameOver(); return; }
+
+            if (obs.type == ObstacleType.Low && IsSliding)
+            {
+                other.gameObject.SetActive(false);
+                return;
+            }
+            if (obs.type == ObstacleType.High && IsJumping &&
+                _rb.position.y - _capsuleCollider.height * 0.5f > other.bounds.max.y - 0.3f)
+            {
+                other.gameObject.SetActive(false);
+                return;
+            }
             GameManager.Instance.GameOver();
         }
         else if (other.CompareTag("Coin"))

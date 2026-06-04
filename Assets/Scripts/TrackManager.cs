@@ -8,7 +8,13 @@ public class TrackManager : MonoBehaviour
     [Header("Track")]
     public GameObject trackSegmentPrefab;
     public float segmentLength = 20f;
-    public int poolSize = 8;
+    public int poolSize = 10;
+
+    [Header("Turns")]
+    public GameObject turnLeftPrefab;
+    public GameObject turnRightPrefab;
+    [Range(0, 1)] public float turnChance = 0.15f;
+    public int minStraightBeforeTurn = 4;
 
     [Header("Lanes")]
     public float laneDistance = 3f;
@@ -19,11 +25,19 @@ public class TrackManager : MonoBehaviour
     [Range(0, 1)] public float obstacleChance = 0.4f;
     [Range(0, 1)] public float coinChance = 0.6f;
 
-    private Queue<GameObject> _segmentPool = new Queue<GameObject>();
+    private Queue<GameObject> _straightPool = new Queue<GameObject>();
+    private Queue<GameObject> _turnLeftPool = new Queue<GameObject>();
+    private Queue<GameObject> _turnRightPool = new Queue<GameObject>();
     private List<GameObject> _activeSegments = new List<GameObject>();
     private List<GameObject> _dynamicObjects = new List<GameObject>();
-    private float _spawnZ;
+
+    private Vector3 _spawnPosition;
+    private float _spawnAngle;
+    private int _straightSegmentsSinceLastTurn;
     private Transform _player;
+
+    public Vector3 ForwardDirection =>
+        Quaternion.Euler(0, _spawnAngle, 0) * Vector3.forward;
 
     void Awake()
     {
@@ -34,8 +48,10 @@ public class TrackManager : MonoBehaviour
     void Start()
     {
         _player = GameObject.Find("player")?.transform;
-        _spawnZ = _player != null ? _player.position.z : 0f;
-        InitializePool();
+        _spawnPosition = _player != null ? new Vector3(_player.position.x, 0, _player.position.z) : Vector3.zero;
+        _spawnAngle = 0f;
+        _straightSegmentsSinceLastTurn = 0;
+        InitializePools();
     }
 
     void Update()
@@ -44,51 +60,162 @@ public class TrackManager : MonoBehaviour
         if (_player == null) return;
         if (trackSegmentPrefab == null) return;
 
-        float playerZ = _player.position.z;
+        float distToSpawn = XZDistance(_player.position, _spawnPosition);
 
-        while (_spawnZ < playerZ + segmentLength * (poolSize / 2))
+        while (distToSpawn < segmentLength * (poolSize / 2))
+        {
             SpawnSegment();
+            distToSpawn = XZDistance(_player.position, _spawnPosition);
+        }
 
-        while (_activeSegments.Count > 0 &&
-               _activeSegments[0].transform.position.z + segmentLength < playerZ - segmentLength * 2)
-            RecycleSegment(_activeSegments[0]);
+        while (_activeSegments.Count > 0)
+        {
+            GameObject seg = _activeSegments[0];
+            float dist = XZDistance(_player.position, seg.transform.position);
+            if (dist < segmentLength * 5) break;
+            RecycleSegment(seg);
+        }
     }
 
-    void InitializePool()
+    float XZDistance(Vector3 a, Vector3 b)
     {
-        if (trackSegmentPrefab == null) return;
-        for (int i = 0; i < poolSize; i++)
+        float dx = a.x - b.x;
+        float dz = a.z - b.z;
+        return Mathf.Sqrt(dx * dx + dz * dz);
+    }
+
+    public TrackSegmentData FindTurnAtPosition(Vector3 worldPos)
+    {
+        for (int i = _activeSegments.Count - 1; i >= 0; i--)
         {
-            GameObject segment = Instantiate(trackSegmentPrefab, Vector3.zero, Quaternion.identity, transform);
-            segment.SetActive(false);
-            _segmentPool.Enqueue(segment);
+            GameObject seg = _activeSegments[i];
+            if (!seg.activeSelf) continue;
+
+            TrackSegmentData data = seg.GetComponent<TrackSegmentData>();
+            if (data == null || data.segmentType == TrackSegmentType.Straight) continue;
+
+            // Check if player is within this turn segment's bounds
+            float dist = XZDistance(worldPos, seg.transform.position);
+            if (dist < segmentLength * 1.5f)
+                return data;
+        }
+        return null;
+    }
+
+    void InitializePools()
+    {
+        if (trackSegmentPrefab != null)
+        {
+            for (int i = 0; i < 6; i++)
+            {
+                GameObject seg = Instantiate(trackSegmentPrefab, Vector3.zero, Quaternion.identity, transform);
+                seg.SetActive(false);
+                _straightPool.Enqueue(seg);
+            }
+        }
+        if (turnLeftPrefab != null)
+        {
+            for (int i = 0; i < 2; i++)
+            {
+                GameObject seg = Instantiate(turnLeftPrefab, Vector3.zero, Quaternion.identity, transform);
+                seg.SetActive(false);
+                _turnLeftPool.Enqueue(seg);
+            }
+        }
+        if (turnRightPrefab != null)
+        {
+            for (int i = 0; i < 2; i++)
+            {
+                GameObject seg = Instantiate(turnRightPrefab, Vector3.zero, Quaternion.identity, transform);
+                seg.SetActive(false);
+                _turnRightPool.Enqueue(seg);
+            }
         }
     }
 
     void SpawnSegment()
     {
-        if (trackSegmentPrefab == null) return;
+        bool shouldTurn = _straightSegmentsSinceLastTurn >= minStraightBeforeTurn
+                          && Random.value < turnChance
+                          && turnLeftPrefab != null && turnRightPrefab != null;
 
-        GameObject segment = _segmentPool.Count > 0
-            ? _segmentPool.Dequeue()
-            : Instantiate(trackSegmentPrefab, Vector3.zero, Quaternion.identity, transform);
+        GameObject prefab;
+        TrackSegmentType segType;
+        float angleDelta = 0f;
+        Queue<GameObject> pool;
 
-        segment.transform.position = new Vector3(0, 0, _spawnZ);
+        if (shouldTurn)
+        {
+            bool turnRight = Random.value < 0.5f;
+            prefab = turnRight ? turnRightPrefab : turnLeftPrefab;
+            segType = turnRight ? TrackSegmentType.TurnRight : TrackSegmentType.TurnLeft;
+            angleDelta = turnRight ? 90f : -90f;
+            pool = turnRight ? _turnRightPool : _turnLeftPool;
+        }
+        else
+        {
+            prefab = trackSegmentPrefab;
+            segType = TrackSegmentType.Straight;
+            pool = _straightPool;
+        }
+
+        GameObject segment = pool.Count > 0
+            ? pool.Dequeue()
+            : Instantiate(prefab, Vector3.zero, Quaternion.identity, transform);
+
+        segment.transform.position = _spawnPosition;
+        segment.transform.rotation = Quaternion.Euler(0, _spawnAngle, 0);
         segment.SetActive(true);
-        _activeSegments.Add(segment);
-        _spawnZ += segmentLength;
 
-        SpawnObstaclesAndCoins(segment);
+        TrackSegmentData data = segment.GetComponent<TrackSegmentData>();
+        if (data == null) data = segment.AddComponent<TrackSegmentData>();
+        data.segmentType = segType;
+
+        _activeSegments.Add(segment);
+
+        if (segType == TrackSegmentType.Straight)
+        {
+            data.entryDirection = ForwardDirection;
+            SpawnObstaclesAndCoins(segment, segType);
+            _spawnPosition += ForwardDirection * segmentLength;
+            _straightSegmentsSinceLastTurn++;
+        }
+        else
+        {
+            Vector3 entryDir = ForwardDirection;
+            Vector3 cornerPos = _spawnPosition;
+
+            // Shift turn back half a segment so entry strip bridges the gap
+            // from previous straight's visual end to the corner
+            Vector3 turnPlacePos = _spawnPosition - entryDir * (segmentLength * 0.5f);
+            segment.transform.position = turnPlacePos;
+            segment.transform.rotation = Quaternion.Euler(0, _spawnAngle, 0);
+
+            SpawnObstaclesAndCoins(segment, segType);
+
+            // Advance spawn: full segment in exit direction from corner
+            // (entry half was consumed by the shifted-back placement)
+            _spawnAngle += angleDelta;
+            _spawnPosition += ForwardDirection * segmentLength;
+
+            data.entryDirection = entryDir;
+            data.exitDirection = ForwardDirection;
+            data.turnPointWorld = cornerPos;
+            _straightSegmentsSinceLastTurn = 0;
+        }
     }
 
     void RecycleSegment(GameObject segment)
     {
-        float segZ = segment.transform.position.z;
+        TrackSegmentData data = segment.GetComponent<TrackSegmentData>();
+
+        // Destroy dynamic objects on this segment
+        Vector3 segPos = segment.transform.position;
         for (int i = _dynamicObjects.Count - 1; i >= 0; i--)
         {
             GameObject obj = _dynamicObjects[i];
             if (obj == null) { _dynamicObjects.RemoveAt(i); continue; }
-            if (obj.transform.position.z >= segZ && obj.transform.position.z < segZ + segmentLength)
+            if (XZDistance(obj.transform.position, segPos) < segmentLength * 1.5f)
             {
                 _dynamicObjects.RemoveAt(i);
                 Destroy(obj);
@@ -97,50 +224,222 @@ public class TrackManager : MonoBehaviour
 
         segment.SetActive(false);
         _activeSegments.RemoveAt(0);
-        _segmentPool.Enqueue(segment);
+
+        if (data != null)
+        {
+            switch (data.segmentType)
+            {
+                case TrackSegmentType.TurnLeft:
+                    _turnLeftPool.Enqueue(segment);
+                    break;
+                case TrackSegmentType.TurnRight:
+                    _turnRightPool.Enqueue(segment);
+                    break;
+                default:
+                    _straightPool.Enqueue(segment);
+                    break;
+            }
+        }
+        else
+        {
+            _straightPool.Enqueue(segment);
+        }
     }
 
-    void SpawnObstaclesAndCoins(GameObject segment)
+    void SpawnObstaclesAndCoins(GameObject segment, TrackSegmentType segType)
     {
         if (obstaclePrefabs.Length == 0 && coinPrefab == null) return;
 
-        // Decide how many lanes to block (max 2, never all 3)
-        int blockedCount = 0;
-        float r = Random.value;
-        if (r < 0.15f) blockedCount = 2;
-        else if (r < 0.55f) blockedCount = 1;
+        float s = 2f;
+        float e = segmentLength - 2f;
 
-        // Pick which lane(s) to block
-        List<int> blockedLanes = new List<int>();
-        List<int> available = new List<int> { 0, 1, 2 };
-        for (int i = 0; i < blockedCount; i++)
+        if (segType != TrackSegmentType.Straight)
         {
-            int idx = Random.Range(0, available.Count);
-            blockedLanes.Add(available[idx]);
-            available.RemoveAt(idx);
+            SpawnCoinsZigzag(segment, 2f, segmentLength * 0.4f);
+            return;
         }
 
+        float roll = Random.value;
+
+        if (roll < 0.15f && coinPrefab != null)
+        {
+            // Full coin row across all 3 lanes (reward)
+            SpawnCoinRow(segment, s, e, -2);
+        }
+        else if (roll < 0.35f && coinPrefab != null)
+        {
+            // Zigzag coins guiding lane switch
+            SpawnCoinsZigzag(segment, s, e);
+        }
+        else if (roll < 0.45f && coinPrefab != null)
+        {
+            // Jump arc coins (floating high)
+            SpawnCoinArc(segment, s, e);
+        }
+        else if (roll < 0.75f && obstaclePrefabs.Length >= 3)
+        {
+            SpawnObstacleSet(segment, s, e);
+        }
+        else if (coinPrefab != null)
+        {
+            int skip = Random.Range(0, 3);
+            for (int lane = 0; lane < 3; lane++)
+            {
+                if (lane == skip && Random.value < 0.5f) continue;
+                SpawnCoinLine(segment, lane, Random.Range(s + 2f, e - 3f), Random.Range(4, 8));
+            }
+        }
+    }
+
+    // ── coin patterns ──────────────────────────────────
+
+    void SpawnCoinLine(GameObject segment, int lane, float startZ, int count)
+    {
+        if (coinPrefab == null) return;
+        float x = (lane - 1) * laneDistance;
+        for (int c = 0; c < count; c++)
+        {
+            Vector3 lp = new Vector3(x, 1f, startZ + c * 1.5f);
+            if (lp.z > segmentLength - 1f) break;
+            Vector3 wp = segment.transform.TransformPoint(lp);
+            _dynamicObjects.Add(Instantiate(coinPrefab, wp, Quaternion.identity));
+        }
+    }
+
+    void SpawnCoinRow(GameObject segment, float zStart, float zEnd, int skipLane)
+    {
+        if (coinPrefab == null) return;
+        float rowZ = Random.Range(zStart + 1f, zEnd - 3f);
+        int count = Random.Range(5, 9);
         for (int lane = 0; lane < 3; lane++)
         {
-            float x = (lane - 1) * laneDistance;
-            float z = segment.transform.position.z + Random.Range(2f, segmentLength - 2f);
+            if (lane == skipLane) continue;
+            SpawnCoinLine(segment, lane, rowZ, count);
+        }
+    }
 
-            if (blockedLanes.Contains(lane) && obstaclePrefabs.Length > 0)
+    void SpawnCoinsZigzag(GameObject segment, float zStart, float zEnd)
+    {
+        // Subway Surfers-style: coins weave between lanes
+        if (coinPrefab == null) return;
+        int steps = Random.Range(5, 9);
+        float zStep = (zEnd - zStart) / steps;
+
+        int fromLane = Random.Range(0, 3);
+        for (int i = 0; i < steps; i++)
+        {
+            float z = zStart + zStep * i;
+            int toLane = (fromLane + (Random.value < 0.5f ? 1 : -1) + 3) % 3;
+            toLane = Mathf.Clamp(toLane, 0, 2);
+
+            float x = (fromLane - 1) * laneDistance;
+            float x2 = (toLane - 1) * laneDistance;
+
+            int coins = Random.Range(2, 5);
+            for (int c = 0; c < coins; c++)
             {
-                Vector3 obsPos = new Vector3(x, 1f, z);
-                GameObject obs = Instantiate(obstaclePrefabs[Random.Range(0, obstaclePrefabs.Length)], obsPos, Quaternion.identity);
-                _dynamicObjects.Add(obs);
+                float t = (float)c / (coins - 1);
+                float cx = Mathf.Lerp(x, x2, t);
+                Vector3 lp = new Vector3(cx, 1f, z + c * 1.2f);
+                if (lp.z > zEnd) break;
+                Vector3 wp = segment.transform.TransformPoint(lp);
+                _dynamicObjects.Add(Instantiate(coinPrefab, wp, Quaternion.identity));
             }
-            else if (Random.value < coinChance && coinPrefab != null)
+            fromLane = toLane;
+        }
+    }
+
+    void SpawnCoinArc(GameObject segment, float zStart, float zEnd)
+    {
+        // Jump arc: coins floating in an arc at Y=1.5-3.5
+        if (coinPrefab == null) return;
+        float centerZ = (zStart + zEnd) * 0.5f;
+        int lane = Random.Range(0, 3);
+        float x = (lane - 1) * laneDistance;
+        int count = Random.Range(6, 12);
+        float arcLen = Random.Range(4f, 8f);
+
+        for (int c = 0; c < count; c++)
+        {
+            float t = (float)c / (count - 1) - 0.5f; // -0.5 to 0.5
+            float z = centerZ + t * arcLen;
+            if (z < zStart || z > zEnd) continue;
+            float y = 1f + Mathf.Sin((t + 0.5f) * Mathf.PI) * 2.5f;
+            Vector3 lp = new Vector3(x, y, z);
+            Vector3 wp = segment.transform.TransformPoint(lp);
+            _dynamicObjects.Add(Instantiate(coinPrefab, wp, Quaternion.identity));
+        }
+    }
+
+    // ── obstacle patterns ──────────────────────────────
+
+    void SpawnObstacleSet(GameObject segment, float zStart, float zEnd)
+    {
+        if (obstaclePrefabs.Length < 3) return;
+        // obstaclePrefabs indices: 0=Low, 1=High, 2=Barrier
+
+        // 1-3 obstacle groups spread along the segment
+        int groups = Random.Range(1, 3);
+        float step = (zEnd - zStart) / (groups + 1);
+
+        for (int g = 0; g < groups; g++)
+        {
+            float z = zStart + step * (g + 1) + Random.Range(-2f, 2f);
+            if (z < zStart + 1f || z > zEnd - 1f) continue;
+
+            float pattern = Random.value;
+            List<int> lanes = new List<int> { 0, 1, 2 };
+
+            if (pattern < 0.35f)
             {
-                int coinCount = Random.Range(3, 8);
-                for (int c = 0; c < coinCount; c++)
+                // Low barriers: slide under (1-2 lanes)
+                int count = Random.Range(1, 3);
+                for (int i = 0; i < count; i++)
                 {
-                    Vector3 coinPos = new Vector3(x, 1f, z + c * 1.5f);
-                    GameObject coin = Instantiate(coinPrefab, coinPos, Quaternion.identity);
-                    _dynamicObjects.Add(coin);
+                    int idx = Random.Range(0, lanes.Count);
+                    SpawnObstacleAt(segment, lanes[idx], z, 0); // Low
+                    lanes.RemoveAt(idx);
+                }
+            }
+            else if (pattern < 0.65f)
+            {
+                // High barrier: jump over (1 lane)
+                int lane = lanes[Random.Range(0, lanes.Count)];
+                SpawnObstacleAt(segment, lane, z, 1); // High
+            }
+            else if (pattern < 0.85f)
+            {
+                // Barriers: force lane switch (1-2 lanes blocked)
+                int count = Random.Range(1, 3);
+                for (int i = 0; i < count; i++)
+                {
+                    int idx = Random.Range(0, lanes.Count);
+                    SpawnObstacleAt(segment, lanes[idx], z, 2); // Barrier
+                    lanes.RemoveAt(idx);
+                }
+            }
+            else
+            {
+                // Combo: low + high on different lanes
+                int lowLane = lanes[Random.Range(0, lanes.Count)];
+                lanes.Remove(lowLane);
+                SpawnObstacleAt(segment, lowLane, z, 0);
+                if (lanes.Count > 0)
+                {
+                    int highLane = lanes[Random.Range(0, lanes.Count)];
+                    SpawnObstacleAt(segment, highLane, z + 1.5f, 1);
                 }
             }
         }
+    }
+
+    void SpawnObstacleAt(GameObject segment, int lane, float z, int prefabIndex)
+    {
+        float x = (lane - 1) * laneDistance;
+        Vector3 lp = new Vector3(x, 1f, z);
+        Vector3 wp = segment.transform.TransformPoint(lp);
+        Quaternion rot = segment.transform.rotation;
+        GameObject obs = Instantiate(obstaclePrefabs[prefabIndex], wp, rot);
+        _dynamicObjects.Add(obs);
     }
 }

@@ -18,6 +18,9 @@ public class GameManager : MonoBehaviour
     [Header("Debug")]
     public bool autoStart = true;
 
+    [Header("Frame Rate")]
+    public int targetFrameRate = 60;
+
     public float CurrentSpeed { get; private set; }
     public GameState State { get; private set; } = GameState.Menu;
     public int Score { get; private set; }
@@ -33,6 +36,18 @@ public class GameManager : MonoBehaviour
     {
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
+        ApplyFrameRate();
+    }
+
+    public void SetFrameRate(int fps)
+    {
+        targetFrameRate = fps;
+        ApplyFrameRate();
+    }
+
+    void ApplyFrameRate()
+    {
+        Application.targetFrameRate = targetFrameRate;
     }
 
     void Update()
