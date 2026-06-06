@@ -44,6 +44,24 @@ public class BuildConfig
         Debug.Log($"Android build complete: {outputPath}");
     }
 
+    [MenuItem("Tools/Build iOS")]
+    static void BuildIOS()
+    {
+        BuildScene.Build();
+
+        EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.iOS, BuildTarget.iOS);
+
+        ConfigureBaseSettings();
+        ConfigureIOS();
+        EnsureSceneInBuild();
+
+        string outputDir = "Builds/iOS";
+        EnsureDirectory(outputDir);
+
+        BuildPipeline.BuildPlayer(GetScenePaths(), outputDir, BuildTarget.iOS, BuildOptions.None);
+        Debug.Log($"iOS Xcode project generated: {outputDir}");
+    }
+
     [MenuItem("Tools/Build WebGL")]
     static void BuildWebGL()
     {
@@ -67,6 +85,7 @@ public class BuildConfig
 
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Android, BundleId);
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.WebGL, BundleId);
+        PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.iOS, BundleId);
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Standalone, BundleId);
     }
 
@@ -78,6 +97,26 @@ public class BuildConfig
         PlayerSettings.Android.bundleVersionCode = 1;
         PlayerSettings.Android.useCustomKeystore = false;
         PlayerSettings.Android.androidIsGame = true;
+
+        PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
+        PlayerSettings.allowedAutorotateToPortrait = true;
+        PlayerSettings.allowedAutorotateToLandscapeLeft = false;
+        PlayerSettings.allowedAutorotateToLandscapeRight = false;
+        PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
+
+        QualitySettings.vSyncCount = 0;
+    }
+
+    static void ConfigureIOS()
+    {
+        PlayerSettings.iOS.targetOSVersionString = "13.0";
+        PlayerSettings.iOS.targetDevice = iOSTargetDevice.iPhoneAndiPad;
+        PlayerSettings.iOS.buildNumber = "1";
+        PlayerSettings.iOS.appleDeveloperTeamID = "";
+        PlayerSettings.iOS.automaticallySign = true;
+        PlayerSettings.iOS.allowHTTPDownload = true;
+        PlayerSettings.iOS.hideHomeButtonOnIphoneX = true;
+        PlayerSettings.iOS.statusBarStyle = iOSStatusBarStyle.TranslucentBlack;
 
         PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
         PlayerSettings.allowedAutorotateToPortrait = true;
