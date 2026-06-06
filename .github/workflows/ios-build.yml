@@ -1,0 +1,91 @@
+name: iOS Build
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Tuanjie Editor
+        id: cache-tuanjie
+        uses: actions/cache@v4
+        with:
+          path: /Applications/Tuanjie
+          key: tuanjie-2022.3.62t8-ios-v2
+
+      - name: Download Tuanjie Hub
+        if: steps.cache-tuanjie.outputs.cache-hit != 'true'
+        run: |
+          curl -L -o TuanjieHubSetup.dmg "https://public-cdn.cloud.unity.cn/tuanjie/hub/TuanjieHubSetup.dmg"
+          hdiutil attach TuanjieHubSetup.dmg -nobrowse
+          sudo cp -R "/Volumes/Tuanjie Hub/Tuanjie Hub.app" /Applications/
+          hdiutil detach "/Volumes/Tuanjie Hub"
+
+      - name: Install Tuanjie Editor + iOS module
+        if: steps.cache-tuanjie.outputs.cache-hit != 'true'
+        run: |
+          "/Applications/Tuanjie Hub.app/Contents/MacOS/Tuanjie Hub" -- --headless install \
+            --version 2022.3.62t8 \
+            --changeset eaa6929bf4e5 \
+            --module ios \
+            --childModules
+          # Move installed editor to cache path for simpler access
+          mkdir -p /Applications/Tuanjie
+          cp -R "/Applications/Tuanjie/Hub/Editor/2022.3.62t8"/* /Applications/Tuanjie/
+
+      - name: Build iOS Xcode project
+        run: |
+          /Applications/Tuanjie/Unity.app/Contents/MacOS/Unity \
+            -quit -batchmode -nographics \
+            -projectPath "${{ github.workspace }}" \
+            -executeMethod BuildConfig.BuildIOS \
+            -logFile build.log
+        continue-on-error: true
+
+      - name: Print build log on failure
+        if: failure()
+        run: cat build.log
+
+      - name: Export IPA
+        run: |
+          PROJECT_DIR="${{ github.workspace }}/Builds/iOS"
+          if [ ! -d "$PROJECT_DIR" ]; then
+            echo "Xcode project not found, checking Unity-iPhone naming..."
+            PROJECT_DIR="${{ github.workspace }}/Builds/iOS/Unity-iPhone.xcodeproj"
+          fi
+          cd "$PROJECT_DIR/.." || cd "${{ github.workspace }}/Builds/iOS"
+
+          # Find xcodeproj
+          XCODEPROJ=$(find . -name "*.xcodeproj" -maxdepth 2 | head -1)
+          SCHEME=$(xcodebuild -project "$XCODEPROJ" -list 2>/dev/null | sed -n '/Schemes:/,/^$/p' | tail -n +2 | head -1 | tr -d ' ')
+
+          echo "Project: $XCODEPROJ"
+          echo "Scheme: $SCHEME"
+
+          xcodebuild -project "$XCODEPROJ" \
+            -scheme "$SCHEME" \
+            -archivePath TempleRun.xcarchive \
+            -sdk iphoneos \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            archive
+
+          xcodebuild -exportArchive \
+            -archivePath TempleRun.xcarchive \
+            -exportPath . \
+            -exportOptionsPlist "${{ github.workspace }}/.github/ExportOptions.plist"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: TempleRun-iOS
+          path: Builds/iOS/*.ipa
