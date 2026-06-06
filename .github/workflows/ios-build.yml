@@ -5,6 +5,9 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-ios:
     runs-on: macos-14
@@ -14,59 +17,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache Tuanjie Editor
-        id: cache-tuanjie
-        uses: actions/cache@v4
-        with:
-          path: /Applications/Tuanjie
-          key: tuanjie-2022.3.62t8-ios-v2
-
-      - name: Download Tuanjie Hub
-        if: steps.cache-tuanjie.outputs.cache-hit != 'true'
+      - name: Patch manifest for Unity compatibility
         run: |
-          curl -L -o TuanjieHubSetup.dmg "https://public-cdn.cloud.unity.cn/tuanjie/hub/TuanjieHubSetup.dmg"
-          hdiutil attach TuanjieHubSetup.dmg -nobrowse
-          sudo cp -R "/Volumes/Tuanjie Hub/Tuanjie Hub.app" /Applications/
-          hdiutil detach "/Volumes/Tuanjie Hub"
-
-      - name: Install Tuanjie Editor + iOS module
-        if: steps.cache-tuanjie.outputs.cache-hit != 'true'
-        run: |
-          "/Applications/Tuanjie Hub.app/Contents/MacOS/Tuanjie Hub" -- --headless install \
-            --version 2022.3.62t8 \
-            --changeset eaa6929bf4e5 \
-            --module ios \
-            --childModules
-          # Move installed editor to cache path for simpler access
-          mkdir -p /Applications/Tuanjie
-          cp -R "/Applications/Tuanjie/Hub/Editor/2022.3.62t8"/* /Applications/Tuanjie/
+          cd "${{ github.workspace }}"
+          # Remove Tuanjie-only packages not available on Unity registry
+          sed -i '' '/cn.tuanjie.codely.bridge/d' Packages/manifest.json
+          # Create stub package to satisfy any internal refs
+          mkdir -p Packages/cn.tuanjie.codely.bridge
+          cat > Packages/cn.tuanjie.codely.bridge/package.json << 'PKGEOF'
+          {
+            "name": "cn.tuanjie.codely.bridge",
+            "version": "1.0.52",
+            "displayName": "CodeLy Bridge (stub)",
+            "description": "CI stub — not needed for build"
+          }
+          PKGEOF
 
       - name: Build iOS Xcode project
-        run: |
-          /Applications/Tuanjie/Unity.app/Contents/MacOS/Unity \
-            -quit -batchmode -nographics \
-            -projectPath "${{ github.workspace }}" \
-            -executeMethod BuildConfig.BuildIOS \
-            -logFile build.log
-        continue-on-error: true
-
-      - name: Print build log on failure
-        if: failure()
-        run: cat build.log
+        uses: game-ci/unity-builder@v4
+        with:
+          targetPlatform: iOS
+          buildMethod: BuildConfig.BuildIOS
+          unityVersion: 2022.3.62f1
 
       - name: Export IPA
         run: |
-          PROJECT_DIR="${{ github.workspace }}/Builds/iOS"
-          if [ ! -d "$PROJECT_DIR" ]; then
-            echo "Xcode project not found, checking Unity-iPhone naming..."
-            PROJECT_DIR="${{ github.workspace }}/Builds/iOS/Unity-iPhone.xcodeproj"
-          fi
-          cd "$PROJECT_DIR/.." || cd "${{ github.workspace }}/Builds/iOS"
-
-          # Find xcodeproj
+          set -e
+          cd "${{ github.workspace }}/Builds/iOS"
           XCODEPROJ=$(find . -name "*.xcodeproj" -maxdepth 2 | head -1)
           SCHEME=$(xcodebuild -project "$XCODEPROJ" -list 2>/dev/null | sed -n '/Schemes:/,/^$/p' | tail -n +2 | head -1 | tr -d ' ')
-
           echo "Project: $XCODEPROJ"
           echo "Scheme: $SCHEME"
 
