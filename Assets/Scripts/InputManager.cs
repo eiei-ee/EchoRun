@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public enum SwipeDirection { None, Up, Down, Left, Right }
 
@@ -61,6 +61,7 @@ public class InputManager : MonoBehaviour
             }
         }
 
+#if UNITY_EDITOR
         // Mouse fallback for editor
         if (Input.GetMouseButtonDown(0))
         {
@@ -71,6 +72,7 @@ public class InputManager : MonoBehaviour
         {
             DetectSwipe(Input.mousePosition);
         }
+#endif
     }
 
     void DetectSwipe(Vector2 endPos)
