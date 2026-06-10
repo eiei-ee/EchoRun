@@ -1,5 +1,6 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.SceneManagement;
 
 public enum GameState { Menu, Playing, GameOver }
 
@@ -39,25 +40,29 @@ public class GameManager : MonoBehaviour
         ApplyFrameRate();
     }
 
+    void Start()
+    {
+        if (autoStart && State == GameState.Menu)
+            StartGame();
+    }
+
     public void SetFrameRate(int fps)
     {
         targetFrameRate = fps;
-        ApplyFrameRate();
+        if (targetFrameRate > 0)
+            Application.targetFrameRate = targetFrameRate;
     }
 
     void ApplyFrameRate()
     {
-        Application.targetFrameRate = targetFrameRate;
+        if (targetFrameRate > 0)
+            Application.targetFrameRate = targetFrameRate;
     }
 
     void Update()
     {
-        // Auto-start for testing
-        if (autoStart && State == GameState.Menu)
-            StartGame();
-
-        // Space to start/restart
-        if (Input.GetKeyDown(KeyCode.Space))
+        // Enter to start/restart (Space is reserved for jump via InputManager)
+        if (Input.GetKeyDown(KeyCode.Return))
         {
             if (State == GameState.Menu) StartGame();
             else if (State == GameState.GameOver) Restart();
@@ -96,8 +101,7 @@ public class GameManager : MonoBehaviour
 
     public void Restart()
     {
-        UnityEngine.SceneManagement.SceneManager.LoadScene(
-            UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex);
+        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
     public void AddCoins(int amount)

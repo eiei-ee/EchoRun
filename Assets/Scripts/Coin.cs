@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public class Coin : MonoBehaviour
 {
@@ -6,17 +6,21 @@ public class Coin : MonoBehaviour
     public float bobSpeed = 2f;
     public float bobHeight = 0.3f;
 
-    private Vector3 _startPos;
+    private float _baseY;
+    private float _phaseOffset;
 
     void Start()
     {
-        _startPos = transform.position;
+        _baseY = transform.position.y;
+        _phaseOffset = Random.Range(0f, Mathf.PI * 2f);
     }
 
     void Update()
     {
         transform.Rotate(Vector3.up, rotateSpeed * Time.deltaTime, Space.World);
-        float bob = Mathf.Sin(Time.time * bobSpeed) * bobHeight;
-        transform.position = _startPos + Vector3.up * bob;
+        float bob = Mathf.Sin((Time.time + _phaseOffset) * bobSpeed) * bobHeight;
+        Vector3 pos = transform.position;
+        pos.y = _baseY + bob;
+        transform.position = pos;
     }
 }

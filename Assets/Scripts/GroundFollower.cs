@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public class GroundFollower : MonoBehaviour
 {
@@ -22,9 +22,9 @@ public class GroundFollower : MonoBehaviour
 
         float dx = transform.position.x - player.position.x;
         float dz = transform.position.z - player.position.z;
-        float dist = Mathf.Sqrt(dx * dx + dz * dz);
+        float sqrDist = dx * dx + dz * dz;
 
-        if (dist > updateThreshold)
+        if (sqrDist > updateThreshold * updateThreshold)
         {
             transform.position = new Vector3(player.position.x, -0.1f, player.position.z);
         }

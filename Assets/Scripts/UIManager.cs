@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.UI;
 
 public class UIManager : MonoBehaviour
@@ -28,6 +28,8 @@ public class UIManager : MonoBehaviour
 
     void Start()
     {
+        if (GameManager.Instance == null) return;
+
         if (startButton != null) startButton.onClick.AddListener(() => GameManager.Instance.StartGame());
         if (restartButton != null) restartButton.onClick.AddListener(() => GameManager.Instance.Restart());
 
@@ -45,7 +47,8 @@ public class UIManager : MonoBehaviour
 
     void SetFps(int fps)
     {
-        GameManager.Instance.SetFrameRate(fps);
+        if (GameManager.Instance != null)
+            GameManager.Instance.SetFrameRate(fps);
         HighlightFpsButton(fps);
     }
 
@@ -99,8 +102,11 @@ public class UIManager : MonoBehaviour
     {
         if (hudPanel != null) hudPanel.SetActive(false);
         if (gameOverPanel != null) gameOverPanel.SetActive(true);
-        if (finalScoreText != null) finalScoreText.text = $"Score: {GameManager.Instance.Score}";
-        if (coinResultText != null) coinResultText.text = $"Coins: {GameManager.Instance.Coins}";
+        if (GameManager.Instance != null)
+        {
+            if (finalScoreText != null) finalScoreText.text = $"Score: {GameManager.Instance.Score}";
+            if (coinResultText != null) coinResultText.text = $"Coins: {GameManager.Instance.Coins}";
+        }
     }
 
     void UpdateScore(int score)

@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public class CharacterAnimator : MonoBehaviour
 {
@@ -7,7 +7,6 @@ public class CharacterAnimator : MonoBehaviour
     public float armSwingAngle = 35f;
     public float legSwingAngle = 45f;
     public float bobAmplitude = 0.06f;
-    public float bobFrequency = 7f;
 
     [Header("Jump Pose")]
     public float jumpArmRaiseAngle = 70f;
@@ -20,20 +19,64 @@ public class CharacterAnimator : MonoBehaviour
     [Header("Turning")]
     public float lookRotationSpeed = 15f;
 
-    [Header("Limb References")]
+    [Header("Limb References (set manually or via InitFromHumanoid)")]
     public Transform leftUpperArm;
     public Transform rightUpperArm;
     public Transform leftUpperLeg;
     public Transform rightUpperLeg;
+    public Transform leftFoot;
+    public Transform rightFoot;
     public Transform bodyTransform;
+
+    [Header("Humanoid")]
+    public bool useHumanoidRig;
 
     private PlayerController _player;
     private Vector3 _bodyBasePos;
+    private Quaternion _leftFootBaseRot;
+    private Quaternion _rightFootBaseRot;
+    private Animator _animator;
+    private GameManager _gm;
+
+    private float _runPhase;
+    private const float POSE_LERP_SPEED = 10f;
 
     void Start()
     {
         _player = GetComponentInParent<PlayerController>();
+        _gm = GameManager.Instance;
+
+        if (useHumanoidRig)
+        {
+            _animator = GetComponent<Animator>();
+            if (_animator == null) _animator = GetComponentInParent<Animator>();
+            if (_animator != null) InitFromHumanoid();
+        }
+
         _bodyBasePos = bodyTransform != null ? bodyTransform.localPosition : transform.localPosition;
+
+        if (leftFoot != null) _leftFootBaseRot = leftFoot.localRotation;
+        if (rightFoot != null) _rightFootBaseRot = rightFoot.localRotation;
+    }
+
+    void InitFromHumanoid()
+    {
+        leftUpperArm    = _animator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
+        rightUpperArm   = _animator.GetBoneTransform(HumanBodyBones.RightUpperArm);
+        leftUpperLeg    = _animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg);
+        rightUpperLeg   = _animator.GetBoneTransform(HumanBodyBones.RightUpperLeg);
+        leftFoot        = _animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+        rightFoot       = _animator.GetBoneTransform(HumanBodyBones.RightFoot);
+        bodyTransform   = _animator.GetBoneTransform(HumanBodyBones.Spine);
+
+        if (bodyTransform == null)
+            bodyTransform = _animator.GetBoneTransform(HumanBodyBones.Hips);
+
+        if (leftUpperArm != null && rightUpperArm != null &&
+            leftUpperLeg != null && rightUpperLeg != null)
+            Debug.Log("CharacterAnimator: humanoid bones mapped OK");
+        else
+            Debug.LogWarning("CharacterAnimator: some humanoid bones missing - check rig");
     }
 
     void Update()
@@ -42,9 +85,9 @@ public class CharacterAnimator : MonoBehaviour
 
         RotateTowardForward();
 
-        if (GameManager.Instance == null || GameManager.Instance.State != GameState.Playing)
+        if (_gm == null || _gm.State != GameState.Playing)
         {
-            ApplyIdlePose();
+            SmoothIdlePose();
             return;
         }
 
@@ -66,11 +109,11 @@ public class CharacterAnimator : MonoBehaviour
 
     void ApplyRunPose()
     {
-        float speed = GameManager.Instance.CurrentSpeed;
-        float phase = Time.time * runSwingSpeed * (speed / 10f);
+        float speed = _gm.CurrentSpeed;
+        _runPhase += Time.deltaTime * runSwingSpeed * (speed / 10f);
 
-        float armSwing = Mathf.Sin(phase) * armSwingAngle;
-        float legSwing = Mathf.Sin(phase) * legSwingAngle;
+        float armSwing = Mathf.Sin(_runPhase) * armSwingAngle;
+        float legSwing = Mathf.Sin(_runPhase) * legSwingAngle;
 
         if (leftUpperArm != null)
             leftUpperArm.localRotation = Quaternion.Euler(armSwing, 0, 0);
@@ -81,14 +124,21 @@ public class CharacterAnimator : MonoBehaviour
         if (rightUpperLeg != null)
             rightUpperLeg.localRotation = Quaternion.Euler(legSwing, 0, 0);
 
-        float bob = Mathf.Abs(Mathf.Sin(phase * 2f)) * bobAmplitude;
+        // Foot roll: lift heel on forward swing, toe on back swing
+        float footPitch = Mathf.Sin(_runPhase) * 25f;
+        if (leftFoot != null)
+            leftFoot.localRotation = _leftFootBaseRot * Quaternion.Euler(footPitch, 0, 0);
+        if (rightFoot != null)
+            rightFoot.localRotation = _rightFootBaseRot * Quaternion.Euler(-footPitch, 0, 0);
+
+        float bob = Mathf.Abs(Mathf.Sin(_runPhase * 2f)) * bobAmplitude;
         if (bodyTransform != null)
             bodyTransform.localPosition = _bodyBasePos + Vector3.up * bob;
     }
 
     void ApplyJumpPose()
     {
-        float t = Time.deltaTime * 10f;
+        float t = Time.deltaTime * POSE_LERP_SPEED;
         if (leftUpperArm != null)
             leftUpperArm.localRotation = Quaternion.Slerp(leftUpperArm.localRotation, Quaternion.Euler(-jumpArmRaiseAngle, 0, 0), t);
         if (rightUpperArm != null)
@@ -97,6 +147,10 @@ public class CharacterAnimator : MonoBehaviour
             leftUpperLeg.localRotation = Quaternion.Slerp(leftUpperLeg.localRotation, Quaternion.Euler(jumpLegTuckAngle, 0, 0), t);
         if (rightUpperLeg != null)
             rightUpperLeg.localRotation = Quaternion.Slerp(rightUpperLeg.localRotation, Quaternion.Euler(jumpLegTuckAngle, 0, 0), t);
+        if (leftFoot != null)
+            leftFoot.localRotation = Quaternion.Slerp(leftFoot.localRotation, _leftFootBaseRot * Quaternion.Euler(30, 0, 0), t);
+        if (rightFoot != null)
+            rightFoot.localRotation = Quaternion.Slerp(rightFoot.localRotation, _rightFootBaseRot * Quaternion.Euler(30, 0, 0), t);
     }
 
     void ApplySlidePose()
@@ -104,27 +158,40 @@ public class CharacterAnimator : MonoBehaviour
         if (bodyTransform != null)
         {
             Vector3 s = bodyTransform.localScale;
-            s.y = Mathf.Lerp(s.y, slideBodySquash, Time.deltaTime * 10f);
+            s.y = Mathf.Lerp(s.y, slideBodySquash, Time.deltaTime * POSE_LERP_SPEED);
             bodyTransform.localScale = s;
         }
 
-        float t = Time.deltaTime * 10f;
+        float t = Time.deltaTime * POSE_LERP_SPEED;
         if (leftUpperLeg != null)
             leftUpperLeg.localRotation = Quaternion.Slerp(leftUpperLeg.localRotation, Quaternion.Euler(-slideLegForwardAngle, 0, 0), t);
         if (rightUpperLeg != null)
             rightUpperLeg.localRotation = Quaternion.Slerp(rightUpperLeg.localRotation, Quaternion.Euler(-slideLegForwardAngle, 0, 0), t);
+        if (leftFoot != null)
+            leftFoot.localRotation = Quaternion.Slerp(leftFoot.localRotation, _leftFootBaseRot, t);
+        if (rightFoot != null)
+            rightFoot.localRotation = Quaternion.Slerp(rightFoot.localRotation, _rightFootBaseRot, t);
     }
 
-    void ApplyIdlePose()
+    void SmoothIdlePose()
     {
-        if (leftUpperArm != null) leftUpperArm.localRotation = Quaternion.identity;
-        if (rightUpperArm != null) rightUpperArm.localRotation = Quaternion.identity;
-        if (leftUpperLeg != null) leftUpperLeg.localRotation = Quaternion.identity;
-        if (rightUpperLeg != null) rightUpperLeg.localRotation = Quaternion.identity;
+        float t = Time.deltaTime * POSE_LERP_SPEED;
+        if (leftUpperArm != null)
+            leftUpperArm.localRotation = Quaternion.Slerp(leftUpperArm.localRotation, Quaternion.identity, t);
+        if (rightUpperArm != null)
+            rightUpperArm.localRotation = Quaternion.Slerp(rightUpperArm.localRotation, Quaternion.identity, t);
+        if (leftUpperLeg != null)
+            leftUpperLeg.localRotation = Quaternion.Slerp(leftUpperLeg.localRotation, Quaternion.identity, t);
+        if (rightUpperLeg != null)
+            rightUpperLeg.localRotation = Quaternion.Slerp(rightUpperLeg.localRotation, Quaternion.identity, t);
+        if (leftFoot != null)
+            leftFoot.localRotation = Quaternion.Slerp(leftFoot.localRotation, _leftFootBaseRot, t);
+        if (rightFoot != null)
+            rightFoot.localRotation = Quaternion.Slerp(rightFoot.localRotation, _rightFootBaseRot, t);
         if (bodyTransform != null)
         {
-            bodyTransform.localPosition = _bodyBasePos;
-            bodyTransform.localScale = Vector3.one;
+            bodyTransform.localPosition = Vector3.Lerp(bodyTransform.localPosition, _bodyBasePos, t);
+            bodyTransform.localScale = Vector3.Lerp(bodyTransform.localScale, Vector3.one, t);
         }
     }
 }

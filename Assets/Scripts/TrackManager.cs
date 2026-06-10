@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 public class TrackManager : MonoBehaviour
@@ -36,6 +36,10 @@ public class TrackManager : MonoBehaviour
     private int _straightSegmentsSinceLastTurn;
     private Transform _player;
 
+    private const float SEGMENT_CHECK_MULT = 1.5f;
+    private const float SEGMENT_RECYCLE_MULT = 5f;
+
+    public TrackSegmentData CurrentTurnSegment { get; private set; }
     public Vector3 ForwardDirection =>
         Quaternion.Euler(0, _spawnAngle, 0) * Vector3.forward;
 
@@ -60,32 +64,49 @@ public class TrackManager : MonoBehaviour
         if (_player == null) return;
         if (trackSegmentPrefab == null) return;
 
-        float distToSpawn = XZDistance(_player.position, _spawnPosition);
+        float spawnThresholdSqr = (segmentLength * (poolSize / 2));
+        spawnThresholdSqr *= spawnThresholdSqr;
 
-        while (distToSpawn < segmentLength * (poolSize / 2))
+        while (XZSqrDistance(_player.position, _spawnPosition) < spawnThresholdSqr)
         {
             SpawnSegment();
-            distToSpawn = XZDistance(_player.position, _spawnPosition);
         }
+
+        float recycleThresholdSqr = (segmentLength * SEGMENT_RECYCLE_MULT);
+        recycleThresholdSqr *= recycleThresholdSqr;
 
         while (_activeSegments.Count > 0)
         {
             GameObject seg = _activeSegments[0];
-            float dist = XZDistance(_player.position, seg.transform.position);
-            if (dist < segmentLength * 5) break;
+            if (XZSqrDistance(_player.position, seg.transform.position) < recycleThresholdSqr) break;
             RecycleSegment(seg);
         }
     }
 
-    float XZDistance(Vector3 a, Vector3 b)
+    float XZSqrDistance(Vector3 a, Vector3 b)
     {
         float dx = a.x - b.x;
         float dz = a.z - b.z;
-        return Mathf.Sqrt(dx * dx + dz * dz);
+        return dx * dx + dz * dz;
     }
 
     public TrackSegmentData FindTurnAtPosition(Vector3 worldPos)
     {
+        // Check cached turn first
+        if (CurrentTurnSegment != null && CurrentTurnSegment.gameObject.activeSelf)
+        {
+            float sqrDist = XZSqrDistance(worldPos, CurrentTurnSegment.transform.position);
+            float checkSqr = (segmentLength * SEGMENT_CHECK_MULT);
+            checkSqr *= checkSqr;
+            if (sqrDist < checkSqr)
+                return CurrentTurnSegment;
+        }
+
+        CurrentTurnSegment = null;
+
+        float checkDistSqr = (segmentLength * SEGMENT_CHECK_MULT);
+        checkDistSqr *= checkDistSqr;
+
         for (int i = _activeSegments.Count - 1; i >= 0; i--)
         {
             GameObject seg = _activeSegments[i];
@@ -94,10 +115,11 @@ public class TrackManager : MonoBehaviour
             TrackSegmentData data = seg.GetComponent<TrackSegmentData>();
             if (data == null || data.segmentType == TrackSegmentType.Straight) continue;
 
-            // Check if player is within this turn segment's bounds
-            float dist = XZDistance(worldPos, seg.transform.position);
-            if (dist < segmentLength * 1.5f)
+            if (XZSqrDistance(worldPos, seg.transform.position) < checkDistSqr)
+            {
+                CurrentTurnSegment = data;
                 return data;
+            }
         }
         return null;
     }
@@ -202,6 +224,9 @@ public class TrackManager : MonoBehaviour
             data.exitDirection = ForwardDirection;
             data.turnPointWorld = cornerPos;
             _straightSegmentsSinceLastTurn = 0;
+
+            // Cache the newly spawned turn for fast lookup
+            CurrentTurnSegment = data;
         }
     }
 
@@ -209,13 +234,20 @@ public class TrackManager : MonoBehaviour
     {
         TrackSegmentData data = segment.GetComponent<TrackSegmentData>();
 
+        // Clear cached turn if this is the one being recycled
+        if (data != null && data == CurrentTurnSegment)
+            CurrentTurnSegment = null;
+
         // Destroy dynamic objects on this segment
         Vector3 segPos = segment.transform.position;
+        float checkDistSqr = (segmentLength * SEGMENT_CHECK_MULT);
+        checkDistSqr *= checkDistSqr;
+
         for (int i = _dynamicObjects.Count - 1; i >= 0; i--)
         {
             GameObject obj = _dynamicObjects[i];
             if (obj == null) { _dynamicObjects.RemoveAt(i); continue; }
-            if (XZDistance(obj.transform.position, segPos) < segmentLength * 1.5f)
+            if (XZSqrDistance(obj.transform.position, segPos) < checkDistSqr)
             {
                 _dynamicObjects.RemoveAt(i);
                 Destroy(obj);
@@ -250,48 +282,37 @@ public class TrackManager : MonoBehaviour
     {
         if (obstaclePrefabs.Length == 0 && coinPrefab == null) return;
 
-        float s = 2f;
-        float e = segmentLength - 2f;
+        float buffer = 4f;
+        float end    = segmentLength - 2f;
 
         if (segType != TrackSegmentType.Straight)
         {
-            SpawnCoinsZigzag(segment, 2f, segmentLength * 0.4f);
+            SpawnCoinsZigzag(segment, buffer, segmentLength * 0.35f);
             return;
         }
 
-        float roll = Random.value;
+        float diff = GameManager.Instance != null
+            ? Mathf.InverseLerp(GameManager.Instance.startSpeed,
+                                GameManager.Instance.maxSpeed * 0.5f,
+                                GameManager.Instance.CurrentSpeed)
+            : 0.5f;
 
-        if (roll < 0.15f && coinPrefab != null)
+        float obstacleProbability = Mathf.Lerp(0.40f, 0.75f, diff);
+
+        // Pick safe lane before spawning anything
+        int safeLane = Random.Range(0, 3);
+
+        // Always spawn coins on at least 2 lanes
+        SpawnCoinsMixed(segment, buffer, end, safeLane);
+
+        // Sometimes add obstacles on non-safe lanes
+        if (Random.value < obstacleProbability && obstaclePrefabs.Length >= 3)
         {
-            // Full coin row across all 3 lanes (reward)
-            SpawnCoinRow(segment, s, e, -2);
-        }
-        else if (roll < 0.35f && coinPrefab != null)
-        {
-            // Zigzag coins guiding lane switch
-            SpawnCoinsZigzag(segment, s, e);
-        }
-        else if (roll < 0.45f && coinPrefab != null)
-        {
-            // Jump arc coins (floating high)
-            SpawnCoinArc(segment, s, e);
-        }
-        else if (roll < 0.75f && obstaclePrefabs.Length >= 3)
-        {
-            SpawnObstacleSet(segment, s, e);
-        }
-        else if (coinPrefab != null)
-        {
-            int skip = Random.Range(0, 3);
-            for (int lane = 0; lane < 3; lane++)
-            {
-                if (lane == skip && Random.value < 0.5f) continue;
-                SpawnCoinLine(segment, lane, Random.Range(s + 2f, e - 3f), Random.Range(4, 8));
-            }
+            SpawnObstacleRow(segment, buffer, end, diff, safeLane);
         }
     }
 
-    // ── coin patterns ──────────────────────────────────
+    // ---- coin patterns ----
 
     void SpawnCoinLine(GameObject segment, int lane, float startZ, int count)
     {
@@ -371,65 +392,79 @@ public class TrackManager : MonoBehaviour
         }
     }
 
-    // ── obstacle patterns ──────────────────────────────
+    // ---- obstacle patterns ----
 
-    void SpawnObstacleSet(GameObject segment, float zStart, float zEnd)
+    // Guarantees at least 1 lane is always open
+    void SpawnObstacleRow(GameObject segment, float zStart, float zEnd, float difficulty, int safeLane)
     {
         if (obstaclePrefabs.Length < 3) return;
-        // obstaclePrefabs indices: 0=Low, 1=High, 2=Barrier
 
-        // 1-3 obstacle groups spread along the segment
-        int groups = Random.Range(1, 3);
-        float step = (zEnd - zStart) / (groups + 1);
+        float z = Random.Range(zStart + 1f, zEnd - 2f);
 
-        for (int g = 0; g < groups; g++)
+        // How many lanes to block (1 or 2, never 3)
+        int blocked = difficulty > 0.55f ? 2 : 1;
+        List<int> lanes = new List<int>();
+        for (int l = 0; l < 3; l++)
+            if (l != safeLane) lanes.Add(l);
+
+        // Shuffle then take <blocked> lanes
+        for (int i = 0; i < lanes.Count; i++)
         {
-            float z = zStart + step * (g + 1) + Random.Range(-2f, 2f);
-            if (z < zStart + 1f || z > zEnd - 1f) continue;
+            int swap = Random.Range(i, lanes.Count);
+            int tmp = lanes[i]; lanes[i] = lanes[swap]; lanes[swap] = tmp;
+        }
 
-            float pattern = Random.value;
-            List<int> lanes = new List<int> { 0, 1, 2 };
+        for (int i = 0; i < blocked && i < lanes.Count; i++)
+        {
+            int lane = lanes[i];
 
-            if (pattern < 0.35f)
+            // Pick obstacle type based on lane position
+            int type;
+            float roll = Random.value;
+            if (roll < 0.35f)      type = 0; // Low (slide under)
+            else if (roll < 0.65f) type = 1; // High (jump over)
+            else                   type = 2; // Barrier (must switch lane)
+
+            // Barriers can't be on safeLane's neighbor if it's the ONLY blocked lane
+            // (would be impossible to dodge at low difficulty)
+            if (blocked == 1 && type == 2) type = Random.value < 0.5f ? 0 : 1;
+
+            SpawnObstacleAt(segment, lane, z + Random.Range(-0.8f, 0.8f), type);
+        }
+    }
+
+    // ---- mixed coins (always spawns, coexists with obstacles) ----
+
+    void SpawnCoinsMixed(GameObject segment, float zStart, float zEnd, int safeLane)
+    {
+        if (coinPrefab == null) return;
+        float roll = Random.value;
+
+        if (roll < 0.3f)
+        {
+            // Zigzag across 2-3 lanes
+            SpawnCoinsZigzag(segment, zStart, zEnd);
+        }
+        else if (roll < 0.5f)
+        {
+            // Jump arc
+            SpawnCoinArc(segment, zStart, zEnd);
+        }
+        else if (roll < 0.8f)
+        {
+            // Coins on all 3 lanes, extra dense on safe lane
+            for (int lane = 0; lane < 3; lane++)
             {
-                // Low barriers: slide under (1-2 lanes)
-                int count = Random.Range(1, 3);
-                for (int i = 0; i < count; i++)
-                {
-                    int idx = Random.Range(0, lanes.Count);
-                    SpawnObstacleAt(segment, lanes[idx], z, 0); // Low
-                    lanes.RemoveAt(idx);
-                }
+                int count = (lane == safeLane) ? Random.Range(6, 10) : Random.Range(3, 6);
+                SpawnCoinLine(segment, lane, Random.Range(zStart + 1f, zEnd - 4f), count);
             }
-            else if (pattern < 0.65f)
-            {
-                // High barrier: jump over (1 lane)
-                int lane = lanes[Random.Range(0, lanes.Count)];
-                SpawnObstacleAt(segment, lane, z, 1); // High
-            }
-            else if (pattern < 0.85f)
-            {
-                // Barriers: force lane switch (1-2 lanes blocked)
-                int count = Random.Range(1, 3);
-                for (int i = 0; i < count; i++)
-                {
-                    int idx = Random.Range(0, lanes.Count);
-                    SpawnObstacleAt(segment, lanes[idx], z, 2); // Barrier
-                    lanes.RemoveAt(idx);
-                }
-            }
-            else
-            {
-                // Combo: low + high on different lanes
-                int lowLane = lanes[Random.Range(0, lanes.Count)];
-                lanes.Remove(lowLane);
-                SpawnObstacleAt(segment, lowLane, z, 0);
-                if (lanes.Count > 0)
-                {
-                    int highLane = lanes[Random.Range(0, lanes.Count)];
-                    SpawnObstacleAt(segment, highLane, z + 1.5f, 1);
-                }
-            }
+        }
+        else
+        {
+            // Coins only on safe lane (guide path), sparse on others
+            SpawnCoinLine(segment, safeLane, Random.Range(zStart + 1f, zEnd - 3f), Random.Range(8, 14));
+            int lane2 = (safeLane + Random.Range(1, 3)) % 3;
+            SpawnCoinLine(segment, lane2, Random.Range(zStart + 2f, zEnd - 5f), Random.Range(3, 6));
         }
     }
 

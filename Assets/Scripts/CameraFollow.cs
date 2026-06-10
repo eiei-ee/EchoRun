@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public class CameraFollow : MonoBehaviour
 {
@@ -7,19 +7,30 @@ public class CameraFollow : MonoBehaviour
     public float smoothSpeed = 8f;
 
     private Vector3 _velocity = Vector3.zero;
+    private PlayerController _pc;
+    private float _invSmoothSpeed;
+
+    void Start()
+    {
+        _invSmoothSpeed = 1f / smoothSpeed;
+        if (target != null)
+            _pc = target.GetComponent<PlayerController>();
+    }
 
     void LateUpdate()
     {
         if (target == null) return;
 
-        Vector3 forward = Vector3.forward;
-        PlayerController pc = target.GetComponent<PlayerController>();
-        if (pc != null) forward = pc.ForwardDirection;
+        // Refresh cached PlayerController if target changed
+        if (_pc == null && target != null)
+            _pc = target.GetComponent<PlayerController>();
+
+        Vector3 forward = _pc != null ? _pc.ForwardDirection : Vector3.forward;
         Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
 
         Vector3 worldOffset = forward * offset.z + Vector3.up * offset.y + right * offset.x;
         Vector3 targetPos = target.position + worldOffset;
-        transform.position = Vector3.SmoothDamp(transform.position, targetPos, ref _velocity, 1f / smoothSpeed);
+        transform.position = Vector3.SmoothDamp(transform.position, targetPos, ref _velocity, _invSmoothSpeed);
 
         Vector3 lookTarget = target.position + forward * 5f;
         Quaternion targetRot = Quaternion.LookRotation(lookTarget - transform.position);

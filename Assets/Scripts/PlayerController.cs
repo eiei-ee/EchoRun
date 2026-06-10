@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public class PlayerController : MonoBehaviour
 {
@@ -22,6 +22,9 @@ public class PlayerController : MonoBehaviour
     [Header("Character Model")]
     public Transform characterModel;
 
+    [Header("Fall Off")]
+    public float fallOffY = -5f;
+
     public int CurrentLane { get; private set; } = 1;
     public bool IsJumping { get; private set; }
     public bool IsSliding { get; private set; }
@@ -36,9 +39,18 @@ public class PlayerController : MonoBehaviour
     private Rigidbody _rb;
     private TrackSegmentData _lastTurnSegment;
     private float _laneOffset;
+    private GameManager _gm;
+    private InputManager _input;
+    private TrackManager _trackMgr;
+
+    private const float GROUND_RAY_DIST = 0.3f;
 
     void Start()
     {
+        _gm = GameManager.Instance;
+        _input = InputManager.Instance;
+        _trackMgr = TrackManager.Instance;
+
         _rb = GetComponent<Rigidbody>();
         _rb.interpolation = RigidbodyInterpolation.Interpolate;
         _rb.constraints = RigidbodyConstraints.FreezeRotation;
@@ -53,8 +65,7 @@ public class PlayerController : MonoBehaviour
 
     void Update()
     {
-        if (GameManager.Instance == null) return;
-        if (GameManager.Instance.State != GameState.Playing) return;
+        if (_gm == null || _gm.State != GameState.Playing) return;
 
         HandleInput();
         UpdateSlide();
@@ -62,12 +73,11 @@ public class PlayerController : MonoBehaviour
 
     void FixedUpdate()
     {
-        if (GameManager.Instance == null) return;
-        if (GameManager.Instance.State != GameState.Playing) return;
+        if (_gm == null || _gm.State != GameState.Playing) return;
 
-        if (_rb.position.y < -5f)
+        if (_rb.position.y < fallOffY)
         {
-            GameManager.Instance.GameOver();
+            _gm.GameOver();
             return;
         }
 
@@ -79,11 +89,11 @@ public class PlayerController : MonoBehaviour
         Vector3 vel = _rb.velocity;
 
         // Forward speed in facing direction
-        Vector3 forwardVel = forward * GameManager.Instance.CurrentSpeed;
+        Vector3 forwardVel = forward * _gm.CurrentSpeed;
         vel.x = forwardVel.x;
         vel.z = forwardVel.z;
 
-        // Lane switching — use tracked scalar offset, not world position projection
+        // Lane switching - use tracked scalar offset, not world position projection
         float targetLateral = (CurrentLane - 1) * laneDistance;
         float currentOffset = _laneOffset;
         _laneOffset = Mathf.MoveTowards(currentOffset, targetLateral,
@@ -113,9 +123,9 @@ public class PlayerController : MonoBehaviour
 
     void UpdateForwardDirection()
     {
-        if (TrackManager.Instance == null) return;
+        if (_trackMgr == null) return;
 
-        TrackSegmentData turnSeg = TrackManager.Instance.FindTurnAtPosition(_rb.position);
+        TrackSegmentData turnSeg = _trackMgr.FindTurnAtPosition(_rb.position);
         if (turnSeg == null)
         {
             _lastTurnSegment = null;
@@ -150,10 +160,7 @@ public class PlayerController : MonoBehaviour
 
     void HandleInput()
     {
-        SwipeDirection swipe = InputManager.Instance != null
-            ? InputManager.Instance.GetSwipe()
-            : SwipeDirection.None;
-
+        SwipeDirection swipe = _input != null ? _input.GetSwipe() : SwipeDirection.None;
         if (swipe == SwipeDirection.None) return;
 
         switch (swipe)
@@ -204,9 +211,10 @@ public class PlayerController : MonoBehaviour
     bool IsGrounded()
     {
         if (_capsuleCollider == null) return false;
-        float halfHeight = _capsuleCollider.height / 2f;
-        Vector3 feet = _rb.position + Vector3.down * halfHeight;
-        return Physics.Raycast(feet, Vector3.down, 0.3f, groundLayer);
+        float bottom = _rb.position.y + _capsuleCollider.center.y
+                       - _capsuleCollider.height / 2f;
+        return Physics.Raycast(new Vector3(_rb.position.x, bottom, _rb.position.z),
+                               Vector3.down, GROUND_RAY_DIST, groundLayer);
     }
 
     void OnTriggerEnter(Collider other)
@@ -214,7 +222,7 @@ public class PlayerController : MonoBehaviour
         if (other.CompareTag("Obstacle"))
         {
             Obstacle obs = other.GetComponent<Obstacle>();
-            if (obs == null) { GameManager.Instance.GameOver(); return; }
+            if (obs == null) { _gm.GameOver(); return; }
 
             if (obs.type == ObstacleType.Low && IsSliding)
             {
@@ -227,11 +235,11 @@ public class PlayerController : MonoBehaviour
                 other.gameObject.SetActive(false);
                 return;
             }
-            GameManager.Instance.GameOver();
+            _gm.GameOver();
         }
         else if (other.CompareTag("Coin"))
         {
-            GameManager.Instance.AddCoins(1);
+            _gm.AddCoins(1);
             other.gameObject.SetActive(false);
         }
     }
