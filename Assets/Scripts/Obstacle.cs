@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public enum ObstacleType { Low, High, Side }
+public enum ObstacleType { Low, High, Barrier }
 
 public class Obstacle : MonoBehaviour
 {

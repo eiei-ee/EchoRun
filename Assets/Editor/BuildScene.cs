@@ -40,9 +40,9 @@ public class BuildScene
         ConfigureTrackManager();
         CreateUICanvas();
 
-        AssetDatabase.SaveAssets();
-        AssetDatabase.Refresh();
-        EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+       AssetDatabase.SaveAssets();
+        EditorSceneManager.SaveScene(SceneManager.GetActiveScene());
+       AssetDatabase.Refresh();
         Debug.Log("=== BUILD COMPLETE — Save scene (Ctrl+S), then Play ===");
     }
 
@@ -69,6 +69,159 @@ public class BuildScene
         _cachedShader = tmp.GetComponent<MeshRenderer>().sharedMaterial.shader;
         Object.DestroyImmediate(tmp);
         Debug.Log($"Using shader from primitive: {(_cachedShader != null ? _cachedShader.name : "NULL")}");
+    }
+
+    // ── character model builders ──────────────────────
+
+    static GameObject CreateHumanoidCharacterModel(GameObject player, GameObject prefab)
+    {
+        GameObject model = (GameObject)PrefabUtility.InstantiatePrefab(prefab, player.transform);
+        model.name = "CharacterModel";
+        model.transform.localPosition = new Vector3(0, -0.55f, 0);
+
+        // Ensure CharacterAnimator has useHumanoidRig enabled
+        CharacterAnimator ca = model.GetComponent<CharacterAnimator>();
+        if (ca == null) ca = model.AddComponent<CharacterAnimator>();
+        SerializedObject caSo = new SerializedObject(ca);
+        caSo.FindProperty("useHumanoidRig").boolValue = true;
+        caSo.ApplyModifiedProperties();
+
+        // Adjust capsule collider for humanoid proportions
+        CapsuleCollider cc = player.GetComponent<CapsuleCollider>();
+        if (cc != null) { cc.height = 2f; cc.radius = 0.35f; }
+
+        Debug.Log("Using humanoid character model");
+        return model;
+    }
+
+    static GameObject CreateProceduralCharacterModel(GameObject player)
+    {
+        // Materials
+        Material skinMat  = LoadOrMakeMat("CharacterSkinMat",  new Color(0.91f, 0.72f, 0.55f)); // peach
+        Material clothMat = LoadOrMakeMat("CharacterClothMat", new Color(0.17f, 0.24f, 0.31f)); // dark blue-gray shirt
+        Material pantsMat = LoadOrMakeMat("CharacterPantsMat", new Color(0.13f, 0.18f, 0.25f)); // darker pants
+        Material shoeMat  = LoadOrMakeMat("CharacterShoeMat",  new Color(0.25f, 0.18f, 0.12f)); // brown shoes
+        Material eyeMat   = LoadOrMakeMat("CharacterEyeMat",   Color.white);
+        Material pupilMat = LoadOrMakeMat("CharacterPupilMat", Color.black);
+
+        GameObject model = new GameObject("CharacterModel");
+        model.transform.SetParent(player.transform);
+        model.transform.localPosition = new Vector3(0, -1f, 0);
+        model.AddComponent<CharacterAnimator>();
+
+        // Helper: create part, strip collider, assign material
+        System.Func<string, PrimitiveType, Vector3, Vector3, Material, GameObject> P =
+            (name, shape, pos, scale, mat) =>
+        {
+            GameObject go = GameObject.CreatePrimitive(shape);
+            go.name = name;
+            go.transform.localPosition = pos;
+            go.transform.localScale = scale;
+            Object.DestroyImmediate(go.GetComponent<Collider>());
+            if (mat != null) go.GetComponent<MeshRenderer>().material = mat;
+            return go;
+        };
+
+        // ── Body ──
+        GameObject pelvis = P("Pelvis", PrimitiveType.Capsule,
+            new Vector3(0, 0.95f, 0), new Vector3(0.55f, 0.28f, 0.4f), pantsMat);
+        pelvis.transform.SetParent(model.transform, false);
+
+        GameObject torso = P("Torso", PrimitiveType.Capsule,
+            new Vector3(0, 1.35f, 0), new Vector3(0.7f, 0.5f, 0.55f), clothMat);
+        torso.transform.SetParent(model.transform, false);
+
+        GameObject neck = P("Neck", PrimitiveType.Capsule,
+            new Vector3(0, 1.85f, 0), new Vector3(0.16f, 0.12f, 0.16f), skinMat);
+        neck.transform.SetParent(model.transform, false);
+
+        // ── Head + face ──
+        GameObject head = P("Head", PrimitiveType.Sphere,
+            new Vector3(0, 2.08f, 0), new Vector3(0.42f, 0.42f, 0.42f), skinMat);
+        head.transform.SetParent(model.transform, false);
+
+        // Eyes (on front of head = Z+)
+        foreach (float sx in new[] { -0.12f, 0.12f })
+        {
+            GameObject eye = P(sx < 0 ? "Eye_L" : "Eye_R", PrimitiveType.Sphere,
+                new Vector3(sx, 2.1f, 0.35f), new Vector3(0.08f, 0.08f, 0.04f), eyeMat);
+            eye.transform.SetParent(model.transform, false);
+
+            GameObject pupil = P(sx < 0 ? "Pupil_L" : "Pupil_R", PrimitiveType.Sphere,
+                new Vector3(0, 0, 0.45f), new Vector3(0.5f, 0.5f, 0.15f), pupilMat);
+            pupil.transform.SetParent(eye.transform, false);
+        }
+
+        // Mouth
+        GameObject mouth = P("Mouth", PrimitiveType.Cube,
+            new Vector3(0, 1.98f, 0.41f), new Vector3(0.16f, 0.03f, 0.02f), pupilMat);
+        mouth.transform.SetParent(model.transform, false);
+
+        // ── Arms (capsules, skin color for lower, cloth for upper) ──
+        float shldY = 1.7f;
+        GameObject armUpperL = P("Arm_Upper_L", PrimitiveType.Capsule,
+            new Vector3(-0.58f, shldY, 0), new Vector3(0.13f, 0.38f, 0.13f), clothMat);
+        armUpperL.transform.SetParent(model.transform, false);
+        GameObject armLowerL = P("Arm_Lower_L", PrimitiveType.Capsule,
+            new Vector3(0, -0.42f, 0), new Vector3(0.11f, 0.34f, 0.11f), skinMat);
+        armLowerL.transform.SetParent(armUpperL.transform, false);
+        GameObject handL = P("Hand_L", PrimitiveType.Sphere,
+            new Vector3(0, -0.38f, 0), new Vector3(0.1f, 0.1f, 0.1f), skinMat);
+        handL.transform.SetParent(armLowerL.transform, false);
+
+        GameObject armUpperR = P("Arm_Upper_R", PrimitiveType.Capsule,
+            new Vector3(0.58f, shldY, 0), new Vector3(0.13f, 0.38f, 0.13f), clothMat);
+        armUpperR.transform.SetParent(model.transform, false);
+        GameObject armLowerR = P("Arm_Lower_R", PrimitiveType.Capsule,
+            new Vector3(0, -0.42f, 0), new Vector3(0.11f, 0.34f, 0.11f), skinMat);
+        armLowerR.transform.SetParent(armUpperR.transform, false);
+        GameObject handR = P("Hand_R", PrimitiveType.Sphere,
+            new Vector3(0, -0.38f, 0), new Vector3(0.1f, 0.1f, 0.1f), skinMat);
+        handR.transform.SetParent(armLowerR.transform, false);
+
+        // ── Legs (capsules) ──
+        GameObject legUpperL = P("Leg_Upper_L", PrimitiveType.Capsule,
+            new Vector3(-0.16f, 0.7f, 0), new Vector3(0.18f, 0.32f, 0.18f), pantsMat);
+        legUpperL.transform.SetParent(model.transform, false);
+        GameObject legLowerL = P("Leg_Lower_L", PrimitiveType.Capsule,
+            new Vector3(0, -0.36f, 0), new Vector3(0.15f, 0.32f, 0.15f), skinMat);
+        legLowerL.transform.SetParent(legUpperL.transform, false);
+        GameObject footL = P("Foot_L", PrimitiveType.Cube,
+            new Vector3(0, -0.36f, 0.08f), new Vector3(0.18f, 0.09f, 0.32f), shoeMat);
+        footL.transform.SetParent(legLowerL.transform, false);
+
+        GameObject legUpperR = P("Leg_Upper_R", PrimitiveType.Capsule,
+            new Vector3(0.16f, 0.7f, 0), new Vector3(0.18f, 0.32f, 0.18f), pantsMat);
+        legUpperR.transform.SetParent(model.transform, false);
+        GameObject legLowerR = P("Leg_Lower_R", PrimitiveType.Capsule,
+            new Vector3(0, -0.36f, 0), new Vector3(0.15f, 0.32f, 0.15f), skinMat);
+        legLowerR.transform.SetParent(legUpperR.transform, false);
+        GameObject footR = P("Foot_R", PrimitiveType.Cube,
+            new Vector3(0, -0.36f, 0.08f), new Vector3(0.18f, 0.09f, 0.32f), shoeMat);
+        footR.transform.SetParent(legLowerR.transform, false);
+
+        // ── Wire CharacterAnimator ──
+        CharacterAnimator anim = model.GetComponent<CharacterAnimator>();
+        SerializedObject animSo = new SerializedObject(anim);
+        animSo.FindProperty("leftUpperArm").objectReferenceValue = armUpperL.transform;
+        animSo.FindProperty("rightUpperArm").objectReferenceValue = armUpperR.transform;
+        animSo.FindProperty("leftUpperLeg").objectReferenceValue = legUpperL.transform;
+        animSo.FindProperty("rightUpperLeg").objectReferenceValue = legUpperR.transform;
+        animSo.FindProperty("leftFoot").objectReferenceValue = footL.transform;
+        animSo.FindProperty("rightFoot").objectReferenceValue = footR.transform;
+        animSo.FindProperty("bodyTransform").objectReferenceValue = torso.transform;
+        animSo.ApplyModifiedProperties();
+
+        Debug.Log("Using procedural character model");
+        return model;
+    }
+
+    static Material LoadOrMakeMat(string name, Color color)
+    {
+        Material mat = AssetDatabase.LoadAssetAtPath<Material>(
+            $"Assets/Prefabs/Materials/{name}.mat");
+        if (mat != null) return mat;
+        return CreateMaterial(name, color);
     }
 
     static Material CreateMaterial(string name, Color color)
@@ -143,95 +296,23 @@ public class BuildScene
 
         // CapsuleCollider
         CapsuleCollider cc = player.AddComponent<CapsuleCollider>();
-        cc.height = 2f;
-        cc.radius = 0.5f;
+        cc.height = 2.2f;
+        cc.radius = 0.4f;
+        cc.center = new Vector3(0, 1.0f, 0);
 
         // PlayerController
         if (player.GetComponent<PlayerController>() == null)
             player.AddComponent<PlayerController>();
 
-        // ── Character Model Hierarchy ──
-        Material skinMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Prefabs/Materials/CharacterSkinMat.mat");
-        Material clothMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Prefabs/Materials/CharacterClothMat.mat");
+        // ── Character Model ──
+        GameObject humanoidPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+            "Assets/Models/HumanoidCharacter.prefab");
 
-        GameObject model = new GameObject("CharacterModel");
-        model.transform.SetParent(player.transform);
-        model.transform.localPosition = new Vector3(0, -0.55f, 0);
-        model.AddComponent<CharacterAnimator>();
-
-        // Body (Capsule)
-        GameObject body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-        body.name = "Body";
-        body.transform.SetParent(model.transform);
-        body.transform.localPosition = new Vector3(0, 0.9f, 0);
-        body.transform.localScale = new Vector3(0.85f, 0.9f, 0.85f);
-        Object.DestroyImmediate(body.GetComponent<Collider>());
-        if (skinMat != null) body.GetComponent<MeshRenderer>().material = skinMat;
-
-        // Head (Sphere)
-        GameObject head = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        head.name = "Head";
-        head.transform.SetParent(model.transform);
-        head.transform.localPosition = new Vector3(0, 1.72f, 0);
-        head.transform.localScale = new Vector3(0.42f, 0.42f, 0.42f);
-        Object.DestroyImmediate(head.GetComponent<Collider>());
-        if (skinMat != null) head.GetComponent<MeshRenderer>().material = skinMat;
-
-        // Helper for limb creation
-        System.Func<string, Vector3, Vector3, GameObject> CreateLimbSegment = (name, pos, scale) =>
-        {
-            GameObject limb = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            limb.name = name;
-            limb.transform.localPosition = pos;
-            limb.transform.localScale = scale;
-            Object.DestroyImmediate(limb.GetComponent<Collider>());
-            if (clothMat != null) limb.GetComponent<MeshRenderer>().material = clothMat;
-            return limb;
-        };
-
-        // Arms
-        GameObject armUpperL = CreateLimbSegment("Arm_Upper_L",
-            new Vector3(-0.65f, 1.55f, 0), new Vector3(0.2f, 0.6f, 0.2f));
-        armUpperL.transform.SetParent(model.transform, false);
-
-        GameObject armLowerL = CreateLimbSegment("Arm_Lower_L",
-            new Vector3(0, -0.55f, 0), new Vector3(0.18f, 0.5f, 0.18f));
-        armLowerL.transform.SetParent(armUpperL.transform, false);
-
-        GameObject armUpperR = CreateLimbSegment("Arm_Upper_R",
-            new Vector3(0.65f, 1.55f, 0), new Vector3(0.2f, 0.6f, 0.2f));
-        armUpperR.transform.SetParent(model.transform, false);
-
-        GameObject armLowerR = CreateLimbSegment("Arm_Lower_R",
-            new Vector3(0, -0.55f, 0), new Vector3(0.18f, 0.5f, 0.18f));
-        armLowerR.transform.SetParent(armUpperR.transform, false);
-
-        // Legs
-        GameObject legUpperL = CreateLimbSegment("Leg_Upper_L",
-            new Vector3(-0.2f, 0.82f, 0), new Vector3(0.22f, 0.6f, 0.22f));
-        legUpperL.transform.SetParent(model.transform, false);
-
-        GameObject legLowerL = CreateLimbSegment("Leg_Lower_L",
-            new Vector3(0, -0.55f, 0), new Vector3(0.2f, 0.55f, 0.2f));
-        legLowerL.transform.SetParent(legUpperL.transform, false);
-
-        GameObject legUpperR = CreateLimbSegment("Leg_Upper_R",
-            new Vector3(0.2f, 0.82f, 0), new Vector3(0.22f, 0.6f, 0.22f));
-        legUpperR.transform.SetParent(model.transform, false);
-
-        GameObject legLowerR = CreateLimbSegment("Leg_Lower_R",
-            new Vector3(0, -0.55f, 0), new Vector3(0.2f, 0.55f, 0.2f));
-        legLowerR.transform.SetParent(legUpperR.transform, false);
-
-        // Wire CharacterAnimator
-        CharacterAnimator anim = model.GetComponent<CharacterAnimator>();
-        SerializedObject animSo = new SerializedObject(anim);
-        animSo.FindProperty("leftUpperArm").objectReferenceValue = armUpperL.transform;
-        animSo.FindProperty("rightUpperArm").objectReferenceValue = armUpperR.transform;
-        animSo.FindProperty("leftUpperLeg").objectReferenceValue = legUpperL.transform;
-        animSo.FindProperty("rightUpperLeg").objectReferenceValue = legUpperR.transform;
-        animSo.FindProperty("bodyTransform").objectReferenceValue = body.transform;
-        animSo.ApplyModifiedProperties();
+        GameObject model;
+        if (humanoidPrefab != null)
+            model = CreateHumanoidCharacterModel(player, humanoidPrefab);
+        else
+            model = CreateProceduralCharacterModel(player);
 
         // Wire characterModel on PlayerController
         PlayerController pc = player.GetComponent<PlayerController>();
@@ -280,9 +361,12 @@ public class BuildScene
     {
         EnsureManager("GameManager", typeof(GameManager));
         EnsureManager("InputManager", typeof(InputManager));
-        EnsureManager("TrackManager", typeof(TrackManager));
-        EnsureManager("UIManager", typeof(UIManager));
-    }
+       EnsureManager("TrackManager", typeof(TrackManager));
+       EnsureManager("UIManager", typeof(UIManager));
+       EnsureManager("AudioManager", typeof(AudioManager));
+       EnsureManager("ParticleManager", typeof(ParticleManager));
+        EnsureManager("HUDOverlay", typeof(HUDOverlay));
+   }
 
     static void EnsureManager(string name, System.Type comp)
     {
@@ -404,7 +488,7 @@ public class BuildScene
         CreateObstacleType("Assets/Prefabs/Obstacle_High.prefab", "Obstacle_High",
             new Vector3(0.8f, 3.5f, 0.6f), ObstacleType.High, new Color(0.85f, 0.15f, 0.05f));
         CreateObstacleType("Assets/Prefabs/Obstacle_Barrier.prefab", "Obstacle_Barrier",
-            new Vector3(3.5f, 2.5f, 0.8f), ObstacleType.Side, new Color(0.9f, 0.25f, 0.15f));
+            new Vector3(3.5f, 2.5f, 0.8f), ObstacleType.Barrier, new Color(0.9f, 0.25f, 0.15f));
     }
 
     static void CreateObstacleType(string path, string name, Vector3 scale, ObstacleType type, Color color)
@@ -637,47 +721,50 @@ public class BuildScene
             new Vector2(0.72f, 0.14f), new Vector2(150, 70),
             new Color(0.3f, 0.3f, 0.35f));
 
-        // ═══ HUD Panel ═══
+        // ═══ HUD Panel (top-left corner) ═══
         GameObject hudPanel = CreatePanel("HudPanel", canvasT, Color.clear);
+        Stretch(hudPanel.GetComponent<RectTransform>());
 
-        // HUD top bar background
-        GameObject hudBar = CreatePanel("HudBar", hudPanel.transform, new Color(0, 0, 0, 0.45f));
+        // Compact bar in top-left
+        GameObject hudBar = CreatePanel("HudBar", hudPanel.transform, new Color(0, 0, 0, 0.5f));
         RectTransform barRT = hudBar.GetComponent<RectTransform>();
-        barRT.anchorMin = new Vector2(0, 1); barRT.anchorMax = new Vector2(1, 1);
-        barRT.pivot = new Vector2(0.5f, 1);
-        barRT.sizeDelta = new Vector2(0, 110);
+        barRT.anchorMin = new Vector2(0, 1); barRT.anchorMax = new Vector2(0, 1);
+        barRT.pivot = new Vector2(0, 1);
+        barRT.sizeDelta = new Vector2(520, 80);
+        barRT.anchoredPosition = new Vector2(20, -20); // margin from top-left edge
 
-        // Score text on HUD
-        Text scoreText = CreateText("ScoreText", hudBar.transform, "Score: 0", 38, TextAnchor.MiddleLeft);
+        // Score: "Score: 0"
+        Text scoreText = CreateText("ScoreText", hudBar.transform, "Score: 0", 36, TextAnchor.MiddleLeft);
         scoreText.color = Color.white;
         scoreText.fontStyle = FontStyle.Bold;
         AddOutline(scoreText.gameObject, new Color(0, 0, 0, 0.6f));
         RectTransform stRT = scoreText.GetComponent<RectTransform>();
         stRT.anchorMin = new Vector2(0, 0.5f); stRT.anchorMax = new Vector2(0, 0.5f);
         stRT.pivot = new Vector2(0, 0.5f);
-        stRT.anchoredPosition = new Vector2(40, 0);
-        stRT.sizeDelta = new Vector2(500, 50);
+        stRT.anchoredPosition = new Vector2(24, 0);
+        stRT.sizeDelta = new Vector2(280, 44);
 
-        // Coin icon + count on HUD
-        Text coinIcon = CreateText("CoinIcon", hudBar.transform, "$", 42, TextAnchor.MiddleRight);
+        // Coin icon: "$"
+        Text coinIcon = CreateText("CoinIcon", hudBar.transform, "$", 38, TextAnchor.MiddleRight);
         coinIcon.color = new Color(1f, 0.85f, 0.1f);
         coinIcon.fontStyle = FontStyle.Bold;
         AddOutline(coinIcon.gameObject, new Color(0.4f, 0.3f, 0f));
         RectTransform ciRT = coinIcon.GetComponent<RectTransform>();
-        ciRT.anchorMin = new Vector2(1, 0.5f); ciRT.anchorMax = new Vector2(1, 0.5f);
-        ciRT.pivot = new Vector2(1, 0.5f);
-        ciRT.anchoredPosition = new Vector2(-40, 0);
-        ciRT.sizeDelta = new Vector2(180, 50);
+        ciRT.anchorMin = new Vector2(0, 0.5f); ciRT.anchorMax = new Vector2(0, 0.5f);
+        ciRT.pivot = new Vector2(0, 0.5f);
+        ciRT.anchoredPosition = new Vector2(340, 0);
+        ciRT.sizeDelta = new Vector2(36, 44);
 
-        Text coinText = CreateText("CoinText", hudBar.transform, "0", 38, TextAnchor.MiddleRight);
+        // Coin count: "0"
+        Text coinText = CreateText("CoinText", hudBar.transform, "0", 36, TextAnchor.MiddleLeft);
         coinText.color = new Color(1f, 0.85f, 0.1f);
         coinText.fontStyle = FontStyle.Bold;
         AddOutline(coinText.gameObject, new Color(0.4f, 0.3f, 0f));
         RectTransform ctRT = coinText.GetComponent<RectTransform>();
-        ctRT.anchorMin = new Vector2(1, 0.5f); ctRT.anchorMax = new Vector2(1, 0.5f);
-        ctRT.pivot = new Vector2(1, 0.5f);
-        ctRT.anchoredPosition = new Vector2(-200, 0);
-        ctRT.sizeDelta = new Vector2(160, 50);
+        ctRT.anchorMin = new Vector2(0, 0.5f); ctRT.anchorMax = new Vector2(0, 0.5f);
+        ctRT.pivot = new Vector2(0, 0.5f);
+        ctRT.anchoredPosition = new Vector2(380, 0);
+        ctRT.sizeDelta = new Vector2(120, 44);
 
         // ═══ GameOver Panel ═══
         GameObject goPanel = CreatePanel("GameOverPanel", canvasT, new Color(0, 0, 0, 0.88f));

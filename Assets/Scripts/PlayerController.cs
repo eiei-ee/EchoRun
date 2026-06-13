@@ -31,10 +31,13 @@ public class PlayerController : MonoBehaviour
     public Vector3 ForwardDirection { get; private set; } = Vector3.forward;
 
     private float _jumpTimer;
-    private float _slideTimer;
+   private float _slideTimer;
+    private float _slideTrailTimer;
+    private float _runTrailTimer;
     private float _jumpGroundY;
     private float _originalColliderHeight;
-    private Vector3 _originalModelScale = Vector3.one;
+   private Vector3 _originalModelScale = Vector3.one;
+    private Vector3 _originalModelPos;
     private CapsuleCollider _capsuleCollider;
     private Rigidbody _rb;
     private TrackSegmentData _lastTurnSegment;
@@ -59,21 +62,37 @@ public class PlayerController : MonoBehaviour
         if (_capsuleCollider != null)
             _originalColliderHeight = _capsuleCollider.height;
 
+       if (characterModel != null)
+           _originalModelScale = characterModel.localScale;
         if (characterModel != null)
-            _originalModelScale = characterModel.localScale;
+            _originalModelPos = characterModel.localPosition;
     }
 
     void Update()
     {
-        if (_gm == null || _gm.State != GameState.Playing) return;
+       if (_gm == null || _gm.State != GameState.Playing) return;
+        if (_gm.IsDeathSequence) return;
 
-        HandleInput();
-        UpdateSlide();
-    }
+       HandleInput();
+       UpdateSlide();
 
-    void FixedUpdate()
-    {
-        if (_gm == null || _gm.State != GameState.Playing) return;
+        // Running trail dust
+        if (_runTrailTimer > 0.12f)
+        {
+            _runTrailTimer = 0f;
+            ParticleManager.Instance?.EmitTrail(_rb.position + Vector3.down * 0.8f);
+        }
+        _runTrailTimer += Time.deltaTime;
+   }
+
+   void FixedUpdate()
+   {
+       if (_gm == null || _gm.State != GameState.Playing) return;
+        if (_gm.IsDeathSequence)
+        {
+            _rb.velocity = Vector3.zero;
+            return;
+        }
 
         if (_rb.position.y < fallOffY)
         {
@@ -172,22 +191,27 @@ public class PlayerController : MonoBehaviour
                 if (CurrentLane < 2) CurrentLane++;
                 break;
             case SwipeDirection.Up:
-                if (!IsJumping && IsGrounded())
-                {
-                    IsJumping = true;
-                    _jumpTimer = 0f;
-                    _jumpGroundY = _rb.position.y;
-                }
+               if (!IsJumping && IsGrounded())
+               {
+                   IsJumping = true;
+                   _jumpTimer = 0f;
+                   _jumpGroundY = _rb.position.y;
+                    AudioManager.Instance?.PlayJump();
+               }
                 break;
             case SwipeDirection.Down:
-                if (!IsSliding && IsGrounded())
-                {
-                    IsSliding = true;
-                    _slideTimer = 0f;
+               if (!IsSliding && IsGrounded())
+               {
+       IsSliding = true;
+       _slideTimer = 0f;
+        _slideTrailTimer = 0f;
+       AudioManager.Instance?.PlaySlide();
                     if (_capsuleCollider != null)
                         _capsuleCollider.height = slideColliderHeight;
-                    if (characterModel != null)
-                        characterModel.localScale = new Vector3(_originalModelScale.x, slideScaleY, _originalModelScale.z);
+               if (characterModel != null)
+                   characterModel.localScale = new Vector3(_originalModelScale.x, slideScaleY, _originalModelScale.z);
+                if (characterModel != null)
+                    characterModel.localPosition = _originalModelPos + Vector3.up * (_originalColliderHeight - slideColliderHeight) * 0.5f;
                 }
                 break;
         }
@@ -197,15 +221,26 @@ public class PlayerController : MonoBehaviour
     {
         if (!IsSliding) return;
 
-        _slideTimer += Time.deltaTime;
-        if (_slideTimer >= slideDuration)
+       _slideTimer += Time.deltaTime;
+
+        // Slide dust trail
+        if (_slideTrailTimer > 0.06f)
         {
-            IsSliding = false;
-            if (characterModel != null)
-                characterModel.localScale = _originalModelScale;
-            if (_capsuleCollider != null)
-                _capsuleCollider.height = _originalColliderHeight;
+            _slideTrailTimer = 0f;
+            ParticleManager.Instance?.EmitDust(_rb.position + Vector3.down * 0.5f);
         }
+        _slideTrailTimer += Time.deltaTime;
+
+       if (_slideTimer >= slideDuration)
+       {
+           IsSliding = false;
+           if (characterModel != null)
+               characterModel.localScale = _originalModelScale;
+            if (characterModel != null)
+                characterModel.localPosition = _originalModelPos;
+           if (_capsuleCollider != null)
+               _capsuleCollider.height = _originalColliderHeight;
+       }
     }
 
     bool IsGrounded()
@@ -213,34 +248,38 @@ public class PlayerController : MonoBehaviour
         if (_capsuleCollider == null) return false;
         float bottom = _rb.position.y + _capsuleCollider.center.y
                        - _capsuleCollider.height / 2f;
-        return Physics.Raycast(new Vector3(_rb.position.x, bottom, _rb.position.z),
-                               Vector3.down, GROUND_RAY_DIST, groundLayer);
+        float rayStart = bottom + 0.1f;
+        return Physics.Raycast(new Vector3(_rb.position.x, rayStart, _rb.position.z),
+                               Vector3.down, GROUND_RAY_DIST + 0.2f, groundLayer);
     }
 
-    void OnTriggerEnter(Collider other)
-    {
-        if (other.CompareTag("Obstacle"))
-        {
-            Obstacle obs = other.GetComponent<Obstacle>();
-            if (obs == null) { _gm.GameOver(); return; }
-
-            if (obs.type == ObstacleType.Low && IsSliding)
-            {
-                other.gameObject.SetActive(false);
-                return;
-            }
-            if (obs.type == ObstacleType.High && IsJumping &&
-                _rb.position.y - _capsuleCollider.height * 0.5f > other.bounds.max.y - 0.3f)
-            {
-                other.gameObject.SetActive(false);
-                return;
-            }
-            _gm.GameOver();
-        }
-        else if (other.CompareTag("Coin"))
+   void OnTriggerEnter(Collider other)
+   {
+        Coin coin = other.GetComponent<Coin>();
+        if (coin != null)
         {
             _gm.AddCoins(1);
             other.gameObject.SetActive(false);
+            AudioManager.Instance?.PlayCoin();
+            ParticleManager.Instance?.EmitCoin(other.transform.position);
+            return;
         }
-    }
+
+        Obstacle obs = other.GetComponent<Obstacle>();
+        if (obs != null)
+        {
+           if (obs.type == ObstacleType.Low && IsSliding)
+           {
+               AudioManager.Instance?.PlayDodgeObstacle();
+               return;
+           }
+           if ((obs.type == ObstacleType.High || obs.type == ObstacleType.Barrier) && IsJumping &&
+               _rb.position.y - _capsuleCollider.height * 0.5f > other.bounds.max.y - 0.3f)
+           {
+               AudioManager.Instance?.PlayDodgeObstacle();
+               return;
+           }
+           _gm.GameOver();
+       }
+   }
 }

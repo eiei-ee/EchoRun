@@ -113,10 +113,9 @@ public class BuildConfig
         PlayerSettings.iOS.targetDevice = iOSTargetDevice.iPhoneAndiPad;
         PlayerSettings.iOS.buildNumber = "1";
         PlayerSettings.iOS.appleDeveloperTeamID = "";
-        PlayerSettings.iOS.automaticallySign = true;
-        PlayerSettings.iOS.allowHTTPDownload = true;
-        PlayerSettings.iOS.hideHomeButtonOnIphoneX = true;
-        PlayerSettings.iOS.statusBarStyle = iOSStatusBarStyle.TranslucentBlack;
+        PlayerSettings.iOS.appleEnableAutomaticSigning = true;
+        PlayerSettings.insecureHttpOption = InsecureHttpOption.AlwaysAllowed;
+        PlayerSettings.iOS.hideHomeButton = true;
 
         PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
         PlayerSettings.allowedAutorotateToPortrait = true;
