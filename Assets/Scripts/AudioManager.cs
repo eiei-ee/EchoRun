@@ -48,6 +48,10 @@ public class AudioManager : MonoBehaviour
 
     void Start()
     {
+        musicVolume = PlayerPrefs.GetFloat("MusicVolume", 0.5f);
+        sfxVolume = PlayerPrefs.GetFloat("SfxVolume", 1f);
+        if (_musicSource != null) _musicSource.volume = musicVolume;
+
         if (bgmClip != null)
         {
             _musicSource.clip = bgmClip;
@@ -83,6 +87,19 @@ public class AudioManager : MonoBehaviour
     public void PlayCoin()  => PlaySFX(coinClip, 0.7f, "coin");
     public void PlayDodgeObstacle() => PlaySFX(dodgeObstacleClip, 0.6f, "dodge");
     public void PlayDeath() => PlaySFX(deathClip, 0.9f, "death");
+
+    public void SetMusicVolume(float v)
+    {
+        musicVolume = Mathf.Clamp01(v);
+        if (_musicSource != null) _musicSource.volume = musicVolume;
+        PlayerPrefs.SetFloat("MusicVolume", musicVolume);
+    }
+
+    public void SetSfxVolume(float v)
+    {
+        sfxVolume = Mathf.Clamp01(v);
+        PlayerPrefs.SetFloat("SfxVolume", sfxVolume);
+    }
 
     void PlaySFX(AudioClip clip, float volumeScale = 1f, string procKey = null)
     {

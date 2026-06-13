@@ -1,9 +1,9 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.Events;
 using System.Collections;
 using UnityEngine.SceneManagement;
 
-public enum GameState { Menu, Playing, GameOver }
+public enum GameState { Menu, Playing, Paused, GameOver }
 
 public class GameManager : MonoBehaviour
 {
@@ -17,75 +17,85 @@ public class GameManager : MonoBehaviour
     [Header("Score")]
     public int coinScore = 10;
 
-    [Header("Debug")]
-    public bool autoStart = true;
-
-    [Header("Frame Rate")]
-    public int targetFrameRate = 60;
-
     public float CurrentSpeed { get; private set; }
     public GameState State { get; private set; } = GameState.Menu;
     public int Score { get; private set; }
-   public int Coins { get; private set; }
+    public int Coins { get; private set; }
+    public float Distance { get; private set; }
     public int HighScore { get; private set; }
     public int TotalCoins { get; private set; }
     public bool IsNewHighScore { get; private set; }
-   public bool IsDeathSequence { get; private set; }
+    public bool IsDeathSequence { get; private set; }
+
+    [Header("Buff (runtime)")]
+    public float BuffTimeRemaining;
+    public string BuffName;
 
     public UnityEvent<GameState> OnStateChanged;
     public UnityEvent<int> OnScoreChanged;
     public UnityEvent<int> OnCoinsChanged;
+    public UnityEvent<float> OnDistanceChanged;
 
-   private float _distanceTraveled;
+    private float _distanceTraveled;
+    private float _prePauseTimeScale = 1f;
 
     void Awake()
     {
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
-        ApplyFrameRate();
+        int savedFps = PlayerPrefs.GetInt("TargetFrameRate", 60);
+        Application.targetFrameRate = savedFps > 0 ? savedFps : 60;
+    }
+
+    public void SetFrameRate(int fps)
+    {
+        if (fps <= 0) return;
+        Application.targetFrameRate = fps;
+        PlayerPrefs.SetInt("TargetFrameRate", fps);
+        PlayerPrefs.Save();
+    }
+
+    public int GetFrameRate()
+    {
+        return Application.targetFrameRate;
     }
 
     void Start()
     {
-       if (autoStart && State == GameState.Menu)
-           StartGame();
-
         HighScore = PlayerPrefs.GetInt("HighScore", 0);
         TotalCoins = PlayerPrefs.GetInt("TotalCoins", 0);
-   }
-
-    public void SetFrameRate(int fps)
-    {
-        targetFrameRate = fps;
-        if (targetFrameRate > 0)
-            Application.targetFrameRate = targetFrameRate;
-    }
-
-    void ApplyFrameRate()
-    {
-        if (targetFrameRate > 0)
-            Application.targetFrameRate = targetFrameRate;
     }
 
     void Update()
     {
-        // Enter to start/restart (Space is reserved for jump via InputManager)
-        if (Input.GetKeyDown(KeyCode.Return))
-        {
-            if (State == GameState.Menu) StartGame();
-            else if (State == GameState.GameOver) Restart();
-        }
-
         if (State != GameState.Playing) return;
 
         CurrentSpeed = Mathf.Min(CurrentSpeed + speedIncreaseRate * Time.deltaTime, maxSpeed);
         _distanceTraveled += CurrentSpeed * Time.deltaTime;
+
+        int newDist = Mathf.FloorToInt(_distanceTraveled);
+        if (newDist != Mathf.FloorToInt(Distance))
+        {
+            Distance = _distanceTraveled;
+            OnDistanceChanged.Invoke(Distance);
+        }
 
         int newScore = Mathf.FloorToInt(_distanceTraveled) + Coins * coinScore;
         if (newScore != Score)
         {
             Score = newScore;
             OnScoreChanged.Invoke(Score);
+        }
+
+        // Buff countdown
+        if (BuffTimeRemaining > 0f)
+        {
+            BuffTimeRemaining -= Time.deltaTime;
+            if (BuffTimeRemaining <= 0f)
+            {
+                BuffTimeRemaining = 0f;
+                BuffName = null;
+            }
         }
     }
 
@@ -94,21 +104,48 @@ public class GameManager : MonoBehaviour
         CurrentSpeed = startSpeed;
         Score = 0;
         Coins = 0;
+        Distance = 0;
         _distanceTraveled = 0;
+        BuffTimeRemaining = 0;
+        BuffName = null;
         State = GameState.Playing;
-       OnStateChanged.Invoke(State);
-       OnScoreChanged.Invoke(0);
-       OnCoinsChanged.Invoke(0);
+        OnStateChanged.Invoke(State);
+        OnScoreChanged.Invoke(0);
+        OnCoinsChanged.Invoke(0);
+        OnDistanceChanged.Invoke(0);
         AudioManager.Instance?.StartFootsteps();
-   }
+    }
+
+    public void Pause()
+    {
+        if (State != GameState.Playing) return;
+        _prePauseTimeScale = Time.timeScale;
+        Time.timeScale = 0f;
+        State = GameState.Paused;
+        OnStateChanged.Invoke(State);
+    }
+
+    public void Resume()
+    {
+        if (State != GameState.Paused) return;
+        Time.timeScale = _prePauseTimeScale;
+        State = GameState.Playing;
+        OnStateChanged.Invoke(State);
+    }
+
+    public void ReturnToMenu()
+    {
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+    }
 
     public void GameOver()
     {
         if (IsDeathSequence) return;
-       IsDeathSequence = true;
+        IsDeathSequence = true;
         var player = GameObject.Find("player");
         if (player != null) ParticleManager.Instance?.EmitDeath(player.transform.position);
-       if (AudioManager.Instance != null) AudioManager.Instance.PlayDeath();
+        if (AudioManager.Instance != null) AudioManager.Instance.PlayDeath();
         if (AudioManager.Instance != null) AudioManager.Instance.StopFootsteps();
         StartCoroutine(DeathSequenceCoroutine());
     }
@@ -118,23 +155,23 @@ public class GameManager : MonoBehaviour
         Time.timeScale = 0.3f;
         yield return new WaitForSecondsRealtime(1.2f);
         Time.timeScale = 1f;
-       State = GameState.GameOver;
+        State = GameState.GameOver;
         SaveHighScore();
-       OnStateChanged.Invoke(State);
+        OnStateChanged.Invoke(State);
         IsDeathSequence = false;
     }
 
     public void Restart()
     {
         Time.timeScale = 1f;
-        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-   }
+        StartGame();
+    }
 
-   public void AddCoins(int amount)
-   {
-       Coins += amount;
-       OnCoinsChanged.Invoke(Coins);
-   }
+    public void AddCoins(int amount)
+    {
+        Coins += amount;
+        OnCoinsChanged.Invoke(Coins);
+    }
 
     void SaveHighScore()
     {

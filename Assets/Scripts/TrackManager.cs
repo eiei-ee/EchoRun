@@ -128,7 +128,7 @@ public class TrackManager : MonoBehaviour
 
    void InitializePools()
    {
-        EnsureProceduralAssets();
+       EnsureProceduralAssets();
 
        if (trackSegmentPrefab != null)
         {
@@ -439,50 +439,62 @@ public class TrackManager : MonoBehaviour
        _dynamicObjects.Add(obs);
    }
 
-    void EnsureProceduralAssets()
-    {
-        int groundLayer = LayerMask.NameToLayer("Ground");
-        if (groundLayer < 0) groundLayer = 0;
+   void EnsureProceduralAssets()
+   {
+        Shader sh = Shader.Find("Standard");
+        if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
+        if (sh == null) sh = Shader.Find("Mobile/Diffuse");
 
-        if (trackSegmentPrefab == null)
+       int groundLayer = LayerMask.NameToLayer("Ground");
+       if (groundLayer < 0) groundLayer = 0;
+
+       if (trackSegmentPrefab == null)
             trackSegmentPrefab = CreateProcStraight(groundLayer);
-        if (turnLeftPrefab == null)
+       if (turnLeftPrefab == null)
             turnLeftPrefab = CreateProcTurn(groundLayer);
-        if (turnRightPrefab == null)
+       if (turnRightPrefab == null)
             turnRightPrefab = CreateProcTurn(groundLayer);
-        if (coinPrefab == null)
-            coinPrefab = CreateProcCoin();
-        if (obstaclePrefabs == null || obstaclePrefabs.Length == 0)
-            obstaclePrefabs = CreateProcObstacles();
-    }
+       if (coinPrefab == null)
+           coinPrefab = CreateProcCoin();
+       if (obstaclePrefabs == null || obstaclePrefabs.Length == 0)
+           obstaclePrefabs = CreateProcObstacles();
+   }
 
-    GameObject CreateProcStraight(int layer)
-    {
-        GameObject go = GameObject.CreatePrimitive(PrimitiveType.Plane);
-        go.name = "ProcStraight";
-        go.layer = layer;
-        go.transform.localScale = new Vector3(0.9f, 1f, 2f);
-        Object.DestroyImmediate(go.GetComponent<MeshCollider>());
-        BoxCollider bc = go.AddComponent<BoxCollider>();
-        bc.center = Vector3.zero; bc.size = new Vector3(9f, 0.3f, 20f);
-        go.SetActive(false); go.transform.SetParent(transform);
-        return go;
-    }
+   GameObject CreateProcStraight(int layer)
+   {
+        Shader sh = Shader.Find("Standard");
+        if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
+        if (sh == null) sh = Shader.Find("Mobile/Diffuse");
+       GameObject go = GameObject.CreatePrimitive(PrimitiveType.Plane);
+       go.name = "ProcStraight";
+       go.layer = layer;
+       go.transform.localScale = new Vector3(0.9f, 1f, 2f);
+        if (sh != null) go.GetComponent<MeshRenderer>().material = new Material(sh) { color = new Color(0.25f, 0.28f, 0.35f) };
+       Object.DestroyImmediate(go.GetComponent<MeshCollider>());
+       BoxCollider bc = go.AddComponent<BoxCollider>();
+       bc.center = Vector3.zero; bc.size = new Vector3(9f, 0.3f, 20f);
+       go.SetActive(false); go.transform.SetParent(transform);
+       return go;
+   }
 
-    GameObject CreateProcTurn(int layer)
-    {
-        GameObject go = GameObject.CreatePrimitive(PrimitiveType.Plane);
-        go.name = "ProcTurn";
-        go.layer = layer;
-        go.transform.localScale = new Vector3(0.9f, 1f, 2f);
-        Object.DestroyImmediate(go.GetComponent<MeshCollider>());
-        BoxCollider bc = go.AddComponent<BoxCollider>();
-        bc.center = Vector3.zero; bc.size = new Vector3(9f, 0.3f, 20f);
-        go.SetActive(false); go.transform.SetParent(transform);
-        return go;
-    }
+   GameObject CreateProcTurn(int layer)
+   {
+        Shader sh = Shader.Find("Standard");
+        if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
+        if (sh == null) sh = Shader.Find("Mobile/Diffuse");
+       GameObject go = GameObject.CreatePrimitive(PrimitiveType.Plane);
+       go.name = "ProcTurn";
+       go.layer = layer;
+       go.transform.localScale = new Vector3(0.9f, 1f, 2f);
+        if (sh != null) go.GetComponent<MeshRenderer>().material = new Material(sh) { color = new Color(0.25f, 0.28f, 0.35f) };
+       Object.DestroyImmediate(go.GetComponent<MeshCollider>());
+       BoxCollider bc = go.AddComponent<BoxCollider>();
+       bc.center = Vector3.zero; bc.size = new Vector3(9f, 0.3f, 20f);
+       go.SetActive(false); go.transform.SetParent(transform);
+       return go;
+   }
 
-    GameObject CreateProcCoin()
+   GameObject CreateProcCoin()
     {
         GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         go.name = "ProcCoin";

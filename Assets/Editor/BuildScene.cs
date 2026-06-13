@@ -365,8 +365,7 @@ public class BuildScene
        EnsureManager("UIManager", typeof(UIManager));
        EnsureManager("AudioManager", typeof(AudioManager));
        EnsureManager("ParticleManager", typeof(ParticleManager));
-        EnsureManager("HUDOverlay", typeof(HUDOverlay));
-   }
+    }
 
     static void EnsureManager(string name, System.Type comp)
     {
@@ -662,160 +661,14 @@ public class BuildScene
 
     static void CreateUICanvas()
     {
+        // UIManager handles Canvas + all panels at runtime.
+        // Just make sure EventSystem exists for UI interaction.
         if (Object.FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
         {
             GameObject esGo = new GameObject("EventSystem");
             esGo.AddComponent<UnityEngine.EventSystems.EventSystem>();
             esGo.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
         }
-
-        Canvas canvas = Object.FindObjectOfType<Canvas>();
-        if (canvas == null)
-        {
-            GameObject canvasGo = new GameObject("Canvas");
-            canvas = canvasGo.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            CanvasScaler scaler = canvasGo.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1080, 1920);
-            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-            scaler.matchWidthOrHeight = 0.5f;
-            canvasGo.AddComponent<GraphicRaycaster>();
-        }
-
-        Transform canvasT = canvas.transform;
-
-        UIManager ui = Object.FindObjectOfType<UIManager>();
-        if (ui == null) { Debug.LogWarning("UIManager not found!"); return; }
-        SerializedObject so = new SerializedObject(ui);
-
-        // ═══ Menu Panel ═══
-        GameObject menuPanel = CreatePanel("MenuPanel", canvasT, new Color(0, 0, 0, 0.85f));
-        Stretch(menuPanel.GetComponent<RectTransform>());
-
-        Text titleText = CreateText("Title", menuPanel.transform, "TEMPLE RUN", 80, TextAnchor.MiddleCenter);
-        titleText.color = new Color(1f, 0.85f, 0.1f);
-        titleText.fontStyle = FontStyle.Bold;
-        AddOutline(titleText.gameObject, new Color(0.4f, 0.2f, 0f));
-        AddShadow(titleText.gameObject, new Color(0, 0, 0, 0.8f));
-        RectTransform titleRT = titleText.GetComponent<RectTransform>();
-        AnchorText(titleRT, 0.5f, 0.65f, 700, 110);
-
-        Button startBtn = CreateButton("StartButton", menuPanel.transform, "开始游戏", 40,
-            new Vector2(0.5f, 0.38f), new Vector2(460, 120),
-            new Color(0.15f, 0.7f, 0.2f), new Color(0.1f, 0.5f, 0.15f));
-
-        // FPS selector label
-        Text fpsLabel = CreateText("FpsLabel", menuPanel.transform, "帧率", 30, TextAnchor.MiddleCenter);
-        fpsLabel.color = new Color(0.7f, 0.7f, 0.7f);
-        AnchorText(fpsLabel.GetComponent<RectTransform>(), 0.5f, 0.22f, 200, 40);
-
-        // FPS buttons row
-        Button fps30 = CreateSmallButton("Fps30", menuPanel.transform, "30",
-            new Vector2(0.28f, 0.14f), new Vector2(150, 70),
-            new Color(0.3f, 0.3f, 0.35f));
-        Button fps60 = CreateSmallButton("Fps60", menuPanel.transform, "60",
-            new Vector2(0.5f, 0.14f), new Vector2(150, 70),
-            new Color(0.2f, 0.75f, 1f));
-        Button fps120 = CreateSmallButton("Fps120", menuPanel.transform, "120",
-            new Vector2(0.72f, 0.14f), new Vector2(150, 70),
-            new Color(0.3f, 0.3f, 0.35f));
-
-        // ═══ HUD Panel (top-left corner) ═══
-        GameObject hudPanel = CreatePanel("HudPanel", canvasT, Color.clear);
-        Stretch(hudPanel.GetComponent<RectTransform>());
-
-        // Compact bar in top-left
-        GameObject hudBar = CreatePanel("HudBar", hudPanel.transform, new Color(0, 0, 0, 0.5f));
-        RectTransform barRT = hudBar.GetComponent<RectTransform>();
-        barRT.anchorMin = new Vector2(0, 1); barRT.anchorMax = new Vector2(0, 1);
-        barRT.pivot = new Vector2(0, 1);
-        barRT.sizeDelta = new Vector2(520, 80);
-        barRT.anchoredPosition = new Vector2(20, -20); // margin from top-left edge
-
-        // Score: "Score: 0"
-        Text scoreText = CreateText("ScoreText", hudBar.transform, "Score: 0", 36, TextAnchor.MiddleLeft);
-        scoreText.color = Color.white;
-        scoreText.fontStyle = FontStyle.Bold;
-        AddOutline(scoreText.gameObject, new Color(0, 0, 0, 0.6f));
-        RectTransform stRT = scoreText.GetComponent<RectTransform>();
-        stRT.anchorMin = new Vector2(0, 0.5f); stRT.anchorMax = new Vector2(0, 0.5f);
-        stRT.pivot = new Vector2(0, 0.5f);
-        stRT.anchoredPosition = new Vector2(24, 0);
-        stRT.sizeDelta = new Vector2(280, 44);
-
-        // Coin icon: "$"
-        Text coinIcon = CreateText("CoinIcon", hudBar.transform, "$", 38, TextAnchor.MiddleRight);
-        coinIcon.color = new Color(1f, 0.85f, 0.1f);
-        coinIcon.fontStyle = FontStyle.Bold;
-        AddOutline(coinIcon.gameObject, new Color(0.4f, 0.3f, 0f));
-        RectTransform ciRT = coinIcon.GetComponent<RectTransform>();
-        ciRT.anchorMin = new Vector2(0, 0.5f); ciRT.anchorMax = new Vector2(0, 0.5f);
-        ciRT.pivot = new Vector2(0, 0.5f);
-        ciRT.anchoredPosition = new Vector2(340, 0);
-        ciRT.sizeDelta = new Vector2(36, 44);
-
-        // Coin count: "0"
-        Text coinText = CreateText("CoinText", hudBar.transform, "0", 36, TextAnchor.MiddleLeft);
-        coinText.color = new Color(1f, 0.85f, 0.1f);
-        coinText.fontStyle = FontStyle.Bold;
-        AddOutline(coinText.gameObject, new Color(0.4f, 0.3f, 0f));
-        RectTransform ctRT = coinText.GetComponent<RectTransform>();
-        ctRT.anchorMin = new Vector2(0, 0.5f); ctRT.anchorMax = new Vector2(0, 0.5f);
-        ctRT.pivot = new Vector2(0, 0.5f);
-        ctRT.anchoredPosition = new Vector2(380, 0);
-        ctRT.sizeDelta = new Vector2(120, 44);
-
-        // ═══ GameOver Panel ═══
-        GameObject goPanel = CreatePanel("GameOverPanel", canvasT, new Color(0, 0, 0, 0.88f));
-        Stretch(goPanel.GetComponent<RectTransform>());
-
-        Text goTitle = CreateText("GameOverTitle", goPanel.transform, "Game Over", 72, TextAnchor.MiddleCenter);
-        goTitle.color = new Color(1f, 0.2f, 0.15f);
-        goTitle.fontStyle = FontStyle.Bold;
-        AddOutline(goTitle.gameObject, new Color(0.5f, 0.05f, 0f));
-        AddShadow(goTitle.gameObject, new Color(0, 0, 0, 0.8f));
-        RectTransform goTitleRT = goTitle.GetComponent<RectTransform>();
-        AnchorText(goTitleRT, 0.5f, 0.7f, 500, 90);
-
-        Text finalScoreText = CreateText("FinalScoreText", goPanel.transform, "Score: 0", 52, TextAnchor.MiddleCenter);
-        finalScoreText.color = Color.white;
-        finalScoreText.fontStyle = FontStyle.Bold;
-        AddOutline(finalScoreText.gameObject, new Color(0, 0, 0, 0.6f));
-        RectTransform fsRT = finalScoreText.GetComponent<RectTransform>();
-        AnchorText(fsRT, 0.5f, 0.52f, 500, 80);
-
-        Text coinResultText = CreateText("CoinResultText", goPanel.transform, "Coins: 0", 42, TextAnchor.MiddleCenter);
-        coinResultText.color = new Color(1f, 0.85f, 0.1f);
-        coinResultText.fontStyle = FontStyle.Bold;
-        AddOutline(coinResultText.gameObject, new Color(0.3f, 0.2f, 0f));
-        RectTransform crRT = coinResultText.GetComponent<RectTransform>();
-        AnchorText(crRT, 0.5f, 0.42f, 400, 70);
-
-        Button restartBtn = CreateButton("RestartButton", goPanel.transform, "再来一局", 40,
-            new Vector2(0.5f, 0.28f), new Vector2(460, 120),
-            new Color(0.15f, 0.7f, 0.2f), new Color(0.1f, 0.5f, 0.15f));
-
-        // Wire to UIManager
-        so.FindProperty("menuPanel").objectReferenceValue = menuPanel;
-        so.FindProperty("startButton").objectReferenceValue = startBtn;
-        so.FindProperty("fps30Button").objectReferenceValue = fps30;
-        so.FindProperty("fps60Button").objectReferenceValue = fps60;
-        so.FindProperty("fps120Button").objectReferenceValue = fps120;
-        so.FindProperty("hudPanel").objectReferenceValue = hudPanel;
-        so.FindProperty("scoreText").objectReferenceValue = scoreText;
-        so.FindProperty("coinText").objectReferenceValue = coinText;
-        so.FindProperty("gameOverPanel").objectReferenceValue = goPanel;
-        so.FindProperty("finalScoreText").objectReferenceValue = finalScoreText;
-        so.FindProperty("coinResultText").objectReferenceValue = coinResultText;
-        so.FindProperty("restartButton").objectReferenceValue = restartBtn;
-        so.ApplyModifiedProperties();
-
-        menuPanel.SetActive(false);
-        hudPanel.SetActive(false);
-        goPanel.SetActive(false);
-
-        EditorUtility.SetDirty(ui.gameObject);
     }
 
     static GameObject CreatePanel(string name, Transform parent, Color color)
