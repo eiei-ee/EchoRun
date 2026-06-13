@@ -33,6 +33,7 @@ public class CharacterAnimator : MonoBehaviour
 
     private PlayerController _player;
     private Vector3 _bodyBasePos;
+    private Vector3 _bodyBaseScale;
     private Quaternion _leftFootBaseRot;
     private Quaternion _rightFootBaseRot;
     private Animator _animator;
@@ -54,6 +55,7 @@ public class CharacterAnimator : MonoBehaviour
         }
 
         _bodyBasePos = bodyTransform != null ? bodyTransform.localPosition : transform.localPosition;
+        _bodyBaseScale = bodyTransform != null ? bodyTransform.localScale : Vector3.one;
 
         if (leftFoot != null) _leftFootBaseRot = leftFoot.localRotation;
         if (rightFoot != null) _rightFootBaseRot = rightFoot.localRotation;
@@ -191,7 +193,7 @@ public class CharacterAnimator : MonoBehaviour
         if (bodyTransform != null)
         {
             bodyTransform.localPosition = Vector3.Lerp(bodyTransform.localPosition, _bodyBasePos, t);
-            bodyTransform.localScale = Vector3.Lerp(bodyTransform.localScale, Vector3.one, t);
+            bodyTransform.localScale = Vector3.Lerp(bodyTransform.localScale, _bodyBaseScale, t);
         }
     }
 }

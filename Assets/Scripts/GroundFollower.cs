@@ -8,6 +8,11 @@ public class GroundFollower : MonoBehaviour
 
     void Start()
     {
+        // Hide ground plane mesh — track segments provide visuals.
+        // Renderer would otherwise block camera view of the character.
+        var mr = GetComponent<MeshRenderer>();
+        if (mr != null) mr.enabled = false;
+
         if (player == null)
         {
             GameObject p = GameObject.Find("player");

@@ -48,6 +48,12 @@ public class PlayerController : MonoBehaviour
 
     private const float GROUND_RAY_DIST = 0.3f;
 
+    // Saved originals so body-part adjustments are idempotent across scene reloads
+    private bool _modelPartsSaved;
+    private Vector3 _savedHeadPos, _savedTorsoScale;
+    private Vector3 _savedLegUpperL, _savedLegUpperR, _savedLegLowerL, _savedLegLowerR;
+    private Vector3 _savedFootL, _savedFootR;
+
     void Start()
     {
         _gm = GameManager.Instance;
@@ -62,16 +68,66 @@ public class PlayerController : MonoBehaviour
         if (_capsuleCollider != null)
             _originalColliderHeight = _capsuleCollider.height;
 
-       if (characterModel != null)
-           _originalModelScale = characterModel.localScale;
         if (characterModel != null)
+        {
+            _originalModelScale = characterModel.localScale;
+
+            // Position model at capsule bottom so feet sit on the track surface
+            if (_capsuleCollider != null)
+            {
+                float capsuleBottom = _capsuleCollider.center.y - _capsuleCollider.height * 0.5f;
+                characterModel.localPosition = new Vector3(
+                    characterModel.localPosition.x, capsuleBottom, characterModel.localPosition.z);
+            }
             _originalModelPos = characterModel.localPosition;
+
+            ApplyBodyPartAdjustments();
+        }
     }
 
-    void Update()
+    void ApplyBodyPartAdjustments()
     {
+        Transform head = characterModel.Find("Head");
+        Transform torso = characterModel.Find("Torso");
+
+        // Save originals on first call so adjustments never compound across restarts
+        if (!_modelPartsSaved)
+        {
+            if (head != null) _savedHeadPos = head.localPosition;
+            if (torso != null) _savedTorsoScale = torso.localScale;
+
+            Transform t;
+            t = characterModel.Find("Leg_Upper_L"); if (t != null) _savedLegUpperL = t.localScale;
+            t = characterModel.Find("Leg_Upper_R"); if (t != null) _savedLegUpperR = t.localScale;
+            t = characterModel.Find("Leg_Lower_L"); if (t != null) _savedLegLowerL = t.localScale;
+            t = characterModel.Find("Leg_Lower_R"); if (t != null) _savedLegLowerR = t.localScale;
+            t = characterModel.Find("Foot_L"); if (t != null) _savedFootL = t.localScale;
+            t = characterModel.Find("Foot_R"); if (t != null) _savedFootR = t.localScale;
+
+            _modelPartsSaved = true;
+        }
+
+        if (head != null) head.localPosition = _savedHeadPos;
+        if (torso != null) torso.localScale = _savedTorsoScale;
+
+        ApplyScaleFromSaved("Leg_Upper_L", _savedLegUpperL, 1f);
+        ApplyScaleFromSaved("Leg_Upper_R", _savedLegUpperR, 1f);
+        ApplyScaleFromSaved("Leg_Lower_L", _savedLegLowerL, 1f);
+        ApplyScaleFromSaved("Leg_Lower_R", _savedLegLowerR, 1f);
+        ApplyScaleFromSaved("Foot_L", _savedFootL, 1f);
+        ApplyScaleFromSaved("Foot_R", _savedFootR, 1f);
+    }
+
+    void ApplyScaleFromSaved(string name, Vector3 saved, float multiplier)
+    {
+        Transform t = characterModel.Find(name);
+        if (t != null) t.localScale = new Vector3(saved.x * multiplier, saved.y, saved.z * multiplier);
+    }
+
+   void Update()
+   {
        if (_gm == null || _gm.State != GameState.Playing) return;
-        if (_gm.IsDeathSequence) return;
+       if (_gm.IsDeathSequence) return;
 
        HandleInput();
        UpdateSlide();

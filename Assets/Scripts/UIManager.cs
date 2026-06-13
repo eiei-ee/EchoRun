@@ -1,141 +1,236 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.UI;
 
 public class UIManager : MonoBehaviour
 {
-    [Header("Menu")]
-    public GameObject menuPanel;
-    public Button startButton;
+    // ── Menu ──
+    GameObject _menuPanel;
+    Button _startBtn, _settingsBtn, _characterBtn;
 
-    [Header("Frame Rate")]
-    public Button fps30Button;
-    public Button fps60Button;
-    public Button fps120Button;
+    // ── Settings (sub-panel of menu) ──
+    GameObject _settingsPanel;
+    Slider _bgmSlider, _sfxSlider;
+    Button _fps30Btn, _fps60Btn, _fps120Btn;
+    Button _settingsBackBtn;
 
-    [Header("HUD")]
-    public GameObject hudPanel;
-    public Text scoreText;
-    public Text coinText;
+    // ── Character (sub-panel of menu) ──
+    GameObject _characterPanel;
+    Button _characterBackBtn;
 
-    [Header("Game Over")]
-    public GameObject gameOverPanel;
-    public Text finalScoreText;
-    public Text coinResultText;
-    public Button restartButton;
+    // ── HUD ──
+    GameObject _hudPanel;
+    Text _scoreText, _distanceText, _coinText;
+    GameObject _buffGroup;
+    Text _buffText;
+    Button _pauseBtn;
 
-    private Color _fpsActiveColor = new Color(0.2f, 0.75f, 1f);
-    private Color _fpsInactiveColor = new Color(0.3f, 0.3f, 0.35f);
-   private Font _runtimeFont;
+    // ── Pause ──
+    GameObject _pausePanel;
+    Button _resumeBtn, _pauseToMenuBtn;
+
+    // ── GameOver ──
+    GameObject _gameOverPanel;
+    Text _finalScoreText, _highScoreText, _coinResultText;
+    Button _restartBtn, _goToMenuBtn;
+
+    private Font _font;
+    private GameManager _gm;
 
     void Start()
     {
-        if (GameManager.Instance == null) return;
+        _gm = GameManager.Instance;
+        if (_gm == null) return;
 
-        GameManager.Instance.OnStateChanged.AddListener(OnGameStateChanged);
-        GameManager.Instance.OnScoreChanged.AddListener(UpdateScore);
-        GameManager.Instance.OnCoinsChanged.AddListener(UpdateCoins);
+        _font = Font.CreateDynamicFontFromOSFont("Arial", 16);
+        if (_font == null)
+            _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-        if (startButton != null) startButton.onClick.AddListener(() => GameManager.Instance.StartGame());
-        if (restartButton != null) restartButton.onClick.AddListener(() => GameManager.Instance.Restart());
+        EnsureCanvas();
+        CreateMenuPanel();
+        CreateSettingsPanel();
+        CreateCharacterPanel();
+        CreateHUDPanel();
+        CreatePausePanel();
+        CreateGameOverPanel();
 
-        if (fps30Button != null) fps30Button.onClick.AddListener(() => SetFps(30));
-        if (fps60Button != null) fps60Button.onClick.AddListener(() => SetFps(60));
-        if (fps120Button != null) fps120Button.onClick.AddListener(() => SetFps(120));
+        _gm.OnStateChanged.AddListener(OnGameStateChanged);
+        _gm.OnScoreChanged.AddListener(OnScoreChanged);
+        _gm.OnCoinsChanged.AddListener(OnCoinsChanged);
+        _gm.OnDistanceChanged.AddListener(OnDistanceChanged);
 
-        HighlightFpsButton(60);
-
-        if (scoreText == null || coinText == null || hudPanel == null)
-        {
-           BuildRuntimeHUD();
-       }
-
-        OnGameStateChanged(GameManager.Instance.State);
+        OnGameStateChanged(_gm.State);
+        LoadCharacterPreset();
     }
 
-    void BuildRuntimeHUD()
+    void Update()
     {
-        // Create font once
-        _runtimeFont = Font.CreateDynamicFontFromOSFont("Arial", 16);
-        if (_runtimeFont == null)
-            _runtimeFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-
-        // Find or create Canvas
-        Canvas canvas = FindObjectOfType<Canvas>();
-        if (canvas == null)
+        // Buff timer display
+        if (_buffGroup != null && _gm != null && _gm.State == GameState.Playing)
         {
-            GameObject cgo = new GameObject("Canvas_Runtime");
-            canvas = cgo.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            cgo.AddComponent<CanvasScaler>();
-            cgo.AddComponent<GraphicRaycaster>();
-            if (FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
-            {
-                GameObject es = new GameObject("EventSystem");
-                es.AddComponent<UnityEngine.EventSystems.EventSystem>();
-                es.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
-            }
+            bool active = _gm.BuffTimeRemaining > 0f;
+            if (_buffGroup.activeSelf != active)
+                _buffGroup.SetActive(active);
+            if (active && _buffText != null)
+                _buffText.text = string.Format("{0} {1:F1}s", _gm.BuffName ?? "Buff", _gm.BuffTimeRemaining);
         }
+    }
 
-        // HUD panel
-        if (hudPanel == null)
+    // ═══════════════════════════════════════════════════
+    //  Canvas
+    // ═══════════════════════════════════════════════════
+
+    void EnsureCanvas()
+    {
+        if (FindObjectOfType<Canvas>() != null) return;
+
+        GameObject cgo = new GameObject("Canvas");
+        Canvas canvas = cgo.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        CanvasScaler scaler = cgo.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1080, 1920);
+        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+        scaler.matchWidthOrHeight = 0.5f;
+        cgo.AddComponent<GraphicRaycaster>();
+
+        if (FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
         {
-            hudPanel = new GameObject("HudPanel_Runtime");
-            hudPanel.transform.SetParent(canvas.transform, false);
-            RectTransform rt = hudPanel.AddComponent<RectTransform>();
-            rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
-            rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+            GameObject es = new GameObject("EventSystem");
+            es.AddComponent<UnityEngine.EventSystems.EventSystem>();
+            es.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
         }
-
-        // Score text
-        scoreText = MakeText("ScoreText_Runtime", "Score: 0", 38, new Color(0.1f, 1f, 0.3f),
-            new Vector2(16, -16), new Vector2(0, 1));
-
-        // Coin text
-        coinText = MakeText("CoinText_Runtime", "0", 38, new Color(1f, 0.9f, 0.1f),
-            new Vector2(320, -16), new Vector2(0, 1));
-
-        Debug.Log("[UIManager] Runtime HUD created");
     }
 
-    Text MakeText(string name, string content, int size, Color color,
-        Vector2 pos, Vector2 anchor)
+    // ═══════════════════════════════════════════════════
+    //  Menu Panel
+    // ═══════════════════════════════════════════════════
+
+    void CreateMenuPanel()
     {
-        GameObject go = new GameObject(name);
-        go.transform.SetParent(hudPanel.transform, false);
-        Text t = go.AddComponent<Text>();
-        t.text = content;
-        t.fontSize = size;
-        t.color = color;
-        t.fontStyle = FontStyle.Bold;
-        t.alignment = TextAnchor.MiddleLeft;
-        if (_runtimeFont != null) t.font = _runtimeFont;
+        _menuPanel = NewPanel("MenuPanel", new Color(0, 0, 0, 0.85f));
 
-        Outline o = go.AddComponent<Outline>();
-        o.effectColor = new Color(0, 0, 0, 0.8f);
-        o.effectDistance = new Vector2(2.5f, -2.5f);
+        Text title = MakeText("Title", _menuPanel.transform, "TEMPLE RUN", 80, TextAnchor.MiddleCenter);
+        title.color = new Color(1f, 0.85f, 0.1f);
+        title.fontStyle = FontStyle.Bold;
+        AddOutline(title.gameObject, new Color(0.4f, 0.2f, 0f));
+        AddShadow(title.gameObject, new Color(0, 0, 0, 0.8f));
+        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.68f, 700, 110);
 
-        RectTransform rt = go.GetComponent<RectTransform>();
-        rt.anchorMin = new Vector2(anchor.x, anchor.y);
-        rt.anchorMax = new Vector2(anchor.x, anchor.y);
-        rt.pivot = new Vector2(anchor.x, anchor.y);
-        rt.anchoredPosition = pos;
-        rt.sizeDelta = new Vector2(400, 48);
+        // Three action buttons stacked
+        _startBtn = MakeButton("StartBtn", _menuPanel.transform, "开始游戏", 42,
+            new Vector2(0.5f, 0.42f), new Vector2(440, 110),
+            new Color(0.15f, 0.7f, 0.2f), new Color(0.1f, 0.5f, 0.15f));
+        _startBtn.onClick.AddListener(() => _gm.StartGame());
 
-        return t;
+        _settingsBtn = MakeButton("SettingsBtn", _menuPanel.transform, "设置", 36,
+            new Vector2(0.5f, 0.28f), new Vector2(320, 80),
+            new Color(0.25f, 0.35f, 0.55f), new Color(0.15f, 0.22f, 0.38f));
+        _settingsBtn.onClick.AddListener(ShowSettings);
+
+        _characterBtn = MakeButton("CharacterBtn", _menuPanel.transform, "角色", 36,
+            new Vector2(0.5f, 0.18f), new Vector2(320, 80),
+            new Color(0.35f, 0.28f, 0.5f), new Color(0.22f, 0.17f, 0.35f));
+        _characterBtn.onClick.AddListener(ShowCharacter);
+
+        _menuPanel.SetActive(false);
     }
 
-    void SetFps(int fps)
+    // ═══════════════════════════════════════════════════
+    //  Settings Panel (sub-menu)
+    // ═══════════════════════════════════════════════════
+
+    void CreateSettingsPanel()
     {
-        if (GameManager.Instance != null)
-            GameManager.Instance.SetFrameRate(fps);
-        HighlightFpsButton(fps);
+        _settingsPanel = NewPanel("SettingsPanel", new Color(0, 0, 0, 0.92f));
+
+        // ScrollRect setup
+        ScrollRect scroll = _settingsPanel.AddComponent<ScrollRect>();
+        scroll.horizontal = false;
+        scroll.vertical = true;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+
+        // Viewport
+        GameObject viewport = new GameObject("Viewport", typeof(Image), typeof(Mask));
+        viewport.transform.SetParent(_settingsPanel.transform, false);
+        viewport.GetComponent<Image>().color = new Color(1, 1, 1, 0.01f);
+        viewport.GetComponent<Mask>().showMaskGraphic = false;
+        RectTransform vpRT = viewport.GetComponent<RectTransform>();
+        vpRT.anchorMin = new Vector2(0, 0); vpRT.anchorMax = new Vector2(1, 1);
+        vpRT.offsetMin = new Vector2(20, 20); vpRT.offsetMax = new Vector2(-20, -20);
+
+        // Content
+        GameObject content = new GameObject("Content");
+        content.transform.SetParent(viewport.transform, false);
+        RectTransform ctRT = content.AddComponent<RectTransform>();
+        ctRT.anchorMin = new Vector2(0.5f, 1f); ctRT.anchorMax = new Vector2(0.5f, 1f);
+        ctRT.pivot = new Vector2(0.5f, 1f);
+        ctRT.sizeDelta = new Vector2(1080, 850);
+        ctRT.anchoredPosition = Vector2.zero;
+
+        scroll.viewport = vpRT;
+        scroll.content = ctRT;
+
+        Transform c = content.transform;
+        float topY = 0.92f;
+
+        Text title = MakeText("SettingsTitle", c, "设置", 56, TextAnchor.MiddleCenter);
+        title.color = Color.white;
+        title.fontStyle = FontStyle.Bold;
+        AnchorText(title.GetComponent<RectTransform>(), 0.5f, topY, 400, 70);
+
+        MakeLabel("BgmLabel", c, "BGM 音量", new Vector2(0.5f, 0.80f));
+        _bgmSlider = MakeSlider("BgmSlider", c, new Vector2(0.5f, 0.73f));
+        float savedBgm = PlayerPrefs.GetFloat("MusicVolume", 0.5f);
+        _bgmSlider.value = savedBgm;
+        _bgmSlider.onValueChanged.AddListener(v => AudioManager.Instance?.SetMusicVolume(v));
+
+        MakeLabel("SfxLabel", c, "SFX 音量", new Vector2(0.5f, 0.63f));
+        _sfxSlider = MakeSlider("SfxSlider", c, new Vector2(0.5f, 0.56f));
+        float savedSfx = PlayerPrefs.GetFloat("SfxVolume", 1f);
+        _sfxSlider.value = savedSfx;
+        _sfxSlider.onValueChanged.AddListener(v => AudioManager.Instance?.SetSfxVolume(v));
+
+        MakeLabel("FpsLabel", c, "帧率", new Vector2(0.5f, 0.46f));
+        _fps30Btn  = MakeSmallButton("Fps30", c, "30",
+            new Vector2(0.25f, 0.38f), new Vector2(140, 60), new Color(0.3f, 0.3f, 0.35f));
+        _fps60Btn  = MakeSmallButton("Fps60", c, "60",
+            new Vector2(0.5f, 0.38f), new Vector2(140, 60), new Color(0.3f, 0.3f, 0.35f));
+        _fps120Btn = MakeSmallButton("Fps120", c, "120",
+            new Vector2(0.75f, 0.38f), new Vector2(140, 60), new Color(0.3f, 0.3f, 0.35f));
+
+        _fps30Btn.onClick.AddListener(() => { _gm.SetFrameRate(30);  HighlightFps(); });
+        _fps60Btn.onClick.AddListener(() => { _gm.SetFrameRate(60);  HighlightFps(); });
+        _fps120Btn.onClick.AddListener(() => { _gm.SetFrameRate(120); HighlightFps(); });
+        HighlightFps();
+
+        _settingsBackBtn = MakeButton("SettingsBackBtn", c, "返回", 34,
+            new Vector2(0.5f, 0.22f), new Vector2(280, 76),
+            new Color(0.5f, 0.25f, 0.2f), new Color(0.35f, 0.15f, 0.1f));
+        _settingsBackBtn.onClick.AddListener(HideSettings);
+
+        _settingsPanel.SetActive(false);
     }
 
-    void HighlightFpsButton(int fps)
+    void ShowSettings()
     {
-        SetBtnColor(fps30Button, fps == 30 ? _fpsActiveColor : _fpsInactiveColor);
-        SetBtnColor(fps60Button, fps == 60 ? _fpsActiveColor : _fpsInactiveColor);
-        SetBtnColor(fps120Button, fps == 120 ? _fpsActiveColor : _fpsInactiveColor);
+        if (_menuPanel != null) _menuPanel.SetActive(false);
+        if (_settingsPanel != null) _settingsPanel.SetActive(true);
+    }
+
+    void HideSettings()
+    {
+        if (_settingsPanel != null) _settingsPanel.SetActive(false);
+        if (_menuPanel != null) _menuPanel.SetActive(true);
+    }
+
+    void HighlightFps()
+    {
+        int cur = _gm != null ? _gm.GetFrameRate() : 60;
+        Color active   = new Color(0.2f, 0.75f, 1f);
+        Color inactive = new Color(0.3f, 0.3f, 0.35f);
+        SetBtnColor(_fps30Btn,  cur == 30  ? active : inactive);
+        SetBtnColor(_fps60Btn,  cur == 60  ? active : inactive);
+        SetBtnColor(_fps120Btn, cur == 120 ? active : inactive);
     }
 
     void SetBtnColor(Button btn, Color c)
@@ -145,53 +240,549 @@ public class UIManager : MonoBehaviour
         if (img != null) img.color = c;
     }
 
+    // ═══════════════════════════════════════════════════
+    //  Character Panel (sub-menu)
+    // ═══════════════════════════════════════════════════
+
+    static readonly (string name, Color cloth, Color pants)[] _presets = {
+        ("默认", new Color(0.17f, 0.24f, 0.31f), new Color(0.13f, 0.18f, 0.25f)),
+        ("红色", new Color(0.75f, 0.15f, 0.10f), new Color(0.18f, 0.12f, 0.15f)),
+        ("蓝色", new Color(0.12f, 0.30f, 0.70f), new Color(0.10f, 0.15f, 0.35f)),
+        ("绿色", new Color(0.12f, 0.65f, 0.28f), new Color(0.08f, 0.28f, 0.14f)),
+        ("金色", new Color(0.85f, 0.70f, 0.15f), new Color(0.50f, 0.40f, 0.10f)),
+        ("暗黑", new Color(0.15f, 0.15f, 0.18f), new Color(0.10f, 0.10f, 0.12f)),
+    };
+
+    void CreateCharacterPanel()
+    {
+        _characterPanel = NewPanel("CharacterPanel", new Color(0, 0, 0, 0.92f));
+
+        // ScrollRect
+        ScrollRect scroll = _characterPanel.AddComponent<ScrollRect>();
+        scroll.horizontal = false;
+        scroll.vertical = true;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+
+        // Viewport
+        GameObject vp = new GameObject("Viewport", typeof(Image), typeof(Mask));
+        vp.transform.SetParent(_characterPanel.transform, false);
+        vp.GetComponent<Image>().color = new Color(1, 1, 1, 0.01f);
+        vp.GetComponent<Mask>().showMaskGraphic = false;
+        RectTransform vpRT = vp.GetComponent<RectTransform>();
+        vpRT.anchorMin = new Vector2(0, 0); vpRT.anchorMax = new Vector2(1, 1);
+        vpRT.offsetMin = new Vector2(20, 20); vpRT.offsetMax = new Vector2(-20, -20);
+
+        // Content
+        GameObject content = new GameObject("Content");
+        content.transform.SetParent(vp.transform, false);
+        RectTransform ctRT = content.AddComponent<RectTransform>();
+        ctRT.anchorMin = new Vector2(0.5f, 1f); ctRT.anchorMax = new Vector2(0.5f, 1f);
+        ctRT.pivot = new Vector2(0.5f, 1f);
+        ctRT.sizeDelta = new Vector2(1080, 700);
+        ctRT.anchoredPosition = Vector2.zero;
+
+        scroll.viewport = vpRT;
+        scroll.content = ctRT;
+
+        Transform c = content.transform;
+
+        Text title = MakeText("CharTitle", c, "角色选择", 50, TextAnchor.MiddleCenter);
+        title.color = Color.white;
+        title.fontStyle = FontStyle.Bold;
+        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.90f, 400, 60);
+
+        // 2 rows × 3 columns of color presets inside scroll content
+        float[] colX = { 0.18f, 0.5f, 0.82f };
+        float[] rowY = { 0.65f, 0.38f };
+
+        for (int r = 0; r < 2; r++)
+        {
+            for (int col = 0; col < 3; col++)
+            {
+                int idx = r * 3 + col;
+                if (idx >= _presets.Length) break;
+                var preset = _presets[idx];
+                CreatePresetButton(preset.name, preset.cloth, preset.pants, idx,
+                    new Vector2(colX[col], rowY[r]), c);
+            }
+        }
+
+        _characterBackBtn = MakeButton("CharBackBtn", c, "返回", 34,
+            new Vector2(0.5f, 0.12f), new Vector2(280, 76),
+            new Color(0.5f, 0.25f, 0.2f), new Color(0.35f, 0.15f, 0.1f));
+        _characterBackBtn.onClick.AddListener(HideCharacter);
+
+        _characterPanel.SetActive(false);
+    }
+
+    void CreatePresetButton(string label, Color cloth, Color pants, int index,
+        Vector2 anchor, Transform parent)
+    {
+        Button btn = MakeSmallButton("PresetBtn_" + index, parent, "",
+            anchor, new Vector2(150, 150), cloth);
+        btn.onClick.AddListener(() => ApplyCharacterColor(index));
+
+        Text autoLabel = btn.GetComponentInChildren<Text>();
+        if (autoLabel != null) Destroy(autoLabel.gameObject);
+
+        Text nameLabel = MakeText("PresetLabel_" + index, parent,
+            label, 26, TextAnchor.MiddleCenter);
+        nameLabel.color = new Color(0.85f, 0.85f, 0.85f);
+        AnchorText(nameLabel.GetComponent<RectTransform>(), anchor.x, anchor.y - 0.06f, 150, 30);
+    }
+
+    void ApplyCharacterColor(int presetIndex)
+    {
+        if (presetIndex < 0 || presetIndex >= _presets.Length) return;
+        var preset = _presets[presetIndex];
+
+        var player = GameObject.Find("player");
+        if (player == null) return;
+        var model = player.transform.Find("CharacterModel");
+        if (model == null) return;
+
+        foreach (var mr in model.GetComponentsInChildren<MeshRenderer>())
+        {
+            // material access triggers automatic instancing — fine for runtime
+            foreach (var mat in mr.materials)
+            {
+                if (mat.name.Contains("Cloth")) mat.color = preset.cloth;
+                else if (mat.name.Contains("Pants")) mat.color = preset.pants;
+            }
+        }
+
+        PlayerPrefs.SetInt("CharacterPreset", presetIndex);
+        PlayerPrefs.Save();
+    }
+
+    void LoadCharacterPreset()
+    {
+        int idx = PlayerPrefs.GetInt("CharacterPreset", 0);
+        if (idx > 0) ApplyCharacterColor(idx);
+    }
+
+    void ShowCharacter()
+    {
+        if (_menuPanel != null) _menuPanel.SetActive(false);
+        if (_characterPanel != null) _characterPanel.SetActive(true);
+    }
+
+    void HideCharacter()
+    {
+        if (_characterPanel != null) _characterPanel.SetActive(false);
+        if (_menuPanel != null) _menuPanel.SetActive(true);
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  HUD Panel
+    // ═══════════════════════════════════════════════════
+
+    void CreateHUDPanel()
+    {
+        // Top-left bar
+        _hudPanel = NewPanel("HudPanel", new Color(0, 0, 0, 0.55f));
+        RectTransform rt = _hudPanel.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0, 1); rt.anchorMax = new Vector2(0, 1);
+        rt.pivot = new Vector2(0, 1);
+        rt.sizeDelta = new Vector2(540, 150);
+        rt.anchoredPosition = new Vector2(20, -20);
+
+        float y = -10f;
+        float rowH = 30f;
+        float leftX = 16f;
+
+        // Row 1: Score
+        _scoreText = MakeHUDText("ScoreText", _hudPanel.transform, "Score: 0", 32,
+            new Vector2(leftX, y), new Vector2(260, rowH));
+        y -= 32f;
+
+        // Row 2: Distance
+        _distanceText = MakeHUDText("DistanceText", _hudPanel.transform, "距离: 0m", 28,
+            new Vector2(leftX, y), new Vector2(260, rowH));
+        y -= 32f;
+
+        // Row 3: Coins
+        _coinText = MakeHUDText("CoinText", _hudPanel.transform, "$0", 28,
+            new Vector2(leftX, y), new Vector2(260, rowH));
+        _coinText.color = new Color(1f, 0.85f, 0.1f);
+        y -= 28f;
+
+        // Row 4: Buff (hidden by default)
+        _buffGroup = new GameObject("BuffGroup", typeof(RectTransform));
+        _buffGroup.transform.SetParent(_hudPanel.transform, false);
+        RectTransform bgRT = _buffGroup.GetComponent<RectTransform>();
+        bgRT.anchorMin = new Vector2(0, 1); bgRT.anchorMax = new Vector2(0, 1);
+        bgRT.pivot = new Vector2(0, 1);
+        bgRT.anchoredPosition = new Vector2(leftX, y);
+        bgRT.sizeDelta = new Vector2(300, 24);
+
+        Text buffIcon = MakeText("BuffIcon", _buffGroup.transform, "▶", 20, TextAnchor.MiddleLeft);
+        buffIcon.color = new Color(0.3f, 1f, 0.5f);
+        RectTransform biRT = buffIcon.GetComponent<RectTransform>();
+        biRT.anchorMin = new Vector2(0, 0.5f); biRT.anchorMax = new Vector2(0, 0.5f);
+        biRT.pivot = new Vector2(0, 0.5f);
+        biRT.anchoredPosition = new Vector2(0, 0);
+        biRT.sizeDelta = new Vector2(24, 24);
+
+        _buffText = MakeText("BuffText", _buffGroup.transform, "", 22, TextAnchor.MiddleLeft);
+        _buffText.color = new Color(0.3f, 1f, 0.5f);
+        RectTransform btRT = _buffText.GetComponent<RectTransform>();
+        btRT.anchorMin = new Vector2(0, 0.5f); btRT.anchorMax = new Vector2(0, 0.5f);
+        btRT.pivot = new Vector2(0, 0.5f);
+        btRT.anchoredPosition = new Vector2(28, 0);
+        btRT.sizeDelta = new Vector2(180, 24);
+
+        _buffGroup.SetActive(false);
+
+        // Pause button (right side of HUD bar)
+        _pauseBtn = MakeIconButton("PauseBtn", _hudPanel.transform, "II",
+            new Vector2(1, 0.5f), new Vector2(56, 56),
+            new Color(0.3f, 0.3f, 0.35f));
+        _pauseBtn.onClick.AddListener(() => _gm.Pause());
+
+        _hudPanel.SetActive(false);
+    }
+
+    Text MakeHUDText(string name, Transform parent, string content, int size,
+        Vector2 anchoredPos, Vector2 sizeDelta)
+    {
+        Text t = MakeText(name, parent, content, size, TextAnchor.MiddleLeft);
+        t.color = Color.white;
+        t.fontStyle = FontStyle.Bold;
+        AddOutline(t.gameObject, new Color(0, 0, 0, 0.6f));
+        RectTransform rt = t.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0, 1); rt.anchorMax = new Vector2(0, 1);
+        rt.pivot = new Vector2(0, 1);
+        rt.anchoredPosition = anchoredPos;
+        rt.sizeDelta = sizeDelta;
+        return t;
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  Pause Panel
+    // ═══════════════════════════════════════════════════
+
+    void CreatePausePanel()
+    {
+        _pausePanel = NewPanel("PausePanel", new Color(0, 0, 0, 0.75f));
+
+        Text title = MakeText("PauseTitle", _pausePanel.transform, "已暂停", 64, TextAnchor.MiddleCenter);
+        title.color = Color.white;
+        title.fontStyle = FontStyle.Bold;
+        AddOutline(title.gameObject, new Color(0, 0, 0, 0.6f));
+        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.58f, 400, 80);
+
+        _resumeBtn = MakeButton("ResumeBtn", _pausePanel.transform, "继续游戏", 38,
+            new Vector2(0.5f, 0.38f), new Vector2(400, 100),
+            new Color(0.15f, 0.7f, 0.2f), new Color(0.1f, 0.5f, 0.15f));
+        _resumeBtn.onClick.AddListener(() => _gm.Resume());
+
+        _pauseToMenuBtn = MakeButton("PauseToMenuBtn", _pausePanel.transform, "返回主页", 32,
+            new Vector2(0.5f, 0.22f), new Vector2(320, 80),
+            new Color(0.5f, 0.3f, 0.25f), new Color(0.35f, 0.18f, 0.15f));
+        _pauseToMenuBtn.onClick.AddListener(() => _gm.ReturnToMenu());
+
+        _pausePanel.SetActive(false);
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  GameOver Panel
+    // ═══════════════════════════════════════════════════
+
+    void CreateGameOverPanel()
+    {
+        _gameOverPanel = NewPanel("GameOverPanel", new Color(0, 0, 0, 0.88f));
+
+        Text title = MakeText("GOTitle", _gameOverPanel.transform, "Game Over", 68, TextAnchor.MiddleCenter);
+        title.color = new Color(1f, 0.2f, 0.15f);
+        title.fontStyle = FontStyle.Bold;
+        AddOutline(title.gameObject, new Color(0.5f, 0.05f, 0f));
+        AddShadow(title.gameObject, new Color(0, 0, 0, 0.8f));
+        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.72f, 500, 90);
+
+        // Session score
+        _finalScoreText = MakeText("FinalScore", _gameOverPanel.transform, "得分: 0", 48, TextAnchor.MiddleCenter);
+        _finalScoreText.color = Color.white;
+        _finalScoreText.fontStyle = FontStyle.Bold;
+        AddOutline(_finalScoreText.gameObject, new Color(0, 0, 0, 0.6f));
+        AnchorText(_finalScoreText.GetComponent<RectTransform>(), 0.5f, 0.54f, 450, 70);
+
+        // High score
+        _highScoreText = MakeText("HighScore", _gameOverPanel.transform, "最高分: 0", 36, TextAnchor.MiddleCenter);
+        _highScoreText.color = new Color(1f, 0.85f, 0.1f);
+        _highScoreText.fontStyle = FontStyle.Bold;
+        AddOutline(_highScoreText.gameObject, new Color(0.3f, 0.2f, 0f));
+        AnchorText(_highScoreText.GetComponent<RectTransform>(), 0.5f, 0.45f, 400, 50);
+
+        // Coins
+        _coinResultText = MakeText("CoinResult", _gameOverPanel.transform, "金币: 0", 32, TextAnchor.MiddleCenter);
+        _coinResultText.color = new Color(1f, 0.85f, 0.1f);
+        AnchorText(_coinResultText.GetComponent<RectTransform>(), 0.5f, 0.38f, 300, 40);
+
+        // Restart
+        _restartBtn = MakeButton("RestartBtn", _gameOverPanel.transform, "重新开始", 38,
+            new Vector2(0.5f, 0.24f), new Vector2(400, 100),
+            new Color(0.15f, 0.7f, 0.2f), new Color(0.1f, 0.5f, 0.15f));
+        _restartBtn.onClick.AddListener(() => _gm.Restart());
+
+        // Back to menu
+        _goToMenuBtn = MakeButton("GoToMenuBtn", _gameOverPanel.transform, "返回主页", 32,
+            new Vector2(0.5f, 0.1f), new Vector2(320, 80),
+            new Color(0.35f, 0.35f, 0.4f), new Color(0.2f, 0.2f, 0.25f));
+        _goToMenuBtn.onClick.AddListener(() => _gm.ReturnToMenu());
+
+        _gameOverPanel.SetActive(false);
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  State Switching
+    // ═══════════════════════════════════════════════════
+
     void OnGameStateChanged(GameState state)
     {
+        // Hide all first
+        if (_menuPanel != null) _menuPanel.SetActive(false);
+        if (_settingsPanel != null) _settingsPanel.SetActive(false);
+        if (_characterPanel != null) _characterPanel.SetActive(false);
+        if (_hudPanel != null) _hudPanel.SetActive(false);
+        if (_pausePanel != null) _pausePanel.SetActive(false);
+        if (_gameOverPanel != null) _gameOverPanel.SetActive(false);
+
         switch (state)
         {
-            case GameState.Menu:      ShowMenu(); break;
-            case GameState.Playing:   ShowHUD(); break;
-            case GameState.GameOver:  ShowGameOver(); break;
+            case GameState.Menu:
+                if (_menuPanel != null) _menuPanel.SetActive(true);
+                break;
+
+            case GameState.Playing:
+                if (_hudPanel != null) _hudPanel.SetActive(true);
+                OnScoreChanged(_gm != null ? _gm.Score : 0);
+                OnCoinsChanged(_gm != null ? _gm.Coins : 0);
+                OnDistanceChanged(_gm != null ? _gm.Distance : 0);
+                break;
+
+            case GameState.Paused:
+                if (_hudPanel != null) _hudPanel.SetActive(true);
+                if (_pausePanel != null) _pausePanel.SetActive(true);
+                break;
+
+            case GameState.GameOver:
+                if (_gameOverPanel != null) _gameOverPanel.SetActive(true);
+                if (_gm != null)
+                {
+                    string newRecord = _gm.IsNewHighScore ? "\n新纪录!" : "";
+                    if (_finalScoreText != null)
+                        _finalScoreText.text = "得分: " + _gm.Score + newRecord;
+                    if (_highScoreText != null)
+                        _highScoreText.text = "最高分: " + _gm.HighScore;
+                    if (_coinResultText != null)
+                        _coinResultText.text = "金币: " + _gm.Coins + "  |  总计: " + _gm.TotalCoins;
+                }
+                break;
         }
     }
 
-    void ShowMenu()
+    void OnScoreChanged(int score)
     {
-        if (menuPanel != null) menuPanel.SetActive(true);
-        if (hudPanel != null) hudPanel.SetActive(false);
-        if (gameOverPanel != null) gameOverPanel.SetActive(false);
+        if (_scoreText != null) _scoreText.text = "Score: " + score;
     }
 
-    void ShowHUD()
+    void OnCoinsChanged(int coins)
     {
-        if (menuPanel != null) menuPanel.SetActive(false);
-        if (hudPanel != null) hudPanel.SetActive(true);
-        if (gameOverPanel != null) gameOverPanel.SetActive(false);
-        UpdateScore(GameManager.Instance != null ? GameManager.Instance.Score : 0);
-        UpdateCoins(GameManager.Instance != null ? GameManager.Instance.Coins : 0);
+        if (_coinText != null) _coinText.text = "$" + coins;
     }
 
-    void ShowGameOver()
+    void OnDistanceChanged(float dist)
     {
-        if (hudPanel != null) hudPanel.SetActive(false);
-        if (gameOverPanel != null) gameOverPanel.SetActive(true);
-       if (GameManager.Instance != null)
-       {
-            string hsTag = GameManager.Instance.IsNewHighScore ? "  NEW HIGH SCORE!" : "";
-            if (finalScoreText != null)
-                finalScoreText.text = "Score: " + GameManager.Instance.Score + "\nBest: " + GameManager.Instance.HighScore + hsTag;
-            if (coinResultText != null)
-                coinResultText.text = "Coins: " + GameManager.Instance.Coins + " | Total: " + GameManager.Instance.TotalCoins;
-       }
+        if (_distanceText != null) _distanceText.text = "距离: " + Mathf.FloorToInt(dist) + "m";
     }
 
-    void UpdateScore(int score)
+    // ═══════════════════════════════════════════════════
+    //  UI Helpers
+    // ═══════════════════════════════════════════════════
+
+    GameObject NewPanel(string name, Color color)
     {
-        if (scoreText != null) scoreText.text = "Score: " + score;
+        GameObject panel = new GameObject(name, typeof(Image));
+        panel.GetComponent<Image>().color = color;
+        Canvas canvas = FindObjectOfType<Canvas>();
+        panel.transform.SetParent(canvas != null ? canvas.transform : transform, false);
+        Stretch(panel.GetComponent<RectTransform>());
+        return panel;
     }
 
-    void UpdateCoins(int coins)
+    static void Stretch(RectTransform rt)
     {
-        if (coinText != null) coinText.text = coins.ToString();
+        rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+        rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+    }
+
+    static void AnchorText(RectTransform rt, float ax, float ay, float w, float h)
+    {
+        rt.anchorMin = new Vector2(ax, ay); rt.anchorMax = new Vector2(ax, ay);
+        rt.sizeDelta = new Vector2(w, h);
+        rt.anchoredPosition = Vector2.zero;
+    }
+
+    Text MakeText(string name, Transform parent, string content, int size, TextAnchor align)
+    {
+        GameObject go = new GameObject(name, typeof(Text));
+        go.transform.SetParent(parent, false);
+        Text t = go.GetComponent<Text>();
+        t.text = content;
+        t.fontSize = size;
+        t.alignment = align;
+        t.color = Color.white;
+        if (_font != null) t.font = _font;
+        return t;
+    }
+
+    void MakeLabel(string name, Transform parent, string content, Vector2 anchor)
+    {
+        Text label = MakeText(name, parent, content, 30, TextAnchor.MiddleCenter);
+        label.color = new Color(0.8f, 0.8f, 0.8f);
+        AnchorText(label.GetComponent<RectTransform>(), anchor.x, anchor.y, 300, 40);
+    }
+
+    void AddOutline(GameObject go, Color color)
+    {
+        Outline o = go.AddComponent<Outline>();
+        o.effectColor = color;
+        o.effectDistance = new Vector2(2.5f, -2.5f);
+    }
+
+    void AddShadow(GameObject go, Color color)
+    {
+        Shadow s = go.AddComponent<Shadow>();
+        s.effectColor = color;
+        s.effectDistance = new Vector2(3f, -3f);
+    }
+
+    Button MakeButton(string name, Transform parent, string label, int fontSize,
+        Vector2 anchor, Vector2 size, Color mainColor, Color edgeColor)
+    {
+        GameObject go = new GameObject(name, typeof(Image), typeof(Button));
+        go.transform.SetParent(parent, false);
+        RectTransform rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = anchor; rt.anchorMax = anchor;
+        rt.sizeDelta = size;
+        rt.anchoredPosition = Vector2.zero;
+        go.GetComponent<Image>().color = mainColor;
+
+        // Border / depth
+        GameObject border = new GameObject("Border", typeof(Image));
+        border.transform.SetParent(go.transform, false);
+        border.GetComponent<Image>().color = edgeColor;
+        RectTransform br = border.GetComponent<RectTransform>();
+        Stretch(br);
+        br.offsetMin = new Vector2(4, 4);
+        br.offsetMax = new Vector2(-4, -4);
+
+        Text labelT = MakeText("Label", go.transform, label, fontSize, TextAnchor.MiddleCenter);
+        labelT.color = Color.white;
+        labelT.fontStyle = FontStyle.Bold;
+        AddOutline(labelT.gameObject, new Color(0, 0, 0, 0.5f));
+        Stretch(labelT.GetComponent<RectTransform>());
+
+        return go.GetComponent<Button>();
+    }
+
+    Button MakeSmallButton(string name, Transform parent, string label,
+        Vector2 anchor, Vector2 size, Color color)
+    {
+        GameObject go = new GameObject(name, typeof(Image), typeof(Button));
+        go.transform.SetParent(parent, false);
+        RectTransform rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = anchor; rt.anchorMax = anchor;
+        rt.sizeDelta = size;
+        rt.anchoredPosition = Vector2.zero;
+        go.GetComponent<Image>().color = color;
+
+        Text labelT = MakeText("Label", go.transform, label, 28, TextAnchor.MiddleCenter);
+        labelT.color = Color.white;
+        labelT.fontStyle = FontStyle.Bold;
+        Stretch(labelT.GetComponent<RectTransform>());
+
+        return go.GetComponent<Button>();
+    }
+
+    Button MakeIconButton(string name, Transform parent, string label,
+        Vector2 anchor, Vector2 size, Color color)
+    {
+        GameObject go = new GameObject(name, typeof(Image), typeof(Button));
+        go.transform.SetParent(parent, false);
+        RectTransform rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = anchor; rt.anchorMax = anchor;
+        rt.pivot = anchor;
+        rt.sizeDelta = size;
+        rt.anchoredPosition = Vector2.zero;
+        go.GetComponent<Image>().color = color;
+
+        Text labelT = MakeText("Label", go.transform, label, 28, TextAnchor.MiddleCenter);
+        labelT.color = Color.white;
+        labelT.fontStyle = FontStyle.Bold;
+        Stretch(labelT.GetComponent<RectTransform>());
+
+        return go.GetComponent<Button>();
+    }
+
+    Slider MakeSlider(string name, Transform parent, Vector2 anchor)
+    {
+        GameObject go = new GameObject(name, typeof(Slider));
+        go.transform.SetParent(parent, false);
+
+        // Background
+        GameObject bg = new GameObject("Background", typeof(Image));
+        bg.transform.SetParent(go.transform, false);
+        bg.GetComponent<Image>().color = new Color(0.2f, 0.2f, 0.25f);
+        RectTransform bgRT = bg.GetComponent<RectTransform>();
+        bgRT.anchorMin = new Vector2(0, 0.5f); bgRT.anchorMax = new Vector2(1, 0.5f);
+        bgRT.sizeDelta = new Vector2(0, 16);
+        bgRT.anchoredPosition = Vector2.zero;
+
+        // Fill area
+        GameObject fillArea = new GameObject("Fill Area", typeof(RectTransform));
+        fillArea.transform.SetParent(go.transform, false);
+        RectTransform faRT = fillArea.GetComponent<RectTransform>();
+        Stretch(faRT);
+        faRT.offsetMin = Vector2.zero; faRT.offsetMax = Vector2.zero;
+
+        // Fill
+        GameObject fill = new GameObject("Fill", typeof(Image));
+        fill.transform.SetParent(fillArea.transform, false);
+        fill.GetComponent<Image>().color = new Color(0.2f, 0.7f, 0.3f);
+        RectTransform fRT = fill.GetComponent<RectTransform>();
+        Stretch(fRT);
+
+        // Handle slide area
+        GameObject handleArea = new GameObject("Handle Slide Area", typeof(RectTransform));
+        handleArea.transform.SetParent(go.transform, false);
+        RectTransform haRT = handleArea.GetComponent<RectTransform>();
+        Stretch(haRT);
+        haRT.offsetMin = new Vector2(-14, 0); haRT.offsetMax = new Vector2(14, 0);
+
+        // Handle
+        GameObject handle = new GameObject("Handle", typeof(Image));
+        handle.transform.SetParent(handleArea.transform, false);
+        handle.GetComponent<Image>().color = Color.white;
+        RectTransform hRT = handle.GetComponent<RectTransform>();
+        hRT.anchorMin = new Vector2(0, 0.5f); hRT.anchorMax = new Vector2(0, 0.5f);
+        hRT.sizeDelta = new Vector2(32, 32);
+        hRT.anchoredPosition = Vector2.zero;
+
+        Slider slider = go.GetComponent<Slider>();
+        slider.targetGraphic = handle.GetComponent<Image>();
+        slider.fillRect = fRT;
+        slider.handleRect = hRT;
+        slider.direction = Slider.Direction.LeftToRight;
+        slider.minValue = 0f;
+        slider.maxValue = 1f;
+
+        RectTransform sRT = go.GetComponent<RectTransform>();
+        sRT.anchorMin = anchor; sRT.anchorMax = anchor;
+        sRT.sizeDelta = new Vector2(500, 40);
+        sRT.anchoredPosition = Vector2.zero;
+
+        return slider;
     }
 }
