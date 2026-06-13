@@ -32,8 +32,10 @@ public class TrackManager : MonoBehaviour
     private List<GameObject> _dynamicObjects = new List<GameObject>();
 
     private Vector3 _spawnPosition;
-    private float _spawnAngle;
-    private int _straightSegmentsSinceLastTurn;
+   private float _spawnAngle;
+    private int _lastSafeLane = 1;
+    private int _obstacleFreeSegments;
+   private int _straightSegmentsSinceLastTurn;
     private Transform _player;
 
     private const float SEGMENT_CHECK_MULT = 1.5f;
@@ -121,12 +123,14 @@ public class TrackManager : MonoBehaviour
                 return data;
             }
         }
-        return null;
-    }
+       return null;
+   }
 
-    void InitializePools()
-    {
-        if (trackSegmentPrefab != null)
+   void InitializePools()
+   {
+        EnsureProceduralAssets();
+
+       if (trackSegmentPrefab != null)
         {
             for (int i = 0; i < 6; i++)
             {
@@ -278,39 +282,66 @@ public class TrackManager : MonoBehaviour
         }
     }
 
-    void SpawnObstaclesAndCoins(GameObject segment, TrackSegmentType segType)
-    {
-        if (obstaclePrefabs.Length == 0 && coinPrefab == null) return;
+   void SpawnObstaclesAndCoins(GameObject segment, TrackSegmentType segType)
+   {
+       if (obstaclePrefabs.Length == 0 && coinPrefab == null) return;
 
-        float buffer = 4f;
-        float end    = segmentLength - 2f;
+       float buffer = 4f;
+       float end    = segmentLength - 2f;
 
-        if (segType != TrackSegmentType.Straight)
-        {
-            SpawnCoinsZigzag(segment, buffer, segmentLength * 0.35f);
-            return;
-        }
+       if (segType != TrackSegmentType.Straight)
+       {
+           SpawnCoinsZigzag(segment, buffer, segmentLength * 0.35f);
+           return;
+       }
 
-        float diff = GameManager.Instance != null
+        // Warmup: first few segments have no obstacles
+        float warmupSegments = 4f;
+        _obstacleFreeSegments++;
+
+        // Progressive difficulty based on segments spawned and speed
+        float speedFactor = GameManager.Instance != null
             ? Mathf.InverseLerp(GameManager.Instance.startSpeed,
-                                GameManager.Instance.maxSpeed * 0.5f,
+                                GameManager.Instance.maxSpeed,
                                 GameManager.Instance.CurrentSpeed)
             : 0.5f;
+        float segmentFactor = Mathf.Clamp01(_obstacleFreeSegments / 15f);
+        float diff = Mathf.Max(speedFactor, segmentFactor);
 
-        float obstacleProbability = Mathf.Lerp(0.40f, 0.75f, diff);
+        // Obstacle probability: 0% during warmup, ramps to 70% at high difficulty
+        float obstacleChance = 0f;
+        if (_obstacleFreeSegments > warmupSegments)
+            obstacleChance = Mathf.Lerp(0.25f, 0.70f, diff);
 
-        // Pick safe lane before spawning anything
-        int safeLane = Random.Range(0, 3);
+        // Lane continuity: safe lane shifts at most 1 from previous
+        int safeLane = _lastSafeLane + Random.Range(-1, 2);
+        safeLane = Mathf.Clamp(safeLane, 0, 2);
+        _lastSafeLane = safeLane;
 
-        // Always spawn coins on at least 2 lanes
-        SpawnCoinsMixed(segment, buffer, end, safeLane);
+        // Determine coin Z first so obstacles can avoid it
+        float coinZ = Random.Range(buffer + 2f, end - 4f);
 
-        // Sometimes add obstacles on non-safe lanes
-        if (Random.value < obstacleProbability && obstaclePrefabs.Length >= 3)
+        // Always put a dense coin trail on the safe lane
+        SpawnCoinLine(segment, safeLane, coinZ, Random.Range(6, 10));
+        // Sometimes add sparse coins on an adjacent lane
+        if (Random.value < 0.6f)
         {
-            SpawnObstacleRow(segment, buffer, end, diff, safeLane);
+            int altLane = (safeLane + (Random.value < 0.5f ? -1 : 1) + 3) % 3;
+            SpawnCoinLine(segment, altLane, coinZ + Random.Range(-1f, 1f), Random.Range(2, 5));
         }
-    }
+
+        // Spawn obstacles if we're past warmup and dice roll passes
+        if (_obstacleFreeSegments > warmupSegments
+            && Random.value < obstacleChance
+            && obstaclePrefabs.Length >= 3)
+        {
+            // Place obstacles at a different Z from the coin trail
+            float obsZ = coinZ + 3f + Random.Range(0f, 3f);
+            if (obsZ > end - 1f) obsZ = coinZ - 3f - Random.Range(0f, 3f);
+            obsZ = Mathf.Clamp(obsZ, buffer + 1f, end - 1f);
+            SpawnObstacleRow(segment, obsZ, diff, safeLane);
+        }
+   }
 
     // ---- coin patterns ----
 
@@ -327,19 +358,7 @@ public class TrackManager : MonoBehaviour
         }
     }
 
-    void SpawnCoinRow(GameObject segment, float zStart, float zEnd, int skipLane)
-    {
-        if (coinPrefab == null) return;
-        float rowZ = Random.Range(zStart + 1f, zEnd - 3f);
-        int count = Random.Range(5, 9);
-        for (int lane = 0; lane < 3; lane++)
-        {
-            if (lane == skipLane) continue;
-            SpawnCoinLine(segment, lane, rowZ, count);
-        }
-    }
-
-    void SpawnCoinsZigzag(GameObject segment, float zStart, float zEnd)
+   void SpawnCoinsZigzag(GameObject segment, float zStart, float zEnd)
     {
         // Subway Surfers-style: coins weave between lanes
         if (coinPrefab == null) return;
@@ -370,111 +389,134 @@ public class TrackManager : MonoBehaviour
         }
     }
 
-    void SpawnCoinArc(GameObject segment, float zStart, float zEnd)
-    {
-        // Jump arc: coins floating in an arc at Y=1.5-3.5
-        if (coinPrefab == null) return;
-        float centerZ = (zStart + zEnd) * 0.5f;
-        int lane = Random.Range(0, 3);
-        float x = (lane - 1) * laneDistance;
-        int count = Random.Range(6, 12);
-        float arcLen = Random.Range(4f, 8f);
-
-        for (int c = 0; c < count; c++)
-        {
-            float t = (float)c / (count - 1) - 0.5f; // -0.5 to 0.5
-            float z = centerZ + t * arcLen;
-            if (z < zStart || z > zEnd) continue;
-            float y = 1f + Mathf.Sin((t + 0.5f) * Mathf.PI) * 2.5f;
-            Vector3 lp = new Vector3(x, y, z);
-            Vector3 wp = segment.transform.TransformPoint(lp);
-            _dynamicObjects.Add(Instantiate(coinPrefab, wp, Quaternion.identity));
-        }
-    }
-
-    // ---- obstacle patterns ----
+   // ---- obstacle patterns ----
 
     // Guarantees at least 1 lane is always open
-    void SpawnObstacleRow(GameObject segment, float zStart, float zEnd, float difficulty, int safeLane)
-    {
-        if (obstaclePrefabs.Length < 3) return;
+    void SpawnObstacleRow(GameObject segment, float obsZ, float difficulty, int safeLane)
+   {
+       if (obstaclePrefabs.Length < 3) return;
 
-        float z = Random.Range(zStart + 1f, zEnd - 2f);
+       // How many lanes to block (1 or 2, never 3)
+        int blocked = difficulty > 0.5f ? 2 : 1;
+       List<int> lanes = new List<int>();
+       for (int l = 0; l < 3; l++)
+           if (l != safeLane) lanes.Add(l);
 
-        // How many lanes to block (1 or 2, never 3)
-        int blocked = difficulty > 0.55f ? 2 : 1;
-        List<int> lanes = new List<int>();
-        for (int l = 0; l < 3; l++)
-            if (l != safeLane) lanes.Add(l);
+       // Shuffle then take <blocked> lanes
+       for (int i = 0; i < lanes.Count; i++)
+       {
+           int swap = Random.Range(i, lanes.Count);
+           int tmp = lanes[i]; lanes[i] = lanes[swap]; lanes[swap] = tmp;
+       }
 
-        // Shuffle then take <blocked> lanes
-        for (int i = 0; i < lanes.Count; i++)
-        {
-            int swap = Random.Range(i, lanes.Count);
-            int tmp = lanes[i]; lanes[i] = lanes[swap]; lanes[swap] = tmp;
-        }
+       for (int i = 0; i < blocked && i < lanes.Count; i++)
+       {
+           int lane = lanes[i];
 
-        for (int i = 0; i < blocked && i < lanes.Count; i++)
-        {
-            int lane = lanes[i];
+            // Progressive obstacle types: harder types appear at higher difficulty
+           int type;
+            if (difficulty < 0.3f)
+                type = 0; // early game: only Low obstacles
+            else if (difficulty < 0.6f)
+                type = Random.value < 0.35f ? 1 : 0; // mid game: Low + High
+            else
+                type = Random.value < 0.3f ? 2 : (Random.value < 0.5f ? 1 : 0); // late: all types
 
-            // Pick obstacle type based on lane position
-            int type;
-            float roll = Random.value;
-            if (roll < 0.35f)      type = 0; // Low (slide under)
-            else if (roll < 0.65f) type = 1; // High (jump over)
-            else                   type = 2; // Barrier (must switch lane)
+            // Never put a Barrier when only 1 lane is blocked (can't dodge)
+            if (blocked == 1 && type == 2) type = 1;
 
-            // Barriers can't be on safeLane's neighbor if it's the ONLY blocked lane
-            // (would be impossible to dodge at low difficulty)
-            if (blocked == 1 && type == 2) type = Random.value < 0.5f ? 0 : 1;
+            SpawnObstacleAt(segment, lane, obsZ + Random.Range(-0.8f, 0.8f), type);
+       }
+   }
 
-            SpawnObstacleAt(segment, lane, z + Random.Range(-0.8f, 0.8f), type);
-        }
-    }
-
-    // ---- mixed coins (always spawns, coexists with obstacles) ----
-
-    void SpawnCoinsMixed(GameObject segment, float zStart, float zEnd, int safeLane)
-    {
-        if (coinPrefab == null) return;
-        float roll = Random.value;
-
-        if (roll < 0.3f)
-        {
-            // Zigzag across 2-3 lanes
-            SpawnCoinsZigzag(segment, zStart, zEnd);
-        }
-        else if (roll < 0.5f)
-        {
-            // Jump arc
-            SpawnCoinArc(segment, zStart, zEnd);
-        }
-        else if (roll < 0.8f)
-        {
-            // Coins on all 3 lanes, extra dense on safe lane
-            for (int lane = 0; lane < 3; lane++)
-            {
-                int count = (lane == safeLane) ? Random.Range(6, 10) : Random.Range(3, 6);
-                SpawnCoinLine(segment, lane, Random.Range(zStart + 1f, zEnd - 4f), count);
-            }
-        }
-        else
-        {
-            // Coins only on safe lane (guide path), sparse on others
-            SpawnCoinLine(segment, safeLane, Random.Range(zStart + 1f, zEnd - 3f), Random.Range(8, 14));
-            int lane2 = (safeLane + Random.Range(1, 3)) % 3;
-            SpawnCoinLine(segment, lane2, Random.Range(zStart + 2f, zEnd - 5f), Random.Range(3, 6));
-        }
-    }
-
-    void SpawnObstacleAt(GameObject segment, int lane, float z, int prefabIndex)
+   void SpawnObstacleAt(GameObject segment, int lane, float z, int prefabIndex)
     {
         float x = (lane - 1) * laneDistance;
         Vector3 lp = new Vector3(x, 1f, z);
         Vector3 wp = segment.transform.TransformPoint(lp);
         Quaternion rot = segment.transform.rotation;
         GameObject obs = Instantiate(obstaclePrefabs[prefabIndex], wp, rot);
-        _dynamicObjects.Add(obs);
+       _dynamicObjects.Add(obs);
+   }
+
+    void EnsureProceduralAssets()
+    {
+        int groundLayer = LayerMask.NameToLayer("Ground");
+        if (groundLayer < 0) groundLayer = 0;
+
+        if (trackSegmentPrefab == null)
+            trackSegmentPrefab = CreateProcStraight(groundLayer);
+        if (turnLeftPrefab == null)
+            turnLeftPrefab = CreateProcTurn(groundLayer);
+        if (turnRightPrefab == null)
+            turnRightPrefab = CreateProcTurn(groundLayer);
+        if (coinPrefab == null)
+            coinPrefab = CreateProcCoin();
+        if (obstaclePrefabs == null || obstaclePrefabs.Length == 0)
+            obstaclePrefabs = CreateProcObstacles();
+    }
+
+    GameObject CreateProcStraight(int layer)
+    {
+        GameObject go = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        go.name = "ProcStraight";
+        go.layer = layer;
+        go.transform.localScale = new Vector3(0.9f, 1f, 2f);
+        Object.DestroyImmediate(go.GetComponent<MeshCollider>());
+        BoxCollider bc = go.AddComponent<BoxCollider>();
+        bc.center = Vector3.zero; bc.size = new Vector3(9f, 0.3f, 20f);
+        go.SetActive(false); go.transform.SetParent(transform);
+        return go;
+    }
+
+    GameObject CreateProcTurn(int layer)
+    {
+        GameObject go = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        go.name = "ProcTurn";
+        go.layer = layer;
+        go.transform.localScale = new Vector3(0.9f, 1f, 2f);
+        Object.DestroyImmediate(go.GetComponent<MeshCollider>());
+        BoxCollider bc = go.AddComponent<BoxCollider>();
+        bc.center = Vector3.zero; bc.size = new Vector3(9f, 0.3f, 20f);
+        go.SetActive(false); go.transform.SetParent(transform);
+        return go;
+    }
+
+    GameObject CreateProcCoin()
+    {
+        GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        go.name = "ProcCoin";
+        go.transform.localScale = new Vector3(0.6f, 0.15f, 0.6f);
+        Object.DestroyImmediate(go.GetComponent<Collider>());
+        BoxCollider bc = go.AddComponent<BoxCollider>();
+        bc.isTrigger = true; bc.size = Vector3.one;
+        go.AddComponent<Coin>();
+        go.SetActive(false); go.transform.SetParent(transform);
+        return go;
+    }
+
+    GameObject[] CreateProcObstacles()
+    {
+        ObstacleType[] types = { ObstacleType.Low, ObstacleType.High, ObstacleType.Barrier };
+        Vector3[] sizes  = { new Vector3(3f, 1f, 0.6f), new Vector3(0.8f, 3.5f, 0.6f), new Vector3(3.5f, 2.5f, 0.8f) };
+        Color[] colors    = { new Color(1f, 0.45f, 0.1f), new Color(0.85f, 0.15f, 0.05f), new Color(0.9f, 0.25f, 0.15f) };
+        Shader sh = Shader.Find("Standard");
+        if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
+
+        GameObject[] obs = new GameObject[3];
+        for (int i = 0; i < 3; i++)
+        {
+            obs[i] = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            obs[i].name = "ProcObstacle_" + i;
+            obs[i].transform.localScale = sizes[i];
+            if (sh != null) obs[i].GetComponent<MeshRenderer>().material = new Material(sh) { color = colors[i] };
+            Object.DestroyImmediate(obs[i].GetComponent<Collider>());
+            BoxCollider bc = obs[i].AddComponent<BoxCollider>();
+            bc.isTrigger = true; bc.size = Vector3.one;
+            Obstacle o = obs[i].AddComponent<Obstacle>();
+            o.type = types[i];
+            obs[i].SetActive(false); obs[i].transform.SetParent(transform);
+        }
+        return obs;
     }
 }

@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using UnityEngine.Events;
+using System.Collections;
 using UnityEngine.SceneManagement;
 
 public enum GameState { Menu, Playing, GameOver }
@@ -25,13 +26,17 @@ public class GameManager : MonoBehaviour
     public float CurrentSpeed { get; private set; }
     public GameState State { get; private set; } = GameState.Menu;
     public int Score { get; private set; }
-    public int Coins { get; private set; }
+   public int Coins { get; private set; }
+    public int HighScore { get; private set; }
+    public int TotalCoins { get; private set; }
+    public bool IsNewHighScore { get; private set; }
+   public bool IsDeathSequence { get; private set; }
 
     public UnityEvent<GameState> OnStateChanged;
     public UnityEvent<int> OnScoreChanged;
     public UnityEvent<int> OnCoinsChanged;
 
-    private float _distanceTraveled;
+   private float _distanceTraveled;
 
     void Awake()
     {
@@ -42,9 +47,12 @@ public class GameManager : MonoBehaviour
 
     void Start()
     {
-        if (autoStart && State == GameState.Menu)
-            StartGame();
-    }
+       if (autoStart && State == GameState.Menu)
+           StartGame();
+
+        HighScore = PlayerPrefs.GetInt("HighScore", 0);
+        TotalCoins = PlayerPrefs.GetInt("TotalCoins", 0);
+   }
 
     public void SetFrameRate(int fps)
     {
@@ -88,25 +96,53 @@ public class GameManager : MonoBehaviour
         Coins = 0;
         _distanceTraveled = 0;
         State = GameState.Playing;
-        OnStateChanged.Invoke(State);
-        OnScoreChanged.Invoke(0);
-        OnCoinsChanged.Invoke(0);
-    }
+       OnStateChanged.Invoke(State);
+       OnScoreChanged.Invoke(0);
+       OnCoinsChanged.Invoke(0);
+        AudioManager.Instance?.StartFootsteps();
+   }
 
     public void GameOver()
     {
-        State = GameState.GameOver;
-        OnStateChanged.Invoke(State);
+        if (IsDeathSequence) return;
+       IsDeathSequence = true;
+        var player = GameObject.Find("player");
+        if (player != null) ParticleManager.Instance?.EmitDeath(player.transform.position);
+       if (AudioManager.Instance != null) AudioManager.Instance.PlayDeath();
+        if (AudioManager.Instance != null) AudioManager.Instance.StopFootsteps();
+        StartCoroutine(DeathSequenceCoroutine());
+    }
+
+    System.Collections.IEnumerator DeathSequenceCoroutine()
+    {
+        Time.timeScale = 0.3f;
+        yield return new WaitForSecondsRealtime(1.2f);
+        Time.timeScale = 1f;
+       State = GameState.GameOver;
+        SaveHighScore();
+       OnStateChanged.Invoke(State);
+        IsDeathSequence = false;
     }
 
     public void Restart()
     {
+        Time.timeScale = 1f;
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-    }
+   }
 
-    public void AddCoins(int amount)
+   public void AddCoins(int amount)
+   {
+       Coins += amount;
+       OnCoinsChanged.Invoke(Coins);
+   }
+
+    void SaveHighScore()
     {
-        Coins += amount;
-        OnCoinsChanged.Invoke(Coins);
+        IsNewHighScore = Score > HighScore;
+        if (IsNewHighScore) HighScore = Score;
+        TotalCoins += Coins;
+        PlayerPrefs.SetInt("HighScore", HighScore);
+        PlayerPrefs.SetInt("TotalCoins", TotalCoins);
+        PlayerPrefs.Save();
     }
 }

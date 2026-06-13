@@ -201,6 +201,7 @@ PlayerSettings:
     Android: com.eieiee.templerun
     Standalone: com.eieiee.templerun
     WebGL: com.eieiee.templerun
+    iPhone: com.eieiee.templerun
   buildNumber:
     Standalone: 0
     VisionOS: 0

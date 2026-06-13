@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using System.Collections.Generic;
 
 public enum SwipeDirection { None, Up, Down, Left, Right }
 
@@ -10,7 +11,7 @@ public class InputManager : MonoBehaviour
 
     private Vector2 _touchStart;
     private bool _swipeDetected;
-    private SwipeDirection _currentSwipe = SwipeDirection.None;
+    private Queue<SwipeDirection> _swipeQueue = new Queue<SwipeDirection>();
 
     void Awake()
     {
@@ -20,27 +21,15 @@ public class InputManager : MonoBehaviour
 
     void Update()
     {
-        // Keyboard input for editor testing
+        // Keyboard input - queue all pressed keys instead of returning early
         if (Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.LeftArrow))
-        {
-            _currentSwipe = SwipeDirection.Left;
-            return;
-        }
+            _swipeQueue.Enqueue(SwipeDirection.Left);
         if (Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.RightArrow))
-        {
-            _currentSwipe = SwipeDirection.Right;
-            return;
-        }
+            _swipeQueue.Enqueue(SwipeDirection.Right);
         if (Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.Space))
-        {
-            _currentSwipe = SwipeDirection.Up;
-            return;
-        }
+            _swipeQueue.Enqueue(SwipeDirection.Up);
         if (Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.LeftControl))
-        {
-            _currentSwipe = SwipeDirection.Down;
-            return;
-        }
+            _swipeQueue.Enqueue(SwipeDirection.Down);
 
         // Touch input
         if (Input.touchCount > 0)
@@ -85,15 +74,19 @@ public class InputManager : MonoBehaviour
         float absY = Mathf.Abs(delta.y);
 
         if (absX > absY)
-            _currentSwipe = delta.x > 0 ? SwipeDirection.Right : SwipeDirection.Left;
+        {
+            if (delta.x > 0) _swipeQueue.Enqueue(SwipeDirection.Right);
+            else _swipeQueue.Enqueue(SwipeDirection.Left);
+        }
         else
-            _currentSwipe = delta.y > 0 ? SwipeDirection.Up : SwipeDirection.Down;
+        {
+            if (delta.y > 0) _swipeQueue.Enqueue(SwipeDirection.Up);
+            else _swipeQueue.Enqueue(SwipeDirection.Down);
+        }
     }
 
     public SwipeDirection GetSwipe()
     {
-        SwipeDirection s = _currentSwipe;
-        _currentSwipe = SwipeDirection.None;
-        return s;
+        return _swipeQueue.Count > 0 ? _swipeQueue.Dequeue() : SwipeDirection.None;
     }
 }
