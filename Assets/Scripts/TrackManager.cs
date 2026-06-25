@@ -29,7 +29,16 @@ public class TrackManager : MonoBehaviour
     private Queue<GameObject> _turnLeftPool = new Queue<GameObject>();
     private Queue<GameObject> _turnRightPool = new Queue<GameObject>();
     private List<GameObject> _activeSegments = new List<GameObject>();
-    private List<GameObject> _dynamicObjects = new List<GameObject>();
+    private readonly Dictionary<GameObject, Queue<GameObject>> _dynamicPools =
+        new Dictionary<GameObject, Queue<GameObject>>();
+    private readonly List<DynamicEntry> _dynamicObjects = new List<DynamicEntry>();
+
+    private class DynamicEntry
+    {
+        public GameObject instance;
+        public GameObject prefab;
+        public GameObject ownerSegment;
+    }
 
     private Vector3 _spawnPosition;
    private float _spawnAngle;
@@ -132,7 +141,8 @@ public class TrackManager : MonoBehaviour
 
        if (trackSegmentPrefab != null)
         {
-            for (int i = 0; i < 6; i++)
+            int straightPoolSize = Mathf.Max(1, poolSize - 4);
+            for (int i = 0; i < straightPoolSize; i++)
             {
                 GameObject seg = Instantiate(trackSegmentPrefab, Vector3.zero, Quaternion.identity, transform);
                 seg.SetActive(false);
@@ -242,19 +252,19 @@ public class TrackManager : MonoBehaviour
         if (data != null && data == CurrentTurnSegment)
             CurrentTurnSegment = null;
 
-        // Destroy dynamic objects on this segment
-        Vector3 segPos = segment.transform.position;
-        float checkDistSqr = (segmentLength * SEGMENT_CHECK_MULT);
-        checkDistSqr *= checkDistSqr;
-
+        // Return dynamic objects owned by this segment to their pools.
         for (int i = _dynamicObjects.Count - 1; i >= 0; i--)
         {
-            GameObject obj = _dynamicObjects[i];
-            if (obj == null) { _dynamicObjects.RemoveAt(i); continue; }
-            if (XZSqrDistance(obj.transform.position, segPos) < checkDistSqr)
+            DynamicEntry entry = _dynamicObjects[i];
+            if (entry.instance == null)
             {
                 _dynamicObjects.RemoveAt(i);
-                Destroy(obj);
+                continue;
+            }
+            if (entry.ownerSegment == segment)
+            {
+                ReturnDynamicToPool(entry);
+                _dynamicObjects.RemoveAt(i);
             }
         }
 
@@ -308,10 +318,12 @@ public class TrackManager : MonoBehaviour
         float segmentFactor = Mathf.Clamp01(_obstacleFreeSegments / 15f);
         float diff = Mathf.Max(speedFactor, segmentFactor);
 
-        // Obstacle probability: 0% during warmup, ramps to 70% at high difficulty
-        float obstacleChance = 0f;
+        // Obstacle probability: 0% during warmup, then uses the configured
+        // base chance and ramps by up to 30 percentage points.
+        float currentObstacleChance = 0f;
         if (_obstacleFreeSegments > warmupSegments)
-            obstacleChance = Mathf.Lerp(0.25f, 0.70f, diff);
+            currentObstacleChance = Mathf.Lerp(
+                obstacleChance, Mathf.Clamp01(obstacleChance + 0.3f), diff);
 
         // Lane continuity: safe lane shifts at most 1 from previous
         int safeLane = _lastSafeLane + Random.Range(-1, 2);
@@ -324,7 +336,7 @@ public class TrackManager : MonoBehaviour
         // Always put a dense coin trail on the safe lane
         SpawnCoinLine(segment, safeLane, coinZ, Random.Range(6, 10));
         // Sometimes add sparse coins on an adjacent lane
-        if (Random.value < 0.6f)
+        if (Random.value < coinChance)
         {
             int altLane = (safeLane + (Random.value < 0.5f ? -1 : 1) + 3) % 3;
             SpawnCoinLine(segment, altLane, coinZ + Random.Range(-1f, 1f), Random.Range(2, 5));
@@ -332,7 +344,7 @@ public class TrackManager : MonoBehaviour
 
         // Spawn obstacles if we're past warmup and dice roll passes
         if (_obstacleFreeSegments > warmupSegments
-            && Random.value < obstacleChance
+            && Random.value < currentObstacleChance
             && obstaclePrefabs.Length >= 3)
         {
             // Place obstacles at a different Z from the coin trail
@@ -354,7 +366,7 @@ public class TrackManager : MonoBehaviour
             Vector3 lp = new Vector3(x, 1f, startZ + c * 1.5f);
             if (lp.z > segmentLength - 1f) break;
             Vector3 wp = segment.transform.TransformPoint(lp);
-            _dynamicObjects.Add(Instantiate(coinPrefab, wp, Quaternion.identity));
+            SpawnDynamic(coinPrefab, segment, wp, Quaternion.identity);
         }
     }
 
@@ -383,7 +395,7 @@ public class TrackManager : MonoBehaviour
                 Vector3 lp = new Vector3(cx, 1f, z + c * 1.2f);
                 if (lp.z > zEnd) break;
                 Vector3 wp = segment.transform.TransformPoint(lp);
-                _dynamicObjects.Add(Instantiate(coinPrefab, wp, Quaternion.identity));
+                SpawnDynamic(coinPrefab, segment, wp, Quaternion.identity);
             }
             fromLane = toLane;
         }
@@ -435,8 +447,61 @@ public class TrackManager : MonoBehaviour
         Vector3 lp = new Vector3(x, 1f, z);
         Vector3 wp = segment.transform.TransformPoint(lp);
         Quaternion rot = segment.transform.rotation;
-        GameObject obs = Instantiate(obstaclePrefabs[prefabIndex], wp, rot);
-       _dynamicObjects.Add(obs);
+        SpawnDynamic(obstaclePrefabs[prefabIndex], segment, wp, rot);
+   }
+
+   GameObject SpawnDynamic(GameObject prefab, GameObject ownerSegment,
+       Vector3 position, Quaternion rotation)
+   {
+       if (!_dynamicPools.TryGetValue(prefab, out Queue<GameObject> pool))
+       {
+           pool = new Queue<GameObject>();
+           _dynamicPools.Add(prefab, pool);
+       }
+
+       GameObject instance = pool.Count > 0
+           ? pool.Dequeue()
+           : Instantiate(prefab);
+
+       instance.SetActive(false);
+       instance.transform.SetParent(ownerSegment.transform, true);
+       instance.transform.SetPositionAndRotation(position, rotation);
+       instance.SetActive(true);
+       _dynamicObjects.Add(new DynamicEntry
+       {
+           instance = instance,
+           prefab = prefab,
+           ownerSegment = ownerSegment
+       });
+       return instance;
+   }
+
+   public void ReleaseDynamic(GameObject instance)
+   {
+       for (int i = _dynamicObjects.Count - 1; i >= 0; i--)
+       {
+           DynamicEntry entry = _dynamicObjects[i];
+           if (entry.instance != instance) continue;
+           ReturnDynamicToPool(entry);
+           _dynamicObjects.RemoveAt(i);
+           return;
+       }
+
+       if (instance != null) instance.SetActive(false);
+   }
+
+   void ReturnDynamicToPool(DynamicEntry entry)
+   {
+       if (entry.instance == null || entry.prefab == null) return;
+       entry.instance.SetActive(false);
+       entry.instance.transform.SetParent(transform, false);
+
+       if (!_dynamicPools.TryGetValue(entry.prefab, out Queue<GameObject> pool))
+       {
+           pool = new Queue<GameObject>();
+           _dynamicPools.Add(entry.prefab, pool);
+       }
+       pool.Enqueue(entry.instance);
    }
 
    void EnsureProceduralAssets()
@@ -530,5 +595,10 @@ public class TrackManager : MonoBehaviour
             obs[i].SetActive(false); obs[i].transform.SetParent(transform);
         }
         return obs;
+    }
+
+    void OnDestroy()
+    {
+        if (Instance == this) Instance = null;
     }
 }

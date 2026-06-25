@@ -587,6 +587,15 @@ public class UIManager : MonoBehaviour
         if (_scoreText != null) _scoreText.text = "Score: " + score;
     }
 
+    void OnDestroy()
+    {
+        if (_gm == null) return;
+        _gm.OnStateChanged.RemoveListener(OnGameStateChanged);
+        _gm.OnScoreChanged.RemoveListener(OnScoreChanged);
+        _gm.OnCoinsChanged.RemoveListener(OnCoinsChanged);
+        _gm.OnDistanceChanged.RemoveListener(OnDistanceChanged);
+    }
+
     void OnCoinsChanged(int coins)
     {
         if (_coinText != null) _coinText.text = "$" + coins;

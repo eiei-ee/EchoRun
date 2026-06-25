@@ -27,7 +27,7 @@ public class BuildConfig
     }
 
     [MenuItem("Tools/Build Android")]
-    static void BuildAndroid()
+    public static void BuildAndroid()
     {
         BuildScene.Build();
 
@@ -45,7 +45,7 @@ public class BuildConfig
     }
 
     [MenuItem("Tools/Build iOS")]
-    static void BuildIOS()
+    public static void BuildIOS()
     {
         BuildScene.Build();
 
@@ -63,8 +63,9 @@ public class BuildConfig
     }
 
     [MenuItem("Tools/Build WebGL")]
-    static void BuildWebGL()
+    public static void BuildWebGL()
     {
+        BuildScene.Build();
         EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.WebGL, BuildTarget.WebGL);
 
         ConfigureBaseSettings();

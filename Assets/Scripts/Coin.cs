@@ -9,7 +9,7 @@ public class Coin : MonoBehaviour
     private float _baseY;
     private float _phaseOffset;
 
-    void Start()
+    void OnEnable()
     {
         _baseY = transform.position.y;
         _phaseOffset = Random.Range(0f, Mathf.PI * 2f);

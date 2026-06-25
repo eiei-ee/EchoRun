@@ -315,9 +315,12 @@ public class PlayerController : MonoBehaviour
         if (coin != null)
         {
             _gm.AddCoins(1);
-            other.gameObject.SetActive(false);
             AudioManager.Instance?.PlayCoin();
             ParticleManager.Instance?.EmitCoin(other.transform.position);
+            if (TrackManager.Instance != null)
+                TrackManager.Instance.ReleaseDynamic(other.gameObject);
+            else
+                other.gameObject.SetActive(false);
             return;
         }
 
@@ -329,13 +332,20 @@ public class PlayerController : MonoBehaviour
                AudioManager.Instance?.PlayDodgeObstacle();
                return;
            }
-           if ((obs.type == ObstacleType.High || obs.type == ObstacleType.Barrier) && IsJumping &&
-               _rb.position.y - _capsuleCollider.height * 0.5f > other.bounds.max.y - 0.3f)
+           if (obs.type == ObstacleType.High && IsJumping &&
+               GetColliderBottomY() > other.bounds.max.y - 0.3f)
            {
                AudioManager.Instance?.PlayDodgeObstacle();
                return;
            }
            _gm.GameOver();
-       }
+        }
+   }
+
+   float GetColliderBottomY()
+   {
+       if (_capsuleCollider == null) return _rb.position.y;
+       return _rb.position.y + _capsuleCollider.center.y
+              - _capsuleCollider.height * 0.5f;
    }
 }
