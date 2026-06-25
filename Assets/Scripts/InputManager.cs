@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
+using UnityEngine.EventSystems;
 
 public enum SwipeDirection { None, Up, Down, Left, Right }
 
@@ -11,6 +12,7 @@ public class InputManager : MonoBehaviour
 
     private Vector2 _touchStart;
     private bool _swipeDetected;
+    private bool _ignoreTouch;
     private Queue<SwipeDirection> _swipeQueue = new Queue<SwipeDirection>();
 
     void Awake()
@@ -21,6 +23,12 @@ public class InputManager : MonoBehaviour
 
     void Update()
     {
+        if (GameManager.Instance == null || GameManager.Instance.State != GameState.Playing)
+        {
+            ClearInput();
+            return;
+        }
+
         // Keyboard input - queue all pressed keys instead of returning early
         if (Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.LeftArrow))
             _swipeQueue.Enqueue(SwipeDirection.Left);
@@ -37,14 +45,16 @@ public class InputManager : MonoBehaviour
             Touch touch = Input.GetTouch(0);
             if (touch.phase == TouchPhase.Began)
             {
+                _ignoreTouch = EventSystem.current != null
+                    && EventSystem.current.IsPointerOverGameObject(touch.fingerId);
                 _touchStart = touch.position;
                 _swipeDetected = false;
             }
-            else if (touch.phase == TouchPhase.Moved && !_swipeDetected)
+            else if (touch.phase == TouchPhase.Moved && !_swipeDetected && !_ignoreTouch)
             {
                 DetectSwipe(touch.position);
             }
-            else if (touch.phase == TouchPhase.Ended && !_swipeDetected)
+            else if (touch.phase == TouchPhase.Ended && !_swipeDetected && !_ignoreTouch)
             {
                 DetectSwipe(touch.position);
             }
@@ -54,10 +64,12 @@ public class InputManager : MonoBehaviour
         // Mouse fallback for editor
         if (Input.GetMouseButtonDown(0))
         {
+            _ignoreTouch = EventSystem.current != null
+                && EventSystem.current.IsPointerOverGameObject();
             _touchStart = Input.mousePosition;
             _swipeDetected = false;
         }
-        if (Input.GetMouseButtonUp(0) && !_swipeDetected)
+        if (Input.GetMouseButtonUp(0) && !_swipeDetected && !_ignoreTouch)
         {
             DetectSwipe(Input.mousePosition);
         }
@@ -88,5 +100,17 @@ public class InputManager : MonoBehaviour
     public SwipeDirection GetSwipe()
     {
         return _swipeQueue.Count > 0 ? _swipeQueue.Dequeue() : SwipeDirection.None;
+    }
+
+    public void ClearInput()
+    {
+        _swipeQueue.Clear();
+        _swipeDetected = false;
+        _ignoreTouch = false;
+    }
+
+    void OnDestroy()
+    {
+        if (Instance == this) Instance = null;
     }
 }

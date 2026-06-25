@@ -1,4 +1,4 @@
-name: iOS Build
+name: iOS Xcode Project
 
 on:
   push:
@@ -17,21 +17,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Patch manifest for Unity compatibility
+      - name: Patch Tuanjie project for Unity CI
         run: |
           cd "${{ github.workspace }}"
-          # Remove Tuanjie-only packages not available on Unity registry
           sed -i '' '/cn.tuanjie.codely.bridge/d' Packages/manifest.json
-          # Create stub package to satisfy any internal refs
-          mkdir -p Packages/cn.tuanjie.codely.bridge
-          cat > Packages/cn.tuanjie.codely.bridge/package.json << 'PKGEOF'
-          {
-            "name": "cn.tuanjie.codely.bridge",
-            "version": "1.0.52",
-            "displayName": "CodeLy Bridge (stub)",
-            "description": "CI stub — not needed for build"
-          }
-          PKGEOF
+          sed -i '' '/com.unity.modules.infinity/d' Packages/manifest.json
+          rm -f Packages/packages-lock.json
+          sed -i '' 's/2022.3.62t8/2022.3.62f1/g' ProjectSettings/ProjectVersion.txt
+          find Assets ProjectSettings -type f \( -name '*.scene' -o -name '*.prefab' -o -name '*.asset' -o -name '*.mat' \) \
+            -exec sed -i '' 's/tag:yousandi.cn,2023:/tag:unity3d.com,2011:/g' {} +
 
       - name: Build iOS Xcode project
         uses: game-ci/unity-builder@v4
@@ -40,31 +34,8 @@ jobs:
           buildMethod: BuildConfig.BuildIOS
           unityVersion: 2022.3.62f1
 
-      - name: Export IPA
-        run: |
-          set -e
-          cd "${{ github.workspace }}/Builds/iOS"
-          XCODEPROJ=$(find . -name "*.xcodeproj" -maxdepth 2 | head -1)
-          SCHEME=$(xcodebuild -project "$XCODEPROJ" -list 2>/dev/null | sed -n '/Schemes:/,/^$/p' | tail -n +2 | head -1 | tr -d ' ')
-          echo "Project: $XCODEPROJ"
-          echo "Scheme: $SCHEME"
-
-          xcodebuild -project "$XCODEPROJ" \
-            -scheme "$SCHEME" \
-            -archivePath TempleRun.xcarchive \
-            -sdk iphoneos \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            archive
-
-          xcodebuild -exportArchive \
-            -archivePath TempleRun.xcarchive \
-            -exportPath . \
-            -exportOptionsPlist "${{ github.workspace }}/.github/ExportOptions.plist"
-
-      - name: Upload IPA
+      - name: Upload Xcode project
         uses: actions/upload-artifact@v4
         with:
-          name: TempleRun-iOS
-          path: Builds/iOS/*.ipa
+          name: TempleRun-iOS-Xcode
+          path: Builds/iOS

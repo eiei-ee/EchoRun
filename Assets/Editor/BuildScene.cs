@@ -23,6 +23,7 @@ public class BuildScene
 
         EnsureFolder("Assets/Prefabs");
         EnsureFolder("Assets/Prefabs/Materials");
+        CleanupRuntimeUI();
 
         CreateCharacterMaterials();
         EnsureMainCamera();
@@ -47,6 +48,30 @@ public class BuildScene
     }
 
     // ── render pipeline detection ──────────────────────
+
+    [MenuItem("Tools/Clean Runtime UI From Scene")]
+    public static void CleanRuntimeUIFromScene()
+    {
+        CleanupRuntimeUI();
+        CreateUICanvas();
+        EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+        EditorSceneManager.SaveScene(SceneManager.GetActiveScene());
+        Debug.Log("Runtime UI scene objects removed. UIManager recreates them in Play mode.");
+    }
+
+    static void CleanupRuntimeUI()
+    {
+        Canvas[] canvases = Object.FindObjectsOfType<Canvas>(true);
+        foreach (Canvas canvas in canvases)
+        {
+            if (canvas != null)
+                Object.DestroyImmediate(canvas.gameObject);
+        }
+
+        GameObject legacyOverlay = GameObject.Find("HUDOverlay");
+        if (legacyOverlay != null)
+            Object.DestroyImmediate(legacyOverlay);
+    }
 
     static void DetectRenderPipeline()
     {

@@ -8,6 +8,7 @@ public enum GameState { Menu, Playing, Paused, GameOver }
 public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
+    private static bool _startAfterSceneLoad;
 
     [Header("Speed")]
     public float startSpeed = 10f;
@@ -31,10 +32,10 @@ public class GameManager : MonoBehaviour
     public float BuffTimeRemaining;
     public string BuffName;
 
-    public UnityEvent<GameState> OnStateChanged;
-    public UnityEvent<int> OnScoreChanged;
-    public UnityEvent<int> OnCoinsChanged;
-    public UnityEvent<float> OnDistanceChanged;
+    public UnityEvent<GameState> OnStateChanged = new UnityEvent<GameState>();
+    public UnityEvent<int> OnScoreChanged = new UnityEvent<int>();
+    public UnityEvent<int> OnCoinsChanged = new UnityEvent<int>();
+    public UnityEvent<float> OnDistanceChanged = new UnityEvent<float>();
 
     private float _distanceTraveled;
     private float _prePauseTimeScale = 1f;
@@ -64,6 +65,12 @@ public class GameManager : MonoBehaviour
     {
         HighScore = PlayerPrefs.GetInt("HighScore", 0);
         TotalCoins = PlayerPrefs.GetInt("TotalCoins", 0);
+
+        if (_startAfterSceneLoad)
+        {
+            _startAfterSceneLoad = false;
+            StartGame();
+        }
     }
 
     void Update()
@@ -101,6 +108,7 @@ public class GameManager : MonoBehaviour
 
     public void StartGame()
     {
+        Time.timeScale = 1f;
         CurrentSpeed = startSpeed;
         Score = 0;
         Coins = 0;
@@ -113,6 +121,7 @@ public class GameManager : MonoBehaviour
         OnScoreChanged.Invoke(0);
         OnCoinsChanged.Invoke(0);
         OnDistanceChanged.Invoke(0);
+        InputManager.Instance?.ClearInput();
         AudioManager.Instance?.StartFootsteps();
     }
 
@@ -136,6 +145,8 @@ public class GameManager : MonoBehaviour
     public void ReturnToMenu()
     {
         Time.timeScale = 1f;
+        AudioManager.Instance?.StopFootsteps();
+        InputManager.Instance?.ClearInput();
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
@@ -164,7 +175,10 @@ public class GameManager : MonoBehaviour
     public void Restart()
     {
         Time.timeScale = 1f;
-        StartGame();
+        AudioManager.Instance?.StopFootsteps();
+        InputManager.Instance?.ClearInput();
+        _startAfterSceneLoad = true;
+        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
     public void AddCoins(int amount)
@@ -181,5 +195,10 @@ public class GameManager : MonoBehaviour
         PlayerPrefs.SetInt("HighScore", HighScore);
         PlayerPrefs.SetInt("TotalCoins", TotalCoins);
         PlayerPrefs.Save();
+    }
+
+    void OnDestroy()
+    {
+        if (Instance == this) Instance = null;
     }
 }
