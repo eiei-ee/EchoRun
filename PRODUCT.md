@@ -1,4 +1,4 @@
-# Product
+# ECHO//RUN Product
 
 ## Register
 
@@ -23,6 +23,10 @@ Deliver an AI-native shadow-racing runner built with Tuanjie Engine for the Tenc
 ## Brand Personality
 
 Direct, energetic, readable. The game should feel arcade-like and responsive without becoming noisy or theatrical.
+
+The visual world is a neon data ruin rather than a temple imitation: cyan route signals,
+coral danger markers, amber rewards, dark metallic track structures, and an AI rival rendered
+as the player's evolving echo.
 
 ## Anti-references
 

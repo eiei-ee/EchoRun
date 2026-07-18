@@ -122,12 +122,13 @@ public class BuildScene
     static GameObject CreateProceduralCharacterModel(GameObject player)
     {
         // Materials
-        Material skinMat  = LoadOrMakeMat("CharacterSkinMat",  new Color(0.91f, 0.72f, 0.55f)); // peach
-        Material clothMat = LoadOrMakeMat("CharacterClothMat", new Color(0.17f, 0.24f, 0.31f)); // dark blue-gray shirt
-        Material pantsMat = LoadOrMakeMat("CharacterPantsMat", new Color(0.13f, 0.18f, 0.25f)); // darker pants
-        Material shoeMat  = LoadOrMakeMat("CharacterShoeMat",  new Color(0.25f, 0.18f, 0.12f)); // brown shoes
-        Material eyeMat   = LoadOrMakeMat("CharacterEyeMat",   Color.white);
-        Material pupilMat = LoadOrMakeMat("CharacterPupilMat", Color.black);
+        Material skinMat = LoadOrMakeMat("CharacterSkinMat", new Color(0.78f, 0.54f, 0.38f));
+        Material clothMat = LoadOrMakeMat("CharacterClothMat", new Color(0.055f, 0.09f, 0.14f));
+        Material pantsMat = LoadOrMakeMat("CharacterPantsMat", new Color(0.035f, 0.05f, 0.08f));
+        Material shoeMat = LoadOrMakeMat("CharacterShoeMat", new Color(0.9f, 0.22f, 0.18f));
+        Material eyeMat = LoadOrMakeMat("CharacterEyeMat", new Color(0.04f, 0.82f, 0.88f));
+        Material pupilMat = LoadOrMakeMat("CharacterPupilMat", new Color(0.008f, 0.015f, 0.025f));
+        Material accentMat = LoadOrMakeMat("CharacterAccentMat", new Color(1f, 0.66f, 0.12f));
 
         GameObject model = new GameObject("CharacterModel");
         model.transform.SetParent(player.transform);
@@ -153,8 +154,24 @@ public class BuildScene
         pelvis.transform.SetParent(model.transform, false);
 
         GameObject torso = P("Torso", PrimitiveType.Capsule,
-            new Vector3(0, 1.35f, 0), new Vector3(0.7f, 0.5f, 0.55f), clothMat);
+            new Vector3(0, 1.35f, 0), new Vector3(0.62f, 0.52f, 0.5f), clothMat);
         torso.transform.SetParent(model.transform, false);
+
+        GameObject chestPlate = P("ChestPlate", PrimitiveType.Cube,
+            new Vector3(0, 1.42f, 0.46f), new Vector3(0.5f, 0.5f, 0.06f), clothMat);
+        chestPlate.transform.SetParent(model.transform, false);
+        GameObject chestSignal = P("ChestSignal", PrimitiveType.Cube,
+            new Vector3(0, 1.43f, 0.53f), new Vector3(0.22f, 0.06f, 0.025f), accentMat);
+        chestSignal.transform.SetParent(model.transform, false);
+
+        GameObject belt = P("SignalBelt", PrimitiveType.Cube,
+            new Vector3(0, 1.02f, 0), new Vector3(0.6f, 0.08f, 0.45f), accentMat);
+        belt.transform.SetParent(model.transform, false);
+
+        GameObject backCore = P("EchoCore", PrimitiveType.Cylinder,
+            new Vector3(0, 1.42f, -0.5f), new Vector3(0.22f, 0.08f, 0.22f), eyeMat);
+        backCore.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+        backCore.transform.SetParent(model.transform, false);
 
         GameObject neck = P("Neck", PrimitiveType.Capsule,
             new Vector3(0, 1.85f, 0), new Vector3(0.16f, 0.12f, 0.16f), skinMat);
@@ -162,8 +179,20 @@ public class BuildScene
 
         // ── Head + face ──
         GameObject head = P("Head", PrimitiveType.Sphere,
-            new Vector3(0, 2.08f, 0), new Vector3(0.42f, 0.42f, 0.42f), skinMat);
+            new Vector3(0, 2.08f, 0), new Vector3(0.4f, 0.43f, 0.4f), skinMat);
         head.transform.SetParent(model.transform, false);
+
+        GameObject helmetBand = P("HelmetBand", PrimitiveType.Cube,
+            new Vector3(0, 2.16f, -0.18f), new Vector3(0.43f, 0.22f, 0.28f), clothMat);
+        helmetBand.transform.SetParent(model.transform, false);
+        foreach (float side in new[] { -1f, 1f })
+        {
+            GameObject earpiece = P(side < 0 ? "Earpiece_L" : "Earpiece_R",
+                PrimitiveType.Cylinder, new Vector3(side * 0.4f, 2.09f, 0f),
+                new Vector3(0.1f, 0.06f, 0.1f), accentMat);
+            earpiece.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+            earpiece.transform.SetParent(model.transform, false);
+        }
 
         // Eyes (on front of head = Z+)
         foreach (float sx in new[] { -0.12f, 0.12f })
@@ -187,6 +216,9 @@ public class BuildScene
         GameObject armUpperL = P("Arm_Upper_L", PrimitiveType.Capsule,
             new Vector3(-0.58f, shldY, 0), new Vector3(0.13f, 0.38f, 0.13f), clothMat);
         armUpperL.transform.SetParent(model.transform, false);
+        GameObject shoulderL = P("Shoulder_L", PrimitiveType.Sphere,
+            new Vector3(-0.58f, 1.73f, 0), new Vector3(0.19f, 0.16f, 0.2f), accentMat);
+        shoulderL.transform.SetParent(model.transform, false);
         GameObject armLowerL = P("Arm_Lower_L", PrimitiveType.Capsule,
             new Vector3(0, -0.42f, 0), new Vector3(0.11f, 0.34f, 0.11f), skinMat);
         armLowerL.transform.SetParent(armUpperL.transform, false);
@@ -197,6 +229,9 @@ public class BuildScene
         GameObject armUpperR = P("Arm_Upper_R", PrimitiveType.Capsule,
             new Vector3(0.58f, shldY, 0), new Vector3(0.13f, 0.38f, 0.13f), clothMat);
         armUpperR.transform.SetParent(model.transform, false);
+        GameObject shoulderR = P("Shoulder_R", PrimitiveType.Sphere,
+            new Vector3(0.58f, 1.73f, 0), new Vector3(0.19f, 0.16f, 0.2f), accentMat);
+        shoulderR.transform.SetParent(model.transform, false);
         GameObject armLowerR = P("Arm_Lower_R", PrimitiveType.Capsule,
             new Vector3(0, -0.42f, 0), new Vector3(0.11f, 0.34f, 0.11f), skinMat);
         armLowerR.transform.SetParent(armUpperR.transform, false);
@@ -251,6 +286,12 @@ public class BuildScene
 
     static Material CreateMaterial(string name, Color color)
     {
+        return CreateMaterial(name, color, Color.black, 0f, 0.45f);
+    }
+
+    static Material CreateMaterial(string name, Color color, Color emission,
+        float metallic, float smoothness)
+    {
         if (_cachedShader == null)
         {
             Debug.LogError($"No shader found! Cannot create material {name}");
@@ -258,11 +299,27 @@ public class BuildScene
         }
 
         string matPath = $"Assets/Prefabs/Materials/{name}.mat";
-        DeleteAssetAtPath(matPath);
-
-        Material mat = new Material(_cachedShader);
+        Material mat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
+        bool isNew = mat == null;
+        if (isNew)
+            mat = new Material(_cachedShader);
+        else
+            mat.shader = _cachedShader;
         mat.color = color;
-        AssetDatabase.CreateAsset(mat, matPath);
+        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
+        if (mat.HasProperty("_Metallic")) mat.SetFloat("_Metallic", metallic);
+        if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", smoothness);
+        if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", smoothness);
+        if (emission.maxColorComponent > 0f && mat.HasProperty("_EmissionColor"))
+        {
+            mat.EnableKeyword("_EMISSION");
+            mat.SetColor("_EmissionColor", emission);
+            mat.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
+        }
+        if (isNew)
+            AssetDatabase.CreateAsset(mat, matPath);
+        else
+            EditorUtility.SetDirty(mat);
         Debug.Log($"Created material: {name} ({_cachedShader.name})");
         return mat;
     }
@@ -271,8 +328,20 @@ public class BuildScene
 
     static void CreateCharacterMaterials()
     {
-        CreateMaterial("CharacterSkinMat", new Color(0.91f, 0.72f, 0.55f));  // peach skin
-        CreateMaterial("CharacterClothMat", new Color(0.17f, 0.24f, 0.31f)); // dark blue-gray
+        CreateMaterial("CharacterSkinMat", new Color(0.78f, 0.54f, 0.38f),
+            Color.black, 0f, 0.55f);
+        CreateMaterial("CharacterClothMat", new Color(0.055f, 0.09f, 0.14f),
+            Color.black, 0.35f, 0.7f);
+        CreateMaterial("CharacterPantsMat", new Color(0.035f, 0.05f, 0.08f),
+            Color.black, 0.15f, 0.5f);
+        CreateMaterial("CharacterShoeMat", new Color(0.9f, 0.22f, 0.18f),
+            new Color(0.65f, 0.025f, 0.01f), 0.2f, 0.65f);
+        CreateMaterial("CharacterEyeMat", new Color(0.04f, 0.82f, 0.88f),
+            new Color(0.02f, 1.2f, 1.4f), 0.15f, 0.82f);
+        CreateMaterial("CharacterPupilMat", new Color(0.008f, 0.015f, 0.025f),
+            Color.black, 0.1f, 0.85f);
+        CreateMaterial("CharacterAccentMat", new Color(1f, 0.66f, 0.12f),
+            new Color(1.1f, 0.32f, 0.01f), 0.65f, 0.8f);
     }
 
     // ── scene objects ──────────────────────────────────
@@ -286,8 +355,10 @@ public class BuildScene
             cam = camGo.AddComponent<Camera>();
             camGo.tag = "MainCamera";
         }
-        cam.clearFlags = CameraClearFlags.SolidColor;
-        cam.backgroundColor = new Color(0.1f, 0.12f, 0.18f);
+        cam.clearFlags = CameraClearFlags.Skybox;
+        cam.backgroundColor = new Color(0.025f, 0.045f, 0.075f);
+        cam.farClipPlane = 140f;
+        cam.fieldOfView = 58f;
         EditorUtility.SetDirty(cam.gameObject);
     }
 
@@ -376,7 +447,8 @@ public class BuildScene
         GroundFollower gf = plane.GetComponent<GroundFollower>();
         if (gf == null) gf = plane.AddComponent<GroundFollower>();
 
-        Material mat = CreateMaterial("GroundMat", new Color(0.2f, 0.22f, 0.28f));
+        Material mat = CreateMaterial("GroundMat", new Color(0.025f, 0.045f, 0.075f),
+            Color.black, 0.05f, 0.25f);
         if (mat != null) plane.GetComponent<MeshRenderer>().material = mat;
 
         EditorUtility.SetDirty(plane);
@@ -388,6 +460,7 @@ public class BuildScene
         EnsureManager("InputManager", typeof(InputManager));
        EnsureManager("TrackManager", typeof(TrackManager));
        EnsureManager("TrackManager", typeof(AIShadowRunner));
+       EnsureManager("WorldStyler", typeof(WorldStyler));
        EnsureManager("UIManager", typeof(UIManager));
        EnsureManager("AudioManager", typeof(AudioManager));
        EnsureManager("ParticleManager", typeof(ParticleManager));
@@ -478,10 +551,10 @@ public class BuildScene
             sun = lightGo.AddComponent<Light>();
             sun.type = LightType.Directional;
         }
-        sun.intensity = 1.5f;
-        sun.color = Color.white;
-        sun.shadows = LightShadows.Hard;
-        sun.transform.rotation = Quaternion.Euler(50, -30, 0);
+        sun.intensity = 1.15f;
+        sun.color = new Color(0.72f, 0.9f, 1f);
+        sun.shadows = LightShadows.Soft;
+        sun.transform.rotation = Quaternion.Euler(42f, -28f, 0f);
         EditorUtility.SetDirty(sun.gameObject);
     }
 
@@ -490,17 +563,29 @@ public class BuildScene
     static void CreateCoinPrefab()
     {
         string path = "Assets/Prefabs/Coin.prefab";
-        DeleteAssetAtPath(path);
-
-        GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        go.name = "Coin";
+        GameObject go = new GameObject("EchoShard");
         go.tag = "Coin";
-        go.transform.localScale = new Vector3(0.8f, 0.5f, 0.8f);
-        go.GetComponent<Collider>().isTrigger = true;
+        BoxCollider trigger = go.AddComponent<BoxCollider>();
+        trigger.isTrigger = true;
+        trigger.size = new Vector3(1.25f, 1.25f, 0.45f);
         go.AddComponent<Coin>();
 
-        Material mat = CreateMaterial("CoinMat", Color.yellow);
-        if (mat != null) go.GetComponent<MeshRenderer>().material = mat;
+        Material gold = CreateMaterial("CoinMat", new Color(1f, 0.66f, 0.08f),
+            new Color(1.25f, 0.35f, 0.01f), 0.7f, 0.8f);
+        Material core = CreateMaterial("CoinCoreMat", new Color(0.03f, 0.75f, 0.8f),
+            new Color(0.01f, 1.25f, 1.45f), 0.15f, 0.8f);
+        Material dark = CreateMaterial("CoinDarkMat", new Color(0.025f, 0.045f, 0.07f),
+            Color.black, 0.4f, 0.7f);
+
+        GameObject shell = CreatePrefabPart("ShardShell", PrimitiveType.Cylinder,
+            go.transform, Vector3.zero, new Vector3(0.62f, 0.11f, 0.62f), gold);
+        shell.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+        GameObject inset = CreatePrefabPart("DarkInset", PrimitiveType.Cylinder,
+            go.transform, new Vector3(0f, 0f, -0.13f), new Vector3(0.4f, 0.12f, 0.4f), dark);
+        inset.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+        GameObject signal = CreatePrefabPart("SignalCore", PrimitiveType.Cube,
+            go.transform, new Vector3(0f, 0f, -0.27f), new Vector3(0.16f, 0.64f, 0.08f), core);
+        signal.transform.localRotation = Quaternion.Euler(0f, 0f, 45f);
 
         PrefabUtility.SaveAsPrefabAsset(go, path);
         Object.DestroyImmediate(go);
@@ -509,37 +594,90 @@ public class BuildScene
     static void CreateObstaclePrefab()
     {
         CreateObstacleType("Assets/Prefabs/Obstacle_Low.prefab", "Obstacle_Low",
-            new Vector3(3f, 1.0f, 0.6f), ObstacleType.Low, new Color(1f, 0.45f, 0.1f));
+            new Vector3(3.4f, 1.8f, 0.7f), ObstacleType.Low, new Color(0.05f, 0.78f, 0.82f));
         CreateObstacleType("Assets/Prefabs/Obstacle_High.prefab", "Obstacle_High",
-            new Vector3(0.8f, 3.5f, 0.6f), ObstacleType.High, new Color(0.85f, 0.15f, 0.05f));
+            new Vector3(3.2f, 0.9f, 0.7f), ObstacleType.High, new Color(1f, 0.66f, 0.08f));
         CreateObstacleType("Assets/Prefabs/Obstacle_Barrier.prefab", "Obstacle_Barrier",
-            new Vector3(3.5f, 2.5f, 0.8f), ObstacleType.Barrier, new Color(0.9f, 0.25f, 0.15f));
+            new Vector3(3.4f, 2.7f, 0.9f), ObstacleType.Barrier, new Color(0.95f, 0.24f, 0.2f));
     }
 
     static void CreateObstacleType(string path, string name, Vector3 scale, ObstacleType type, Color color)
     {
-        DeleteAssetAtPath(path);
-
-        GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        go.name = name;
+        GameObject go = new GameObject(name);
         go.tag = "Obstacle";
-        go.transform.localScale = scale;
         Obstacle obs = go.AddComponent<Obstacle>();
         obs.type = type;
-        go.GetComponent<Collider>().isTrigger = true;
+        BoxCollider trigger = go.AddComponent<BoxCollider>();
+        trigger.isTrigger = true;
+        trigger.size = scale;
 
-        Material mat = CreateMaterial(name + "Mat", color);
-        if (mat != null) go.GetComponent<MeshRenderer>().material = mat;
+        Material accent = CreateMaterial(name + "Mat", color,
+            color * 1.25f, 0.2f, 0.65f);
+        Material frame = CreateMaterial(name + "FrameMat", new Color(0.055f, 0.08f, 0.12f),
+            Color.black, 0.55f, 0.72f);
+
+        if (type == ObstacleType.Low)
+        {
+            trigger.center = new Vector3(0f, 0.65f, 0f);
+            CreatePrefabPart("ScannerPostL", PrimitiveType.Cube, go.transform,
+                new Vector3(-1.45f, 0.45f, 0f), new Vector3(0.28f, 2.3f, 0.55f), frame);
+            CreatePrefabPart("ScannerPostR", PrimitiveType.Cube, go.transform,
+                new Vector3(1.45f, 0.45f, 0f), new Vector3(0.28f, 2.3f, 0.55f), frame);
+            CreatePrefabPart("ScannerBeam", PrimitiveType.Cube, go.transform,
+                new Vector3(0f, 1.38f, 0f), new Vector3(3.15f, 0.24f, 0.5f), accent);
+            CreatePrefabPart("ScannerSignal", PrimitiveType.Cube, go.transform,
+                new Vector3(0f, 1.38f, -0.3f), new Vector3(1.25f, 0.08f, 0.08f), accent);
+        }
+        else if (type == ObstacleType.High)
+        {
+            trigger.center = new Vector3(0f, -0.45f, 0f);
+            CreatePrefabPart("HurdleBase", PrimitiveType.Cube, go.transform,
+                new Vector3(0f, -0.5f, 0f), new Vector3(3.1f, 0.48f, 0.6f), frame);
+            CreatePrefabPart("HurdleLight", PrimitiveType.Cube, go.transform,
+                new Vector3(0f, -0.2f, -0.34f), new Vector3(2.5f, 0.18f, 0.08f), accent);
+            CreatePrefabPart("HurdleFootL", PrimitiveType.Cube, go.transform,
+                new Vector3(-1.3f, -0.78f, 0f), new Vector3(0.32f, 0.45f, 0.8f), frame);
+            CreatePrefabPart("HurdleFootR", PrimitiveType.Cube, go.transform,
+                new Vector3(1.3f, -0.78f, 0f), new Vector3(0.32f, 0.45f, 0.8f), frame);
+        }
+        else
+        {
+            trigger.center = new Vector3(0f, 0.25f, 0f);
+            CreatePrefabPart("ShieldBody", PrimitiveType.Cube, go.transform,
+                new Vector3(0f, 0.25f, 0f), new Vector3(3.15f, 2.45f, 0.55f), frame);
+            for (int i = -1; i <= 1; i++)
+            {
+                GameObject chevron = CreatePrefabPart("ShieldSignal", PrimitiveType.Cube,
+                    go.transform, new Vector3(i * 0.85f, 0.25f, -0.32f),
+                    new Vector3(0.16f, 1.55f, 0.08f), accent);
+                chevron.transform.localRotation = Quaternion.Euler(0f, 0f, -28f);
+            }
+            CreatePrefabPart("ShieldTop", PrimitiveType.Cube, go.transform,
+                new Vector3(0f, 1.55f, 0f), new Vector3(3.45f, 0.18f, 0.72f), accent);
+        }
 
         PrefabUtility.SaveAsPrefabAsset(go, path);
         Object.DestroyImmediate(go);
     }
 
+    static GameObject CreatePrefabPart(string name, PrimitiveType primitive, Transform parent,
+        Vector3 localPosition, Vector3 localScale, Material material)
+    {
+        GameObject part = GameObject.CreatePrimitive(primitive);
+        part.name = name;
+        part.transform.SetParent(parent, false);
+        part.transform.localPosition = localPosition;
+        part.transform.localScale = localScale;
+        Collider collider = part.GetComponent<Collider>();
+        if (collider != null) Object.DestroyImmediate(collider);
+        Renderer renderer = part.GetComponent<Renderer>();
+        if (renderer != null && material != null) renderer.sharedMaterial = material;
+        return part;
+    }
+
     static void CreateTrackSegmentPrefab()
     {
         string path = "Assets/Prefabs/TrackSegment.prefab";
-        DeleteAssetAtPath(path);
-
         GameObject seg = new GameObject("TrackSegment");
         seg.layer = LayerMask.NameToLayer("Ground");
         seg.AddComponent<TrackSegmentData>();
@@ -556,7 +694,8 @@ public class BuildScene
         groundCol.center = Vector3.zero;
         groundCol.size = new Vector3(9f, 0.2f, 20f);
 
-        Material gm = CreateMaterial("TrackGroundMat", new Color(0.25f, 0.28f, 0.35f));
+        Material gm = CreateMaterial("TrackGroundMat", new Color(0.075f, 0.105f, 0.15f),
+            Color.black, 0.35f, 0.72f);
         if (gm != null) ground.GetComponent<MeshRenderer>().material = gm;
 
         // Lane markers
@@ -568,7 +707,8 @@ public class BuildScene
         }
 
         // White lane divider lines
-        Material lineMat = CreateMaterial("LaneLineMat", Color.white);
+        Material lineMat = CreateMaterial("LaneLineMat", new Color(0.04f, 0.7f, 0.74f),
+            new Color(0.02f, 1.05f, 1.2f), 0.2f, 0.75f);
         for (int i = -1; i <= 1; i += 2)
         {
             GameObject line = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -580,14 +720,25 @@ public class BuildScene
             Object.DestroyImmediate(line.GetComponent<Collider>());
         }
 
+        Material seamMat = CreateMaterial("TrackSeamMat", new Color(0.95f, 0.25f, 0.2f),
+            new Color(0.8f, 0.04f, 0.01f), 0.15f, 0.65f);
+        for (int z = -8; z <= 8; z += 4)
+        {
+            GameObject seam = CreatePrefabPart("DataSeam", PrimitiveType.Cube, seg.transform,
+                new Vector3(0f, 0.075f, z), new Vector3(0.72f, 0.025f, 0.08f), seamMat);
+            seam.transform.localRotation = Quaternion.Euler(0f, 18f, 0f);
+        }
+
         PrefabUtility.SaveAsPrefabAsset(seg, path);
         Object.DestroyImmediate(seg);
     }
 
     static void CreateTurnSegmentPrefabs()
     {
-        Material trackMat = CreateMaterial("TrackGroundMat_Turn", new Color(0.25f, 0.28f, 0.35f));
-        Material lineMat = CreateMaterial("LaneLineMat_Turn", Color.white);
+        Material trackMat = CreateMaterial("TrackGroundMat_Turn", new Color(0.075f, 0.105f, 0.15f),
+            Color.black, 0.35f, 0.72f);
+        Material lineMat = CreateMaterial("LaneLineMat_Turn", new Color(1f, 0.66f, 0.1f),
+            new Color(1.1f, 0.35f, 0.01f), 0.55f, 0.8f);
         int groundLayer = LayerMask.NameToLayer("Ground");
 
         CreateTurnPrefab("Assets/Prefabs/TurnSegment_Right.prefab", "TurnSegment_Right", 1, trackMat, lineMat, groundLayer);
@@ -596,8 +747,6 @@ public class BuildScene
 
     static void CreateTurnPrefab(string path, string name, int turnDir, Material trackMat, Material lineMat, int groundLayer)
     {
-        DeleteAssetAtPath(path);
-
         GameObject seg = new GameObject(name);
         seg.layer = groundLayer;
         seg.AddComponent<TrackSegmentData>();

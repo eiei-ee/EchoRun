@@ -14,7 +14,7 @@ PlayerSettings:
   useOnDemandResources: 0
   accelerometerFrequency: 60
   companyName: Eiei-ee
-  productName: TempleRun
+  productName: EchoRun
   defaultCursor: {fileID: 0}
   cursorHotspot: {x: 0, y: 0}
   m_SplashScreenBackgroundColor: {r: 0.13725491, g: 0.12156863, b: 0.1254902, a: 1}
@@ -42,7 +42,7 @@ PlayerSettings:
     height: 1
   m_SplashScreenLogos: []
   m_VirtualRealitySplashScreen: {fileID: 0}
-  expectedBundleIdentifier: com.eieiee.templerun
+  expectedBundleIdentifier: com.eieiee.echorun
   integrityHash: 
   m_HolographicTrackingLossScreen: {fileID: 0}
   defaultScreenWidth: 1920
@@ -198,10 +198,10 @@ PlayerSettings:
   androidSupportedAspectRatio: 1
   androidMaxAspectRatio: 2.1
   applicationIdentifier:
-    Android: com.eieiee.templerun
-    Standalone: com.eieiee.templerun
-    WebGL: com.eieiee.templerun
-    iPhone: com.eieiee.templerun
+    Android: com.eieiee.echorun
+    Standalone: com.eieiee.echorun
+    WebGL: com.eieiee.echorun
+    iPhone: com.eieiee.echorun
   buildNumber:
     Standalone: 0
     VisionOS: 0
@@ -785,7 +785,7 @@ PlayerSettings:
   webGLExceptionSupport: 0
   webGLNameFilesAsHashes: 0
   webGLShowDiagnostics: 0
-  webGLDataCaching: 1
+  webGLDataCaching: 0
   webGLDebugSymbols: 0
   webGLEmscriptenArgs: 
   webGLModulesDirectory: 
