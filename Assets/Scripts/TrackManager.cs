@@ -25,6 +25,9 @@ public class TrackManager : MonoBehaviour
     [Range(0, 1)] public float obstacleChance = 0.4f;
     [Range(0, 1)] public float coinChance = 0.6f;
 
+    [Header("AI Track Director")]
+    public bool useAITrackDirector = true;
+
     private Queue<GameObject> _straightPool = new Queue<GameObject>();
     private Queue<GameObject> _turnLeftPool = new Queue<GameObject>();
     private Queue<GameObject> _turnRightPool = new Queue<GameObject>();
@@ -45,7 +48,9 @@ public class TrackManager : MonoBehaviour
     private int _lastSafeLane = 1;
     private int _obstacleFreeSegments;
    private int _straightSegmentsSinceLastTurn;
+    private float _plannedDistance;
     private Transform _player;
+    private AITrackDirector _aiDirector;
 
     private const float SEGMENT_CHECK_MULT = 1.5f;
     private const float SEGMENT_RECYCLE_MULT = 5f;
@@ -58,6 +63,15 @@ public class TrackManager : MonoBehaviour
     {
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
+
+        if (useAITrackDirector)
+        {
+            _aiDirector = GetComponent<AITrackDirector>();
+            if (_aiDirector == null) _aiDirector = gameObject.AddComponent<AITrackDirector>();
+        }
+
+        if (GetComponent<AIShadowRunner>() == null)
+            gameObject.AddComponent<AIShadowRunner>();
     }
 
     void Start()
@@ -135,6 +149,135 @@ public class TrackManager : MonoBehaviour
        return null;
    }
 
+    public bool TryGetUpcomingObstacle(Vector3 playerPosition, Vector3 forward,
+        int currentLane, out int obstacleLane, out float obstacleDistance,
+        out ObstacleType obstacleType, out int obstacleId)
+    {
+        obstacleLane = currentLane;
+        obstacleDistance = float.MaxValue;
+        obstacleType = ObstacleType.Low;
+        obstacleId = 0;
+
+        Vector3 normalizedForward = forward.sqrMagnitude > 0.001f
+            ? forward.normalized
+            : Vector3.forward;
+        Vector3 right = Vector3.Cross(Vector3.up, normalizedForward).normalized;
+        bool found = false;
+
+        for (int i = 0; i < _dynamicObjects.Count; i++)
+        {
+            DynamicEntry entry = _dynamicObjects[i];
+            if (entry.instance == null || !entry.instance.activeInHierarchy) continue;
+
+            Obstacle obstacle = entry.instance.GetComponent<Obstacle>();
+            if (obstacle == null) continue;
+
+            Vector3 offset = entry.instance.transform.position - playerPosition;
+            float forwardDistance = Vector3.Dot(offset, normalizedForward);
+            if (forwardDistance <= 0.5f || forwardDistance > 24f
+                || forwardDistance >= obstacleDistance)
+                continue;
+
+            float laneDelta = Vector3.Dot(offset, right) / Mathf.Max(0.1f, laneDistance);
+            obstacleLane = Mathf.Clamp(currentLane + Mathf.RoundToInt(laneDelta), 0, 2);
+            obstacleDistance = forwardDistance;
+            obstacleType = obstacle.type;
+            Vector3 obstaclePosition = entry.instance.transform.position;
+            obstacleId = entry.instance.GetInstanceID()
+                         ^ Mathf.RoundToInt(obstaclePosition.x * 17f)
+                         ^ Mathf.RoundToInt(obstaclePosition.z * 31f);
+            found = true;
+        }
+
+        return found;
+    }
+
+    public void GetTrackPoseAhead(Vector3 playerPosition, Vector3 playerForward,
+        int playerLane, float targetLane, float distanceAhead,
+        out Vector3 trackPosition, out Vector3 trackForward)
+    {
+        Vector3 forward = playerForward.sqrMagnitude > 0.001f
+            ? playerForward.normalized
+            : Vector3.forward;
+        Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
+        Vector3 trackCenter = playerPosition
+                              - right * ((playerLane - 1) * laneDistance);
+        trackForward = forward;
+
+        if (distanceAhead > 0f)
+        {
+            TrackSegmentData nextTurn = null;
+            float nearestTurnDistance = float.MaxValue;
+            for (int i = 0; i < _activeSegments.Count; i++)
+            {
+                GameObject segment = _activeSegments[i];
+                if (segment == null || !segment.activeInHierarchy) continue;
+
+                TrackSegmentData data = segment.GetComponent<TrackSegmentData>();
+                if (data == null || data.segmentType == TrackSegmentType.Straight
+                    || Vector3.Dot(data.entryDirection, forward) < 0.9f)
+                    continue;
+
+                Vector3 toTurn = data.turnPointWorld - trackCenter;
+                float forwardDistance = Vector3.Dot(toTurn, forward);
+                float lateralDistance = Mathf.Abs(Vector3.Dot(toTurn, right));
+                const float cornerBlendDistance = 2.5f;
+                if (forwardDistance <= 0.1f
+                    || forwardDistance > distanceAhead + cornerBlendDistance
+                    || lateralDistance > laneDistance * 1.5f
+                    || forwardDistance >= nearestTurnDistance)
+                    continue;
+
+                nextTurn = data;
+                nearestTurnDistance = forwardDistance;
+            }
+
+            if (nextTurn != null)
+            {
+                const float cornerBlendDistance = 2.5f;
+                float distanceFromTurn = distanceAhead - nearestTurnDistance;
+                if (distanceFromTurn <= -cornerBlendDistance)
+                {
+                    trackCenter += forward * distanceAhead;
+                }
+                else if (distanceFromTurn >= cornerBlendDistance)
+                {
+                    trackCenter = nextTurn.turnPointWorld
+                                  + nextTurn.exitDirection * distanceFromTurn;
+                    trackForward = nextTurn.exitDirection;
+                }
+                else
+                {
+                    float t = Mathf.InverseLerp(-cornerBlendDistance,
+                        cornerBlendDistance, distanceFromTurn);
+                    Vector3 entryPoint = nextTurn.turnPointWorld
+                                         - forward * cornerBlendDistance;
+                    Vector3 exitPoint = nextTurn.turnPointWorld
+                                        + nextTurn.exitDirection * cornerBlendDistance;
+                    float oneMinusT = 1f - t;
+                    trackCenter = oneMinusT * oneMinusT * entryPoint
+                                  + 2f * oneMinusT * t * nextTurn.turnPointWorld
+                                  + t * t * exitPoint;
+                    trackForward = Vector3.Slerp(
+                        forward, nextTurn.exitDirection, t).normalized;
+                }
+            }
+            else
+            {
+                trackCenter += forward * distanceAhead;
+            }
+        }
+        else
+        {
+            trackCenter += forward * distanceAhead;
+        }
+
+        Vector3 targetRight = Vector3.Cross(Vector3.up, trackForward).normalized;
+        trackPosition = trackCenter
+                        + targetRight * ((Mathf.Clamp(targetLane, 0f, 2f) - 1f)
+                                         * laneDistance);
+    }
+
    void InitializePools()
    {
        EnsureProceduralAssets();
@@ -171,9 +314,14 @@ public class TrackManager : MonoBehaviour
 
     void SpawnSegment()
     {
-        bool shouldTurn = _straightSegmentsSinceLastTurn >= minStraightBeforeTurn
-                          && Random.value < turnChance
-                          && turnLeftPrefab != null && turnRightPrefab != null;
+        float baseDifficulty = CalculateBaseDifficulty();
+        bool canTurn = _straightSegmentsSinceLastTurn >= minStraightBeforeTurn
+                       && turnLeftPrefab != null && turnRightPrefab != null;
+        AITrackPlan plan = _aiDirector != null && _aiDirector.useAI
+            ? _aiDirector.CreatePlan(baseDifficulty, obstacleChance, coinChance,
+                turnChance, _lastSafeLane, canTurn, _plannedDistance + segmentLength)
+            : CreateFallbackPlan(baseDifficulty, canTurn);
+        bool shouldTurn = canTurn && plan.shouldTurn;
 
         GameObject prefab;
         TrackSegmentType segType;
@@ -212,7 +360,7 @@ public class TrackManager : MonoBehaviour
         if (segType == TrackSegmentType.Straight)
         {
             data.entryDirection = ForwardDirection;
-            SpawnObstaclesAndCoins(segment, segType);
+            SpawnObstaclesAndCoins(segment, segType, plan);
             _spawnPosition += ForwardDirection * segmentLength;
             _straightSegmentsSinceLastTurn++;
         }
@@ -227,7 +375,9 @@ public class TrackManager : MonoBehaviour
             segment.transform.position = turnPlacePos;
             segment.transform.rotation = Quaternion.Euler(0, _spawnAngle, 0);
 
-            SpawnObstaclesAndCoins(segment, segType);
+            EnsureTurnCoverage(segment, angleDelta > 0f ? 1 : -1);
+
+            SpawnObstaclesAndCoins(segment, segType, plan);
 
             // Advance spawn: full segment in exit direction from corner
             // (entry half was consumed by the shifted-back placement)
@@ -242,6 +392,8 @@ public class TrackManager : MonoBehaviour
             // Cache the newly spawned turn for fast lookup
             CurrentTurnSegment = data;
         }
+
+        _plannedDistance += segmentLength;
     }
 
     void RecycleSegment(GameObject segment)
@@ -292,7 +444,7 @@ public class TrackManager : MonoBehaviour
         }
     }
 
-   void SpawnObstaclesAndCoins(GameObject segment, TrackSegmentType segType)
+   void SpawnObstaclesAndCoins(GameObject segment, TrackSegmentType segType, AITrackPlan plan)
    {
        if (obstaclePrefabs.Length == 0 && coinPrefab == null) return;
 
@@ -306,37 +458,26 @@ public class TrackManager : MonoBehaviour
        }
 
         // Warmup: first few segments have no obstacles
-        float warmupSegments = 4f;
+        float warmupSegments = 2f;
         _obstacleFreeSegments++;
 
-        // Progressive difficulty based on segments spawned and speed
-        float speedFactor = GameManager.Instance != null
-            ? Mathf.InverseLerp(GameManager.Instance.startSpeed,
-                                GameManager.Instance.maxSpeed,
-                                GameManager.Instance.CurrentSpeed)
-            : 0.5f;
-        float segmentFactor = Mathf.Clamp01(_obstacleFreeSegments / 15f);
-        float diff = Mathf.Max(speedFactor, segmentFactor);
+        float diff = Mathf.Clamp01(plan.difficulty);
 
-        // Obstacle probability: 0% during warmup, then uses the configured
-        // base chance and ramps by up to 30 percentage points.
-        float currentObstacleChance = 0f;
-        if (_obstacleFreeSegments > warmupSegments)
-            currentObstacleChance = Mathf.Lerp(
-                obstacleChance, Mathf.Clamp01(obstacleChance + 0.3f), diff);
-
-        // Lane continuity: safe lane shifts at most 1 from previous
-        int safeLane = _lastSafeLane + Random.Range(-1, 2);
-        safeLane = Mathf.Clamp(safeLane, 0, 2);
+        // The director proposes a lane; this validator enforces continuity.
+        int safeLane = Mathf.Clamp(plan.safeLane,
+            Mathf.Max(0, _lastSafeLane - 1),
+            Mathf.Min(2, _lastSafeLane + 1));
         _lastSafeLane = safeLane;
 
         // Determine coin Z first so obstacles can avoid it
         float coinZ = Random.Range(buffer + 2f, end - 4f);
 
         // Always put a dense coin trail on the safe lane
-        SpawnCoinLine(segment, safeLane, coinZ, Random.Range(6, 10));
+        int minCoins = Mathf.Max(2, plan.minCoinCount);
+        int maxCoins = Mathf.Max(minCoins + 1, plan.maxCoinCount);
+        SpawnCoinLine(segment, safeLane, coinZ, Random.Range(minCoins, maxCoins));
         // Sometimes add sparse coins on an adjacent lane
-        if (Random.value < coinChance)
+        if (Random.value < plan.coinChance)
         {
             int altLane = (safeLane + (Random.value < 0.5f ? -1 : 1) + 3) % 3;
             SpawnCoinLine(segment, altLane, coinZ + Random.Range(-1f, 1f), Random.Range(2, 5));
@@ -344,16 +485,45 @@ public class TrackManager : MonoBehaviour
 
         // Spawn obstacles if we're past warmup and dice roll passes
         if (_obstacleFreeSegments > warmupSegments
-            && Random.value < currentObstacleChance
+            && Random.value < plan.obstacleChance
             && obstaclePrefabs.Length >= 3)
         {
             // Place obstacles at a different Z from the coin trail
             float obsZ = coinZ + 3f + Random.Range(0f, 3f);
             if (obsZ > end - 1f) obsZ = coinZ - 3f - Random.Range(0f, 3f);
             obsZ = Mathf.Clamp(obsZ, buffer + 1f, end - 1f);
-            SpawnObstacleRow(segment, obsZ, diff, safeLane);
+            SpawnObstacleRow(segment, obsZ, diff, safeLane, plan.maxBlockedLanes);
         }
    }
+
+    float CalculateBaseDifficulty()
+    {
+        float speedFactor = GameManager.Instance != null
+            ? Mathf.InverseLerp(GameManager.Instance.startSpeed,
+                GameManager.Instance.maxSpeed, GameManager.Instance.CurrentSpeed)
+            : 0f;
+        float segmentFactor = Mathf.Clamp01(_obstacleFreeSegments / 15f);
+        return Mathf.Max(speedFactor, segmentFactor);
+    }
+
+    AITrackPlan CreateFallbackPlan(float difficulty, bool canTurn)
+    {
+        int safeLane = Mathf.Clamp(_lastSafeLane + Random.Range(-1, 2), 0, 2);
+        return new AITrackPlan
+        {
+            intent = AIDirectorIntent.Observe,
+            difficulty = difficulty,
+            obstacleChance = _obstacleFreeSegments < 4
+                ? 0f
+                : Mathf.Lerp(obstacleChance, Mathf.Clamp01(obstacleChance + 0.3f), difficulty),
+            coinChance = coinChance,
+            minCoinCount = 6,
+            maxCoinCount = 10,
+            maxBlockedLanes = difficulty > 0.5f ? 2 : 1,
+            safeLane = safeLane,
+            shouldTurn = canTurn && Random.value < turnChance
+        };
+    }
 
     // ---- coin patterns ----
 
@@ -404,12 +574,14 @@ public class TrackManager : MonoBehaviour
    // ---- obstacle patterns ----
 
     // Guarantees at least 1 lane is always open
-    void SpawnObstacleRow(GameObject segment, float obsZ, float difficulty, int safeLane)
+    void SpawnObstacleRow(GameObject segment, float obsZ, float difficulty, int safeLane,
+        int maxBlockedLanes)
    {
        if (obstaclePrefabs.Length < 3) return;
 
        // How many lanes to block (1 or 2, never 3)
         int blocked = difficulty > 0.5f ? 2 : 1;
+        blocked = Mathf.Clamp(blocked, 1, Mathf.Clamp(maxBlockedLanes, 1, 2));
        List<int> lanes = new List<int>();
        for (int l = 0; l < 3; l++)
            if (l != safeLane) lanes.Add(l);
@@ -441,8 +613,12 @@ public class TrackManager : MonoBehaviour
        }
    }
 
-   void SpawnObstacleAt(GameObject segment, int lane, float z, int prefabIndex)
+    void SpawnObstacleAt(GameObject segment, int lane, float z, int prefabIndex)
     {
+        if (obstaclePrefabs == null || prefabIndex < 0
+            || prefabIndex >= obstaclePrefabs.Length || obstaclePrefabs[prefabIndex] == null)
+            return;
+
         float x = (lane - 1) * laneDistance;
         Vector3 lp = new Vector3(x, 1f, z);
         Vector3 wp = segment.transform.TransformPoint(lp);
@@ -516,57 +692,134 @@ public class TrackManager : MonoBehaviour
        if (trackSegmentPrefab == null)
             trackSegmentPrefab = CreateProcStraight(groundLayer);
        if (turnLeftPrefab == null)
-            turnLeftPrefab = CreateProcTurn(groundLayer);
+            turnLeftPrefab = CreateProcTurn(groundLayer, -1);
        if (turnRightPrefab == null)
-            turnRightPrefab = CreateProcTurn(groundLayer);
+            turnRightPrefab = CreateProcTurn(groundLayer, 1);
        if (coinPrefab == null)
            coinPrefab = CreateProcCoin();
-       if (obstaclePrefabs == null || obstaclePrefabs.Length == 0)
+       bool missingObstaclePrefab = obstaclePrefabs == null || obstaclePrefabs.Length < 3;
+       if (!missingObstaclePrefab)
+       {
+           for (int i = 0; i < 3; i++)
+           {
+               if (obstaclePrefabs[i] == null)
+               {
+                   missingObstaclePrefab = true;
+                   break;
+               }
+           }
+       }
+       if (missingObstaclePrefab)
            obstaclePrefabs = CreateProcObstacles();
    }
 
-   GameObject CreateProcStraight(int layer)
-   {
-        Shader sh = Shader.Find("Standard");
-        if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
-        if (sh == null) sh = Shader.Find("Mobile/Diffuse");
-       GameObject go = GameObject.CreatePrimitive(PrimitiveType.Plane);
-       go.name = "ProcStraight";
-       go.layer = layer;
-       go.transform.localScale = new Vector3(0.9f, 1f, 2f);
-        if (sh != null) go.GetComponent<MeshRenderer>().material = new Material(sh) { color = new Color(0.25f, 0.28f, 0.35f) };
-       Object.DestroyImmediate(go.GetComponent<MeshCollider>());
-       BoxCollider bc = go.AddComponent<BoxCollider>();
-       bc.center = Vector3.zero; bc.size = new Vector3(9f, 0.3f, 20f);
-       go.SetActive(false); go.transform.SetParent(transform);
-       return go;
-   }
+    GameObject CreateProcStraight(int layer)
+    {
+       return CreateProcTrackRoot("ProcStraight", layer);
+    }
 
-   GameObject CreateProcTurn(int layer)
-   {
+    GameObject CreateProcTurn(int layer, int turnDirection)
+    {
+        GameObject root = new GameObject(
+            turnDirection > 0 ? "ProcTurnRight" : "ProcTurnLeft");
+        root.layer = layer;
+        EnsureTurnCoverage(root, turnDirection);
+        root.SetActive(false);
+        root.transform.SetParent(transform);
+        return root;
+    }
+
+    void EnsureTurnCoverage(GameObject segment, int turnDirection)
+    {
+        if (segment == null || segment.transform.Find("RuntimeTurnCoverage") != null)
+            return;
+
+        int layer = LayerMask.NameToLayer("Ground");
+        if (layer < 0) layer = segment.layer;
+
+        Material material = null;
+        Renderer[] existingRenderers = segment.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < existingRenderers.Length; i++)
+        {
+            if (existingRenderers[i].sharedMaterial == null) continue;
+            material = existingRenderers[i].sharedMaterial;
+            break;
+        }
+
+        if (material == null)
+        {
+            Shader shader = Shader.Find("Standard");
+            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) shader = Shader.Find("Mobile/Diffuse");
+            if (shader != null)
+                material = new Material(shader) { color = new Color(0.25f, 0.28f, 0.35f) };
+        }
+
+        GameObject coverage = new GameObject("RuntimeTurnCoverage");
+        coverage.layer = layer;
+        coverage.transform.SetParent(segment.transform, false);
+
+        CreateTurnSurface("EntryCoverage", coverage.transform,
+            new Vector3(0f, -0.15f, segmentLength * 0.5f),
+            Quaternion.identity, new Vector3(15f, 0.3f, segmentLength), layer, material);
+        CreateTurnSurface("ExitCoverage", coverage.transform,
+            new Vector3(turnDirection * segmentLength * 0.5f, -0.15f,
+                segmentLength * 0.5f),
+            Quaternion.Euler(0f, 90f, 0f),
+            new Vector3(15f, 0.3f, segmentLength), layer, material);
+        CreateTurnSurface("CornerCoverage", coverage.transform,
+            new Vector3(0f, -0.14f, segmentLength * 0.5f),
+            Quaternion.identity, new Vector3(15f, 0.32f, 15f), layer, material);
+    }
+
+    static void CreateTurnSurface(string name, Transform parent, Vector3 localPosition,
+        Quaternion localRotation, Vector3 localScale, int layer, Material material)
+    {
+        GameObject surface = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        surface.name = name;
+        surface.layer = layer;
+        surface.transform.SetParent(parent, false);
+        surface.transform.localPosition = localPosition;
+        surface.transform.localRotation = localRotation;
+        surface.transform.localScale = localScale;
+        if (material != null)
+            surface.GetComponent<MeshRenderer>().sharedMaterial = material;
+    }
+
+    GameObject CreateProcTrackRoot(string name, int layer)
+    {
         Shader sh = Shader.Find("Standard");
         if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
         if (sh == null) sh = Shader.Find("Mobile/Diffuse");
-       GameObject go = GameObject.CreatePrimitive(PrimitiveType.Plane);
-       go.name = "ProcTurn";
-       go.layer = layer;
-       go.transform.localScale = new Vector3(0.9f, 1f, 2f);
-        if (sh != null) go.GetComponent<MeshRenderer>().material = new Material(sh) { color = new Color(0.25f, 0.28f, 0.35f) };
-       Object.DestroyImmediate(go.GetComponent<MeshCollider>());
-       BoxCollider bc = go.AddComponent<BoxCollider>();
-       bc.center = Vector3.zero; bc.size = new Vector3(9f, 0.3f, 20f);
-       go.SetActive(false); go.transform.SetParent(transform);
-       return go;
-   }
+
+        GameObject root = new GameObject(name);
+        root.layer = layer;
+
+        GameObject surface = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        surface.name = "Surface";
+        surface.layer = layer;
+        surface.transform.SetParent(root.transform, false);
+        surface.transform.localPosition = new Vector3(0f, -0.15f, 0f);
+        surface.transform.localScale = new Vector3(9f, 0.3f, 20f);
+        if (sh != null)
+            surface.GetComponent<MeshRenderer>().material = new Material(sh)
+            {
+                color = new Color(0.25f, 0.28f, 0.35f)
+            };
+
+        root.SetActive(false);
+        root.transform.SetParent(transform);
+        return root;
+    }
 
    GameObject CreateProcCoin()
     {
         GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         go.name = "ProcCoin";
         go.transform.localScale = new Vector3(0.6f, 0.15f, 0.6f);
-        Object.DestroyImmediate(go.GetComponent<Collider>());
-        BoxCollider bc = go.AddComponent<BoxCollider>();
-        bc.isTrigger = true; bc.size = Vector3.one;
+        Collider coinCollider = go.GetComponent<Collider>();
+        if (coinCollider == null) coinCollider = go.AddComponent<BoxCollider>();
+        coinCollider.isTrigger = true;
         go.AddComponent<Coin>();
         go.SetActive(false); go.transform.SetParent(transform);
         return go;
@@ -587,8 +840,8 @@ public class TrackManager : MonoBehaviour
             obs[i].name = "ProcObstacle_" + i;
             obs[i].transform.localScale = sizes[i];
             if (sh != null) obs[i].GetComponent<MeshRenderer>().material = new Material(sh) { color = colors[i] };
-            Object.DestroyImmediate(obs[i].GetComponent<Collider>());
-            BoxCollider bc = obs[i].AddComponent<BoxCollider>();
+            BoxCollider bc = obs[i].GetComponent<BoxCollider>();
+            if (bc == null) bc = obs[i].AddComponent<BoxCollider>();
             bc.isTrigger = true; bc.size = Vector3.one;
             Obstacle o = obs[i].AddComponent<Obstacle>();
             o.type = types[i];

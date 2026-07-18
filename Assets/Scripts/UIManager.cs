@@ -6,6 +6,7 @@ public class UIManager : MonoBehaviour
     // ── Menu ──
     GameObject _menuPanel;
     Button _startBtn, _settingsBtn, _characterBtn;
+    Text _menuShadowText;
 
     // ── Settings (sub-panel of menu) ──
     GameObject _settingsPanel;
@@ -19,7 +20,7 @@ public class UIManager : MonoBehaviour
 
     // ── HUD ──
     GameObject _hudPanel;
-    Text _scoreText, _distanceText, _coinText;
+    Text _statsText, _aiDirectorText, _aiShadowText;
     GameObject _buffGroup;
     Text _buffText;
     Button _pauseBtn;
@@ -30,10 +31,12 @@ public class UIManager : MonoBehaviour
 
     // ── GameOver ──
     GameObject _gameOverPanel;
-    Text _finalScoreText, _highScoreText, _coinResultText;
+    Text _finalScoreText, _highScoreText, _coinResultText, _shadowResultText;
+    Text _gameOverTitleText, _gameOverStatsText;
     Button _restartBtn, _goToMenuBtn;
 
     private Font _font;
+    private Font _titleFont;
     private GameManager _gm;
 
     void Start()
@@ -41,9 +44,15 @@ public class UIManager : MonoBehaviour
         _gm = GameManager.Instance;
         if (_gm == null) return;
 
-        _font = Font.CreateDynamicFontFromOSFont("Arial", 16);
+        _font = Resources.Load<Font>("Fonts/NotoSansCJKsc-Regular");
         if (_font == null)
+            _font = Font.CreateDynamicFontFromOSFont("Arial", 16);
+        if (_font == null)
+        {
             _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Debug.LogWarning("Bundled Noto Sans CJK font is missing; Chinese text may not render.");
+        }
+        _titleFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
         EnsureCanvas();
         CreateMenuPanel();
@@ -72,6 +81,18 @@ public class UIManager : MonoBehaviour
                 _buffGroup.SetActive(active);
             if (active && _buffText != null)
                 _buffText.text = string.Format("{0} {1:F1}s", _gm.BuffName ?? "Buff", _gm.BuffTimeRemaining);
+        }
+
+        if (_aiDirectorText != null && AITrackDirector.Instance != null)
+        {
+            string status = AITrackDirector.Instance.CurrentStatus;
+            if (_aiDirectorText.text != status) _aiDirectorText.text = status;
+        }
+
+        if (_aiShadowText != null && AIShadowRunner.Instance != null)
+        {
+            string status = AIShadowRunner.Instance.CurrentStatus;
+            if (_aiShadowText.text != status) _aiShadowText.text = status;
         }
     }
 
@@ -110,11 +131,19 @@ public class UIManager : MonoBehaviour
         _menuPanel = NewPanel("MenuPanel", new Color(0, 0, 0, 0.85f));
 
         Text title = MakeText("Title", _menuPanel.transform, "TEMPLE RUN", 80, TextAnchor.MiddleCenter);
+        if (_titleFont != null) title.font = _titleFont;
         title.color = new Color(1f, 0.85f, 0.1f);
         title.fontStyle = FontStyle.Bold;
         AddOutline(title.gameObject, new Color(0.4f, 0.2f, 0f));
         AddShadow(title.gameObject, new Color(0, 0, 0, 0.8f));
         AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.68f, 700, 110);
+
+        _menuShadowText = MakeText("ShadowMode", _menuPanel.transform,
+            "首局校准：AI 将学习你的跑酷习惯", 28, TextAnchor.MiddleCenter);
+        _menuShadowText.color = new Color(0.25f, 0.9f, 1f);
+        _menuShadowText.fontStyle = FontStyle.Bold;
+        AddOutline(_menuShadowText.gameObject, new Color(0, 0.15f, 0.2f, 0.9f));
+        AnchorText(_menuShadowText.GetComponent<RectTransform>(), 0.5f, 0.55f, 760, 60);
 
         // Three action buttons stacked
         _startBtn = MakeButton("StartBtn", _menuPanel.transform, "开始游戏", 42,
@@ -384,30 +413,26 @@ public class UIManager : MonoBehaviour
         RectTransform rt = _hudPanel.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0, 1); rt.anchorMax = new Vector2(0, 1);
         rt.pivot = new Vector2(0, 1);
-        rt.sizeDelta = new Vector2(540, 150);
+        rt.sizeDelta = new Vector2(620, 270);
         rt.anchoredPosition = new Vector2(20, -20);
 
-        float y = -10f;
-        float rowH = 30f;
+        float y = -130f;
+        float rowH = 40f;
         float leftX = 16f;
 
-        // Row 1: Score
-        _scoreText = MakeHUDText("ScoreText", _hudPanel.transform, "Score: 0", 32,
-            new Vector2(leftX, y), new Vector2(260, rowH));
-        y -= 32f;
+        // Row 4: AI director state
+        _aiDirectorText = MakeHUDText("AIDirectorText", _hudPanel.transform,
+            "AI导演 · 正在观察", 22, new Vector2(leftX, y), new Vector2(420, rowH));
+        _aiDirectorText.color = new Color(0.25f, 0.9f, 1f);
+        y -= rowH;
 
-        // Row 2: Distance
-        _distanceText = MakeHUDText("DistanceText", _hudPanel.transform, "距离: 0m", 28,
-            new Vector2(leftX, y), new Vector2(260, rowH));
-        y -= 32f;
+        // Row 5: behavior-cloned opponent state
+        _aiShadowText = MakeHUDText("AIShadowText", _hudPanel.transform,
+            "AI影子 · 校准中", 22, new Vector2(leftX, y), new Vector2(560, rowH));
+        _aiShadowText.color = new Color(0.35f, 1f, 0.75f);
+        y -= rowH;
 
-        // Row 3: Coins
-        _coinText = MakeHUDText("CoinText", _hudPanel.transform, "$0", 28,
-            new Vector2(leftX, y), new Vector2(260, rowH));
-        _coinText.color = new Color(1f, 0.85f, 0.1f);
-        y -= 28f;
-
-        // Row 4: Buff (hidden by default)
+        // Row 6: Buff (hidden by default)
         _buffGroup = new GameObject("BuffGroup", typeof(RectTransform));
         _buffGroup.transform.SetParent(_hudPanel.transform, false);
         RectTransform bgRT = _buffGroup.GetComponent<RectTransform>();
@@ -433,6 +458,13 @@ public class UIManager : MonoBehaviour
         btRT.sizeDelta = new Vector2(180, 24);
 
         _buffGroup.SetActive(false);
+
+        // Created after the dynamic AI rows so the core counters stay on top
+        // when WebGL rebuilds the dynamic font atlas.
+        _statsText = MakeHUDText("StatsText", _hudPanel.transform,
+            "得分  0\n距离  0m\n金币  0", 26,
+            new Vector2(leftX, -8f), new Vector2(300, 120));
+        _statsText.lineSpacing = 1.05f;
 
         // Pause button (right side of HUD bar)
         _pauseBtn = MakeIconButton("PauseBtn", _hudPanel.transform, "II",
@@ -498,38 +530,65 @@ public class UIManager : MonoBehaviour
         title.fontStyle = FontStyle.Bold;
         AddOutline(title.gameObject, new Color(0.5f, 0.05f, 0f));
         AddShadow(title.gameObject, new Color(0, 0, 0, 0.8f));
-        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.72f, 500, 90);
+        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.76f, 500, 90);
+        title.gameObject.SetActive(false);
 
         // Session score
         _finalScoreText = MakeText("FinalScore", _gameOverPanel.transform, "得分: 0", 48, TextAnchor.MiddleCenter);
         _finalScoreText.color = Color.white;
         _finalScoreText.fontStyle = FontStyle.Bold;
         AddOutline(_finalScoreText.gameObject, new Color(0, 0, 0, 0.6f));
-        AnchorText(_finalScoreText.GetComponent<RectTransform>(), 0.5f, 0.54f, 450, 70);
+        AnchorText(_finalScoreText.GetComponent<RectTransform>(), 0.5f, 0.61f, 450, 70);
+        _finalScoreText.gameObject.SetActive(false);
 
         // High score
         _highScoreText = MakeText("HighScore", _gameOverPanel.transform, "最高分: 0", 36, TextAnchor.MiddleCenter);
         _highScoreText.color = new Color(1f, 0.85f, 0.1f);
         _highScoreText.fontStyle = FontStyle.Bold;
         AddOutline(_highScoreText.gameObject, new Color(0.3f, 0.2f, 0f));
-        AnchorText(_highScoreText.GetComponent<RectTransform>(), 0.5f, 0.45f, 400, 50);
+        AnchorText(_highScoreText.GetComponent<RectTransform>(), 0.5f, 0.52f, 400, 50);
+        _highScoreText.gameObject.SetActive(false);
 
         // Coins
         _coinResultText = MakeText("CoinResult", _gameOverPanel.transform, "金币: 0", 32, TextAnchor.MiddleCenter);
         _coinResultText.color = new Color(1f, 0.85f, 0.1f);
-        AnchorText(_coinResultText.GetComponent<RectTransform>(), 0.5f, 0.38f, 300, 40);
+        AnchorText(_coinResultText.GetComponent<RectTransform>(), 0.5f, 0.45f, 500, 40);
+        _coinResultText.gameObject.SetActive(false);
+
+        _shadowResultText = MakeText("ShadowResult", _gameOverPanel.transform,
+            "AI影子正在生成赛后分析", 28, TextAnchor.MiddleCenter);
+        _shadowResultText.color = new Color(0.3f, 0.95f, 1f);
+        _shadowResultText.fontStyle = FontStyle.Bold;
+        AnchorText(_shadowResultText.GetComponent<RectTransform>(), 0.5f, 0.35f, 820, 80);
 
         // Restart
-        _restartBtn = MakeButton("RestartBtn", _gameOverPanel.transform, "重新开始", 38,
-            new Vector2(0.5f, 0.24f), new Vector2(400, 100),
+        _restartBtn = MakeButton("RestartBtn", _gameOverPanel.transform, "挑战下一代", 38,
+            new Vector2(0.5f, 0.20f), new Vector2(400, 100),
             new Color(0.15f, 0.7f, 0.2f), new Color(0.1f, 0.5f, 0.15f));
         _restartBtn.onClick.AddListener(() => _gm.Restart());
 
         // Back to menu
         _goToMenuBtn = MakeButton("GoToMenuBtn", _gameOverPanel.transform, "返回主页", 32,
-            new Vector2(0.5f, 0.1f), new Vector2(320, 80),
+            new Vector2(0.5f, 0.08f), new Vector2(320, 80),
             new Color(0.35f, 0.35f, 0.4f), new Color(0.2f, 0.2f, 0.25f));
         _goToMenuBtn.onClick.AddListener(() => _gm.ReturnToMenu());
+
+        // Create consolidated result text last so WebGL dynamic-font atlas rebuilds
+        // cannot leave the earlier score rows without geometry.
+        _gameOverTitleText = MakeText("GameOverTitle", _gameOverPanel.transform,
+            "跑酷结算", 58, TextAnchor.MiddleCenter);
+        _gameOverTitleText.color = new Color(1f, 0.35f, 0.18f);
+        _gameOverTitleText.fontStyle = FontStyle.Bold;
+        AddOutline(_gameOverTitleText.gameObject, new Color(0.4f, 0.05f, 0f));
+        AnchorText(_gameOverTitleText.GetComponent<RectTransform>(), 0.5f, 0.76f, 600, 80);
+
+        _gameOverStatsText = MakeText("GameOverStats", _gameOverPanel.transform,
+            "得分  0\n最高  0\n金币  0", 34, TextAnchor.MiddleCenter);
+        _gameOverStatsText.color = Color.white;
+        _gameOverStatsText.fontStyle = FontStyle.Bold;
+        _gameOverStatsText.lineSpacing = 1.05f;
+        AddOutline(_gameOverStatsText.gameObject, new Color(0, 0, 0, 0.7f));
+        AnchorText(_gameOverStatsText.GetComponent<RectTransform>(), 0.5f, 0.55f, 620, 150);
 
         _gameOverPanel.SetActive(false);
     }
@@ -552,6 +611,18 @@ public class UIManager : MonoBehaviour
         {
             case GameState.Menu:
                 if (_menuPanel != null) _menuPanel.SetActive(true);
+                if (AIShadowRunner.Instance != null)
+                {
+                    string menuStatus = AIShadowRunner.Instance.GetMenuStatus();
+                    if (_menuShadowText != null) _menuShadowText.text = menuStatus;
+                    Text startLabel = _startBtn != null
+                        ? _startBtn.GetComponentInChildren<Text>()
+                        : null;
+                    if (startLabel != null)
+                        startLabel.text = AIShadowRunner.Instance.Generation > 0
+                            ? "挑战 AI 影子"
+                            : "开始校准";
+                }
                 break;
 
             case GameState.Playing:
@@ -568,6 +639,8 @@ public class UIManager : MonoBehaviour
 
             case GameState.GameOver:
                 if (_gameOverPanel != null) _gameOverPanel.SetActive(true);
+                if (_shadowResultText != null && AIShadowRunner.Instance != null)
+                    _shadowResultText.text = AIShadowRunner.Instance.FinalizeRunIfNeeded();
                 if (_gm != null)
                 {
                     string newRecord = _gm.IsNewHighScore ? "\n新纪录!" : "";
@@ -577,6 +650,11 @@ public class UIManager : MonoBehaviour
                         _highScoreText.text = "最高分: " + _gm.HighScore;
                     if (_coinResultText != null)
                         _coinResultText.text = "金币: " + _gm.Coins + "  |  总计: " + _gm.TotalCoins;
+                    if (_gameOverStatsText != null)
+                        _gameOverStatsText.text = "得分  " + _gm.Score + newRecord
+                                                   + "\n最高  " + _gm.HighScore
+                                                   + "\n金币  " + _gm.Coins
+                                                   + "  ·  总计 " + _gm.TotalCoins;
                 }
                 break;
         }
@@ -584,7 +662,7 @@ public class UIManager : MonoBehaviour
 
     void OnScoreChanged(int score)
     {
-        if (_scoreText != null) _scoreText.text = "Score: " + score;
+        RefreshStats();
     }
 
     void OnDestroy()
@@ -598,12 +676,20 @@ public class UIManager : MonoBehaviour
 
     void OnCoinsChanged(int coins)
     {
-        if (_coinText != null) _coinText.text = "$" + coins;
+        RefreshStats();
     }
 
     void OnDistanceChanged(float dist)
     {
-        if (_distanceText != null) _distanceText.text = "距离: " + Mathf.FloorToInt(dist) + "m";
+        RefreshStats();
+    }
+
+    void RefreshStats()
+    {
+        if (_statsText == null || _gm == null) return;
+        _statsText.text = "得分  " + _gm.Score
+                          + "\n距离  " + Mathf.FloorToInt(_gm.Distance) + "m"
+                          + "\n金币  " + _gm.Coins;
     }
 
     // ═══════════════════════════════════════════════════
