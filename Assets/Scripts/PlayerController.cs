@@ -238,29 +238,47 @@ public class PlayerController : MonoBehaviour
         SwipeDirection swipe = _input != null ? _input.GetSwipe() : SwipeDirection.None;
         if (swipe == SwipeDirection.None) return;
 
+        int previousLane = CurrentLane;
+
         switch (swipe)
         {
             case SwipeDirection.Left:
-                if (CurrentLane > 0) CurrentLane--;
+                if (CurrentLane > 0)
+                {
+                    AIShadowRunner.Instance?.RecordPlayerAction(
+                        ShadowAction.Left, CurrentLane);
+                    CurrentLane--;
+                }
                 break;
             case SwipeDirection.Right:
-                if (CurrentLane < 2) CurrentLane++;
+                if (CurrentLane < 2)
+                {
+                    AIShadowRunner.Instance?.RecordPlayerAction(
+                        ShadowAction.Right, CurrentLane);
+                    CurrentLane++;
+                }
                 break;
             case SwipeDirection.Up:
                if (!IsJumping && IsGrounded())
                {
+                   AIShadowRunner.Instance?.RecordPlayerAction(
+                       ShadowAction.Jump, CurrentLane);
                    IsJumping = true;
-                   _jumpTimer = 0f;
-                   _jumpGroundY = _rb.position.y;
+                    _jumpTimer = 0f;
+                    _jumpGroundY = _rb.position.y;
+                    AITrackDirector.Instance?.RecordJump();
                     AudioManager.Instance?.PlayJump();
                }
                 break;
             case SwipeDirection.Down:
                if (!IsSliding && IsGrounded())
                {
+       AIShadowRunner.Instance?.RecordPlayerAction(
+           ShadowAction.Slide, CurrentLane);
        IsSliding = true;
        _slideTimer = 0f;
-        _slideTrailTimer = 0f;
+         _slideTrailTimer = 0f;
+       AITrackDirector.Instance?.RecordSlide();
        AudioManager.Instance?.PlaySlide();
                     if (_capsuleCollider != null)
                         _capsuleCollider.height = slideColliderHeight;
@@ -271,6 +289,9 @@ public class PlayerController : MonoBehaviour
                 }
                 break;
         }
+
+        if (CurrentLane != previousLane)
+            AITrackDirector.Instance?.RecordLaneChange(CurrentLane);
     }
 
     void UpdateSlide()
@@ -315,6 +336,8 @@ public class PlayerController : MonoBehaviour
         if (coin != null)
         {
             _gm.AddCoins(1);
+            AITrackDirector.Instance?.RecordCoin();
+            AIShadowRunner.Instance?.RecordCoin();
             AudioManager.Instance?.PlayCoin();
             ParticleManager.Instance?.EmitCoin(other.transform.position);
             if (TrackManager.Instance != null)
@@ -327,17 +350,23 @@ public class PlayerController : MonoBehaviour
         Obstacle obs = other.GetComponent<Obstacle>();
         if (obs != null)
         {
-           if (obs.type == ObstacleType.Low && IsSliding)
-           {
-               AudioManager.Instance?.PlayDodgeObstacle();
+            if (obs.type == ObstacleType.Low && IsSliding)
+            {
+                AITrackDirector.Instance?.RecordDodge();
+                AIShadowRunner.Instance?.RecordDodge();
+                AudioManager.Instance?.PlayDodgeObstacle();
                return;
            }
            if (obs.type == ObstacleType.High && IsJumping &&
                GetColliderBottomY() > other.bounds.max.y - 0.3f)
-           {
-               AudioManager.Instance?.PlayDodgeObstacle();
-               return;
-           }
+            {
+                AITrackDirector.Instance?.RecordDodge();
+                AIShadowRunner.Instance?.RecordDodge();
+                AudioManager.Instance?.PlayDodgeObstacle();
+                return;
+            }
+           AITrackDirector.Instance?.RecordObstacleHit();
+           AIShadowRunner.Instance?.RecordObstacleHit();
            _gm.GameOver();
         }
    }

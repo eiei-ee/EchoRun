@@ -23,7 +23,23 @@ public class InputManager : MonoBehaviour
 
     void Update()
     {
-        if (GameManager.Instance == null || GameManager.Instance.State != GameState.Playing)
+        GameManager gameManager = GameManager.Instance;
+        if (gameManager == null)
+        {
+            ClearInput();
+            return;
+        }
+
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            if (gameManager.State == GameState.Playing)
+                gameManager.Pause();
+            else if (gameManager.State == GameState.Paused)
+                gameManager.Resume();
+            return;
+        }
+
+        if (gameManager.State != GameState.Playing)
         {
             ClearInput();
             return;

@@ -387,6 +387,7 @@ public class BuildScene
         EnsureManager("GameManager", typeof(GameManager));
         EnsureManager("InputManager", typeof(InputManager));
        EnsureManager("TrackManager", typeof(TrackManager));
+       EnsureManager("TrackManager", typeof(AIShadowRunner));
        EnsureManager("UIManager", typeof(UIManager));
        EnsureManager("AudioManager", typeof(AudioManager));
        EnsureManager("ParticleManager", typeof(ParticleManager));
@@ -729,7 +730,8 @@ public class BuildScene
         text.fontSize = fontSize;
         text.alignment = align;
         text.color = Color.white;
-        Font font = AssetDatabase.LoadAssetAtPath<Font>("Assets/Fonts/arial.ttf");
+        Font font = AssetDatabase.LoadAssetAtPath<Font>(
+            "Assets/Resources/Fonts/NotoSansCJKsc-Regular.otf");
         if (font != null) text.font = font;
         else text.font = Font.CreateDynamicFontFromOSFont("Arial", fontSize);
         return text;
