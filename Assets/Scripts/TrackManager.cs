@@ -393,6 +393,7 @@ public class TrackManager : MonoBehaviour
             CurrentTurnSegment = data;
         }
 
+        WorldStyler.Instance?.DecorateSegment(segment, segType);
         _plannedDistance += segmentLength;
     }
 

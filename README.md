@@ -1,6 +1,6 @@
-# 3D 无尽跑酷 Temple Run
+# ECHO//RUN：AI 回声竞速
 
-基于 团结引擎 (Unity 2022.3) / C# 开发的 3D 无尽跑酷游戏 Demo，支持 WebGL 浏览器即玩与 Android 双端运行。
+基于团结引擎（Unity 2022.3）与 C# 开发的 AI 原生 3D 竞速跑酷游戏，支持 WebGL 浏览器即玩与 Android 运行。
 
 > 项目定位：面向腾讯游戏创作大赛 AI 游戏开放赛道的 AI 原生竞速跑酷原型
 
@@ -75,7 +75,7 @@ AIShadowRunner 使用纯 C# 在线多分类行为克隆模型。输入包含玩�
 
 ```bash
 # 使用团结引擎打开项目
-# 打开 Project 窗口选择 C:\Users\zzz\Desktop\TempleRun
+# 打开 Project 窗口选择本仓库目录
 
 # 运行测试
 # Window → General → Test Runner → Run All

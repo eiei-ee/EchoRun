@@ -1,13 +1,14 @@
 using System.Collections.Generic;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 public class BuildConfig
 {
-    const string BundleId = "com.eieiee.templerun";
+    const string BundleId = "com.eieiee.echorun";
     const string CompanyName = "Eiei-ee";
-    const string ProductName = "TempleRun";
+    const string ProductName = "EchoRun";
 
     static string[] GetScenePaths()
     {
@@ -26,9 +27,18 @@ public class BuildConfig
         return list.ToArray();
     }
 
+    static void OpenPrimaryScene()
+    {
+        string[] paths = GetScenePaths();
+        if (paths.Length == 0 || string.IsNullOrEmpty(paths[0])) return;
+        if (SceneManager.GetActiveScene().path == paths[0]) return;
+        EditorSceneManager.OpenScene(paths[0], OpenSceneMode.Single);
+    }
+
     [MenuItem("Tools/Build Android")]
     public static void BuildAndroid()
     {
+        OpenPrimaryScene();
         BuildScene.Build();
 
         EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Android, BuildTarget.Android);
@@ -37,7 +47,7 @@ public class BuildConfig
         ConfigureAndroid();
         EnsureSceneInBuild();
 
-        string outputPath = "Builds/Android/TempleRun.apk";
+        string outputPath = "Builds/Android/EchoRun.apk";
         EnsureDirectory("Builds/Android");
 
         BuildPipeline.BuildPlayer(GetScenePaths(), outputPath, BuildTarget.Android, BuildOptions.None);
@@ -47,6 +57,7 @@ public class BuildConfig
     [MenuItem("Tools/Build iOS")]
     public static void BuildIOS()
     {
+        OpenPrimaryScene();
         BuildScene.Build();
 
         EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.iOS, BuildTarget.iOS);
@@ -65,6 +76,7 @@ public class BuildConfig
     [MenuItem("Tools/Build WebGL")]
     public static void BuildWebGL()
     {
+        OpenPrimaryScene();
         BuildScene.Build();
         EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.WebGL, BuildTarget.WebGL);
 
@@ -133,7 +145,7 @@ public class BuildConfig
         PlayerSettings.WebGL.exceptionSupport = WebGLExceptionSupport.None;
         PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Gzip;
         PlayerSettings.WebGL.decompressionFallback = true;
-        PlayerSettings.WebGL.dataCaching = true;
+        PlayerSettings.WebGL.dataCaching = false;
         PlayerSettings.WebGL.linkerTarget = WebGLLinkerTarget.Wasm;
         PlayerSettings.WebGL.threadsSupport = false;
 

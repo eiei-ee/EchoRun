@@ -109,7 +109,7 @@ public class UIManager : MonoBehaviour
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         CanvasScaler scaler = cgo.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1080, 1920);
+        scaler.referenceResolution = new Vector2(1280, 720);
         scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
         scaler.matchWidthOrHeight = 0.5f;
         cgo.AddComponent<GraphicRaycaster>();
@@ -128,37 +128,46 @@ public class UIManager : MonoBehaviour
 
     void CreateMenuPanel()
     {
-        _menuPanel = NewPanel("MenuPanel", new Color(0, 0, 0, 0.85f));
+        _menuPanel = NewPanel("MenuPanel", new Color(0.01f, 0.025f, 0.05f, 0.68f));
+        AddMenuGrid(_menuPanel.transform);
 
-        Text title = MakeText("Title", _menuPanel.transform, "TEMPLE RUN", 80, TextAnchor.MiddleCenter);
+        Text protocol = MakeText("Protocol", _menuPanel.transform,
+            "ADAPTIVE RIVAL PROTOCOL  //  07", 16, TextAnchor.MiddleCenter);
+        protocol.color = new Color(0.28f, 0.9f, 0.92f);
+        protocol.fontStyle = FontStyle.Bold;
+        AnchorText(protocol.GetComponent<RectTransform>(), 0.5f, 0.78f, 620, 30);
+
+        Text title = MakeText("Title", _menuPanel.transform, "ECHO//RUN", 76, TextAnchor.MiddleCenter);
         if (_titleFont != null) title.font = _titleFont;
-        title.color = new Color(1f, 0.85f, 0.1f);
+        title.color = new Color(0.95f, 0.98f, 1f);
         title.fontStyle = FontStyle.Bold;
-        AddOutline(title.gameObject, new Color(0.4f, 0.2f, 0f));
-        AddShadow(title.gameObject, new Color(0, 0, 0, 0.8f));
-        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.68f, 700, 110);
+        AddShadow(title.gameObject, new Color(0f, 0.08f, 0.12f, 0.9f));
+        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.68f, 760, 92);
+
+        Text subtitle = MakeText("Subtitle", _menuPanel.transform,
+            "回声竞速实验", 22, TextAnchor.MiddleCenter);
+        subtitle.color = new Color(1f, 0.62f, 0.14f);
+        AnchorText(subtitle.GetComponent<RectTransform>(), 0.5f, 0.61f, 420, 36);
 
         _menuShadowText = MakeText("ShadowMode", _menuPanel.transform,
-            "首局校准：AI 将学习你的跑酷习惯", 28, TextAnchor.MiddleCenter);
-        _menuShadowText.color = new Color(0.25f, 0.9f, 1f);
+            "校准阶段  //  等待跑者数据", 21, TextAnchor.MiddleCenter);
+        _menuShadowText.color = new Color(0.72f, 0.83f, 0.86f);
         _menuShadowText.fontStyle = FontStyle.Bold;
-        AddOutline(_menuShadowText.gameObject, new Color(0, 0.15f, 0.2f, 0.9f));
-        AnchorText(_menuShadowText.GetComponent<RectTransform>(), 0.5f, 0.55f, 760, 60);
+        AnchorText(_menuShadowText.GetComponent<RectTransform>(), 0.5f, 0.53f, 780, 38);
 
-        // Three action buttons stacked
-        _startBtn = MakeButton("StartBtn", _menuPanel.transform, "开始游戏", 42,
-            new Vector2(0.5f, 0.42f), new Vector2(440, 110),
-            new Color(0.15f, 0.7f, 0.2f), new Color(0.1f, 0.5f, 0.15f));
+        _startBtn = MakeButton("StartBtn", _menuPanel.transform, "启动校准", 28,
+            new Vector2(0.5f, 0.39f), new Vector2(360, 68),
+            new Color(0.035f, 0.38f, 0.42f, 0.96f), new Color(0.12f, 0.95f, 0.98f));
         _startBtn.onClick.AddListener(() => _gm.StartGame());
 
-        _settingsBtn = MakeButton("SettingsBtn", _menuPanel.transform, "设置", 36,
-            new Vector2(0.5f, 0.28f), new Vector2(320, 80),
-            new Color(0.25f, 0.35f, 0.55f), new Color(0.15f, 0.22f, 0.38f));
+        _settingsBtn = MakeButton("SettingsBtn", _menuPanel.transform, "设置", 20,
+            new Vector2(0.43f, 0.25f), new Vector2(150, 48),
+            new Color(0.075f, 0.1f, 0.15f, 0.94f), new Color(0.28f, 0.52f, 0.58f));
         _settingsBtn.onClick.AddListener(ShowSettings);
 
-        _characterBtn = MakeButton("CharacterBtn", _menuPanel.transform, "角色", 36,
-            new Vector2(0.5f, 0.18f), new Vector2(320, 80),
-            new Color(0.35f, 0.28f, 0.5f), new Color(0.22f, 0.17f, 0.35f));
+        _characterBtn = MakeButton("CharacterBtn", _menuPanel.transform, "跑者", 20,
+            new Vector2(0.57f, 0.25f), new Vector2(150, 48),
+            new Color(0.075f, 0.1f, 0.15f, 0.94f), new Color(0.85f, 0.35f, 0.24f));
         _characterBtn.onClick.AddListener(ShowCharacter);
 
         _menuPanel.SetActive(false);
@@ -170,7 +179,7 @@ public class UIManager : MonoBehaviour
 
     void CreateSettingsPanel()
     {
-        _settingsPanel = NewPanel("SettingsPanel", new Color(0, 0, 0, 0.92f));
+        _settingsPanel = NewPanel("SettingsPanel", new Color(0.01f, 0.025f, 0.05f, 0.94f));
 
         // ScrollRect setup
         ScrollRect scroll = _settingsPanel.AddComponent<ScrollRect>();
@@ -284,7 +293,7 @@ public class UIManager : MonoBehaviour
 
     void CreateCharacterPanel()
     {
-        _characterPanel = NewPanel("CharacterPanel", new Color(0, 0, 0, 0.92f));
+        _characterPanel = NewPanel("CharacterPanel", new Color(0.01f, 0.025f, 0.05f, 0.94f));
 
         // ScrollRect
         ScrollRect scroll = _characterPanel.AddComponent<ScrollRect>();
@@ -408,28 +417,29 @@ public class UIManager : MonoBehaviour
 
     void CreateHUDPanel()
     {
-        // Top-left bar
-        _hudPanel = NewPanel("HudPanel", new Color(0, 0, 0, 0.55f));
+        _hudPanel = NewPanel("HudPanel", new Color(0.015f, 0.035f, 0.065f, 0.78f));
         RectTransform rt = _hudPanel.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0, 1); rt.anchorMax = new Vector2(0, 1);
         rt.pivot = new Vector2(0, 1);
-        rt.sizeDelta = new Vector2(620, 270);
-        rt.anchoredPosition = new Vector2(20, -20);
+        rt.sizeDelta = new Vector2(450, 122);
+        rt.anchoredPosition = new Vector2(18, -18);
 
-        float y = -130f;
-        float rowH = 40f;
+        AddPanelAccent(_hudPanel.transform, new Color(0.08f, 0.9f, 0.94f), true);
+
+        float y = -45f;
+        float rowH = 24f;
         float leftX = 16f;
 
         // Row 4: AI director state
         _aiDirectorText = MakeHUDText("AIDirectorText", _hudPanel.transform,
-            "AI导演 · 正在观察", 22, new Vector2(leftX, y), new Vector2(420, rowH));
-        _aiDirectorText.color = new Color(0.25f, 0.9f, 1f);
+            "AI DIRECTOR  //  OBSERVING", 15, new Vector2(leftX, y), new Vector2(380, rowH));
+        _aiDirectorText.color = new Color(0.28f, 0.9f, 0.92f);
         y -= rowH;
 
         // Row 5: behavior-cloned opponent state
         _aiShadowText = MakeHUDText("AIShadowText", _hudPanel.transform,
-            "AI影子 · 校准中", 22, new Vector2(leftX, y), new Vector2(560, rowH));
-        _aiShadowText.color = new Color(0.35f, 1f, 0.75f);
+            "ECHO RIVAL  //  CALIBRATING", 15, new Vector2(leftX, y), new Vector2(390, rowH));
+        _aiShadowText.color = new Color(1f, 0.62f, 0.16f);
         y -= rowH;
 
         // Row 6: Buff (hidden by default)
@@ -439,7 +449,7 @@ public class UIManager : MonoBehaviour
         bgRT.anchorMin = new Vector2(0, 1); bgRT.anchorMax = new Vector2(0, 1);
         bgRT.pivot = new Vector2(0, 1);
         bgRT.anchoredPosition = new Vector2(leftX, y);
-        bgRT.sizeDelta = new Vector2(300, 24);
+        bgRT.sizeDelta = new Vector2(300, 22);
 
         Text buffIcon = MakeText("BuffIcon", _buffGroup.transform, "▶", 20, TextAnchor.MiddleLeft);
         buffIcon.color = new Color(0.3f, 1f, 0.5f);
@@ -462,14 +472,13 @@ public class UIManager : MonoBehaviour
         // Created after the dynamic AI rows so the core counters stay on top
         // when WebGL rebuilds the dynamic font atlas.
         _statsText = MakeHUDText("StatsText", _hudPanel.transform,
-            "得分  0\n距离  0m\n金币  0", 26,
-            new Vector2(leftX, -8f), new Vector2(300, 120));
-        _statsText.lineSpacing = 1.05f;
+            "SCORE 00000   RANGE 000m   SHARDS 00", 17,
+            new Vector2(leftX, -11f), new Vector2(380, 30));
 
         // Pause button (right side of HUD bar)
-        _pauseBtn = MakeIconButton("PauseBtn", _hudPanel.transform, "II",
-            new Vector2(1, 0.5f), new Vector2(56, 56),
-            new Color(0.3f, 0.3f, 0.35f));
+        _pauseBtn = MakeIconButton("PauseBtn", _hudPanel.transform, "Ⅱ",
+            new Vector2(1, 1), new Vector2(48, 48),
+            new Color(0.08f, 0.13f, 0.18f, 0.96f));
         _pauseBtn.onClick.AddListener(() => _gm.Pause());
 
         _hudPanel.SetActive(false);
@@ -496,9 +505,9 @@ public class UIManager : MonoBehaviour
 
     void CreatePausePanel()
     {
-        _pausePanel = NewPanel("PausePanel", new Color(0, 0, 0, 0.75f));
+        _pausePanel = NewPanel("PausePanel", new Color(0.01f, 0.025f, 0.05f, 0.86f));
 
-        Text title = MakeText("PauseTitle", _pausePanel.transform, "已暂停", 64, TextAnchor.MiddleCenter);
+        Text title = MakeText("PauseTitle", _pausePanel.transform, "PROTOCOL PAUSED", 42, TextAnchor.MiddleCenter);
         title.color = Color.white;
         title.fontStyle = FontStyle.Bold;
         AddOutline(title.gameObject, new Color(0, 0, 0, 0.6f));
@@ -506,12 +515,12 @@ public class UIManager : MonoBehaviour
 
         _resumeBtn = MakeButton("ResumeBtn", _pausePanel.transform, "继续游戏", 38,
             new Vector2(0.5f, 0.38f), new Vector2(400, 100),
-            new Color(0.15f, 0.7f, 0.2f), new Color(0.1f, 0.5f, 0.15f));
+            new Color(0.035f, 0.38f, 0.42f), new Color(0.12f, 0.95f, 0.98f));
         _resumeBtn.onClick.AddListener(() => _gm.Resume());
 
         _pauseToMenuBtn = MakeButton("PauseToMenuBtn", _pausePanel.transform, "返回主页", 32,
             new Vector2(0.5f, 0.22f), new Vector2(320, 80),
-            new Color(0.5f, 0.3f, 0.25f), new Color(0.35f, 0.18f, 0.15f));
+            new Color(0.09f, 0.12f, 0.17f), new Color(0.65f, 0.26f, 0.2f));
         _pauseToMenuBtn.onClick.AddListener(() => _gm.ReturnToMenu());
 
         _pausePanel.SetActive(false);
@@ -523,7 +532,7 @@ public class UIManager : MonoBehaviour
 
     void CreateGameOverPanel()
     {
-        _gameOverPanel = NewPanel("GameOverPanel", new Color(0, 0, 0, 0.88f));
+        _gameOverPanel = NewPanel("GameOverPanel", new Color(0.01f, 0.025f, 0.05f, 0.9f));
 
         Text title = MakeText("GOTitle", _gameOverPanel.transform, "Game Over", 68, TextAnchor.MiddleCenter);
         title.color = new Color(1f, 0.2f, 0.15f);
@@ -564,20 +573,20 @@ public class UIManager : MonoBehaviour
         // Restart
         _restartBtn = MakeButton("RestartBtn", _gameOverPanel.transform, "挑战下一代", 38,
             new Vector2(0.5f, 0.20f), new Vector2(400, 100),
-            new Color(0.15f, 0.7f, 0.2f), new Color(0.1f, 0.5f, 0.15f));
+            new Color(0.035f, 0.38f, 0.42f), new Color(0.12f, 0.95f, 0.98f));
         _restartBtn.onClick.AddListener(() => _gm.Restart());
 
         // Back to menu
         _goToMenuBtn = MakeButton("GoToMenuBtn", _gameOverPanel.transform, "返回主页", 32,
             new Vector2(0.5f, 0.08f), new Vector2(320, 80),
-            new Color(0.35f, 0.35f, 0.4f), new Color(0.2f, 0.2f, 0.25f));
+            new Color(0.075f, 0.1f, 0.15f), new Color(0.35f, 0.48f, 0.54f));
         _goToMenuBtn.onClick.AddListener(() => _gm.ReturnToMenu());
 
         // Create consolidated result text last so WebGL dynamic-font atlas rebuilds
         // cannot leave the earlier score rows without geometry.
         _gameOverTitleText = MakeText("GameOverTitle", _gameOverPanel.transform,
-            "跑酷结算", 58, TextAnchor.MiddleCenter);
-        _gameOverTitleText.color = new Color(1f, 0.35f, 0.18f);
+            "RUN DECODED", 48, TextAnchor.MiddleCenter);
+        _gameOverTitleText.color = new Color(1f, 0.42f, 0.2f);
         _gameOverTitleText.fontStyle = FontStyle.Bold;
         AddOutline(_gameOverTitleText.gameObject, new Color(0.4f, 0.05f, 0f));
         AnchorText(_gameOverTitleText.GetComponent<RectTransform>(), 0.5f, 0.76f, 600, 80);
@@ -620,7 +629,7 @@ public class UIManager : MonoBehaviour
                         : null;
                     if (startLabel != null)
                         startLabel.text = AIShadowRunner.Instance.Generation > 0
-                            ? "挑战 AI 影子"
+                            ? "挑战 AI 回声"
                             : "开始校准";
                 }
                 break;
@@ -687,9 +696,9 @@ public class UIManager : MonoBehaviour
     void RefreshStats()
     {
         if (_statsText == null || _gm == null) return;
-        _statsText.text = "得分  " + _gm.Score
-                          + "\n距离  " + Mathf.FloorToInt(_gm.Distance) + "m"
-                          + "\n金币  " + _gm.Coins;
+        _statsText.text = "SCORE " + _gm.Score.ToString("D5")
+                          + "   RANGE " + Mathf.FloorToInt(_gm.Distance).ToString("D3") + "m"
+                          + "   SHARDS " + _gm.Coins.ToString("D2");
     }
 
     // ═══════════════════════════════════════════════════
@@ -717,6 +726,55 @@ public class UIManager : MonoBehaviour
         rt.anchorMin = new Vector2(ax, ay); rt.anchorMax = new Vector2(ax, ay);
         rt.sizeDelta = new Vector2(w, h);
         rt.anchoredPosition = Vector2.zero;
+    }
+
+    void AddMenuGrid(Transform parent)
+    {
+        for (int i = 1; i < 8; i++)
+        {
+            GameObject line = new GameObject("GridV", typeof(Image));
+            line.transform.SetParent(parent, false);
+            line.GetComponent<Image>().color = new Color(0.08f, 0.65f, 0.7f, 0.055f);
+            RectTransform rt = line.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(i / 8f, 0f);
+            rt.anchorMax = new Vector2(i / 8f, 1f);
+            rt.sizeDelta = new Vector2(1f, 0f);
+            rt.anchoredPosition = Vector2.zero;
+        }
+
+        for (int i = 1; i < 5; i++)
+        {
+            GameObject line = new GameObject("GridH", typeof(Image));
+            line.transform.SetParent(parent, false);
+            line.GetComponent<Image>().color = new Color(1f, 0.34f, 0.2f, 0.035f);
+            RectTransform rt = line.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, i / 5f);
+            rt.anchorMax = new Vector2(1f, i / 5f);
+            rt.sizeDelta = new Vector2(0f, 1f);
+            rt.anchoredPosition = Vector2.zero;
+        }
+    }
+
+    void AddPanelAccent(Transform parent, Color color, bool vertical)
+    {
+        GameObject accent = new GameObject("SignalAccent", typeof(Image));
+        accent.transform.SetParent(parent, false);
+        accent.GetComponent<Image>().color = color;
+        RectTransform rt = accent.GetComponent<RectTransform>();
+        if (vertical)
+        {
+            rt.anchorMin = new Vector2(0f, 0f);
+            rt.anchorMax = new Vector2(0f, 1f);
+            rt.sizeDelta = new Vector2(4f, 0f);
+            rt.anchoredPosition = Vector2.zero;
+        }
+        else
+        {
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.sizeDelta = new Vector2(0f, 3f);
+            rt.anchoredPosition = Vector2.zero;
+        }
     }
 
     Text MakeText(string name, Transform parent, string content, int size, TextAnchor align)
@@ -762,24 +820,32 @@ public class UIManager : MonoBehaviour
         rt.anchorMin = anchor; rt.anchorMax = anchor;
         rt.sizeDelta = size;
         rt.anchoredPosition = Vector2.zero;
-        go.GetComponent<Image>().color = mainColor;
+        Image background = go.GetComponent<Image>();
+        background.color = mainColor;
 
-        // Border / depth
-        GameObject border = new GameObject("Border", typeof(Image));
-        border.transform.SetParent(go.transform, false);
-        border.GetComponent<Image>().color = edgeColor;
-        RectTransform br = border.GetComponent<RectTransform>();
-        Stretch(br);
-        br.offsetMin = new Vector2(4, 4);
-        br.offsetMax = new Vector2(-4, -4);
+        GameObject edge = new GameObject("SignalEdge", typeof(Image));
+        edge.transform.SetParent(go.transform, false);
+        edge.GetComponent<Image>().color = edgeColor;
+        RectTransform edgeRt = edge.GetComponent<RectTransform>();
+        edgeRt.anchorMin = new Vector2(0f, 0f);
+        edgeRt.anchorMax = new Vector2(0f, 1f);
+        edgeRt.sizeDelta = new Vector2(7f, 0f);
+        edgeRt.anchoredPosition = Vector2.zero;
 
         Text labelT = MakeText("Label", go.transform, label, fontSize, TextAnchor.MiddleCenter);
         labelT.color = Color.white;
         labelT.fontStyle = FontStyle.Bold;
-        AddOutline(labelT.gameObject, new Color(0, 0, 0, 0.5f));
         Stretch(labelT.GetComponent<RectTransform>());
 
-        return go.GetComponent<Button>();
+        Button button = go.GetComponent<Button>();
+        ColorBlock colors = button.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = new Color(1.2f, 1.2f, 1.2f, 1f);
+        colors.pressedColor = new Color(0.72f, 0.82f, 0.84f, 1f);
+        colors.selectedColor = colors.highlightedColor;
+        colors.fadeDuration = 0.08f;
+        button.colors = colors;
+        return button;
     }
 
     Button MakeSmallButton(string name, Transform parent, string label,
