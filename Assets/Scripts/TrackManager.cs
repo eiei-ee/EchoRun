@@ -153,6 +153,25 @@ public class TrackManager : MonoBehaviour
         int currentLane, out int obstacleLane, out float obstacleDistance,
         out ObstacleType obstacleType, out int obstacleId)
     {
+        return TryGetUpcomingObstacleInternal(playerPosition, forward, currentLane,
+            false, null, out obstacleLane, out obstacleDistance,
+            out obstacleType, out obstacleId);
+    }
+
+    public bool TryGetUpcomingObstacleInLane(Vector3 position, Vector3 forward,
+        int lane, ISet<int> ignoredObstacleIds, out float obstacleDistance,
+        out ObstacleType obstacleType, out int obstacleId)
+    {
+        return TryGetUpcomingObstacleInternal(position, forward, lane,
+            true, ignoredObstacleIds, out _, out obstacleDistance,
+            out obstacleType, out obstacleId);
+    }
+
+    private bool TryGetUpcomingObstacleInternal(Vector3 playerPosition, Vector3 forward,
+        int currentLane, bool currentLaneOnly, ISet<int> ignoredObstacleIds,
+        out int obstacleLane, out float obstacleDistance,
+        out ObstacleType obstacleType, out int obstacleId)
+    {
         obstacleLane = currentLane;
         obstacleDistance = float.MaxValue;
         obstacleType = ObstacleType.Low;
@@ -179,13 +198,21 @@ public class TrackManager : MonoBehaviour
                 continue;
 
             float laneDelta = Vector3.Dot(offset, right) / Mathf.Max(0.1f, laneDistance);
-            obstacleLane = Mathf.Clamp(currentLane + Mathf.RoundToInt(laneDelta), 0, 2);
+            int candidateLane = Mathf.Clamp(
+                currentLane + Mathf.RoundToInt(laneDelta), 0, 2);
+            if (currentLaneOnly && candidateLane != currentLane) continue;
+
+            Vector3 obstaclePosition = entry.instance.transform.position;
+            int candidateId = entry.instance.GetInstanceID()
+                              ^ Mathf.RoundToInt(obstaclePosition.x * 17f)
+                              ^ Mathf.RoundToInt(obstaclePosition.z * 31f);
+            if (ignoredObstacleIds != null && ignoredObstacleIds.Contains(candidateId))
+                continue;
+
+            obstacleLane = candidateLane;
             obstacleDistance = forwardDistance;
             obstacleType = obstacle.type;
-            Vector3 obstaclePosition = entry.instance.transform.position;
-            obstacleId = entry.instance.GetInstanceID()
-                         ^ Mathf.RoundToInt(obstaclePosition.x * 17f)
-                         ^ Mathf.RoundToInt(obstaclePosition.z * 31f);
+            obstacleId = candidateId;
             found = true;
         }
 
@@ -518,8 +545,8 @@ public class TrackManager : MonoBehaviour
                 ? 0f
                 : Mathf.Lerp(obstacleChance, Mathf.Clamp01(obstacleChance + 0.3f), difficulty),
             coinChance = coinChance,
-            minCoinCount = 6,
-            maxCoinCount = 10,
+            minCoinCount = 5,
+            maxCoinCount = 8,
             maxBlockedLanes = difficulty > 0.5f ? 2 : 1,
             safeLane = safeLane,
             shouldTurn = canTurn && Random.value < turnChance
@@ -534,7 +561,7 @@ public class TrackManager : MonoBehaviour
         float x = (lane - 1) * laneDistance;
         for (int c = 0; c < count; c++)
         {
-            Vector3 lp = new Vector3(x, 1f, startZ + c * 1.5f);
+            Vector3 lp = new Vector3(x, 1f, startZ + c * 1.8f);
             if (lp.z > segmentLength - 1f) break;
             Vector3 wp = segment.transform.TransformPoint(lp);
             SpawnDynamic(coinPrefab, segment, wp, Quaternion.identity);

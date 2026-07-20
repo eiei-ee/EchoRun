@@ -134,6 +134,56 @@ public class GameStateTests
     }
 
     [Test]
+    public void ShadowHeightDoesNotFollowPlayerJump()
+    {
+        GameObject playerObject = new GameObject("player");
+        _objects.Add(playerObject);
+        playerObject.transform.position = new Vector3(0f, 4f, 0f);
+        PlayerController player = playerObject.AddComponent<PlayerController>();
+        SetPrivateField(player, "<IsJumping>k__BackingField", true);
+
+        AIShadowRunner runner = Create<AIShadowRunner>("AIShadowRunner");
+        GameObject ghost = new GameObject("ghost");
+        _objects.Add(ghost);
+        SetPrivateField(runner, "_player", player);
+        SetPrivateField(runner, "_ghost", ghost);
+        SetPrivateField(runner, "_ghostGroundY", 1f);
+
+        InvokePrivate(runner, "UpdateGhostPose");
+
+        Assert.AreEqual(1f, ghost.transform.position.y, 0.001f,
+            "A player jump must not lift a shadow that did not choose Jump.");
+    }
+
+    [Test]
+    public void ShadowObstacleQuerySelectsItsOwnLaneAndSkipsHandledObjects()
+    {
+        TrackManager manager = Create<TrackManager>("TrackManager");
+        GameObject owner = new GameObject("Segment");
+        _objects.Add(owner);
+
+        GameObject otherLanePrefab = CreateObstaclePrefab("OtherLane", ObstacleType.Low);
+        GameObject ownLanePrefab = CreateObstaclePrefab("OwnLane", ObstacleType.High);
+        InvokePrivate(manager, "SpawnDynamic", otherLanePrefab, owner,
+            new Vector3(-manager.laneDistance, 1f, 1f), Quaternion.identity);
+        InvokePrivate(manager, "SpawnDynamic", ownLanePrefab, owner,
+            new Vector3(0f, 1f, 1.4f), Quaternion.identity);
+
+        bool found = manager.TryGetUpcomingObstacleInLane(
+            Vector3.zero, Vector3.forward, 1, new HashSet<int>(),
+            out float distance, out ObstacleType type, out int obstacleId);
+
+        Assert.IsTrue(found);
+        Assert.AreEqual(1.4f, distance, 0.001f);
+        Assert.AreEqual(ObstacleType.High, type);
+
+        var handled = new HashSet<int> { obstacleId };
+        Assert.IsFalse(manager.TryGetUpcomingObstacleInLane(
+            Vector3.zero, Vector3.forward, 1, handled,
+            out _, out _, out _));
+    }
+
+    [Test]
     public void AITrackPlanAlwaysLeavesAReachableLane()
     {
         AITrackDirector director = Create<AITrackDirector>("AITrackDirector");
@@ -240,5 +290,29 @@ public class GameStateTests
         GameObject go = new GameObject(name);
         _objects.Add(go);
         return go.AddComponent<T>();
+    }
+
+    private GameObject CreateObstaclePrefab(string name, ObstacleType type)
+    {
+        GameObject prefab = new GameObject(name);
+        prefab.AddComponent<Obstacle>().type = type;
+        _objects.Add(prefab);
+        return prefab;
+    }
+
+    private static void SetPrivateField(object target, string name, object value)
+    {
+        FieldInfo field = target.GetType().GetField(
+            name, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.IsNotNull(field, "Missing private field: " + name);
+        field.SetValue(target, value);
+    }
+
+    private static object InvokePrivate(object target, string name, params object[] args)
+    {
+        MethodInfo method = target.GetType().GetMethod(
+            name, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.IsNotNull(method, "Missing private method: " + name);
+        return method.Invoke(target, args);
     }
 }

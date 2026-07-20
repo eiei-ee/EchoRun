@@ -187,6 +187,7 @@ public class AIShadowRunner : MonoBehaviour
     private int _ghostLane = 1;
     private float _displayedGhostLane = 1f;
     private float _displayedGap;
+    private float _ghostGroundY;
     private float _laneSmoothVelocity;
     private float _gapSmoothVelocity;
     private float _laneDecisionCooldown;
@@ -338,6 +339,7 @@ public class AIShadowRunner : MonoBehaviour
         _ghostLane = 1;
         _displayedGhostLane = 1f;
         _displayedGap = 0f;
+        _ghostGroundY = _player != null ? _player.transform.position.y : 0f;
         _laneSmoothVelocity = 0f;
         _gapSmoothVelocity = 0f;
         _laneDecisionCooldown = 0f;
@@ -547,7 +549,9 @@ public class AIShadowRunner : MonoBehaviour
                                 * _player.laneDistance);
         }
 
-        target.y = _player.transform.position.y + jumpHeight;
+        if (!_player.IsJumping)
+            _ghostGroundY = _player.transform.position.y;
+        target.y = _ghostGroundY + jumpHeight;
         _ghostForward = targetForward;
         _ghost.transform.position = target;
         Quaternion targetRotation = Quaternion.LookRotation(targetForward, Vector3.up);
@@ -565,23 +569,22 @@ public class AIShadowRunner : MonoBehaviour
         if (_ghostMaterial != null)
         {
             _ghostMaterial.color = _ghostStumbleTimer > 0f
-                ? new Color(1f, 0.18f, 0.12f, 0.62f)
-                : new Color(0.05f, 0.9f, 1f, 0.42f);
+                ? new Color(0.9f, 0.2f, 0.16f, 0.48f)
+                : new Color(0.16f, 0.68f, 0.74f, 0.28f);
         }
     }
 
     private void EvaluateGhostObstacle()
     {
         if (_ghost == null || TrackManager.Instance == null) return;
-        if (!TrackManager.Instance.TryGetUpcomingObstacle(
+        if (!TrackManager.Instance.TryGetUpcomingObstacleInLane(
                 _ghost.transform.position, _ghostForward, _ghostLane,
-                out int threatLane, out float threatDistance,
+                _handledGhostObstacles, out float threatDistance,
                 out ObstacleType threatType, out int obstacleId))
             return;
-        if (threatDistance > 1.5f || _handledGhostObstacles.Contains(obstacleId)) return;
+        if (threatDistance > 1.5f) return;
 
         _handledGhostObstacles.Add(obstacleId);
-        if (threatLane != _ghostLane) return;
 
         bool avoided = CanAvoidObstacle(
             threatType, _ghostJumpTimer > 0f, _ghostSlideTimer > 0f);
@@ -667,7 +670,7 @@ public class AIShadowRunner : MonoBehaviour
 
         _ghostMaterial = new Material(shader)
         {
-            color = new Color(0.05f, 0.9f, 1f, 0.42f),
+            color = new Color(0.16f, 0.68f, 0.74f, 0.28f),
             renderQueue = 3000
         };
 
