@@ -9,6 +9,7 @@ public class WorldStyler : MonoBehaviour
     private Material _cyanMaterial;
     private Material _coralMaterial;
     private Material _goldMaterial;
+    private Material _skyMaterial;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeInstance()
@@ -35,10 +36,18 @@ public class WorldStyler : MonoBehaviour
         Camera camera = Camera.main;
         if (camera != null)
         {
-            camera.clearFlags = CameraClearFlags.Skybox;
+            camera.clearFlags = _skyMaterial != null
+                ? CameraClearFlags.Skybox
+                : CameraClearFlags.SolidColor;
             camera.farClipPlane = 140f;
-            camera.backgroundColor = new Color(0.025f, 0.045f, 0.075f);
+            camera.fieldOfView = 56f;
+            camera.backgroundColor = new Color(0.025f, 0.04f, 0.065f);
+
+            CameraFollow follow = camera.GetComponent<CameraFollow>();
+            if (follow != null) follow.offset = new Vector3(0f, 4.6f, -8.2f);
         }
+
+        ConfigureLighting();
 
         GameObject floor = GameObject.Find("Plane");
         Renderer floorRenderer = floor != null ? floor.GetComponent<Renderer>() : null;
@@ -66,39 +75,56 @@ public class WorldStyler : MonoBehaviour
     {
         RenderSettings.fog = true;
         RenderSettings.fogMode = FogMode.Linear;
-        RenderSettings.fogColor = new Color(0.055f, 0.11f, 0.15f);
-        RenderSettings.fogStartDistance = 38f;
-        RenderSettings.fogEndDistance = 118f;
+        RenderSettings.fogColor = new Color(0.055f, 0.085f, 0.115f);
+        RenderSettings.fogStartDistance = 40f;
+        RenderSettings.fogEndDistance = 112f;
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
-        RenderSettings.ambientSkyColor = new Color(0.22f, 0.31f, 0.38f);
-        RenderSettings.ambientEquatorColor = new Color(0.08f, 0.15f, 0.19f);
-        RenderSettings.ambientGroundColor = new Color(0.025f, 0.035f, 0.055f);
-        RenderSettings.reflectionIntensity = 0.25f;
+        RenderSettings.ambientSkyColor = new Color(0.36f, 0.42f, 0.48f);
+        RenderSettings.ambientEquatorColor = new Color(0.18f, 0.24f, 0.29f);
+        RenderSettings.ambientGroundColor = new Color(0.075f, 0.1f, 0.13f);
+        RenderSettings.reflectionIntensity = 0.36f;
 
-        Shader skyShader = Shader.Find("Skybox/Procedural");
-        if (skyShader == null) return;
+        Material skyAsset = Resources.Load<Material>("Art/EchoSky");
+        if (skyAsset != null)
+        {
+            _skyMaterial = new Material(skyAsset) { name = "EchoSky_Runtime" };
+            RenderSettings.skybox = _skyMaterial;
+        }
+    }
 
-        Material sky = new Material(skyShader) { name = "EchoSky_Runtime" };
-        sky.SetColor("_SkyTint", new Color(0.12f, 0.27f, 0.32f));
-        sky.SetColor("_GroundColor", new Color(0.018f, 0.028f, 0.05f));
-        sky.SetFloat("_AtmosphereThickness", 0.72f);
-        sky.SetFloat("_SunSize", 0.018f);
-        sky.SetFloat("_Exposure", 0.75f);
-        RenderSettings.skybox = sky;
+    private void ConfigureLighting()
+    {
+        Light key = FindObjectOfType<Light>();
+        if (key != null)
+        {
+            key.intensity = 1.02f;
+            key.color = new Color(0.9f, 0.95f, 1f);
+            key.shadows = LightShadows.Soft;
+        }
+
+        if (GameObject.Find("EchoFillLight") != null) return;
+        GameObject fillObject = new GameObject("EchoFillLight");
+        fillObject.transform.SetParent(transform, false);
+        fillObject.transform.rotation = Quaternion.Euler(38f, 145f, 0f);
+        Light fill = fillObject.AddComponent<Light>();
+        fill.type = LightType.Directional;
+        fill.intensity = 0.42f;
+        fill.color = new Color(0.48f, 0.68f, 0.74f);
+        fill.shadows = LightShadows.None;
     }
 
     private void BuildPalette()
     {
         _structureMaterial = MakeMaterial("EchoStructure",
-            new Color(0.12f, 0.17f, 0.22f), Color.black, 0.55f, 0.7f);
+            new Color(0.15f, 0.21f, 0.27f), Color.black, 0.38f, 0.52f);
         _deepStructureMaterial = MakeMaterial("EchoDepth",
-            new Color(0.035f, 0.055f, 0.085f), Color.black, 0.15f, 0.35f);
+            new Color(0.065f, 0.09f, 0.12f), Color.black, 0.1f, 0.28f);
         _cyanMaterial = MakeMaterial("EchoCyan",
-            new Color(0.05f, 0.72f, 0.75f), new Color(0.02f, 1.1f, 1.25f), 0.2f, 0.6f);
+            new Color(0.08f, 0.42f, 0.48f), new Color(0.01f, 0.28f, 0.36f), 0.15f, 0.52f);
         _coralMaterial = MakeMaterial("EchoCoral",
-            new Color(0.95f, 0.26f, 0.22f), new Color(1.15f, 0.1f, 0.04f), 0.15f, 0.5f);
+            new Color(0.88f, 0.25f, 0.18f), new Color(0.68f, 0.08f, 0.02f), 0.1f, 0.42f);
         _goldMaterial = MakeMaterial("EchoGold",
-            new Color(1f, 0.69f, 0.12f), new Color(1.25f, 0.48f, 0.02f), 0.65f, 0.78f);
+            new Color(0.96f, 0.64f, 0.18f), new Color(0.65f, 0.22f, 0.015f), 0.5f, 0.64f);
     }
 
     private void BuildStraightEnvironment(Transform parent, int seed)
@@ -116,9 +142,9 @@ public class WorldStyler : MonoBehaviour
         int variant = Mathf.Abs(seed) % 3;
         for (int side = -1; side <= 1; side += 2)
         {
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < 2; i++)
             {
-                float z = -7f + i * 7f;
+                float z = -6.5f + i * 13f;
                 float height = 2.8f + ((i + variant + (side > 0 ? 1 : 0)) % 3) * 1.4f;
                 BuildPylon(parent, side, z, height, i == variant);
             }
@@ -179,11 +205,11 @@ public class WorldStyler : MonoBehaviour
 
     private void BuildPylon(Transform parent, int side, float z, float height, bool accent)
     {
-        float x = side * (10.2f + (Mathf.Abs(z) < 1f ? 0.8f : 0f));
+        float x = side * (11.4f + (Mathf.Abs(z) < 1f ? 0.8f : 0f));
         CreateCube("Pylon", parent, new Vector3(x, height * 0.5f - 0.25f, z),
-            new Vector3(1.25f, height, 1.25f), _structureMaterial);
+            new Vector3(1f, height, 1f), _structureMaterial);
         CreateCube("PylonCap", parent, new Vector3(x, height + 0.05f, z),
-            new Vector3(1.55f, 0.16f, 1.55f), accent ? _coralMaterial : _cyanMaterial);
+            new Vector3(1.25f, 0.13f, 1.25f), accent ? _coralMaterial : _cyanMaterial);
         CreateCube("PylonSlot", parent,
             new Vector3(x - side * 0.64f, height * 0.58f, z),
             new Vector3(0.06f, height * 0.35f, 0.42f), accent ? _goldMaterial : _cyanMaterial);
@@ -268,6 +294,7 @@ public class WorldStyler : MonoBehaviour
 
     void OnDestroy()
     {
+        if (_skyMaterial != null) Destroy(_skyMaterial);
         if (Instance == this) Instance = null;
     }
 }

@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using UnityEditor;
+using UnityEditor.Build;
+using UnityEditor.Build.Reporting;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -39,7 +41,6 @@ public class BuildConfig
     public static void BuildAndroid()
     {
         OpenPrimaryScene();
-        BuildScene.Build();
 
         EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Android, BuildTarget.Android);
 
@@ -50,7 +51,9 @@ public class BuildConfig
         string outputPath = "Builds/Android/EchoRun.apk";
         EnsureDirectory("Builds/Android");
 
-        BuildPipeline.BuildPlayer(GetScenePaths(), outputPath, BuildTarget.Android, BuildOptions.None);
+        BuildReport report = BuildPipeline.BuildPlayer(
+            GetScenePaths(), outputPath, BuildTarget.Android, BuildOptions.None);
+        EnsureBuildSucceeded(report, "Android");
         Debug.Log($"Android build complete: {outputPath}");
     }
 
@@ -58,7 +61,6 @@ public class BuildConfig
     public static void BuildIOS()
     {
         OpenPrimaryScene();
-        BuildScene.Build();
 
         EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.iOS, BuildTarget.iOS);
 
@@ -69,7 +71,9 @@ public class BuildConfig
         string outputDir = "Builds/iOS";
         EnsureDirectory(outputDir);
 
-        BuildPipeline.BuildPlayer(GetScenePaths(), outputDir, BuildTarget.iOS, BuildOptions.None);
+        BuildReport report = BuildPipeline.BuildPlayer(
+            GetScenePaths(), outputDir, BuildTarget.iOS, BuildOptions.None);
+        EnsureBuildSucceeded(report, "iOS");
         Debug.Log($"iOS Xcode project generated: {outputDir}");
     }
 
@@ -77,7 +81,6 @@ public class BuildConfig
     public static void BuildWebGL()
     {
         OpenPrimaryScene();
-        BuildScene.Build();
         EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.WebGL, BuildTarget.WebGL);
 
         ConfigureBaseSettings();
@@ -87,8 +90,20 @@ public class BuildConfig
         string outputDir = "Builds/WebGL";
         EnsureDirectory(outputDir);
 
-        BuildPipeline.BuildPlayer(GetScenePaths(), outputDir, BuildTarget.WebGL, BuildOptions.None);
+        BuildReport report = BuildPipeline.BuildPlayer(
+            GetScenePaths(), outputDir, BuildTarget.WebGL, BuildOptions.None);
+        EnsureBuildSucceeded(report, "WebGL");
         Debug.Log($"WebGL build complete: {outputDir}");
+    }
+
+    static void EnsureBuildSucceeded(BuildReport report, string platform)
+    {
+        if (report != null && report.summary.result == BuildResult.Succeeded) return;
+
+        string result = report == null ? "No build report" : report.summary.result.ToString();
+        int errors = report == null ? 0 : report.summary.totalErrors;
+        throw new BuildFailedException(
+            $"{platform} build failed: {result} ({errors} errors).");
     }
 
     static void ConfigureBaseSettings()

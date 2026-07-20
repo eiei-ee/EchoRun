@@ -291,8 +291,8 @@ public class AITrackDirector : MonoBehaviour
             difficulty = Mathf.Clamp01(baseDifficulty),
             obstacleChance = Mathf.Clamp01(baseObstacleChance),
             coinChance = Mathf.Clamp01(baseCoinChance),
-            minCoinCount = 6,
-            maxCoinCount = 10,
+            minCoinCount = 5,
+            maxCoinCount = 8,
             maxBlockedLanes = baseDifficulty > 0.5f ? 2 : 1,
             safeLane = previousSafeLane,
             shouldTurn = false
@@ -305,8 +305,8 @@ public class AITrackDirector : MonoBehaviour
                 plan.difficulty = 0f;
                 plan.obstacleChance = 0f;
                 plan.coinChance = 0.8f;
-                plan.minCoinCount = 7;
-                plan.maxCoinCount = 10;
+                plan.minCoinCount = 5;
+                plan.maxCoinCount = 7;
                 plan.maxBlockedLanes = 1;
                 turnMultiplier = 0f;
                 break;
@@ -314,8 +314,8 @@ public class AITrackDirector : MonoBehaviour
                 plan.difficulty = Mathf.Min(plan.difficulty, 0.35f);
                 plan.obstacleChance = Mathf.Min(plan.obstacleChance, 0.30f);
                 plan.coinChance = Mathf.Max(plan.coinChance, 0.9f);
-                plan.minCoinCount = 9;
-                plan.maxCoinCount = 12;
+                plan.minCoinCount = 6;
+                plan.maxCoinCount = 9;
                 plan.maxBlockedLanes = 1;
                 turnMultiplier = 0.45f;
                 break;
@@ -329,8 +329,8 @@ public class AITrackDirector : MonoBehaviour
                 plan.difficulty = Mathf.Max(plan.difficulty, 0.68f);
                 plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.74f);
                 plan.coinChance = Mathf.Min(plan.coinChance, 0.55f);
-                plan.minCoinCount = 5;
-                plan.maxCoinCount = 8;
+                plan.minCoinCount = 4;
+                plan.maxCoinCount = 6;
                 plan.maxBlockedLanes = 2;
                 turnMultiplier = 1.35f;
                 break;
@@ -338,8 +338,8 @@ public class AITrackDirector : MonoBehaviour
                 plan.difficulty = Mathf.Max(plan.difficulty, 0.82f);
                 plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.86f);
                 plan.coinChance = Mathf.Min(plan.coinChance, 0.5f);
-                plan.minCoinCount = 4;
-                plan.maxCoinCount = 7;
+                plan.minCoinCount = 3;
+                plan.maxCoinCount = 5;
                 plan.maxBlockedLanes = 2;
                 turnMultiplier = 1.75f;
                 break;
