@@ -5,6 +5,12 @@ using UnityEngine;
 
 public class GameStateTests
 {
+    [System.Serializable]
+    private sealed class ShadowGenerationProbe
+    {
+        public int generation;
+    }
+
     private readonly List<GameObject> _objects = new List<GameObject>();
 
     [TearDown]
@@ -87,6 +93,47 @@ public class GameStateTests
 
         Assert.Greater(policy.Score(3, context), before,
             "A positive play reward must increase the selected strategy score.");
+    }
+
+    [Test]
+    public void AITrackPolicyWeightsSurviveRoundTrip()
+    {
+        float[] context = { 1f, 0.8f, 0.1f, 0.9f, 0.6f };
+        AITrackPolicy trained = new AITrackPolicy(1);
+        for (int i = 0; i < 12; i++)
+            trained.Update(3, context, 1f, 0.1f);
+
+        AITrackPolicy restored = new AITrackPolicy(2, trained.ExportWeights());
+
+        Assert.AreEqual(trained.Score(3, context),
+            restored.Score(3, context), 0.0001f);
+        Assert.AreEqual(trained.Select(context, false, 0f),
+            restored.Select(context, false, 0f));
+    }
+
+    [Test]
+    public void ArchiveJsonPreservesExistingProgressAndModels()
+    {
+        EchoRunSaveData original = new EchoRunSaveData
+        {
+            highScore = 7904,
+            totalCoins = 321,
+            targetFrameRate = 60,
+            shadowProfileJson = "{\"generation\":22,\"sampleCount\":90}",
+            directorWeights = new[] { 0.1f, 0.2f, 0.3f },
+            directorModelUpdateCount = 48,
+            savedAtUtcTicks = 123456789L
+        };
+
+        EchoRunSaveData restored = JsonUtility.FromJson<EchoRunSaveData>(
+            JsonUtility.ToJson(original));
+
+        Assert.AreEqual(7904, restored.highScore);
+        Assert.AreEqual(22,
+            JsonUtility.FromJson<ShadowGenerationProbe>(
+                restored.shadowProfileJson).generation);
+        CollectionAssert.AreEqual(original.directorWeights, restored.directorWeights);
+        Assert.AreEqual(48, restored.directorModelUpdateCount);
     }
 
     [Test]

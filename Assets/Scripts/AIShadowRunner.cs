@@ -162,7 +162,7 @@ public class AIShadowRunner : MonoBehaviour
         ? 1f - Mathf.Clamp01(Mathf.Abs(PlayerLead) / 14f)
         : 0f;
 
-    private const string ProfileKey = "AIShadowProfileV1";
+    private const int SamplesPerCheckpoint = 4;
 
     [Serializable]
     private sealed class ShadowProfile
@@ -203,6 +203,7 @@ public class AIShadowRunner : MonoBehaviour
     private int _runCoins;
     private int _runDodges;
     private int _ghostMistakes;
+    private int _samplesSinceCheckpoint;
     private bool _runStarted;
     private bool _runFinalized;
     private readonly HashSet<int> _handledGhostObstacles = new HashSet<int>();
@@ -423,6 +424,13 @@ public class AIShadowRunner : MonoBehaviour
     {
         _policy.Learn((int)action, features, learningRate);
         _profile.sampleCount++;
+        _samplesSinceCheckpoint++;
+
+        if (_samplesSinceCheckpoint >= SamplesPerCheckpoint)
+        {
+            _samplesSinceCheckpoint = 0;
+            SaveProfile();
+        }
 
         if (!HasActiveOpponent)
         {
@@ -690,7 +698,8 @@ public class AIShadowRunner : MonoBehaviour
     private void LoadProfile()
     {
         _profile = null;
-        string json = PlayerPrefs.GetString(ProfileKey, "");
+        EchoRunSaveSystem.EnsureInitialized();
+        string json = EchoRunSaveSystem.GetShadowProfileJson();
         if (!string.IsNullOrEmpty(json))
         {
             try
@@ -709,12 +718,14 @@ public class AIShadowRunner : MonoBehaviour
 
     private void SaveProfile()
     {
-        PlayerPrefs.SetString(ProfileKey, JsonUtility.ToJson(_profile));
-        PlayerPrefs.Save();
+        if (_profile == null || _policy == null) return;
+        _profile.weights = _policy.ExportWeights();
+        EchoRunSaveSystem.SaveShadowProfile(JsonUtility.ToJson(_profile));
     }
 
     void OnDestroy()
     {
+        SaveProfile();
         if (_gameManager != null)
             _gameManager.OnStateChanged.RemoveListener(OnGameStateChanged);
         if (Instance == this) Instance = null;

@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
@@ -93,6 +95,7 @@ public class BuildConfig
         BuildReport report = BuildPipeline.BuildPlayer(
             GetScenePaths(), outputDir, BuildTarget.WebGL, BuildOptions.None);
         EnsureBuildSucceeded(report, "WebGL");
+        EnableWebGLPersistence(outputDir);
         Debug.Log($"WebGL build complete: {outputDir}");
     }
 
@@ -166,6 +169,30 @@ public class BuildConfig
 
         PlayerSettings.defaultWebScreenWidth = 960;
         PlayerSettings.defaultWebScreenHeight = 600;
+    }
+
+    static void EnableWebGLPersistence(string outputDir)
+    {
+        string indexPath = Path.Combine(Application.dataPath, "../", outputDir, "index.html");
+        if (!File.Exists(indexPath))
+            throw new BuildFailedException("WebGL index.html was not generated.");
+
+        const string commented = "// config.autoSyncPersistentDataPath = true;";
+        const string enabled = "config.autoSyncPersistentDataPath = true;";
+        string html = File.ReadAllText(indexPath);
+
+        if (html.Contains(commented))
+        {
+            html = html.Replace(commented, enabled);
+            File.WriteAllText(indexPath, html, new UTF8Encoding(false));
+            return;
+        }
+
+        if (!html.Contains(enabled))
+        {
+            throw new BuildFailedException(
+                "WebGL template does not expose autoSyncPersistentDataPath.");
+        }
     }
 
     static void EnsureSceneInBuild()

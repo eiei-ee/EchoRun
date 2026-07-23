@@ -257,6 +257,7 @@ public class UIManager : MonoBehaviour
 
     void HideSettings()
     {
+        EchoRunSaveSystem.SaveLegacyState();
         if (_settingsPanel != null) _settingsPanel.SetActive(false);
         if (_menuPanel != null) _menuPanel.SetActive(true);
     }
@@ -389,8 +390,7 @@ public class UIManager : MonoBehaviour
             }
         }
 
-        PlayerPrefs.SetInt("CharacterPreset", presetIndex);
-        PlayerPrefs.Save();
+        EchoRunSaveSystem.SaveCharacterPreset(presetIndex);
     }
 
     void LoadCharacterPreset()
@@ -622,7 +622,11 @@ public class UIManager : MonoBehaviour
                 if (_menuPanel != null) _menuPanel.SetActive(true);
                 if (AIShadowRunner.Instance != null)
                 {
-                    string menuStatus = AIShadowRunner.Instance.GetMenuStatus();
+                    int generation = AIShadowRunner.Instance.Generation;
+                    string menuStatus = generation > 0
+                        ? "本地档案已载入 · 第" + generation
+                          + "代 · 最高分" + (_gm != null ? _gm.HighScore : 0)
+                        : "本地档案已创建 · 首局将训练个人AI影子";
                     if (_menuShadowText != null) _menuShadowText.text = menuStatus;
                     Text startLabel = _startBtn != null
                         ? _startBtn.GetComponentInChildren<Text>()

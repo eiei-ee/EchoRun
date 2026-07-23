@@ -41,9 +41,16 @@ public sealed class AITrackPolicy
 
     private readonly System.Random _random;
 
-    public AITrackPolicy(int seed = 1337)
+    public AITrackPolicy(int seed = 1337, float[] savedWeights = null)
     {
         _random = new System.Random(seed);
+        if (savedWeights == null || savedWeights.Length != ActionCount * FeatureCount)
+            return;
+
+        int index = 0;
+        for (int action = 0; action < ActionCount; action++)
+            for (int feature = 0; feature < FeatureCount; feature++)
+                _weights[action, feature] = savedWeights[index++];
     }
 
     public int Select(float[] context, bool explore, float explorationRate)
@@ -93,6 +100,16 @@ public sealed class AITrackPolicy
         for (int feature = 0; feature < FeatureCount; feature++)
             score += _weights[action, feature] * context[feature];
         return score;
+    }
+
+    public float[] ExportWeights()
+    {
+        float[] result = new float[ActionCount * FeatureCount];
+        int index = 0;
+        for (int action = 0; action < ActionCount; action++)
+            for (int feature = 0; feature < FeatureCount; feature++)
+                result[index++] = _weights[action, feature];
+        return result;
     }
 
     private static void ValidateContext(float[] context)
@@ -149,8 +166,13 @@ public class AITrackDirector : MonoBehaviour
         }
 
         Instance = this;
+        EchoRunSaveSystem.EnsureInitialized();
         if (_sessionPolicy == null)
-            _sessionPolicy = new AITrackPolicy(Environment.TickCount);
+        {
+            _sessionPolicy = new AITrackPolicy(
+                Environment.TickCount, EchoRunSaveSystem.GetDirectorWeights());
+        }
+        ModelUpdateCount = EchoRunSaveSystem.DirectorModelUpdateCount;
     }
 
     void Start()
@@ -165,7 +187,10 @@ public class AITrackDirector : MonoBehaviour
         float segmentEndDistance)
     {
         if (_sessionPolicy == null)
-            _sessionPolicy = new AITrackPolicy(Environment.TickCount);
+        {
+            _sessionPolicy = new AITrackPolicy(
+                Environment.TickCount, EchoRunSaveSystem.GetDirectorWeights());
+        }
 
         _decisionCount++;
         TrainCompletedPlans(false);
@@ -211,7 +236,10 @@ public class AITrackDirector : MonoBehaviour
         if (state == GameState.Playing && _decisionCount == 0)
             CurrentStatus = "AI导演 · 正在观察";
         else if (state == GameState.GameOver)
+        {
             TrainCompletedPlans(true);
+            SaveDirectorModel();
+        }
     }
 
     private float[] BuildContext()
@@ -275,10 +303,18 @@ public class AITrackDirector : MonoBehaviour
         _sessionPolicy.Update(decision.action, decision.context,
             Mathf.Clamp(reward, -1f, 1f), learningRate);
         ModelUpdateCount++;
+        SaveDirectorModel();
         _evaluatedDistance = distance;
         _evaluatedCoins = _coins;
         _evaluatedDodges = _dodges;
         _evaluatedHits = _hits;
+    }
+
+    private void SaveDirectorModel()
+    {
+        if (_sessionPolicy == null) return;
+        EchoRunSaveSystem.SaveDirector(
+            _sessionPolicy.ExportWeights(), ModelUpdateCount);
     }
 
     private AITrackPlan BuildPlan(AIDirectorIntent intent, float baseDifficulty,
