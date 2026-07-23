@@ -24,6 +24,7 @@ public class TrackManager : MonoBehaviour
     public GameObject coinPrefab;
     [Range(0, 1)] public float obstacleChance = 0.4f;
     [Range(0, 1)] public float coinChance = 0.6f;
+    [Min(1)] public int maxConsecutiveObstacleFreeStraights = 3;
 
     [Header("AI Track Director")]
     public bool useAITrackDirector = true;
@@ -47,7 +48,9 @@ public class TrackManager : MonoBehaviour
    private float _spawnAngle;
     private int _lastSafeLane = 1;
     private int _obstacleFreeSegments;
-   private int _straightSegmentsSinceLastTurn;
+    private int _straightSegmentsSpawned;
+    private readonly int[] _laneObstacleDrought = new int[3];
+    private int _straightSegmentsSinceLastTurn;
     private float _plannedDistance;
     private Transform _player;
     private AITrackDirector _aiDirector;
@@ -474,7 +477,8 @@ public class TrackManager : MonoBehaviour
 
    void SpawnObstaclesAndCoins(GameObject segment, TrackSegmentType segType, AITrackPlan plan)
    {
-       if (obstaclePrefabs.Length == 0 && coinPrefab == null) return;
+       if ((obstaclePrefabs == null || obstaclePrefabs.Length == 0)
+           && coinPrefab == null) return;
 
        float buffer = 4f;
        float end    = segmentLength - 2f;
@@ -486,15 +490,18 @@ public class TrackManager : MonoBehaviour
        }
 
         // Warmup: first few segments have no obstacles
-        float warmupSegments = 2f;
+        const int warmupSegments = 2;
+        _straightSegmentsSpawned++;
         _obstacleFreeSegments++;
+        for (int lane = 0; lane < _laneObstacleDrought.Length; lane++)
+            _laneObstacleDrought[lane]++;
 
         float diff = Mathf.Clamp01(plan.difficulty);
 
-        // The director proposes a lane; this validator enforces continuity.
-        int safeLane = Mathf.Clamp(plan.safeLane,
-            Mathf.Max(0, _lastSafeLane - 1),
-            Mathf.Min(2, _lastSafeLane + 1));
+        // Preserve route continuity while rotating protection away from lanes
+        // that have gone too long without an obstacle.
+        int safeLane = ChooseFairSafeLane(
+            plan.safeLane, _lastSafeLane, _laneObstacleDrought);
         _lastSafeLane = safeLane;
 
         // Determine coin Z first so obstacles can avoid it
@@ -511,16 +518,19 @@ public class TrackManager : MonoBehaviour
             SpawnCoinLine(segment, altLane, coinZ + Random.Range(-1f, 1f), Random.Range(2, 5));
         }
 
-        // Spawn obstacles if we're past warmup and dice roll passes
-        if (_obstacleFreeSegments > warmupSegments
-            && Random.value < plan.obstacleChance
-            && obstaclePrefabs.Length >= 3)
+        bool prefabsReady = obstaclePrefabs != null && obstaclePrefabs.Length >= 3;
+        bool shouldSpawnObstacles = prefabsReady && ShouldSpawnObstacleRow(
+            _straightSegmentsSpawned, _obstacleFreeSegments, warmupSegments,
+            maxConsecutiveObstacleFreeStraights, plan.obstacleChance, Random.value);
+        if (shouldSpawnObstacles)
         {
             // Place obstacles at a different Z from the coin trail
             float obsZ = coinZ + 3f + Random.Range(0f, 3f);
             if (obsZ > end - 1f) obsZ = coinZ - 3f - Random.Range(0f, 3f);
             obsZ = Mathf.Clamp(obsZ, buffer + 1f, end - 1f);
-            SpawnObstacleRow(segment, obsZ, diff, safeLane, plan.maxBlockedLanes);
+            if (SpawnObstacleRow(
+                    segment, obsZ, diff, safeLane, plan.maxBlockedLanes) > 0)
+                _obstacleFreeSegments = 0;
         }
    }
 
@@ -530,7 +540,7 @@ public class TrackManager : MonoBehaviour
             ? Mathf.InverseLerp(GameManager.Instance.startSpeed,
                 GameManager.Instance.maxSpeed, GameManager.Instance.CurrentSpeed)
             : 0f;
-        float segmentFactor = Mathf.Clamp01(_obstacleFreeSegments / 15f);
+        float segmentFactor = Mathf.Clamp01(_straightSegmentsSpawned / 15f);
         return Mathf.Max(speedFactor, segmentFactor);
     }
 
@@ -541,9 +551,8 @@ public class TrackManager : MonoBehaviour
         {
             intent = AIDirectorIntent.Observe,
             difficulty = difficulty,
-            obstacleChance = _obstacleFreeSegments < 4
-                ? 0f
-                : Mathf.Lerp(obstacleChance, Mathf.Clamp01(obstacleChance + 0.3f), difficulty),
+            obstacleChance = Mathf.Lerp(
+                obstacleChance, Mathf.Clamp01(obstacleChance + 0.3f), difficulty),
             coinChance = coinChance,
             minCoinCount = 5,
             maxCoinCount = 8,
@@ -602,26 +611,19 @@ public class TrackManager : MonoBehaviour
    // ---- obstacle patterns ----
 
     // Guarantees at least 1 lane is always open
-    void SpawnObstacleRow(GameObject segment, float obsZ, float difficulty, int safeLane,
+    int SpawnObstacleRow(GameObject segment, float obsZ, float difficulty, int safeLane,
         int maxBlockedLanes)
-   {
-       if (obstaclePrefabs.Length < 3) return;
+    {
+       if (obstaclePrefabs == null || obstaclePrefabs.Length < 3) return 0;
 
        // How many lanes to block (1 or 2, never 3)
         int blocked = difficulty > 0.5f ? 2 : 1;
         blocked = Mathf.Clamp(blocked, 1, Mathf.Clamp(maxBlockedLanes, 1, 2));
-       List<int> lanes = new List<int>();
-       for (int l = 0; l < 3; l++)
-           if (l != safeLane) lanes.Add(l);
+        int[] lanes = SelectBlockedLanes(
+            safeLane, blocked, _laneObstacleDrought);
+        int spawned = 0;
 
-       // Shuffle then take <blocked> lanes
-       for (int i = 0; i < lanes.Count; i++)
-       {
-           int swap = Random.Range(i, lanes.Count);
-           int tmp = lanes[i]; lanes[i] = lanes[swap]; lanes[swap] = tmp;
-       }
-
-       for (int i = 0; i < blocked && i < lanes.Count; i++)
+       for (int i = 0; i < lanes.Length; i++)
        {
            int lane = lanes[i];
 
@@ -637,22 +639,89 @@ public class TrackManager : MonoBehaviour
             // Never put a Barrier when only 1 lane is blocked (can't dodge)
             if (blocked == 1 && type == 2) type = 1;
 
-            SpawnObstacleAt(segment, lane, obsZ + Random.Range(-0.8f, 0.8f), type);
+            if (SpawnObstacleAt(
+                    segment, lane, obsZ + Random.Range(-0.8f, 0.8f), type))
+            {
+                _laneObstacleDrought[lane] = 0;
+                spawned++;
+            }
        }
-   }
+       return spawned;
+    }
 
-    void SpawnObstacleAt(GameObject segment, int lane, float z, int prefabIndex)
+    bool SpawnObstacleAt(GameObject segment, int lane, float z, int prefabIndex)
     {
         if (obstaclePrefabs == null || prefabIndex < 0
             || prefabIndex >= obstaclePrefabs.Length || obstaclePrefabs[prefabIndex] == null)
-            return;
+            return false;
 
         float x = (lane - 1) * laneDistance;
         Vector3 lp = new Vector3(x, 1f, z);
         Vector3 wp = segment.transform.TransformPoint(lp);
         Quaternion rot = segment.transform.rotation;
         SpawnDynamic(obstaclePrefabs[prefabIndex], segment, wp, rot);
-   }
+        return true;
+    }
+
+    public static bool ShouldSpawnObstacleRow(int straightSegmentsSpawned,
+        int obstacleFreeSegments, int warmupSegments, int maxFreeSegments,
+        float chance, float chanceRoll)
+    {
+        if (straightSegmentsSpawned <= Mathf.Max(0, warmupSegments)) return false;
+        if (obstacleFreeSegments > Mathf.Max(0, maxFreeSegments)) return true;
+        return chanceRoll < Mathf.Clamp01(chance);
+    }
+
+    public static int ChooseFairSafeLane(int proposedLane, int previousSafeLane,
+        int[] laneObstacleDrought)
+    {
+        int proposed = Mathf.Clamp(proposedLane, 0, 2);
+        int previous = Mathf.Clamp(previousSafeLane, 0, 2);
+        int minLane = Mathf.Max(0, previous - 1);
+        int maxLane = Mathf.Min(2, previous + 1);
+        int bestLane = Mathf.Clamp(proposed, minLane, maxLane);
+        int bestDrought = GetLaneDrought(laneObstacleDrought, bestLane);
+
+        for (int lane = minLane; lane <= maxLane; lane++)
+        {
+            int drought = GetLaneDrought(laneObstacleDrought, lane);
+            if (drought < bestDrought
+                || (drought == bestDrought
+                    && Mathf.Abs(lane - proposed) < Mathf.Abs(bestLane - proposed)))
+            {
+                bestLane = lane;
+                bestDrought = drought;
+            }
+        }
+        return bestLane;
+    }
+
+    public static int[] SelectBlockedLanes(int safeLane, int blockedLaneCount,
+        int[] laneObstacleDrought)
+    {
+        int safe = Mathf.Clamp(safeLane, 0, 2);
+        List<int> candidates = new List<int>(2);
+        for (int lane = 0; lane < 3; lane++)
+            if (lane != safe) candidates.Add(lane);
+
+        candidates.Sort((left, right) =>
+        {
+            int droughtOrder = GetLaneDrought(laneObstacleDrought, right)
+                .CompareTo(GetLaneDrought(laneObstacleDrought, left));
+            return droughtOrder != 0 ? droughtOrder : left.CompareTo(right);
+        });
+
+        int count = Mathf.Clamp(blockedLaneCount, 1, 2);
+        return candidates.GetRange(0, Mathf.Min(count, candidates.Count)).ToArray();
+    }
+
+    private static int GetLaneDrought(int[] laneObstacleDrought, int lane)
+    {
+        return laneObstacleDrought != null && lane >= 0
+               && lane < laneObstacleDrought.Length
+            ? Mathf.Max(0, laneObstacleDrought[lane])
+            : 0;
+    }
 
    GameObject SpawnDynamic(GameObject prefab, GameObject ownerSegment,
        Vector3 position, Quaternion rotation)

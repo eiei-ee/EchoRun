@@ -182,6 +182,7 @@ public class AIShadowRunner : MonoBehaviour
     private GameObject _ghost;
     private Transform _ghostVisual;
     private Vector3 _ghostVisualScale = Vector3.one;
+    private Vector3 _ghostVisualPosition;
     private Vector3 _ghostForward = Vector3.forward;
     private Material _ghostMaterial;
     private int _ghostLane = 1;
@@ -207,6 +208,7 @@ public class AIShadowRunner : MonoBehaviour
     private bool _runStarted;
     private bool _runFinalized;
     private readonly HashSet<int> _handledGhostObstacles = new HashSet<int>();
+    private readonly HashSet<int> _reactedGhostObstacles = new HashSet<int>();
 
     void Awake()
     {
@@ -257,6 +259,8 @@ public class AIShadowRunner : MonoBehaviour
 
         _laneDecisionCooldown = Mathf.Max(0f, _laneDecisionCooldown - Time.deltaTime);
         _ghostStumbleTimer = Mathf.Max(0f, _ghostStumbleTimer - Time.deltaTime);
+        _ghostJumpTimer = Mathf.Max(0f, _ghostJumpTimer - Time.deltaTime);
+        _ghostSlideTimer = Mathf.Max(0f, _ghostSlideTimer - Time.deltaTime);
         float stumbleSpeed = _ghostStumbleTimer > 0f ? 0.25f : 1f;
         _ghostProgress += Mathf.Max(1f, _profile.pace)
                           * shadowPaceMultiplier * stumbleSpeed * Time.deltaTime;
@@ -269,6 +273,7 @@ public class AIShadowRunner : MonoBehaviour
             ApplyShadowDecision();
         }
 
+        ApplyObstacleReaction();
         CurrentStatus = BuildDuelStatus();
     }
 
@@ -352,6 +357,7 @@ public class AIShadowRunner : MonoBehaviour
         _ghostStumbleTimer = 0f;
         _ghostMistakes = 0;
         _handledGhostObstacles.Clear();
+        _reactedGhostObstacles.Clear();
         HasActiveOpponent = HasTrainedProfile();
 
         if (HasActiveOpponent)
@@ -509,22 +515,68 @@ public class AIShadowRunner : MonoBehaviour
                 }
                 break;
             case ShadowAction.Jump:
-                if (_ghostJumpTimer <= 0f && _ghostStumbleTimer <= 0f)
-                    _ghostJumpTimer = 0.6f;
-                break;
             case ShadowAction.Slide:
-                if (_ghostSlideTimer <= 0f && _ghostStumbleTimer <= 0f)
-                    _ghostSlideTimer = 0.7f;
+                // Vertical actions are scheduled from the obstacle distance below.
+                // The policy still owns route selection, but cannot spam jumps or
+                // start a slide in mid-air between its regular decision ticks.
                 break;
         }
+    }
+
+    private void ApplyObstacleReaction()
+    {
+        if (_ghost == null || _player == null || TrackManager.Instance == null
+            || _ghostStumbleTimer > 0f || _ghostJumpTimer > 0f
+            || _ghostSlideTimer > 0f)
+            return;
+
+        if (!TrackManager.Instance.TryGetUpcomingObstacleInLane(
+                _ghost.transform.position, _ghostForward, _ghostLane,
+                _reactedGhostObstacles, out float threatDistance,
+                out ObstacleType threatType, out int obstacleId))
+            return;
+
+        ShadowAction requiredAction = RequiredActionForObstacle(threatType);
+        if (requiredAction == ShadowAction.Keep) return;
+
+        float duration = requiredAction == ShadowAction.Jump
+            ? GetGhostJumpDuration()
+            : GetGhostSlideDuration();
+        float speed = _gameManager != null ? _gameManager.CurrentSpeed : 10f;
+        if (threatDistance > CalculateReactionDistance(speed, duration)) return;
+
+        // A trained clone gets the full reaction window when it predicts the
+        // learned move. The close-range reflex is the physical safety layer:
+        // it keeps an imperfect model readable without erasing earlier/later
+        // reaction timing learned from the player.
+        if (_opponentPolicy != null)
+        {
+            ShadowAction predicted = (ShadowAction)_opponentPolicy.Predict(
+                BuildFeatures(_ghostLane, true));
+            float emergencyDistance = Mathf.Clamp(speed * 0.2f, 2f, 4.5f);
+            if (predicted != requiredAction && threatDistance > emergencyDistance)
+                return;
+        }
+
+        _reactedGhostObstacles.Add(obstacleId);
+        StartGhostAction(requiredAction);
+    }
+
+    private void StartGhostAction(ShadowAction action)
+    {
+        if (!CanStartVerticalAction(action, _ghostJumpTimer > 0f,
+                _ghostSlideTimer > 0f, _ghostStumbleTimer > 0f))
+            return;
+
+        if (action == ShadowAction.Jump)
+            _ghostJumpTimer = GetGhostJumpDuration();
+        else if (action == ShadowAction.Slide)
+            _ghostSlideTimer = GetGhostSlideDuration();
     }
 
     private void UpdateGhostPose()
     {
         if (_ghost == null || _player == null) return;
-
-        _ghostJumpTimer = Mathf.Max(0f, _ghostJumpTimer - Time.deltaTime);
-        _ghostSlideTimer = Mathf.Max(0f, _ghostSlideTimer - Time.deltaTime);
 
         float targetGap = Mathf.Clamp(_ghostProgress - _playerProgress,
             -2.5f, maximumVisibleLead);
@@ -534,8 +586,12 @@ public class AIShadowRunner : MonoBehaviour
         _displayedGhostLane = Mathf.SmoothDamp(_displayedGhostLane, _ghostLane,
             ref _laneSmoothVelocity, Mathf.Max(0.02f, laneSmoothTime),
             12f, Time.deltaTime);
+        float jumpDuration = GetGhostJumpDuration();
+        float jumpProgress = _ghostJumpTimer > 0f
+            ? 1f - _ghostJumpTimer / jumpDuration
+            : 0f;
         float jumpHeight = _ghostJumpTimer > 0f
-            ? Mathf.Sin((1f - _ghostJumpTimer / 0.6f) * Mathf.PI) * _player.jumpHeight
+            ? EvaluateJumpArc(jumpProgress) * _player.jumpHeight
             : 0f;
 
         Vector3 target;
@@ -570,8 +626,11 @@ public class AIShadowRunner : MonoBehaviour
         if (_ghostVisual != null)
         {
             Vector3 scale = _ghostVisualScale;
-            if (_ghostSlideTimer > 0f) scale.y *= 0.55f;
+            float slideAmount = EvaluateSlideAmount(
+                _ghostSlideTimer, GetGhostSlideDuration());
+            scale.y *= Mathf.Lerp(1f, 0.52f, slideAmount);
             _ghostVisual.localScale = scale;
+            _ghostVisual.localPosition = _ghostVisualPosition;
         }
 
         if (_ghostMaterial != null)
@@ -625,6 +684,52 @@ public class AIShadowRunner : MonoBehaviour
         return false;
     }
 
+    public static ShadowAction RequiredActionForObstacle(ObstacleType obstacleType)
+    {
+        if (obstacleType == ObstacleType.Low) return ShadowAction.Slide;
+        if (obstacleType == ObstacleType.High) return ShadowAction.Jump;
+        return ShadowAction.Keep;
+    }
+
+    public static bool CanStartVerticalAction(ShadowAction action,
+        bool isJumping, bool isSliding, bool isStumbling)
+    {
+        if (isJumping || isSliding || isStumbling) return false;
+        return action == ShadowAction.Jump || action == ShadowAction.Slide;
+    }
+
+    public static float CalculateReactionDistance(float speed, float actionDuration)
+    {
+        return Mathf.Clamp(Mathf.Max(0f, speed) * Mathf.Max(0.1f, actionDuration)
+                           * 0.48f, 3.5f, 8f);
+    }
+
+    public static float EvaluateJumpArc(float normalizedProgress)
+    {
+        float sine = Mathf.Sin(Mathf.Clamp01(normalizedProgress) * Mathf.PI);
+        return sine * sine;
+    }
+
+    public static float EvaluateSlideAmount(float remainingTime, float duration)
+    {
+        if (remainingTime <= 0f || duration <= 0f) return 0f;
+        float elapsed = duration - Mathf.Clamp(remainingTime, 0f, duration);
+        const float blendTime = 0.08f;
+        float enter = Mathf.Clamp01(elapsed / blendTime);
+        float exit = Mathf.Clamp01(remainingTime / blendTime);
+        return Mathf.SmoothStep(0f, 1f, Mathf.Min(enter, exit));
+    }
+
+    private float GetGhostJumpDuration()
+    {
+        return Mathf.Max(0.2f, _player != null ? _player.jumpDuration : 0.6f);
+    }
+
+    private float GetGhostSlideDuration()
+    {
+        return Mathf.Max(0.2f, _player != null ? _player.slideDuration : 0.8f);
+    }
+
     private bool HasTrainedProfile()
     {
         return _profile != null && _profile.generation > 0
@@ -647,6 +752,7 @@ public class AIShadowRunner : MonoBehaviour
             visual.name = "ShadowVisual";
             _ghostVisual = visual.transform;
             _ghostVisualScale = _ghostVisual.localScale;
+            _ghostVisualPosition = _ghostVisual.localPosition;
 
             foreach (Collider collider in visual.GetComponentsInChildren<Collider>(true))
                 Destroy(collider);
@@ -661,6 +767,7 @@ public class AIShadowRunner : MonoBehaviour
             Destroy(body.GetComponent<Collider>());
             _ghostVisual = body.transform;
             _ghostVisualScale = body.transform.localScale;
+            _ghostVisualPosition = body.transform.localPosition;
             ApplyGhostMaterial(body);
         }
 
