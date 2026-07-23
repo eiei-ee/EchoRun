@@ -181,6 +181,89 @@ public class GameStateTests
     }
 
     [Test]
+    public void ShadowObstacleReflexUsesOneMutuallyExclusiveVerticalAction()
+    {
+        Assert.AreEqual(ShadowAction.Slide,
+            AIShadowRunner.RequiredActionForObstacle(ObstacleType.Low));
+        Assert.AreEqual(ShadowAction.Jump,
+            AIShadowRunner.RequiredActionForObstacle(ObstacleType.High));
+        Assert.AreEqual(ShadowAction.Keep,
+            AIShadowRunner.RequiredActionForObstacle(ObstacleType.Barrier));
+
+        Assert.IsTrue(AIShadowRunner.CanStartVerticalAction(
+            ShadowAction.Jump, false, false, false));
+        Assert.IsFalse(AIShadowRunner.CanStartVerticalAction(
+            ShadowAction.Slide, true, false, false));
+        Assert.IsFalse(AIShadowRunner.CanStartVerticalAction(
+            ShadowAction.Jump, false, true, false));
+    }
+
+    [Test]
+    public void ShadowJumpAndSlideCurvesHaveSmoothGroundedEndpoints()
+    {
+        Assert.AreEqual(0f, AIShadowRunner.EvaluateJumpArc(0f), 0.0001f);
+        Assert.AreEqual(1f, AIShadowRunner.EvaluateJumpArc(0.5f), 0.0001f);
+        Assert.AreEqual(0f, AIShadowRunner.EvaluateJumpArc(1f), 0.0001f);
+        Assert.Less(AIShadowRunner.EvaluateJumpArc(0.01f), 0.002f,
+            "The shadow should ease off the ground instead of popping upward.");
+
+        Assert.AreEqual(0f, AIShadowRunner.EvaluateSlideAmount(0f, 0.8f), 0.0001f);
+        Assert.Greater(AIShadowRunner.EvaluateSlideAmount(0.4f, 0.8f), 0.99f);
+        Assert.Less(AIShadowRunner.EvaluateSlideAmount(0.01f, 0.8f), 0.1f,
+            "The shadow should smoothly stand up at the end of a slide.");
+    }
+
+    [Test]
+    public void ShadowSlidesOnceForAnApproachingLowObstacle()
+    {
+        TrackManager manager = Create<TrackManager>("TrackManager");
+        if (TrackManager.Instance != manager)
+            InvokePrivate(manager, "Awake");
+        GameObject owner = new GameObject("Segment");
+        _objects.Add(owner);
+        GameObject lowPrefab = CreateObstaclePrefab("LowObstacle", ObstacleType.Low);
+        InvokePrivate(manager, "SpawnDynamic", lowPrefab, owner,
+            new Vector3(0f, 1f, 3f), Quaternion.identity);
+        Assert.IsTrue(manager.TryGetUpcomingObstacleInLane(
+            Vector3.zero, Vector3.forward, 1, new HashSet<int>(),
+            out _, out ObstacleType detectedType, out _));
+        Assert.AreEqual(ObstacleType.Low, detectedType);
+
+        GameObject playerObject = new GameObject("player");
+        _objects.Add(playerObject);
+        PlayerController player = playerObject.AddComponent<PlayerController>();
+        GameObject ghost = new GameObject("ghost");
+        _objects.Add(ghost);
+        GameObject visual = new GameObject("visual");
+        _objects.Add(visual);
+        visual.transform.SetParent(ghost.transform, false);
+
+        AIShadowRunner runner = manager.GetComponent<AIShadowRunner>();
+        Assert.IsNotNull(runner);
+        SetPrivateField(runner, "_player", player);
+        SetPrivateField(runner, "_ghost", ghost);
+        SetPrivateField(runner, "_ghostVisual", visual.transform);
+        SetPrivateField(runner, "_ghostVisualScale", Vector3.one);
+        SetPrivateField(runner, "_ghostVisualPosition", Vector3.zero);
+        SetPrivateField(runner, "_ghostGroundY", 0f);
+
+        InvokePrivate(runner, "ApplyObstacleReaction");
+        float startedTimer = GetPrivateField<float>(runner, "_ghostSlideTimer");
+        Assert.Greater(startedTimer, 0f,
+            "A low obstacle in the shadow lane must start a slide.");
+
+        SetPrivateField(runner, "_ghostSlideTimer", startedTimer - 0.12f);
+        InvokePrivate(runner, "UpdateGhostPose");
+        Assert.Less(visual.transform.localScale.y, 0.7f,
+            "The reaction must be visible as a crouched shadow pose.");
+
+        SetPrivateField(runner, "_ghostSlideTimer", 0f);
+        InvokePrivate(runner, "ApplyObstacleReaction");
+        Assert.AreEqual(0f, GetPrivateField<float>(runner, "_ghostSlideTimer"),
+            "The same obstacle must not retrigger the slide.");
+    }
+
+    [Test]
     public void ShadowHeightDoesNotFollowPlayerJump()
     {
         GameObject playerObject = new GameObject("player");
@@ -248,6 +331,33 @@ public class GameStateTests
             Assert.That(plan.maxBlockedLanes, Is.InRange(1, 2));
             previousSafeLane = plan.safeLane;
         }
+    }
+
+    [Test]
+    public void TrackObstacleGenerationCapsEmptyStraightsAfterWarmup()
+    {
+        Assert.IsFalse(TrackManager.ShouldSpawnObstacleRow(
+            2, 2, 2, 3, 1f, 0f), "Warmup must remain obstacle-free.");
+        Assert.IsFalse(TrackManager.ShouldSpawnObstacleRow(
+            5, 3, 2, 3, 0f, 1f));
+        Assert.IsTrue(TrackManager.ShouldSpawnObstacleRow(
+            6, 4, 2, 3, 0f, 1f),
+            "The fourth consecutive empty straight must force an obstacle row.");
+    }
+
+    [Test]
+    public void TrackObstacleFairnessTargetsStarvedEdgeLane()
+    {
+        int[] drought = { 1, 0, 8 };
+        int safeLane = TrackManager.ChooseFairSafeLane(2, 1, drought);
+        int[] blocked = TrackManager.SelectBlockedLanes(safeLane, 1, drought);
+
+        Assert.AreNotEqual(2, safeLane,
+            "A long-starved edge lane must not remain protected indefinitely.");
+        CollectionAssert.Contains(blocked, 2,
+            "The next obstacle row should refill the long-starved edge lane.");
+        Assert.LessOrEqual(Mathf.Abs(safeLane - 1), 1,
+            "Fairness must not create an unreachable safe-lane jump.");
     }
 
     [Test]
@@ -353,6 +463,14 @@ public class GameStateTests
             name, BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.IsNotNull(field, "Missing private field: " + name);
         field.SetValue(target, value);
+    }
+
+    private static T GetPrivateField<T>(object target, string name)
+    {
+        FieldInfo field = target.GetType().GetField(
+            name, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.IsNotNull(field, "Missing private field: " + name);
+        return (T)field.GetValue(target);
     }
 
     private static object InvokePrivate(object target, string name, params object[] args)
