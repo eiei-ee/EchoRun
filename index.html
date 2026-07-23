@@ -119,12 +119,14 @@
       var codeChunks = [
         "WebGL.wasm.part00", "WebGL.wasm.part01", "WebGL.wasm.part02"
       ];
+      var chunkVersion = "1a890e0";
       var chunkObjectUrls = [];
 
       async function assembleBuildFile(chunkNames, completed, total) {
         var loaded = 0;
         var chunks = await Promise.all(chunkNames.map(async (chunkName) => {
-          var response = await fetch(buildUrl + "/" + chunkName);
+          var response = await fetch(
+            buildUrl + "/" + chunkName + "?v=" + chunkVersion);
           if (!response.ok) {
             throw new Error("Unable to load " + chunkName + " (" + response.status + ")");
           }
