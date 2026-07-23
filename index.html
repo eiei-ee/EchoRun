@@ -81,7 +81,7 @@
       // If you would like all file writes inside Unity Application.persistentDataPath
       // directory to automatically persist so that the contents are remembered when
       // the user revisits the site the next time, uncomment the following line:
-      // config.autoSyncPersistentDataPath = true;
+      config.autoSyncPersistentDataPath = true;
       // This autosyncing is currently not the default behavior to avoid regressing
       // existing user projects that might rely on the earlier manual
       // JS_FileSystem_Sync() behavior, but in future Unity version, this will be
@@ -111,11 +111,55 @@
 
       loadingBar.style.display = "block";
 
+      var dataChunks = [
+        "WebGL.data.part00", "WebGL.data.part01", "WebGL.data.part02",
+        "WebGL.data.part03", "WebGL.data.part04", "WebGL.data.part05",
+        "WebGL.data.part06", "WebGL.data.part07"
+      ];
+      var codeChunks = [
+        "WebGL.wasm.part00", "WebGL.wasm.part01", "WebGL.wasm.part02"
+      ];
+      var chunkObjectUrls = [];
+
+      async function assembleBuildFile(chunkNames, completed, total) {
+        var loaded = 0;
+        var chunks = await Promise.all(chunkNames.map(async (chunkName) => {
+          var response = await fetch(buildUrl + "/" + chunkName);
+          if (!response.ok) {
+            throw new Error("Unable to load " + chunkName + " (" + response.status + ")");
+          }
+          var bytes = await response.arrayBuffer();
+          loaded++;
+          progressBarFull.style.width =
+            15 * (completed + loaded / chunkNames.length) / total + "%";
+          return bytes;
+        }));
+        var objectUrl = URL.createObjectURL(
+          new Blob(chunks, { type: "application/octet-stream" })
+        );
+        chunkObjectUrls.push(objectUrl);
+        return objectUrl;
+      }
+
+      window.addEventListener("unload", () => {
+        chunkObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+      });
+
       var script = document.createElement("script");
       script.src = loaderUrl;
-      script.onload = () => {
+      script.onload = async () => {
+        try {
+          config.dataUrl = await assembleBuildFile(dataChunks, 0, 2);
+          config.codeUrl = await assembleBuildFile(codeChunks, 1, 2);
+        } catch (error) {
+          loadingBar.style.display = "none";
+          unityShowBanner("游戏资源加载失败，请刷新后重试。", "error");
+          console.error(error);
+          return;
+        }
+
         createTuanjieInstance(canvas, config, (progress) => {
-          progressBarFull.style.width = 100 * progress + "%";
+          progressBarFull.style.width = 15 + 85 * progress + "%";
               }).then((tuanjieInstance) => {
                 loadingBar.style.display = "none";
                 fullscreenButton.onclick = () => {
