@@ -44,6 +44,7 @@ public class GameManager : MonoBehaviour
     {
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
+        EchoRunSaveSystem.EnsureInitialized();
         int savedFps = PlayerPrefs.GetInt("TargetFrameRate", 60);
         Application.targetFrameRate = savedFps > 0 ? savedFps : 60;
     }
@@ -52,8 +53,7 @@ public class GameManager : MonoBehaviour
     {
         if (fps <= 0) return;
         Application.targetFrameRate = fps;
-        PlayerPrefs.SetInt("TargetFrameRate", fps);
-        PlayerPrefs.Save();
+        EchoRunSaveSystem.SaveFrameRate(fps);
     }
 
     public int GetFrameRate()
@@ -132,6 +132,7 @@ public class GameManager : MonoBehaviour
         Time.timeScale = 0f;
         State = GameState.Paused;
         OnStateChanged.Invoke(State);
+        EchoRunSaveSystem.SaveLegacyState();
     }
 
     public void Resume()
@@ -147,6 +148,7 @@ public class GameManager : MonoBehaviour
         Time.timeScale = 1f;
         AudioManager.Instance?.StopFootsteps();
         InputManager.Instance?.ClearInput();
+        EchoRunSaveSystem.SaveLegacyState();
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
@@ -177,6 +179,7 @@ public class GameManager : MonoBehaviour
         Time.timeScale = 1f;
         AudioManager.Instance?.StopFootsteps();
         InputManager.Instance?.ClearInput();
+        EchoRunSaveSystem.SaveLegacyState();
         _startAfterSceneLoad = true;
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
@@ -192,9 +195,7 @@ public class GameManager : MonoBehaviour
         IsNewHighScore = Score > HighScore;
         if (IsNewHighScore) HighScore = Score;
         TotalCoins += Coins;
-        PlayerPrefs.SetInt("HighScore", HighScore);
-        PlayerPrefs.SetInt("TotalCoins", TotalCoins);
-        PlayerPrefs.Save();
+        EchoRunSaveSystem.SaveProgress(HighScore, TotalCoins);
     }
 
     void OnDestroy()

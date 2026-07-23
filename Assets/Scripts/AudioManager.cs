@@ -35,6 +35,7 @@ public class AudioManager : MonoBehaviour
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
         DontDestroyOnLoad(gameObject);
+        EchoRunSaveSystem.EnsureInitialized();
 
         _sfxSource = gameObject.AddComponent<AudioSource>();
         _sfxSource.playOnAwake = false;
@@ -92,13 +93,13 @@ public class AudioManager : MonoBehaviour
     {
         musicVolume = Mathf.Clamp01(v);
         if (_musicSource != null) _musicSource.volume = musicVolume;
-        PlayerPrefs.SetFloat("MusicVolume", musicVolume);
+        EchoRunSaveSystem.SaveAudio(musicVolume, sfxVolume, false);
     }
 
     public void SetSfxVolume(float v)
     {
         sfxVolume = Mathf.Clamp01(v);
-        PlayerPrefs.SetFloat("SfxVolume", sfxVolume);
+        EchoRunSaveSystem.SaveAudio(musicVolume, sfxVolume, false);
     }
 
     void PlaySFX(AudioClip clip, float volumeScale = 1f, string procKey = null)
