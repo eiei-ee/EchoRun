@@ -152,6 +152,37 @@ public class TrackManager : MonoBehaviour
        return null;
    }
 
+    public bool IsInsideTurnTransition(Vector3 worldPosition,
+        float transitionDistance = 3f)
+    {
+        float distance = Mathf.Max(0.1f, transitionDistance);
+        float maxRadius = distance + laneDistance;
+        float maxRadiusSqr = maxRadius * maxRadius;
+
+        for (int i = _activeSegments.Count - 1; i >= 0; i--)
+        {
+            GameObject segment = _activeSegments[i];
+            if (segment == null || !segment.activeInHierarchy) continue;
+
+            TrackSegmentData data = segment.GetComponent<TrackSegmentData>();
+            if (data == null || data.segmentType == TrackSegmentType.Straight)
+                continue;
+
+            Vector3 fromTurn = worldPosition - data.turnPointWorld;
+            fromTurn.y = 0f;
+            if (fromTurn.sqrMagnitude > maxRadiusSqr) continue;
+
+            Vector3 entryDirection = data.entryDirection.normalized;
+            Vector3 exitDirection = data.exitDirection.normalized;
+            float entryProgress = Vector3.Dot(fromTurn, entryDirection);
+            float exitProgress = Vector3.Dot(fromTurn, exitDirection);
+            if (entryProgress >= -distance && exitProgress <= distance)
+                return true;
+        }
+
+        return false;
+    }
+
     public bool TryGetUpcomingObstacle(Vector3 playerPosition, Vector3 forward,
         int currentLane, out int obstacleLane, out float obstacleDistance,
         out ObstacleType obstacleType, out int obstacleId)

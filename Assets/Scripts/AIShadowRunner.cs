@@ -529,6 +529,9 @@ public class AIShadowRunner : MonoBehaviour
             || _ghostStumbleTimer > 0f || _ghostJumpTimer > 0f
             || _ghostSlideTimer > 0f)
             return;
+        if (TrackManager.Instance.IsInsideTurnTransition(
+                _ghost.transform.position))
+            return;
 
         if (!TrackManager.Instance.TryGetUpcomingObstacleInLane(
                 _ghost.transform.position, _ghostForward, _ghostLane,
@@ -644,6 +647,9 @@ public class AIShadowRunner : MonoBehaviour
     private void EvaluateGhostObstacle()
     {
         if (_ghost == null || TrackManager.Instance == null) return;
+        if (TrackManager.Instance.IsInsideTurnTransition(
+                _ghost.transform.position))
+            return;
         if (!TrackManager.Instance.TryGetUpcomingObstacleInLane(
                 _ghost.transform.position, _ghostForward, _ghostLane,
                 _handledGhostObstacles, out float threatDistance,
