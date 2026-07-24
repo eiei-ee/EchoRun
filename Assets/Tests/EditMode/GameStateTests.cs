@@ -442,6 +442,78 @@ public class GameStateTests
             "The shadow direction must rotate smoothly instead of snapping 90 degrees.");
     }
 
+    [Test]
+    public void TurnTransitionOnlyCoversTheCorner()
+    {
+        TrackManager manager = Create<TrackManager>("TrackManager");
+        GameObject turn = new GameObject("Turn");
+        _objects.Add(turn);
+        TrackSegmentData data = turn.AddComponent<TrackSegmentData>();
+        data.segmentType = TrackSegmentType.TurnRight;
+        data.entryDirection = Vector3.forward;
+        data.exitDirection = Vector3.right;
+        data.turnPointWorld = new Vector3(0f, 0f, 5f);
+
+        FieldInfo activeField = typeof(TrackManager).GetField(
+            "_activeSegments", BindingFlags.Instance | BindingFlags.NonPublic);
+        var activeSegments = (List<GameObject>)activeField.GetValue(manager);
+        activeSegments.Add(turn);
+
+        Assert.IsTrue(manager.IsInsideTurnTransition(new Vector3(0f, 0f, 3f)));
+        Assert.IsTrue(manager.IsInsideTurnTransition(new Vector3(2f, 0f, 5f)));
+        Assert.IsFalse(manager.IsInsideTurnTransition(new Vector3(0f, 0f, -5f)));
+        Assert.IsFalse(manager.IsInsideTurnTransition(new Vector3(10f, 0f, 5f)));
+    }
+
+    [Test]
+    public void ShadowDoesNotCountAProjectedObstacleWhileTurning()
+    {
+        TrackManager manager = Create<TrackManager>("TrackManager");
+        if (TrackManager.Instance != manager)
+            InvokePrivate(manager, "Awake");
+
+        GameObject turn = new GameObject("Turn");
+        _objects.Add(turn);
+        TrackSegmentData data = turn.AddComponent<TrackSegmentData>();
+        data.segmentType = TrackSegmentType.TurnRight;
+        data.entryDirection = Vector3.forward;
+        data.exitDirection = Vector3.right;
+        data.turnPointWorld = Vector3.zero;
+        FieldInfo activeField = typeof(TrackManager).GetField(
+            "_activeSegments", BindingFlags.Instance | BindingFlags.NonPublic);
+        var activeSegments = (List<GameObject>)activeField.GetValue(manager);
+        activeSegments.Add(turn);
+
+        GameObject owner = new GameObject("ExitSegment");
+        _objects.Add(owner);
+        GameObject barrierPrefab = CreateObstaclePrefab(
+            "BarrierObstacle", ObstacleType.Barrier);
+        InvokePrivate(manager, "SpawnDynamic", barrierPrefab, owner,
+            new Vector3(1f, 1f, 0f), Quaternion.identity);
+
+        GameObject ghost = new GameObject("ghost");
+        _objects.Add(ghost);
+        ghost.transform.position = new Vector3(0f, 0f, -1f);
+        AIShadowRunner runner = manager.GetComponent<AIShadowRunner>();
+        Assert.IsNotNull(runner);
+        SetPrivateField(runner, "_ghost", ghost);
+        SetPrivateField(runner, "_ghostForward",
+            new Vector3(1f, 0f, 1f).normalized);
+        SetPrivateField(runner, "_ghostLane", 1);
+
+        Assert.IsTrue(manager.TryGetUpcomingObstacleInLane(
+            ghost.transform.position, new Vector3(1f, 0f, 1f), 1,
+            new HashSet<int>(), out float projectedDistance, out _, out _));
+        Assert.Less(projectedDistance, 1.5f,
+            "The setup must reproduce the old diagonal projection false positive.");
+
+        InvokePrivate(runner, "EvaluateGhostObstacle");
+
+        Assert.AreEqual(0, GetPrivateField<int>(runner, "_ghostMistakes"),
+            "An obstacle projected across a corner must not count as a mistake.");
+        Assert.AreEqual(0f, GetPrivateField<float>(runner, "_ghostStumbleTimer"));
+    }
+
     private T Create<T>(string name) where T : Component
     {
         GameObject go = new GameObject(name);
