@@ -10,7 +10,9 @@ public sealed class AITrainingSimulationConfig
     [Range(0f, 1f)] public float initialPlayerSkill = 0.5f;
     [Range(0f, 0.5f)] public float playerVolatility = 0.08f;
     [Range(0f, 0.5f)] public float explorationRate = 0.12f;
+    [Range(0f, 1f)] public float ucbExploration = 0.35f;
     [Range(0.001f, 0.5f)] public float learningRate = 0.06f;
+    public bool useLinUcb = true;
 }
 
 [Serializable]
@@ -20,17 +22,31 @@ public sealed class AITrainingSimulationResult
     public int seed;
     public int episodes;
     public int totalSegments;
+    public string policyType;
     public float meanReward;
     public float survivalRate;
     public float meanDifficulty;
+    public float meanPolicyUncertainty;
     public int[] actionCounts;
     public float[] finalWeights;
+    public string policyStateJson;
+}
+
+[Serializable]
+public sealed class AITrainingComparisonResult
+{
+    public int schemaVersion = 1;
+    public AITrainingSimulationResult baseline;
+    public AITrainingSimulationResult linUcb;
+    public float rewardLift;
+    public float survivalLift;
 }
 
 public static class AITrainingSimulator
 {
     public static AITrainingSimulationResult Run(
-        AITrainingSimulationConfig config, float[] initialWeights = null)
+        AITrainingSimulationConfig config, float[] initialWeights = null,
+        string linUcbStateJson = null)
     {
         if (config == null)
             throw new ArgumentNullException(nameof(config));
@@ -38,11 +54,17 @@ public static class AITrainingSimulator
         int episodes = Mathf.Max(1, config.episodes);
         int segmentsPerEpisode = Mathf.Max(1, config.segmentsPerEpisode);
         var random = new System.Random(config.seed);
-        var policy = new AITrackPolicy(
-            unchecked(config.seed ^ 0x2C9277B5), initialWeights);
+        AITrackPolicy baselinePolicy = config.useLinUcb
+            ? null
+            : new AITrackPolicy(
+                unchecked(config.seed ^ 0x2C9277B5), initialWeights);
+        AILinUcbPolicy linUcbPolicy = config.useLinUcb
+            ? new AILinUcbPolicy(initialWeights, linUcbStateJson)
+            : null;
         int[] actionCounts = new int[AITrackPolicy.ActionCount];
         float totalReward = 0f;
         float totalDifficulty = 0f;
+        float totalUncertainty = 0f;
         int survivedSegments = 0;
         int totalSegments = episodes * segmentsPerEpisode;
 
@@ -61,8 +83,19 @@ public static class AITrainingSimulator
                 {
                     1f, skill, strain, recordPressure, engagement
                 };
-                int action = policy.Select(
-                    context, true, config.explorationRate);
+                int action;
+                if (config.useLinUcb)
+                {
+                    action = linUcbPolicy.Select(
+                        context, config.ucbExploration);
+                    totalUncertainty +=
+                        linUcbPolicy.LastSelectedUncertainty;
+                }
+                else
+                {
+                    action = baselinePolicy.Select(
+                        context, true, config.explorationRate);
+                }
                 actionCounts[action]++;
 
                 float difficulty = DifficultyForAction(action);
@@ -81,7 +114,16 @@ public static class AITrainingSimulator
                       + engagement * 0.15f - boredomPenalty
                     : -1f;
                 reward = Mathf.Clamp(reward, -1f, 1f);
-                policy.Update(action, context, reward, config.learningRate);
+                if (config.useLinUcb)
+                {
+                    linUcbPolicy.Update(action, context, reward,
+                        config.learningRate * 12.5f);
+                }
+                else
+                {
+                    baselinePolicy.Update(
+                        action, context, reward, config.learningRate);
+                }
 
                 totalReward += reward;
                 totalDifficulty += difficulty;
@@ -100,11 +142,45 @@ public static class AITrainingSimulator
             seed = config.seed,
             episodes = episodes,
             totalSegments = totalSegments,
+            policyType = config.useLinUcb ? "LinUCB" : "EpsilonGreedy",
             meanReward = totalReward / totalSegments,
             survivalRate = (float)survivedSegments / totalSegments,
             meanDifficulty = totalDifficulty / totalSegments,
+            meanPolicyUncertainty = config.useLinUcb
+                ? totalUncertainty / totalSegments
+                : 0f,
             actionCounts = actionCounts,
-            finalWeights = policy.ExportWeights()
+            finalWeights = config.useLinUcb
+                ? linUcbPolicy.ExportWeights()
+                : baselinePolicy.ExportWeights(),
+            policyStateJson = config.useLinUcb
+                ? linUcbPolicy.ExportStateJson()
+                : ""
+        };
+    }
+
+    public static AITrainingComparisonResult Compare(
+        AITrainingSimulationConfig config, float[] initialWeights = null,
+        string linUcbStateJson = null)
+    {
+        if (config == null)
+            throw new ArgumentNullException(nameof(config));
+
+        AITrainingSimulationConfig baselineConfig = CloneConfig(config);
+        baselineConfig.useLinUcb = false;
+        AITrainingSimulationConfig linUcbConfig = CloneConfig(config);
+        linUcbConfig.useLinUcb = true;
+
+        AITrainingSimulationResult baseline =
+            Run(baselineConfig, initialWeights);
+        AITrainingSimulationResult linUcb =
+            Run(linUcbConfig, initialWeights, linUcbStateJson);
+        return new AITrainingComparisonResult
+        {
+            baseline = baseline,
+            linUcb = linUcb,
+            rewardLift = linUcb.meanReward - baseline.meanReward,
+            survivalLift = linUcb.survivalRate - baseline.survivalRate
         };
     }
 
@@ -127,5 +203,22 @@ public static class AITrainingSimulator
         double u2 = random.NextDouble();
         return (float)(Math.Sqrt(-2.0 * Math.Log(u1))
                        * Math.Cos(2.0 * Math.PI * u2));
+    }
+
+    private static AITrainingSimulationConfig CloneConfig(
+        AITrainingSimulationConfig source)
+    {
+        return new AITrainingSimulationConfig
+        {
+            seed = source.seed,
+            episodes = source.episodes,
+            segmentsPerEpisode = source.segmentsPerEpisode,
+            initialPlayerSkill = source.initialPlayerSkill,
+            playerVolatility = source.playerVolatility,
+            explorationRate = source.explorationRate,
+            ucbExploration = source.ucbExploration,
+            learningRate = source.learningRate,
+            useLinUcb = source.useLinUcb
+        };
     }
 }

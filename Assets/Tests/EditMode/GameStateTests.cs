@@ -120,12 +120,64 @@ public class GameStateTests
     }
 
     [Test]
+    public void TrainingComparisonUsesTheSameEpisodeBudget()
+    {
+        var config = new AITrainingSimulationConfig
+        {
+            seed = 1338,
+            episodes = 4,
+            segmentsPerEpisode = 30
+        };
+
+        AITrainingComparisonResult result =
+            AITrainingSimulator.Compare(config);
+
+        Assert.AreEqual("EpsilonGreedy", result.baseline.policyType);
+        Assert.AreEqual("LinUCB", result.linUcb.policyType);
+        Assert.AreEqual(120, result.baseline.totalSegments);
+        Assert.AreEqual(120, result.linUcb.totalSegments);
+        Assert.Greater(result.linUcb.meanPolicyUncertainty, 0f);
+    }
+
+    [Test]
+    public void LinUcbOffersHarderRunsToHigherSkillCohorts()
+    {
+        var novice = new AITrainingSimulationConfig
+        {
+            seed = 909,
+            episodes = 30,
+            segmentsPerEpisode = 50,
+            initialPlayerSkill = 0.3f,
+            useLinUcb = true
+        };
+        var expert = new AITrainingSimulationConfig
+        {
+            seed = 909,
+            episodes = 30,
+            segmentsPerEpisode = 50,
+            initialPlayerSkill = 0.82f,
+            useLinUcb = true
+        };
+
+        AITrainingSimulationResult noviceResult =
+            AITrainingSimulator.Run(novice);
+        AITrainingSimulationResult expertResult =
+            AITrainingSimulator.Run(expert);
+
+        Assert.Greater(expertResult.meanDifficulty,
+            noviceResult.meanDifficulty + 0.05f);
+    }
+
+    [Test]
     public void TelemetryRoundTripPreservesDecisionInputsAndReward()
     {
         float[] shadowWeights = { 0.1f, 0.2f };
         float[] directorWeights = { 0.3f, 0.4f, 0.5f };
+        const string directorState =
+            "{\"version\":1,\"actionPulls\":[1,2,3,4]}";
         AIRunTelemetry.BeginRun(
-            77, 12, 7904, 22, 48, shadowWeights, directorWeights);
+            77, 12, 7904, 22, 48, shadowWeights,
+            directorWeights, directorState);
         AITrackPlan plan = new AITrackPlan
         {
             intent = AIDirectorIntent.Pressure,
@@ -138,7 +190,8 @@ public class GameStateTests
         };
         float[] context = { 1f, 0.7f, 0.2f, 0.8f, 0.6f };
 
-        int decisionId = AIRunTelemetry.RecordDirectorDecision(context, plan);
+        int decisionId = AIRunTelemetry.RecordDirectorDecision(
+            context, plan, 1, 0.42f, 0.18f, true);
         AIRunTelemetry.RecordDirectorOutcome(decisionId, 0.65f, 49);
         AIRunTelemetry.RecordShadowSample(
             ShadowAction.Jump, 1,
@@ -155,8 +208,15 @@ public class GameStateTests
             shadowWeights, restored.shadowWeightsAtStart);
         CollectionAssert.AreEqual(
             directorWeights, restored.directorWeightsAtStart);
+        Assert.AreEqual(
+            directorState, restored.directorPolicyStateAtStart);
         Assert.AreEqual(1, restored.directorDecisions.Count);
         Assert.IsTrue(restored.directorDecisions[0].trained);
+        Assert.AreEqual((int)AIDirectorIntent.Flow,
+            restored.directorDecisions[0].proposedIntent);
+        Assert.IsTrue(restored.directorDecisions[0].safetyAdjusted);
+        Assert.AreEqual(0.18f,
+            restored.directorDecisions[0].policyUncertainty, 0.0001f);
         Assert.AreEqual(0.65f, restored.directorDecisions[0].reward, 0.0001f);
         CollectionAssert.AreEqual(context,
             restored.directorDecisions[0].context);
@@ -234,6 +294,66 @@ public class GameStateTests
     }
 
     [Test]
+    public void LinUcbStartsFromLegacyFlowPrior()
+    {
+        var policy = new AILinUcbPolicy(
+            new AITrackPolicy(1).ExportWeights());
+        float[] context = { 1f, 0f, 0f, 0f, 0f };
+
+        int action = policy.Select(context, 0f);
+
+        Assert.AreEqual(1, action);
+        Assert.Greater(policy.LastSelectedUncertainty, 0f);
+    }
+
+    [Test]
+    public void LinUcbPositiveEvidenceRaisesMeanAndReducesUncertainty()
+    {
+        var policy = new AILinUcbPolicy();
+        float[] context = { 1f, 0.7f, 0.2f, 0.6f, 0.8f };
+        float meanBefore = policy.MeanScore(2, context);
+        float uncertaintyBefore = policy.Uncertainty(2, context);
+
+        for (int i = 0; i < 20; i++)
+            policy.Update(2, context, 1f);
+
+        Assert.Greater(policy.MeanScore(2, context), meanBefore);
+        Assert.Less(policy.Uncertainty(2, context), uncertaintyBefore);
+    }
+
+    [Test]
+    public void LinUcbStateSurvivesJsonRoundTrip()
+    {
+        float[] context = { 1f, 0.4f, 0.3f, 0.2f, 0.7f };
+        var trained = new AILinUcbPolicy();
+        for (int i = 0; i < 8; i++)
+            trained.Update(1, context, 0.75f);
+
+        var restored = new AILinUcbPolicy(
+            null, trained.ExportStateJson());
+
+        Assert.AreEqual(trained.MeanScore(1, context),
+            restored.MeanScore(1, context), 0.0001f);
+        Assert.AreEqual(trained.Uncertainty(1, context),
+            restored.Uncertainty(1, context), 0.0001f);
+        CollectionAssert.AreEqual(
+            trained.ExportWeights(), restored.ExportWeights());
+    }
+
+    [Test]
+    public void DirectorSafetyLayerCapsRiskWithoutChangingSafeChoices()
+    {
+        Assert.AreEqual(0, AITrackDirector.ConstrainAction(
+            3, 0.2f, 0.1f, true));
+        Assert.AreEqual(0, AITrackDirector.ConstrainAction(
+            2, 0.8f, 0.1f, false));
+        Assert.AreEqual(1, AITrackDirector.ConstrainAction(
+            3, 0.2f, 0.9f, false));
+        Assert.AreEqual(2, AITrackDirector.ConstrainAction(
+            2, 0.2f, 0.1f, false));
+    }
+
+    [Test]
     public void ArchiveJsonPreservesExistingProgressAndModels()
     {
         EchoRunSaveData original = new EchoRunSaveData
@@ -244,6 +364,7 @@ public class GameStateTests
             shadowProfileJson = "{\"generation\":22,\"sampleCount\":90}",
             directorWeights = new[] { 0.1f, 0.2f, 0.3f },
             directorModelUpdateCount = 48,
+            directorPolicyJson = "{\"version\":1,\"actionPulls\":[1,2,3,4]}",
             runSequence = 12,
             lastRunTelemetryJson = "{\"schemaVersion\":1,\"seed\":77}",
             skillProfileJson = "{\"version\":1,\"completedRuns\":4}",
@@ -259,6 +380,8 @@ public class GameStateTests
                 restored.shadowProfileJson).generation);
         CollectionAssert.AreEqual(original.directorWeights, restored.directorWeights);
         Assert.AreEqual(48, restored.directorModelUpdateCount);
+        StringAssert.Contains("\"actionPulls\"",
+            restored.directorPolicyJson);
         Assert.AreEqual(12, restored.runSequence);
         StringAssert.Contains("\"seed\":77", restored.lastRunTelemetryJson);
         StringAssert.Contains("\"completedRuns\":4", restored.skillProfileJson);

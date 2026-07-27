@@ -36,7 +36,11 @@ public sealed class AIDirectorDecisionSample
     public float time;
     public float distance;
     public int intent;
+    public int proposedIntent;
     public float[] context;
+    public float policyMean;
+    public float policyUncertainty;
+    public bool safetyAdjusted;
     public float difficulty;
     public float obstacleChance;
     public float coinChance;
@@ -79,6 +83,7 @@ public sealed class AIRunTelemetryData
     public float skillConfidenceAtStart;
     public float[] shadowWeightsAtStart;
     public float[] directorWeightsAtStart;
+    public string directorPolicyStateAtStart;
     public float duration;
     public float distance;
     public int score;
@@ -89,6 +94,7 @@ public sealed class AIRunTelemetryData
     public float skillConfidenceAtEnd;
     public float[] shadowWeightsAtEnd;
     public float[] directorWeightsAtEnd;
+    public string directorPolicyStateAtEnd;
     public List<AIRunStateSample> states = new List<AIRunStateSample>();
     public List<AIRunEventSample> events = new List<AIRunEventSample>();
     public List<AIDirectorDecisionSample> directorDecisions =
@@ -126,7 +132,7 @@ public static class AIRunRandom
 
 public static class AIRunTelemetry
 {
-    public const int SchemaVersion = 1;
+    public const int SchemaVersion = 2;
     public const float StateSampleInterval = 0.25f;
 
     private const int MaxStateSamples = 7200;
@@ -143,7 +149,7 @@ public static class AIRunTelemetry
 
     public static void BeginRun(int seed, int sequence, int highScore,
         int shadowGeneration, int directorUpdates, float[] shadowWeights,
-        float[] directorWeights)
+        float[] directorWeights, string directorPolicyState)
     {
         long now = DateTime.UtcNow.Ticks;
         _active = new AIRunTelemetryData
@@ -159,7 +165,8 @@ public static class AIRunTelemetry
             playerSkillAtStart = AIPlayerSkillEstimator.Skill,
             skillConfidenceAtStart = AIPlayerSkillEstimator.Confidence,
             shadowWeightsAtStart = Clone(shadowWeights),
-            directorWeightsAtStart = Clone(directorWeights)
+            directorWeightsAtStart = Clone(directorWeights),
+            directorPolicyStateAtStart = directorPolicyState ?? ""
         };
         _runStartTime = Time.time;
         _nextStateSampleTime = 0f;
@@ -210,6 +217,17 @@ public static class AIRunTelemetry
 
     public static int RecordDirectorDecision(float[] context, AITrackPlan plan)
     {
+        int proposedAction = plan.intent == AIDirectorIntent.Observe
+            ? -1
+            : (int)plan.intent - 1;
+        return RecordDirectorDecision(
+            context, plan, proposedAction, 0f, 0f, false);
+    }
+
+    public static int RecordDirectorDecision(float[] context,
+        AITrackPlan plan, int proposedAction, float policyMean,
+        float policyUncertainty, bool safetyAdjusted)
+    {
         if (!IsRecording) return 0;
         int id = _nextDecisionId++;
         _active.directorDecisions.Add(new AIDirectorDecisionSample
@@ -218,7 +236,13 @@ public static class AIRunTelemetry
             time = ElapsedTime(),
             distance = CurrentDistance(),
             intent = (int)plan.intent,
+            proposedIntent = proposedAction >= 0
+                ? proposedAction + 1
+                : (int)AIDirectorIntent.Observe,
             context = Clone(context),
+            policyMean = policyMean,
+            policyUncertainty = Mathf.Max(0f, policyUncertainty),
+            safetyAdjusted = safetyAdjusted,
             difficulty = plan.difficulty,
             obstacleChance = plan.obstacleChance,
             coinChance = plan.coinChance,
@@ -262,7 +286,7 @@ public static class AIRunTelemetry
 
     public static string FinishRun(GameManager gameManager, string reason,
         int shadowGeneration, int directorUpdates, float[] shadowWeights,
-        float[] directorWeights)
+        float[] directorWeights, string directorPolicyState)
     {
         if (!IsRecording) return GetLatestRunJson();
 
@@ -282,6 +306,8 @@ public static class AIRunTelemetry
         _active.skillConfidenceAtEnd = AIPlayerSkillEstimator.Confidence;
         _active.shadowWeightsAtEnd = Clone(shadowWeights);
         _active.directorWeightsAtEnd = Clone(directorWeights);
+        _active.directorPolicyStateAtEnd =
+            directorPolicyState ?? "";
 
         string json = JsonUtility.ToJson(_active);
         EchoRunSaveSystem.SaveLastRunTelemetry(json);
