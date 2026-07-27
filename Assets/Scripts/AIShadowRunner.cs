@@ -302,7 +302,9 @@ public class AIShadowRunner : MonoBehaviour
         if (!_runStarted) BeginRun();
         AIRunTelemetry.RecordEvent(
             "player_action", (int)action, laneBeforeAction);
-        Learn(action, laneBeforeAction);
+        float[] features = BuildFeatures(laneBeforeAction, false);
+        AIPlayerSkillEstimator.RecordAction(action, features);
+        Learn(action, features);
         _keepSampleTimer = 0f;
     }
 
@@ -435,11 +437,6 @@ public class AIShadowRunner : MonoBehaviour
             _ghostLane, PlayerLead, _ghostMistakes);
         HasActiveOpponent = false;
         SetGhostActive(false);
-    }
-
-    private void Learn(ShadowAction action, int lane)
-    {
-        Learn(action, BuildFeatures(lane, false));
     }
 
     private void Learn(ShadowAction action, float[] features)

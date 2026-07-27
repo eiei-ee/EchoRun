@@ -352,6 +352,8 @@ public class PlayerController : MonoBehaviour
         {
             if (obs.type == ObstacleType.Low && IsSliding)
             {
+                AIPlayerSkillEstimator.RecordObstacleOutcome(
+                    obs.type, true);
                 AITrackDirector.Instance?.RecordDodge();
                 AIShadowRunner.Instance?.RecordDodge();
                 AudioManager.Instance?.PlayDodgeObstacle();
@@ -360,11 +362,15 @@ public class PlayerController : MonoBehaviour
            if (obs.type == ObstacleType.High && IsJumping &&
                GetColliderBottomY() > other.bounds.max.y - 0.3f)
             {
+                AIPlayerSkillEstimator.RecordObstacleOutcome(
+                    obs.type, true);
                 AITrackDirector.Instance?.RecordDodge();
                 AIShadowRunner.Instance?.RecordDodge();
                 AudioManager.Instance?.PlayDodgeObstacle();
                 return;
             }
+           AIPlayerSkillEstimator.RecordObstacleOutcome(
+               obs.type, false);
            AITrackDirector.Instance?.RecordObstacleHit();
            AIShadowRunner.Instance?.RecordObstacleHit();
            _gm.GameOver();

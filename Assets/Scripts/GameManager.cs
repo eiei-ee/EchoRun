@@ -119,6 +119,7 @@ public class GameManager : MonoBehaviour
         RunSeed = _nextRunSeed ?? CreateRunSeed(runSequence);
         _nextRunSeed = null;
         AIRunRandom.BeginRun(RunSeed);
+        AIPlayerSkillEstimator.BeginRun();
         AIRunTelemetry.BeginRun(RunSeed, runSequence, HighScore,
             AIShadowRunner.Instance != null ? AIShadowRunner.Instance.Generation : 0,
             AITrackDirector.Instance != null
@@ -242,6 +243,7 @@ public class GameManager : MonoBehaviour
 
     private void FinishTelemetry(string reason)
     {
+        AIPlayerSkillEstimator.EndRun(Distance);
         AIRunTelemetry.FinishRun(this, reason,
             AIShadowRunner.Instance != null ? AIShadowRunner.Instance.Generation : 0,
             AITrackDirector.Instance != null

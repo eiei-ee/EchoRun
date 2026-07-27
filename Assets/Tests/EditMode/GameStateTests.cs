@@ -62,6 +62,64 @@ public class GameStateTests
     }
 
     [Test]
+    public void BayesianAbilityGainsSkillAndConfidenceFromEvidence()
+    {
+        var ability = new BayesianAbilityEstimate();
+        float initialMean = ability.Mean;
+        float initialConfidence = ability.Confidence;
+
+        for (int i = 0; i < 12; i++)
+            ability.Observe(true);
+
+        Assert.Greater(ability.Mean, initialMean);
+        Assert.Greater(ability.Confidence, initialConfidence);
+    }
+
+    [Test]
+    public void PlayerSkillProfileSeparatesJumpAndSlideEvidence()
+    {
+        var profile = new AIPlayerSkillProfile();
+        float initialJump = profile.jumping.Mean;
+        float initialSlide = profile.sliding.Mean;
+
+        profile.RecordObstacle(ObstacleType.High, true, 0.7f);
+        profile.RecordObstacle(ObstacleType.Low, false, 0.4f);
+
+        Assert.Greater(profile.jumping.Mean, initialJump);
+        Assert.Less(profile.sliding.Mean, initialSlide);
+        Assert.AreEqual(1, profile.reactionSamples);
+        Assert.AreEqual(0.7f, profile.reactionProximityMean, 0.0001f);
+    }
+
+    [Test]
+    public void TrainingSimulatorIsDeterministicAndAccountsForEverySegment()
+    {
+        var config = new AITrainingSimulationConfig
+        {
+            seed = 4815,
+            episodes = 8,
+            segmentsPerEpisode = 25,
+            initialPlayerSkill = 0.58f
+        };
+
+        AITrainingSimulationResult first =
+            AITrainingSimulator.Run(config);
+        AITrainingSimulationResult second =
+            AITrainingSimulator.Run(config);
+
+        Assert.AreEqual(200, first.totalSegments);
+        Assert.AreEqual(first.meanReward, second.meanReward, 0.000001f);
+        Assert.AreEqual(first.survivalRate, second.survivalRate, 0.000001f);
+        CollectionAssert.AreEqual(first.actionCounts, second.actionCounts);
+        CollectionAssert.AreEqual(first.finalWeights, second.finalWeights);
+
+        int decisionCount = 0;
+        foreach (int count in first.actionCounts) decisionCount += count;
+        Assert.AreEqual(first.totalSegments, decisionCount);
+        Assert.That(first.survivalRate, Is.InRange(0f, 1f));
+    }
+
+    [Test]
     public void TelemetryRoundTripPreservesDecisionInputsAndReward()
     {
         float[] shadowWeights = { 0.1f, 0.2f };
@@ -188,6 +246,7 @@ public class GameStateTests
             directorModelUpdateCount = 48,
             runSequence = 12,
             lastRunTelemetryJson = "{\"schemaVersion\":1,\"seed\":77}",
+            skillProfileJson = "{\"version\":1,\"completedRuns\":4}",
             savedAtUtcTicks = 123456789L
         };
 
@@ -202,6 +261,7 @@ public class GameStateTests
         Assert.AreEqual(48, restored.directorModelUpdateCount);
         Assert.AreEqual(12, restored.runSequence);
         StringAssert.Contains("\"seed\":77", restored.lastRunTelemetryJson);
+        StringAssert.Contains("\"completedRuns\":4", restored.skillProfileJson);
     }
 
     [Test]

@@ -277,9 +277,14 @@ public class AITrackDirector : MonoBehaviour
         float highScore = _gameManager != null ? _gameManager.HighScore : 0f;
         float actionCount = _laneChanges + _jumps + _slides;
 
-        float mastery = Mathf.Clamp01(distance / 220f + _dodges * 0.08f);
+        float liveMastery = Mathf.Clamp01(
+            distance / 220f + _dodges * 0.08f);
+        float skillConfidence = AIPlayerSkillEstimator.Confidence;
+        float mastery = Mathf.Lerp(
+            liveMastery, AIPlayerSkillEstimator.Skill, skillConfidence);
         float strain = Mathf.Clamp01(_hits * 0.8f
-                       + Mathf.Max(0f, actionCount - distance / 8f) / 20f);
+                       + Mathf.Max(0f, actionCount - distance / 8f) / 20f
+                       + AIPlayerSkillEstimator.Uncertainty * 0.18f);
         float recordPressure = highScore > 0f
             ? Mathf.Clamp01(score / Mathf.Max(1f, highScore))
             : 0f;
@@ -329,6 +334,8 @@ public class AITrackDirector : MonoBehaviour
                        - hitGain * 1.25f;
 
         float clampedReward = Mathf.Clamp(reward, -1f, 1f);
+        AIPlayerSkillEstimator.RecordSegmentOutcome(
+            hitGain == 0, distanceGain);
         _sessionPolicy.Update(decision.action, decision.context,
             clampedReward, learningRate);
         ModelUpdateCount++;
