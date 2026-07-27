@@ -39,7 +39,7 @@ public sealed class AITrackPolicy
         {-0.65f,  1.00f, -0.80f, 1.20f, 0.20f }  // Record push
     };
 
-    private readonly System.Random _random;
+    private System.Random _random;
 
     public AITrackPolicy(int seed = 1337, float[] savedWeights = null)
     {
@@ -72,6 +72,11 @@ public sealed class AITrackPolicy
             }
         }
         return bestAction;
+    }
+
+    public void ResetRandom(int seed)
+    {
+        _random = new System.Random(seed);
     }
 
     public void Update(int action, float[] context, float reward, float learningRate)
@@ -149,12 +154,14 @@ public class AITrackDirector : MonoBehaviour
     private readonly int[] _laneVisits = { 0, 1, 0 };
     private readonly Queue<PendingDecision> _pendingDecisions =
         new Queue<PendingDecision>();
+    private int _policyRunSeed = int.MinValue;
 
     private sealed class PendingDecision
     {
         public int action;
         public float[] context;
         public float segmentEndDistance;
+        public int telemetryDecisionId;
     }
 
     void Awake()
@@ -191,12 +198,19 @@ public class AITrackDirector : MonoBehaviour
             _sessionPolicy = new AITrackPolicy(
                 Environment.TickCount, EchoRunSaveSystem.GetDirectorWeights());
         }
+        int runSeed = _gameManager != null ? _gameManager.RunSeed : AIRunRandom.Seed;
+        if (_policyRunSeed != runSeed)
+        {
+            _policyRunSeed = runSeed;
+            _sessionPolicy.ResetRandom(unchecked(runSeed ^ 0x41C64E6D));
+        }
 
         _decisionCount++;
         TrainCompletedPlans(false);
 
         float[] context = BuildContext();
         AIDirectorIntent intent;
+        PendingDecision pendingDecision = null;
         if (!useAI || _decisionCount <= Mathf.Max(1, observationSegments))
         {
             intent = AIDirectorIntent.Observe;
@@ -205,16 +219,23 @@ public class AITrackDirector : MonoBehaviour
         {
             int action = _sessionPolicy.Select(context, true, explorationRate);
             intent = (AIDirectorIntent)(action + 1);
-            _pendingDecisions.Enqueue(new PendingDecision
+            pendingDecision = new PendingDecision
             {
                 action = action,
                 context = (float[])context.Clone(),
                 segmentEndDistance = segmentEndDistance
-            });
+            };
         }
 
         CurrentPlan = BuildPlan(intent, baseDifficulty, baseObstacleChance,
             baseCoinChance, baseTurnChance, previousSafeLane, canTurn);
+        int telemetryDecisionId =
+            AIRunTelemetry.RecordDirectorDecision(context, CurrentPlan);
+        if (pendingDecision != null)
+        {
+            pendingDecision.telemetryDecisionId = telemetryDecisionId;
+            _pendingDecisions.Enqueue(pendingDecision);
+        }
         CurrentStatus = BuildStatus(CurrentPlan);
         return CurrentPlan;
     }
@@ -230,6 +251,13 @@ public class AITrackDirector : MonoBehaviour
     public void RecordCoin() => _coins++;
     public void RecordDodge() => _dodges++;
     public void RecordObstacleHit() => _hits++;
+
+    public float[] GetModelWeightsSnapshot()
+    {
+        return _sessionPolicy != null
+            ? _sessionPolicy.ExportWeights()
+            : EchoRunSaveSystem.GetDirectorWeights();
+    }
 
     private void OnGameStateChanged(GameState state)
     {
@@ -300,9 +328,12 @@ public class AITrackDirector : MonoBehaviour
                        + Mathf.Clamp(dodgeGain * 0.12f, 0f, 0.24f)
                        - hitGain * 1.25f;
 
+        float clampedReward = Mathf.Clamp(reward, -1f, 1f);
         _sessionPolicy.Update(decision.action, decision.context,
-            Mathf.Clamp(reward, -1f, 1f), learningRate);
+            clampedReward, learningRate);
         ModelUpdateCount++;
+        AIRunTelemetry.RecordDirectorOutcome(
+            decision.telemetryDecisionId, clampedReward, ModelUpdateCount);
         SaveDirectorModel();
         _evaluatedDistance = distance;
         _evaluatedCoins = _coins;
@@ -383,7 +414,7 @@ public class AITrackDirector : MonoBehaviour
 
         plan.safeLane = ChooseSafeLane(intent, previousSafeLane);
         plan.shouldTurn = canTurn
-                          && UnityEngine.Random.value
+                          && AIRunRandom.Value
                           < Mathf.Clamp01(baseTurnChance * turnMultiplier);
         return plan;
     }

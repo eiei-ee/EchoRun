@@ -391,7 +391,7 @@ public class TrackManager : MonoBehaviour
 
         if (shouldTurn)
         {
-            bool turnRight = Random.value < 0.5f;
+            bool turnRight = AIRunRandom.Value < 0.5f;
             prefab = turnRight ? turnRightPrefab : turnLeftPrefab;
             segType = turnRight ? TrackSegmentType.TurnRight : TrackSegmentType.TurnLeft;
             angleDelta = turnRight ? 90f : -90f;
@@ -455,6 +455,8 @@ public class TrackManager : MonoBehaviour
         }
 
         WorldStyler.Instance?.DecorateSegment(segment, segType);
+        AIRunTelemetry.RecordEvent("track_segment", (int)segType,
+            plan.safeLane, plan.difficulty, plan.obstacleChance);
         _plannedDistance += segmentLength;
     }
 
@@ -536,28 +538,32 @@ public class TrackManager : MonoBehaviour
         _lastSafeLane = safeLane;
 
         // Determine coin Z first so obstacles can avoid it
-        float coinZ = Random.Range(buffer + 2f, end - 4f);
+        float coinZ = AIRunRandom.Range(buffer + 2f, end - 4f);
 
         // Always put a dense coin trail on the safe lane
         int minCoins = Mathf.Max(2, plan.minCoinCount);
         int maxCoins = Mathf.Max(minCoins + 1, plan.maxCoinCount);
-        SpawnCoinLine(segment, safeLane, coinZ, Random.Range(minCoins, maxCoins));
+        SpawnCoinLine(segment, safeLane, coinZ,
+            AIRunRandom.Range(minCoins, maxCoins));
         // Sometimes add sparse coins on an adjacent lane
-        if (Random.value < plan.coinChance)
+        if (AIRunRandom.Value < plan.coinChance)
         {
-            int altLane = (safeLane + (Random.value < 0.5f ? -1 : 1) + 3) % 3;
-            SpawnCoinLine(segment, altLane, coinZ + Random.Range(-1f, 1f), Random.Range(2, 5));
+            int altLane = (safeLane + (AIRunRandom.Value < 0.5f ? -1 : 1) + 3) % 3;
+            SpawnCoinLine(segment, altLane,
+                coinZ + AIRunRandom.Range(-1f, 1f), AIRunRandom.Range(2, 5));
         }
 
         bool prefabsReady = obstaclePrefabs != null && obstaclePrefabs.Length >= 3;
         bool shouldSpawnObstacles = prefabsReady && ShouldSpawnObstacleRow(
             _straightSegmentsSpawned, _obstacleFreeSegments, warmupSegments,
-            maxConsecutiveObstacleFreeStraights, plan.obstacleChance, Random.value);
+            maxConsecutiveObstacleFreeStraights, plan.obstacleChance,
+            AIRunRandom.Value);
         if (shouldSpawnObstacles)
         {
             // Place obstacles at a different Z from the coin trail
-            float obsZ = coinZ + 3f + Random.Range(0f, 3f);
-            if (obsZ > end - 1f) obsZ = coinZ - 3f - Random.Range(0f, 3f);
+            float obsZ = coinZ + 3f + AIRunRandom.Range(0f, 3f);
+            if (obsZ > end - 1f)
+                obsZ = coinZ - 3f - AIRunRandom.Range(0f, 3f);
             obsZ = Mathf.Clamp(obsZ, buffer + 1f, end - 1f);
             if (SpawnObstacleRow(
                     segment, obsZ, diff, safeLane, plan.maxBlockedLanes) > 0)
@@ -577,7 +583,8 @@ public class TrackManager : MonoBehaviour
 
     AITrackPlan CreateFallbackPlan(float difficulty, bool canTurn)
     {
-        int safeLane = Mathf.Clamp(_lastSafeLane + Random.Range(-1, 2), 0, 2);
+        int safeLane = Mathf.Clamp(
+            _lastSafeLane + AIRunRandom.Range(-1, 2), 0, 2);
         return new AITrackPlan
         {
             intent = AIDirectorIntent.Observe,
@@ -589,7 +596,7 @@ public class TrackManager : MonoBehaviour
             maxCoinCount = 8,
             maxBlockedLanes = difficulty > 0.5f ? 2 : 1,
             safeLane = safeLane,
-            shouldTurn = canTurn && Random.value < turnChance
+            shouldTurn = canTurn && AIRunRandom.Value < turnChance
         };
     }
 
@@ -612,20 +619,20 @@ public class TrackManager : MonoBehaviour
     {
         // Subway Surfers-style: coins weave between lanes
         if (coinPrefab == null) return;
-        int steps = Random.Range(5, 9);
+        int steps = AIRunRandom.Range(5, 9);
         float zStep = (zEnd - zStart) / steps;
 
-        int fromLane = Random.Range(0, 3);
+        int fromLane = AIRunRandom.Range(0, 3);
         for (int i = 0; i < steps; i++)
         {
             float z = zStart + zStep * i;
-            int toLane = (fromLane + (Random.value < 0.5f ? 1 : -1) + 3) % 3;
+            int toLane = (fromLane + (AIRunRandom.Value < 0.5f ? 1 : -1) + 3) % 3;
             toLane = Mathf.Clamp(toLane, 0, 2);
 
             float x = (fromLane - 1) * laneDistance;
             float x2 = (toLane - 1) * laneDistance;
 
-            int coins = Random.Range(2, 5);
+            int coins = AIRunRandom.Range(2, 5);
             for (int c = 0; c < coins; c++)
             {
                 float t = (float)c / (coins - 1);
@@ -663,15 +670,18 @@ public class TrackManager : MonoBehaviour
             if (difficulty < 0.3f)
                 type = 0; // early game: only Low obstacles
             else if (difficulty < 0.6f)
-                type = Random.value < 0.35f ? 1 : 0; // mid game: Low + High
+                type = AIRunRandom.Value < 0.35f ? 1 : 0; // mid game: Low + High
             else
-                type = Random.value < 0.3f ? 2 : (Random.value < 0.5f ? 1 : 0); // late: all types
+                type = AIRunRandom.Value < 0.3f
+                    ? 2
+                    : (AIRunRandom.Value < 0.5f ? 1 : 0); // late: all types
 
             // Never put a Barrier when only 1 lane is blocked (can't dodge)
             if (blocked == 1 && type == 2) type = 1;
 
             if (SpawnObstacleAt(
-                    segment, lane, obsZ + Random.Range(-0.8f, 0.8f), type))
+                    segment, lane,
+                    obsZ + AIRunRandom.Range(-0.8f, 0.8f), type))
             {
                 _laneObstacleDrought[lane] = 0;
                 spawned++;
