@@ -9,6 +9,7 @@ public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
     private static bool _startAfterSceneLoad;
+    private static int? _nextRunSeed;
 
     [Header("Speed")]
     public float startSpeed = 10f;
@@ -27,6 +28,7 @@ public class GameManager : MonoBehaviour
     public int TotalCoins { get; private set; }
     public bool IsNewHighScore { get; private set; }
     public bool IsDeathSequence { get; private set; }
+    public int RunSeed { get; private set; }
 
     [Header("Buff (runtime)")]
     public float BuffTimeRemaining;
@@ -39,6 +41,7 @@ public class GameManager : MonoBehaviour
 
     private float _distanceTraveled;
     private float _prePauseTimeScale = 1f;
+    private PlayerController _telemetryPlayer;
 
     void Awake()
     {
@@ -94,6 +97,10 @@ public class GameManager : MonoBehaviour
             OnScoreChanged.Invoke(Score);
         }
 
+        if (_telemetryPlayer == null)
+            _telemetryPlayer = FindObjectOfType<PlayerController>();
+        AIRunTelemetry.Tick(this, _telemetryPlayer);
+
         // Buff countdown
         if (BuffTimeRemaining > 0f)
         {
@@ -108,6 +115,22 @@ public class GameManager : MonoBehaviour
 
     public void StartGame()
     {
+        int runSequence = EchoRunSaveSystem.ReserveRunSequence();
+        RunSeed = _nextRunSeed ?? CreateRunSeed(runSequence);
+        _nextRunSeed = null;
+        AIRunRandom.BeginRun(RunSeed);
+        AIRunTelemetry.BeginRun(RunSeed, runSequence, HighScore,
+            AIShadowRunner.Instance != null ? AIShadowRunner.Instance.Generation : 0,
+            AITrackDirector.Instance != null
+                ? AITrackDirector.Instance.ModelUpdateCount
+                : EchoRunSaveSystem.DirectorModelUpdateCount,
+            AIShadowRunner.Instance != null
+                ? AIShadowRunner.Instance.GetModelWeightsSnapshot()
+                : null,
+            AITrackDirector.Instance != null
+                ? AITrackDirector.Instance.GetModelWeightsSnapshot()
+                : EchoRunSaveSystem.GetDirectorWeights());
+
         Time.timeScale = 1f;
         CurrentSpeed = startSpeed;
         Score = 0;
@@ -116,6 +139,8 @@ public class GameManager : MonoBehaviour
         _distanceTraveled = 0;
         BuffTimeRemaining = 0;
         BuffName = null;
+        IsDeathSequence = false;
+        _telemetryPlayer = null;
         State = GameState.Playing;
         OnStateChanged.Invoke(State);
         OnScoreChanged.Invoke(0);
@@ -148,6 +173,7 @@ public class GameManager : MonoBehaviour
         Time.timeScale = 1f;
         AudioManager.Instance?.StopFootsteps();
         InputManager.Instance?.ClearInput();
+        FinishTelemetry("menu");
         EchoRunSaveSystem.SaveLegacyState();
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
@@ -171,6 +197,7 @@ public class GameManager : MonoBehaviour
         State = GameState.GameOver;
         SaveHighScore();
         OnStateChanged.Invoke(State);
+        FinishTelemetry("game_over");
         IsDeathSequence = false;
     }
 
@@ -179,6 +206,7 @@ public class GameManager : MonoBehaviour
         Time.timeScale = 1f;
         AudioManager.Instance?.StopFootsteps();
         InputManager.Instance?.ClearInput();
+        FinishTelemetry("restart");
         EchoRunSaveSystem.SaveLegacyState();
         _startAfterSceneLoad = true;
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
@@ -196,6 +224,35 @@ public class GameManager : MonoBehaviour
         if (IsNewHighScore) HighScore = Score;
         TotalCoins += Coins;
         EchoRunSaveSystem.SaveProgress(HighScore, TotalCoins);
+    }
+
+    public static void SetNextRunSeed(int seed)
+    {
+        _nextRunSeed = seed;
+    }
+
+    private static int CreateRunSeed(int sequence)
+    {
+        unchecked
+        {
+            long ticks = System.DateTime.UtcNow.Ticks;
+            return (int)(ticks ^ (ticks >> 32) ^ (sequence * 486187739));
+        }
+    }
+
+    private void FinishTelemetry(string reason)
+    {
+        AIRunTelemetry.FinishRun(this, reason,
+            AIShadowRunner.Instance != null ? AIShadowRunner.Instance.Generation : 0,
+            AITrackDirector.Instance != null
+                ? AITrackDirector.Instance.ModelUpdateCount
+                : EchoRunSaveSystem.DirectorModelUpdateCount,
+            AIShadowRunner.Instance != null
+                ? AIShadowRunner.Instance.GetModelWeightsSnapshot()
+                : null,
+            AITrackDirector.Instance != null
+                ? AITrackDirector.Instance.GetModelWeightsSnapshot()
+                : EchoRunSaveSystem.GetDirectorWeights());
     }
 
     void OnDestroy()

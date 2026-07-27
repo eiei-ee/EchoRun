@@ -300,6 +300,8 @@ public class AIShadowRunner : MonoBehaviour
     {
         if (_gameManager == null || _gameManager.State != GameState.Playing) return;
         if (!_runStarted) BeginRun();
+        AIRunTelemetry.RecordEvent(
+            "player_action", (int)action, laneBeforeAction);
         Learn(action, laneBeforeAction);
         _keepSampleTimer = 0f;
     }
@@ -307,22 +309,33 @@ public class AIShadowRunner : MonoBehaviour
     public void RecordCoin()
     {
         _runCoins++;
+        AIRunTelemetry.RecordEvent("coin", 0,
+            _player != null ? _player.CurrentLane : -1, _runCoins);
     }
 
     public void RecordDodge()
     {
         _runDodges++;
+        AIRunTelemetry.RecordEvent("dodge", 0,
+            _player != null ? _player.CurrentLane : -1, _runDodges);
     }
 
     public void RecordObstacleHit()
     {
         if (HasActiveOpponent) PlayerLead -= 2f;
+        AIRunTelemetry.RecordEvent("obstacle_hit", 0,
+            _player != null ? _player.CurrentLane : -1, PlayerLead);
     }
 
     public string FinalizeRunIfNeeded()
     {
         if (!_runFinalized && _runStarted) FinishRun();
         return LastResult;
+    }
+
+    public float[] GetModelWeightsSnapshot()
+    {
+        return _policy != null ? _policy.ExportWeights() : null;
     }
 
     private void OnGameStateChanged(GameState state)
@@ -417,6 +430,9 @@ public class AIShadowRunner : MonoBehaviour
         }
 
         CurrentStatus = LastResult;
+        AIRunTelemetry.RecordEvent("shadow_result",
+            challengedOpponent ? (playerWon ? 1 : -1) : 0,
+            _ghostLane, PlayerLead, _ghostMistakes);
         HasActiveOpponent = false;
         SetGhostActive(false);
     }
@@ -428,6 +444,12 @@ public class AIShadowRunner : MonoBehaviour
 
     private void Learn(ShadowAction action, float[] features)
     {
+        int lane = features != null && features.Length > 1
+            ? Mathf.RoundToInt(features[1] + 1f)
+            : 1;
+        float confidence = _policy != null ? _policy.Confidence(features) : 0f;
+        AIRunTelemetry.RecordShadowSample(
+            action, lane, features, false, confidence);
         _policy.Learn((int)action, features, learningRate);
         _profile.sampleCount++;
         _samplesSinceCheckpoint++;
@@ -497,6 +519,8 @@ public class AIShadowRunner : MonoBehaviour
         float[] features = BuildFeatures(_ghostLane, true);
         ShadowAction action = (ShadowAction)_opponentPolicy.Predict(features);
         _decisionConfidence = _opponentPolicy.Confidence(features);
+        AIRunTelemetry.RecordShadowSample(
+            action, _ghostLane, features, true, _decisionConfidence);
 
         switch (action)
         {

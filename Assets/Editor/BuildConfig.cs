@@ -122,6 +122,10 @@ public class BuildConfig
 
     static void ConfigureAndroid()
     {
+        PlayerSettings.SetScriptingBackend(
+            NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);
+        PlayerSettings.SetIl2CppCompilerConfiguration(
+            NamedBuildTarget.Android, Il2CppCompilerConfiguration.Release);
         PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64 | AndroidArchitecture.ARMv7;
         PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel22;
         PlayerSettings.Android.targetSdkVersion = AndroidSdkVersions.AndroidApiLevelAuto;

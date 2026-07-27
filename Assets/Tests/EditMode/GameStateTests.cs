@@ -30,6 +30,7 @@ public class GameStateTests
         manager.BuffName = "Shield";
         manager.BuffTimeRemaining = 5f;
         manager.AddCoins(3);
+        GameManager.SetNextRunSeed(424242);
 
         manager.StartGame();
 
@@ -41,6 +42,69 @@ public class GameStateTests
         Assert.IsNull(manager.BuffName);
         Assert.AreEqual(0f, manager.BuffTimeRemaining);
         Assert.AreEqual(1f, Time.timeScale);
+        Assert.AreEqual(424242, manager.RunSeed);
+        Assert.IsTrue(AIRunTelemetry.IsRecording);
+    }
+
+    [Test]
+    public void RunRandomRepeatsTheSameSequenceForTheSameSeed()
+    {
+        AIRunRandom.BeginRun(9137);
+        float firstValue = AIRunRandom.Value;
+        int firstLane = AIRunRandom.Range(0, 3);
+        float firstOffset = AIRunRandom.Range(-0.8f, 0.8f);
+
+        AIRunRandom.BeginRun(9137);
+
+        Assert.AreEqual(firstValue, AIRunRandom.Value);
+        Assert.AreEqual(firstLane, AIRunRandom.Range(0, 3));
+        Assert.AreEqual(firstOffset, AIRunRandom.Range(-0.8f, 0.8f));
+    }
+
+    [Test]
+    public void TelemetryRoundTripPreservesDecisionInputsAndReward()
+    {
+        float[] shadowWeights = { 0.1f, 0.2f };
+        float[] directorWeights = { 0.3f, 0.4f, 0.5f };
+        AIRunTelemetry.BeginRun(
+            77, 12, 7904, 22, 48, shadowWeights, directorWeights);
+        AITrackPlan plan = new AITrackPlan
+        {
+            intent = AIDirectorIntent.Pressure,
+            difficulty = 0.72f,
+            obstacleChance = 0.8f,
+            coinChance = 0.45f,
+            safeLane = 2,
+            maxBlockedLanes = 2,
+            shouldTurn = true
+        };
+        float[] context = { 1f, 0.7f, 0.2f, 0.8f, 0.6f };
+
+        int decisionId = AIRunTelemetry.RecordDirectorDecision(context, plan);
+        AIRunTelemetry.RecordDirectorOutcome(decisionId, 0.65f, 49);
+        AIRunTelemetry.RecordShadowSample(
+            ShadowAction.Jump, 1,
+            new[] { 1f, 0f, 0.3f, 0.8f, 0f, 0.66f, 0f, 0f },
+            false, 0.72f);
+
+        AIRunTelemetryData restored = AIRunTelemetry.FromJson(
+            AIRunTelemetry.GetLatestRunJson());
+
+        Assert.AreEqual(AIRunTelemetry.SchemaVersion, restored.schemaVersion);
+        Assert.AreEqual(77, restored.seed);
+        Assert.AreEqual("0000004D-000012", restored.runId);
+        CollectionAssert.AreEqual(
+            shadowWeights, restored.shadowWeightsAtStart);
+        CollectionAssert.AreEqual(
+            directorWeights, restored.directorWeightsAtStart);
+        Assert.AreEqual(1, restored.directorDecisions.Count);
+        Assert.IsTrue(restored.directorDecisions[0].trained);
+        Assert.AreEqual(0.65f, restored.directorDecisions[0].reward, 0.0001f);
+        CollectionAssert.AreEqual(context,
+            restored.directorDecisions[0].context);
+        Assert.AreEqual(1, restored.shadowSamples.Count);
+        Assert.AreEqual((int)ShadowAction.Jump,
+            restored.shadowSamples[0].action);
     }
 
     [Test]
@@ -122,6 +186,8 @@ public class GameStateTests
             shadowProfileJson = "{\"generation\":22,\"sampleCount\":90}",
             directorWeights = new[] { 0.1f, 0.2f, 0.3f },
             directorModelUpdateCount = 48,
+            runSequence = 12,
+            lastRunTelemetryJson = "{\"schemaVersion\":1,\"seed\":77}",
             savedAtUtcTicks = 123456789L
         };
 
@@ -134,6 +200,8 @@ public class GameStateTests
                 restored.shadowProfileJson).generation);
         CollectionAssert.AreEqual(original.directorWeights, restored.directorWeights);
         Assert.AreEqual(48, restored.directorModelUpdateCount);
+        Assert.AreEqual(12, restored.runSequence);
+        StringAssert.Contains("\"seed\":77", restored.lastRunTelemetryJson);
     }
 
     [Test]
