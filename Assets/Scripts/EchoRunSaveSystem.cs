@@ -4,7 +4,7 @@ using UnityEngine;
 [Serializable]
 public sealed class EchoRunSaveData
 {
-    public int version = 3;
+    public int version = 4;
     public int highScore;
     public int totalCoins;
     public int targetFrameRate = 60;
@@ -14,6 +14,7 @@ public sealed class EchoRunSaveData
     public string shadowProfileJson = "";
     public float[] directorWeights;
     public int directorModelUpdateCount;
+    public string directorPolicyJson = "";
     public int runSequence;
     public string lastRunTelemetryJson = "";
     public string skillProfileJson = "";
@@ -23,7 +24,7 @@ public sealed class EchoRunSaveData
 public static class EchoRunSaveSystem
 {
     public const string SaveKey = "EchoRunSaveV1";
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     private const string ShadowProfileKey = "AIShadowProfileV1";
 
@@ -106,11 +107,20 @@ public static class EchoRunSaveSystem
         return Clone(_data.directorWeights);
     }
 
-    public static void SaveDirector(float[] weights, int modelUpdateCount)
+    public static string GetDirectorPolicyJson()
+    {
+        EnsureInitialized();
+        return _data.directorPolicyJson ?? "";
+    }
+
+    public static void SaveDirector(float[] weights, int modelUpdateCount,
+        string policyJson = null)
     {
         EnsureInitialized();
         _data.directorWeights = Clone(weights);
         _data.directorModelUpdateCount = Mathf.Max(0, modelUpdateCount);
+        if (policyJson != null)
+            _data.directorPolicyJson = policyJson;
         CaptureLegacyKeys();
         WriteArchive(true);
     }
@@ -207,6 +217,7 @@ public static class EchoRunSaveSystem
         _data.shadowProfileJson = _data.shadowProfileJson ?? "";
         _data.directorWeights = Clone(_data.directorWeights);
         _data.directorModelUpdateCount = Mathf.Max(0, _data.directorModelUpdateCount);
+        _data.directorPolicyJson = _data.directorPolicyJson ?? "";
         _data.runSequence = Mathf.Max(0, _data.runSequence);
         _data.lastRunTelemetryJson = _data.lastRunTelemetryJson ?? "";
         _data.skillProfileJson = _data.skillProfileJson ?? "";

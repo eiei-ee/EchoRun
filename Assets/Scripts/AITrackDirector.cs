@@ -131,14 +131,17 @@ public class AITrackDirector : MonoBehaviour
     [Header("Runtime AI")]
     public bool useAI = true;
     [Range(0.001f, 0.5f)] public float learningRate = 0.08f;
-    [Range(0f, 0.5f)] public float explorationRate = 0.10f;
+    [Range(0f, 1f)] public float explorationRate = 0.35f;
     public int observationSegments = 2;
 
     public AITrackPlan CurrentPlan { get; private set; }
     public int ModelUpdateCount { get; private set; }
+    public float LastPolicyMean { get; private set; }
+    public float LastPolicyUncertainty { get; private set; }
+    public bool LastDecisionSafetyAdjusted { get; private set; }
     public string CurrentStatus { get; private set; } = "AI导演 · 等待开局";
 
-    private static AITrackPolicy _sessionPolicy;
+    private static AILinUcbPolicy _sessionPolicy;
     private GameManager _gameManager;
     private int _decisionCount;
     private int _evaluatedCoins;
@@ -154,8 +157,6 @@ public class AITrackDirector : MonoBehaviour
     private readonly int[] _laneVisits = { 0, 1, 0 };
     private readonly Queue<PendingDecision> _pendingDecisions =
         new Queue<PendingDecision>();
-    private int _policyRunSeed = int.MinValue;
-
     private sealed class PendingDecision
     {
         public int action;
@@ -176,8 +177,9 @@ public class AITrackDirector : MonoBehaviour
         EchoRunSaveSystem.EnsureInitialized();
         if (_sessionPolicy == null)
         {
-            _sessionPolicy = new AITrackPolicy(
-                Environment.TickCount, EchoRunSaveSystem.GetDirectorWeights());
+            _sessionPolicy = new AILinUcbPolicy(
+                EchoRunSaveSystem.GetDirectorWeights(),
+                EchoRunSaveSystem.GetDirectorPolicyJson());
         }
         ModelUpdateCount = EchoRunSaveSystem.DirectorModelUpdateCount;
     }
@@ -195,14 +197,9 @@ public class AITrackDirector : MonoBehaviour
     {
         if (_sessionPolicy == null)
         {
-            _sessionPolicy = new AITrackPolicy(
-                Environment.TickCount, EchoRunSaveSystem.GetDirectorWeights());
-        }
-        int runSeed = _gameManager != null ? _gameManager.RunSeed : AIRunRandom.Seed;
-        if (_policyRunSeed != runSeed)
-        {
-            _policyRunSeed = runSeed;
-            _sessionPolicy.ResetRandom(unchecked(runSeed ^ 0x41C64E6D));
+            _sessionPolicy = new AILinUcbPolicy(
+                EchoRunSaveSystem.GetDirectorWeights(),
+                EchoRunSaveSystem.GetDirectorPolicyJson());
         }
 
         _decisionCount++;
@@ -210,6 +207,10 @@ public class AITrackDirector : MonoBehaviour
 
         float[] context = BuildContext();
         AIDirectorIntent intent;
+        int proposedAction = -1;
+        LastPolicyMean = 0f;
+        LastPolicyUncertainty = 0f;
+        LastDecisionSafetyAdjusted = false;
         PendingDecision pendingDecision = null;
         if (!useAI || _decisionCount <= Mathf.Max(1, observationSegments))
         {
@@ -217,7 +218,14 @@ public class AITrackDirector : MonoBehaviour
         }
         else
         {
-            int action = _sessionPolicy.Select(context, true, explorationRate);
+            proposedAction = _sessionPolicy.Select(
+                context, explorationRate);
+            LastPolicyMean = _sessionPolicy.LastSelectedMean;
+            LastPolicyUncertainty =
+                _sessionPolicy.LastSelectedUncertainty;
+            int action = ApplySafetyConstraints(
+                proposedAction, context);
+            LastDecisionSafetyAdjusted = action != proposedAction;
             intent = (AIDirectorIntent)(action + 1);
             pendingDecision = new PendingDecision
             {
@@ -230,7 +238,10 @@ public class AITrackDirector : MonoBehaviour
         CurrentPlan = BuildPlan(intent, baseDifficulty, baseObstacleChance,
             baseCoinChance, baseTurnChance, previousSafeLane, canTurn);
         int telemetryDecisionId =
-            AIRunTelemetry.RecordDirectorDecision(context, CurrentPlan);
+            AIRunTelemetry.RecordDirectorDecision(
+                context, CurrentPlan, proposedAction,
+                LastPolicyMean, LastPolicyUncertainty,
+                LastDecisionSafetyAdjusted);
         if (pendingDecision != null)
         {
             pendingDecision.telemetryDecisionId = telemetryDecisionId;
@@ -257,6 +268,31 @@ public class AITrackDirector : MonoBehaviour
         return _sessionPolicy != null
             ? _sessionPolicy.ExportWeights()
             : EchoRunSaveSystem.GetDirectorWeights();
+    }
+
+    public string GetPolicyStateSnapshot()
+    {
+        return _sessionPolicy != null
+            ? _sessionPolicy.ExportStateJson()
+            : EchoRunSaveSystem.GetDirectorPolicyJson();
+    }
+
+    private int ApplySafetyConstraints(int proposedAction, float[] context)
+    {
+        return ConstrainAction(proposedAction, context[2],
+            AIPlayerSkillEstimator.Uncertainty,
+            _hits > _evaluatedHits);
+    }
+
+    public static int ConstrainAction(int proposedAction, float strain,
+        float skillUncertainty, bool recentHit)
+    {
+        int action = Mathf.Clamp(
+            proposedAction, 0, AITrackPolicy.ActionCount - 1);
+        if (recentHit) return 0;
+        if (strain > 0.72f && action > 1) return 0;
+        if (skillUncertainty > 0.72f && action > 1) return 1;
+        return action;
     }
 
     private void OnGameStateChanged(GameState state)
@@ -337,7 +373,7 @@ public class AITrackDirector : MonoBehaviour
         AIPlayerSkillEstimator.RecordSegmentOutcome(
             hitGain == 0, distanceGain);
         _sessionPolicy.Update(decision.action, decision.context,
-            clampedReward, learningRate);
+            clampedReward, learningRate * 12.5f);
         ModelUpdateCount++;
         AIRunTelemetry.RecordDirectorOutcome(
             decision.telemetryDecisionId, clampedReward, ModelUpdateCount);
@@ -352,7 +388,8 @@ public class AITrackDirector : MonoBehaviour
     {
         if (_sessionPolicy == null) return;
         EchoRunSaveSystem.SaveDirector(
-            _sessionPolicy.ExportWeights(), ModelUpdateCount);
+            _sessionPolicy.ExportWeights(), ModelUpdateCount,
+            _sessionPolicy.ExportStateJson());
     }
 
     private AITrackPlan BuildPlan(AIDirectorIntent intent, float baseDifficulty,
