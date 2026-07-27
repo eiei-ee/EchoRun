@@ -4,7 +4,7 @@ using UnityEngine;
 [Serializable]
 public sealed class EchoRunSaveData
 {
-    public int version = 2;
+    public int version = 3;
     public int highScore;
     public int totalCoins;
     public int targetFrameRate = 60;
@@ -16,13 +16,14 @@ public sealed class EchoRunSaveData
     public int directorModelUpdateCount;
     public int runSequence;
     public string lastRunTelemetryJson = "";
+    public string skillProfileJson = "";
     public long savedAtUtcTicks;
 }
 
 public static class EchoRunSaveSystem
 {
     public const string SaveKey = "EchoRunSaveV1";
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     private const string ShadowProfileKey = "AIShadowProfileV1";
 
@@ -135,6 +136,19 @@ public static class EchoRunSaveSystem
         WriteArchive(true);
     }
 
+    public static string GetSkillProfileJson()
+    {
+        EnsureInitialized();
+        return _data.skillProfileJson ?? "";
+    }
+
+    public static void SaveSkillProfile(string profileJson)
+    {
+        EnsureInitialized();
+        _data.skillProfileJson = profileJson ?? "";
+        WriteArchive(true);
+    }
+
     public static void SaveProgress(int highScore, int totalCoins)
     {
         EnsureInitialized();
@@ -195,6 +209,7 @@ public static class EchoRunSaveSystem
         _data.directorModelUpdateCount = Mathf.Max(0, _data.directorModelUpdateCount);
         _data.runSequence = Mathf.Max(0, _data.runSequence);
         _data.lastRunTelemetryJson = _data.lastRunTelemetryJson ?? "";
+        _data.skillProfileJson = _data.skillProfileJson ?? "";
     }
 
     private static bool HasLegacyData()

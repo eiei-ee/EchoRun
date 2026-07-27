@@ -75,6 +75,8 @@ public sealed class AIRunTelemetryData
     public int highScoreBeforeRun;
     public int shadowGenerationAtStart;
     public int directorUpdatesAtStart;
+    public float playerSkillAtStart;
+    public float skillConfidenceAtStart;
     public float[] shadowWeightsAtStart;
     public float[] directorWeightsAtStart;
     public float duration;
@@ -83,6 +85,8 @@ public sealed class AIRunTelemetryData
     public int coins;
     public int shadowGenerationAtEnd;
     public int directorUpdatesAtEnd;
+    public float playerSkillAtEnd;
+    public float skillConfidenceAtEnd;
     public float[] shadowWeightsAtEnd;
     public float[] directorWeightsAtEnd;
     public List<AIRunStateSample> states = new List<AIRunStateSample>();
@@ -152,6 +156,8 @@ public static class AIRunTelemetry
             highScoreBeforeRun = Mathf.Max(0, highScore),
             shadowGenerationAtStart = Mathf.Max(0, shadowGeneration),
             directorUpdatesAtStart = Mathf.Max(0, directorUpdates),
+            playerSkillAtStart = AIPlayerSkillEstimator.Skill,
+            skillConfidenceAtStart = AIPlayerSkillEstimator.Confidence,
             shadowWeightsAtStart = Clone(shadowWeights),
             directorWeightsAtStart = Clone(directorWeights)
         };
@@ -272,6 +278,8 @@ public static class AIRunTelemetry
         }
         _active.shadowGenerationAtEnd = Mathf.Max(0, shadowGeneration);
         _active.directorUpdatesAtEnd = Mathf.Max(0, directorUpdates);
+        _active.playerSkillAtEnd = AIPlayerSkillEstimator.Skill;
+        _active.skillConfidenceAtEnd = AIPlayerSkillEstimator.Confidence;
         _active.shadowWeightsAtEnd = Clone(shadowWeights);
         _active.directorWeightsAtEnd = Clone(directorWeights);
 

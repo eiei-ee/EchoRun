@@ -27,3 +27,6 @@ Thumbs.db
 
 # Memory captures
 MemoryCaptures/
+
+# Local AI training exports
+TrainingData/
