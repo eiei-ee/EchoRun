@@ -99,6 +99,27 @@ public class BuildConfig
         Debug.Log($"WebGL build complete: {outputDir}");
     }
 
+    [MenuItem("Tools/Build Windows 64-bit")]
+    public static void BuildWindows()
+    {
+        OpenPrimaryScene();
+        EditorUserBuildSettings.SwitchActiveBuildTarget(
+            BuildTargetGroup.Standalone, BuildTarget.StandaloneWindows64);
+
+        ConfigureBaseSettings();
+        ConfigureWindows();
+        EnsureSceneInBuild();
+
+        string outputPath = "Builds/Windows/EchoRun.exe";
+        EnsureDirectory("Builds/Windows");
+
+        BuildReport report = BuildPipeline.BuildPlayer(
+            GetScenePaths(), outputPath, BuildTarget.StandaloneWindows64,
+            BuildOptions.CompressWithLz4HC);
+        EnsureBuildSucceeded(report, "Windows 64-bit");
+        Debug.Log($"Windows build complete: {outputPath}");
+    }
+
     static void EnsureBuildSucceeded(BuildReport report, string platform)
     {
         if (report != null && report.summary.result == BuildResult.Succeeded) return;
@@ -173,6 +194,17 @@ public class BuildConfig
 
         PlayerSettings.defaultWebScreenWidth = 960;
         PlayerSettings.defaultWebScreenHeight = 600;
+    }
+
+    static void ConfigureWindows()
+    {
+        PlayerSettings.SetScriptingBackend(
+            NamedBuildTarget.Standalone, ScriptingImplementation.Mono2x);
+        PlayerSettings.defaultScreenWidth = 1920;
+        PlayerSettings.defaultScreenHeight = 1080;
+        PlayerSettings.fullScreenMode = FullScreenMode.FullScreenWindow;
+        PlayerSettings.resizableWindow = true;
+        PlayerSettings.runInBackground = true;
     }
 
     static void EnableWebGLPersistence(string outputDir)
