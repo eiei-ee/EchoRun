@@ -61,6 +61,11 @@ public sealed class AIShadowPolicy
         return best;
     }
 
+    public float[] GetProbabilities(float[] features)
+    {
+        return Probabilities(features);
+    }
+
     public void Learn(int label, float[] features, float learningRate)
     {
         Validate(features);
@@ -172,11 +177,15 @@ public class AIShadowRunner : MonoBehaviour
         public float pace;
         public float bestProgress;
         public float[] weights;
+        public float[] sequenceTransitions;
+        public int sequencePairCount;
     }
 
     private ShadowProfile _profile;
     private AIShadowPolicy _policy;
     private AIShadowPolicy _opponentPolicy;
+    private AIShadowSequencePolicy _sequencePolicy;
+    private AIShadowSequencePolicy _opponentSequencePolicy;
     private GameManager _gameManager;
     private PlayerController _player;
     private GameObject _ghost;
@@ -201,10 +210,13 @@ public class AIShadowRunner : MonoBehaviour
     private float _ghostSlideTimer;
     private float _ghostStumbleTimer;
     private float _decisionConfidence;
+    private float _sequenceInfluence;
     private int _runCoins;
     private int _runDodges;
     private int _ghostMistakes;
     private int _samplesSinceCheckpoint;
+    private int _lastTrainingAction = -1;
+    private int _lastOpponentAction = -1;
     private bool _runStarted;
     private bool _runFinalized;
     private readonly HashSet<int> _handledGhostObstacles = new HashSet<int>();
@@ -340,6 +352,13 @@ public class AIShadowRunner : MonoBehaviour
         return _policy != null ? _policy.ExportWeights() : null;
     }
 
+    public string GetSequenceStateSnapshot()
+    {
+        return _sequencePolicy == null
+            ? ""
+            : JsonUtility.ToJson(_sequencePolicy.ExportState());
+    }
+
     private void OnGameStateChanged(GameState state)
     {
         if (state == GameState.Playing) BeginRun();
@@ -370,7 +389,10 @@ public class AIShadowRunner : MonoBehaviour
         _ghostJumpTimer = 0f;
         _ghostSlideTimer = 0f;
         _ghostStumbleTimer = 0f;
+        _sequenceInfluence = 0f;
         _ghostMistakes = 0;
+        _lastTrainingAction = -1;
+        _lastOpponentAction = -1;
         _handledGhostObstacles.Clear();
         _reactedGhostObstacles.Clear();
         HasActiveOpponent = HasTrainedProfile();
@@ -380,6 +402,9 @@ public class AIShadowRunner : MonoBehaviour
             // Freeze the previous generation for this duel. New player actions train
             // the next generation and cannot make the current shadow mirror inputs.
             _opponentPolicy = new AIShadowPolicy(_policy.ExportWeights());
+            AIShadowSequenceState state = _sequencePolicy.ExportState();
+            _opponentSequencePolicy = new AIShadowSequencePolicy(
+                state.transitions, state.pairCount);
             CreateGhost();
             CurrentStatus = "AI影子 · 第 " + _profile.generation + " 代已加入挑战";
         }
@@ -446,8 +471,11 @@ public class AIShadowRunner : MonoBehaviour
             : 1;
         float confidence = _policy != null ? _policy.Confidence(features) : 0f;
         AIRunTelemetry.RecordShadowSample(
-            action, lane, features, false, confidence);
+            action, lane, features, false, confidence, (int)action,
+            0f, 0f);
         _policy.Learn((int)action, features, learningRate);
+        _sequencePolicy.Learn(_lastTrainingAction, (int)action);
+        _lastTrainingAction = (int)action;
         _profile.sampleCount++;
         _samplesSinceCheckpoint++;
 
@@ -514,10 +542,14 @@ public class AIShadowRunner : MonoBehaviour
     {
         if (_opponentPolicy == null) return;
         float[] features = BuildFeatures(_ghostLane, true);
-        ShadowAction action = (ShadowAction)_opponentPolicy.Predict(features);
-        _decisionConfidence = _opponentPolicy.Confidence(features);
+        ShadowAction baseAction = (ShadowAction)_opponentPolicy.Predict(features);
+        ShadowAction action = PredictOpponentAction(features, out float baseConfidence,
+            out float sequenceConfidence, out float sequenceInfluence);
+        _decisionConfidence = Mathf.Max(baseConfidence, sequenceConfidence);
+        _sequenceInfluence = sequenceInfluence;
         AIRunTelemetry.RecordShadowSample(
-            action, _ghostLane, features, true, _decisionConfidence);
+            action, _ghostLane, features, true, _decisionConfidence, (int)baseAction,
+            sequenceConfidence, sequenceInfluence);
 
         switch (action)
         {
@@ -526,20 +558,28 @@ public class AIShadowRunner : MonoBehaviour
                 {
                     _ghostLane--;
                     _laneDecisionCooldown = minimumLaneHoldTime;
+                    RecordOpponentAction(action);
                 }
+                else RecordOpponentAction(ShadowAction.Keep);
                 break;
             case ShadowAction.Right:
                 if (_laneDecisionCooldown <= 0f && _ghostLane < 2)
                 {
                     _ghostLane++;
                     _laneDecisionCooldown = minimumLaneHoldTime;
+                    RecordOpponentAction(action);
                 }
+                else RecordOpponentAction(ShadowAction.Keep);
                 break;
             case ShadowAction.Jump:
             case ShadowAction.Slide:
                 // Vertical actions are scheduled from the obstacle distance below.
                 // The policy still owns route selection, but cannot spam jumps or
                 // start a slide in mid-air between its regular decision ticks.
+                RecordOpponentAction(ShadowAction.Keep);
+                break;
+            default:
+                RecordOpponentAction(ShadowAction.Keep);
                 break;
         }
     }
@@ -575,27 +615,54 @@ public class AIShadowRunner : MonoBehaviour
         // reaction timing learned from the player.
         if (_opponentPolicy != null)
         {
-            ShadowAction predicted = (ShadowAction)_opponentPolicy.Predict(
-                BuildFeatures(_ghostLane, true));
+            ShadowAction predicted = PredictOpponentAction(
+                BuildFeatures(_ghostLane, true), out _, out _, out _);
             float emergencyDistance = Mathf.Clamp(speed * 0.2f, 2f, 4.5f);
             if (predicted != requiredAction && threatDistance > emergencyDistance)
                 return;
         }
 
         _reactedGhostObstacles.Add(obstacleId);
-        StartGhostAction(requiredAction);
+        if (StartGhostAction(requiredAction))
+            RecordOpponentAction(requiredAction);
     }
 
-    private void StartGhostAction(ShadowAction action)
+    private bool StartGhostAction(ShadowAction action)
     {
         if (!CanStartVerticalAction(action, _ghostJumpTimer > 0f,
                 _ghostSlideTimer > 0f, _ghostStumbleTimer > 0f))
-            return;
+            return false;
 
         if (action == ShadowAction.Jump)
             _ghostJumpTimer = GetGhostJumpDuration();
         else if (action == ShadowAction.Slide)
             _ghostSlideTimer = GetGhostSlideDuration();
+        else return false;
+        return true;
+    }
+
+    private ShadowAction PredictOpponentAction(float[] features,
+        out float baseConfidence, out float sequenceConfidence,
+        out float sequenceInfluence)
+    {
+        float[] probabilities = _opponentPolicy.GetProbabilities(features);
+        int baseAction = _opponentPolicy.Predict(features);
+        baseConfidence = probabilities[baseAction];
+        if (_opponentSequencePolicy == null)
+        {
+            sequenceConfidence = 0f;
+            sequenceInfluence = 0f;
+            return (ShadowAction)baseAction;
+        }
+
+        int action = _opponentSequencePolicy.Predict(probabilities,
+            _lastOpponentAction, out sequenceConfidence, out sequenceInfluence);
+        return (ShadowAction)action;
+    }
+
+    private void RecordOpponentAction(ShadowAction action)
+    {
+        _lastOpponentAction = (int)action;
     }
 
     private void UpdateGhostPose()
@@ -698,9 +765,12 @@ public class AIShadowRunner : MonoBehaviour
         string lead = PlayerLead >= 0f
             ? "领先 " + PlayerLead.ToString("0.0") + "m"
             : "落后 " + Mathf.Abs(PlayerLead).ToString("0.0") + "m";
+        string sequence = _sequenceInfluence > 0.01f
+            ? " · 序列 " + (_sequenceInfluence * 100f).ToString("0") + "%"
+            : "";
         return "AI影子 · 第 " + _profile.generation + " 代 · " + lead
-               + " · 模仿 " + (_decisionConfidence * 100f).ToString("0")
-               + "% · 失误 " + _ghostMistakes;
+                + " · 模仿 " + (_decisionConfidence * 100f).ToString("0")
+                + "%" + sequence + " · 失误 " + _ghostMistakes;
     }
 
     public static bool CanAvoidObstacle(ObstacleType obstacleType,
@@ -848,12 +918,20 @@ public class AIShadowRunner : MonoBehaviour
 
         if (_profile == null) _profile = new ShadowProfile();
         _policy = new AIShadowPolicy(_profile.weights);
+        _sequencePolicy = new AIShadowSequencePolicy(_profile.sequenceTransitions,
+            _profile.sequencePairCount);
     }
 
     private void SaveProfile()
     {
         if (_profile == null || _policy == null) return;
         _profile.weights = _policy.ExportWeights();
+        if (_sequencePolicy != null)
+        {
+            AIShadowSequenceState state = _sequencePolicy.ExportState();
+            _profile.sequenceTransitions = state.transitions;
+            _profile.sequencePairCount = state.pairCount;
+        }
         EchoRunSaveSystem.SaveShadowProfile(JsonUtility.ToJson(_profile));
     }
 
