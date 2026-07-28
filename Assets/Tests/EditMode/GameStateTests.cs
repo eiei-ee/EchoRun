@@ -175,9 +175,11 @@ public class GameStateTests
         float[] directorWeights = { 0.3f, 0.4f, 0.5f };
         const string directorState =
             "{\"version\":1,\"actionPulls\":[1,2,3,4]}";
+        const string shadowSequenceState =
+            "{\"pairCount\":8,\"transitions\":[1,2,3]}";
         AIRunTelemetry.BeginRun(
             77, 12, 7904, 22, 48, shadowWeights,
-            directorWeights, directorState);
+            directorWeights, directorState, shadowSequenceState);
         AITrackPlan plan = new AITrackPlan
         {
             intent = AIDirectorIntent.Pressure,
@@ -196,7 +198,7 @@ public class GameStateTests
         AIRunTelemetry.RecordShadowSample(
             ShadowAction.Jump, 1,
             new[] { 1f, 0f, 0.3f, 0.8f, 0f, 0.66f, 0f, 0f },
-            false, 0.72f);
+            false, 0.72f, (int)ShadowAction.Keep, 0.85f, 0.36f);
 
         AIRunTelemetryData restored = AIRunTelemetry.FromJson(
             AIRunTelemetry.GetLatestRunJson());
@@ -210,6 +212,8 @@ public class GameStateTests
             directorWeights, restored.directorWeightsAtStart);
         Assert.AreEqual(
             directorState, restored.directorPolicyStateAtStart);
+        Assert.AreEqual(
+            shadowSequenceState, restored.shadowSequenceStateAtStart);
         Assert.AreEqual(1, restored.directorDecisions.Count);
         Assert.IsTrue(restored.directorDecisions[0].trained);
         Assert.AreEqual((int)AIDirectorIntent.Flow,
@@ -223,6 +227,10 @@ public class GameStateTests
         Assert.AreEqual(1, restored.shadowSamples.Count);
         Assert.AreEqual((int)ShadowAction.Jump,
             restored.shadowSamples[0].action);
+        Assert.AreEqual((int)ShadowAction.Keep,
+            restored.shadowSamples[0].baseAction);
+        Assert.AreEqual(0.36f,
+            restored.shadowSamples[0].sequenceInfluence, 0.0001f);
     }
 
     [Test]
@@ -414,6 +422,55 @@ public class GameStateTests
         Assert.AreEqual(trained.Predict(context), restored.Predict(context));
         Assert.AreEqual(trained.Score((int)ShadowAction.Right, context),
             restored.Score((int)ShadowAction.Right, context), 0.0001f);
+    }
+
+    [Test]
+    public void ShadowSequencePolicyResolvesAnAmbiguousImmediateDecision()
+    {
+        AIShadowSequencePolicy policy = new AIShadowSequencePolicy();
+        for (int i = 0; i < 24; i++)
+            policy.Learn((int)ShadowAction.Jump, (int)ShadowAction.Slide);
+
+        float[] ambiguous = { 0.36f, 0.1f, 0.1f, 0.1f, 0.34f };
+        int selected = policy.Predict(ambiguous, (int)ShadowAction.Jump,
+            out float sequenceConfidence, out float sequenceInfluence);
+
+        Assert.AreEqual((int)ShadowAction.Slide, selected);
+        Assert.Greater(sequenceConfidence, 0.9f);
+        Assert.Greater(sequenceInfluence, 0.5f);
+    }
+
+    [Test]
+    public void ShadowSequencePolicyDefersToAConfidentImmediateDecision()
+    {
+        AIShadowSequencePolicy policy = new AIShadowSequencePolicy();
+        for (int i = 0; i < 24; i++)
+            policy.Learn((int)ShadowAction.Jump, (int)ShadowAction.Slide);
+
+        float[] clearContext = { 0.95f, 0.01f, 0.01f, 0.01f, 0.02f };
+        int selected = policy.Predict(clearContext, (int)ShadowAction.Jump,
+            out _, out float sequenceInfluence);
+
+        Assert.AreEqual((int)ShadowAction.Keep, selected);
+        Assert.AreEqual(0f, sequenceInfluence, 0.0001f);
+    }
+
+    [Test]
+    public void ShadowSequencePolicyStateSurvivesRoundTrip()
+    {
+        AIShadowSequencePolicy trained = new AIShadowSequencePolicy();
+        for (int i = 0; i < 10; i++)
+            trained.Learn((int)ShadowAction.Left, (int)ShadowAction.Jump);
+
+        AIShadowSequenceState state = trained.ExportState();
+        AIShadowSequencePolicy restored = new AIShadowSequencePolicy(
+            state.transitions, state.pairCount);
+        float[] ambiguous = { 0.3f, 0.18f, 0.18f, 0.16f, 0.18f };
+
+        Assert.AreEqual(trained.Predict(ambiguous, (int)ShadowAction.Left,
+                out _, out _),
+            restored.Predict(ambiguous, (int)ShadowAction.Left, out _, out _));
+        Assert.AreEqual(trained.PairCount, restored.PairCount);
     }
 
     [Test]

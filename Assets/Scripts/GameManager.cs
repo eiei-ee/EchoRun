@@ -133,7 +133,10 @@ public class GameManager : MonoBehaviour
                 : EchoRunSaveSystem.GetDirectorWeights(),
             AITrackDirector.Instance != null
                 ? AITrackDirector.Instance.GetPolicyStateSnapshot()
-                : EchoRunSaveSystem.GetDirectorPolicyJson());
+                : EchoRunSaveSystem.GetDirectorPolicyJson(),
+            AIShadowRunner.Instance != null
+                ? AIShadowRunner.Instance.GetSequenceStateSnapshot()
+                : "");
 
         Time.timeScale = 1f;
         CurrentSpeed = startSpeed;
@@ -260,7 +263,10 @@ public class GameManager : MonoBehaviour
                 : EchoRunSaveSystem.GetDirectorWeights(),
             AITrackDirector.Instance != null
                 ? AITrackDirector.Instance.GetPolicyStateSnapshot()
-                : EchoRunSaveSystem.GetDirectorPolicyJson());
+                : EchoRunSaveSystem.GetDirectorPolicyJson(),
+            AIShadowRunner.Instance != null
+                ? AIShadowRunner.Instance.GetSequenceStateSnapshot()
+                : "");
     }
 
     void OnDestroy()

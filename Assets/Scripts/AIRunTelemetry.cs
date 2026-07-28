@@ -62,6 +62,9 @@ public sealed class AIShadowTrainingSample
     public bool opponentDecision;
     public float confidence;
     public float[] features;
+    public int baseAction;
+    public float sequenceConfidence;
+    public float sequenceInfluence;
 }
 
 [Serializable]
@@ -82,6 +85,7 @@ public sealed class AIRunTelemetryData
     public float playerSkillAtStart;
     public float skillConfidenceAtStart;
     public float[] shadowWeightsAtStart;
+    public string shadowSequenceStateAtStart;
     public float[] directorWeightsAtStart;
     public string directorPolicyStateAtStart;
     public float duration;
@@ -93,6 +97,7 @@ public sealed class AIRunTelemetryData
     public float playerSkillAtEnd;
     public float skillConfidenceAtEnd;
     public float[] shadowWeightsAtEnd;
+    public string shadowSequenceStateAtEnd;
     public float[] directorWeightsAtEnd;
     public string directorPolicyStateAtEnd;
     public List<AIRunStateSample> states = new List<AIRunStateSample>();
@@ -132,7 +137,7 @@ public static class AIRunRandom
 
 public static class AIRunTelemetry
 {
-    public const int SchemaVersion = 2;
+    public const int SchemaVersion = 3;
     public const float StateSampleInterval = 0.25f;
 
     private const int MaxStateSamples = 7200;
@@ -149,7 +154,8 @@ public static class AIRunTelemetry
 
     public static void BeginRun(int seed, int sequence, int highScore,
         int shadowGeneration, int directorUpdates, float[] shadowWeights,
-        float[] directorWeights, string directorPolicyState)
+        float[] directorWeights, string directorPolicyState,
+        string shadowSequenceState = "")
     {
         long now = DateTime.UtcNow.Ticks;
         _active = new AIRunTelemetryData
@@ -165,6 +171,7 @@ public static class AIRunTelemetry
             playerSkillAtStart = AIPlayerSkillEstimator.Skill,
             skillConfidenceAtStart = AIPlayerSkillEstimator.Confidence,
             shadowWeightsAtStart = Clone(shadowWeights),
+            shadowSequenceStateAtStart = shadowSequenceState ?? "",
             directorWeightsAtStart = Clone(directorWeights),
             directorPolicyStateAtStart = directorPolicyState ?? ""
         };
@@ -271,6 +278,14 @@ public static class AIRunTelemetry
     public static void RecordShadowSample(ShadowAction action, int lane,
         float[] features, bool opponentDecision, float confidence)
     {
+        RecordShadowSample(action, lane, features, opponentDecision, confidence,
+            (int)action, 0f, 0f);
+    }
+
+    public static void RecordShadowSample(ShadowAction action, int lane,
+        float[] features, bool opponentDecision, float confidence, int baseAction,
+        float sequenceConfidence, float sequenceInfluence)
+    {
         if (!IsRecording || _active.shadowSamples.Count >= MaxShadowSamples) return;
         _active.shadowSamples.Add(new AIShadowTrainingSample
         {
@@ -280,13 +295,17 @@ public static class AIRunTelemetry
             lane = Mathf.Clamp(lane, 0, 2),
             opponentDecision = opponentDecision,
             confidence = Mathf.Clamp01(confidence),
-            features = Clone(features)
+            features = Clone(features),
+            baseAction = Mathf.Clamp(baseAction, 0, AIShadowPolicy.ActionCount - 1),
+            sequenceConfidence = Mathf.Clamp01(sequenceConfidence),
+            sequenceInfluence = Mathf.Clamp01(sequenceInfluence)
         });
     }
 
     public static string FinishRun(GameManager gameManager, string reason,
         int shadowGeneration, int directorUpdates, float[] shadowWeights,
-        float[] directorWeights, string directorPolicyState)
+        float[] directorWeights, string directorPolicyState,
+        string shadowSequenceState = "")
     {
         if (!IsRecording) return GetLatestRunJson();
 
@@ -305,6 +324,7 @@ public static class AIRunTelemetry
         _active.playerSkillAtEnd = AIPlayerSkillEstimator.Skill;
         _active.skillConfidenceAtEnd = AIPlayerSkillEstimator.Confidence;
         _active.shadowWeightsAtEnd = Clone(shadowWeights);
+        _active.shadowSequenceStateAtEnd = shadowSequenceState ?? "";
         _active.directorWeightsAtEnd = Clone(directorWeights);
         _active.directorPolicyStateAtEnd =
             directorPolicyState ?? "";
