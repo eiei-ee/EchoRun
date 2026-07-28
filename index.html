@@ -59,10 +59,11 @@
       }
 
       var buildUrl = "Build";
-      var loaderUrl = buildUrl + "/WebGL.loader.js";
+      var chunkVersion = "07d2af1";
+      var loaderUrl = buildUrl + "/WebGL.loader.js?v=" + chunkVersion;
       var config = {
         dataUrl: buildUrl + "/WebGL.data.unityweb",
-        frameworkUrl: buildUrl + "/WebGL.framework.js.unityweb",
+        frameworkUrl: buildUrl + "/WebGL.framework.js.unityweb?v=" + chunkVersion,
         codeUrl: buildUrl + "/WebGL.wasm.unityweb",
         streamingAssetsUrl: "StreamingAssets",
         companyName: "Eiei-ee",
@@ -119,7 +120,6 @@
       var codeChunks = [
         "WebGL.wasm.part00", "WebGL.wasm.part01", "WebGL.wasm.part02"
       ];
-        var chunkVersion = "07d2af1";
       var chunkObjectUrls = [];
 
       async function assembleBuildFile(chunkNames, completed, total) {
