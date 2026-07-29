@@ -165,12 +165,16 @@ public class BuildConfig
 
     static void ConfigureIOS()
     {
+        PlayerSettings.SetScriptingBackend(
+            NamedBuildTarget.iOS, ScriptingImplementation.IL2CPP);
+        PlayerSettings.SetIl2CppCompilerConfiguration(
+            NamedBuildTarget.iOS, Il2CppCompilerConfiguration.Release);
         PlayerSettings.iOS.targetOSVersionString = "13.0";
         PlayerSettings.iOS.targetDevice = iOSTargetDevice.iPhoneAndiPad;
         PlayerSettings.iOS.buildNumber = "1";
         PlayerSettings.iOS.appleDeveloperTeamID = "";
         PlayerSettings.iOS.appleEnableAutomaticSigning = true;
-        PlayerSettings.insecureHttpOption = InsecureHttpOption.AlwaysAllowed;
+        PlayerSettings.insecureHttpOption = InsecureHttpOption.NotAllowed;
         PlayerSettings.iOS.hideHomeButton = true;
 
         PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
@@ -199,7 +203,11 @@ public class BuildConfig
     static void ConfigureWindows()
     {
         PlayerSettings.SetScriptingBackend(
-            NamedBuildTarget.Standalone, ScriptingImplementation.Mono2x);
+            NamedBuildTarget.Standalone, ScriptingImplementation.IL2CPP);
+        PlayerSettings.SetIl2CppCompilerConfiguration(
+            NamedBuildTarget.Standalone, Il2CppCompilerConfiguration.Release);
+        PlayerSettings.SetManagedStrippingLevel(
+            NamedBuildTarget.Standalone, ManagedStrippingLevel.Medium);
         PlayerSettings.defaultScreenWidth = 1920;
         PlayerSettings.defaultScreenHeight = 1080;
         PlayerSettings.fullScreenMode = FullScreenMode.FullScreenWindow;
