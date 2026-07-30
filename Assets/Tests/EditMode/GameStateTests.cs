@@ -249,6 +249,68 @@ public class GameStateTests
     }
 
     [Test]
+    public void SwipeThresholdAdaptsToScreenSizeAndDensity()
+    {
+        Assert.AreEqual(30f,
+            InputManager.ResolveSwipeThreshold(30f, 390f, 0f), 0.0001f);
+        Assert.AreEqual(54f,
+            InputManager.ResolveSwipeThreshold(30f, 1200f, 0f), 0.0001f);
+        Assert.AreEqual(56f,
+            InputManager.ResolveSwipeThreshold(30f, 800f, 400f), 0.0001f);
+    }
+
+    [Test]
+    public void ConstrainedPlatformsCapSavedHighFrameRates()
+    {
+        Assert.AreEqual(30, GameManager.NormalizeFrameRate(30, true));
+        Assert.AreEqual(60, GameManager.NormalizeFrameRate(120, true));
+        Assert.AreEqual(120, GameManager.NormalizeFrameRate(120, false));
+        Assert.AreEqual(60, GameManager.NormalizeFrameRate(75, false));
+    }
+
+    [Test]
+    public void TouchLayoutRequestsLandscapeOnlyWhenPortrait()
+    {
+        Assert.IsTrue(UIManager.ShouldShowLandscapeGuard(720, 1280, true));
+        Assert.IsFalse(UIManager.ShouldShowLandscapeGuard(1280, 720, true));
+        Assert.IsFalse(UIManager.ShouldShowLandscapeGuard(720, 1280, false));
+    }
+
+    [Test]
+    public void ShadowCalibrationRejectsPassiveKeepSamples()
+    {
+        int[] actionCounts = { 24, 0, 0, 0, 0 };
+
+        Assert.IsFalse(AIShadowRunner.HasCalibrationSamples(
+            24, 0, actionCounts, 24, 6, 2));
+        Assert.AreEqual(0f, AIShadowRunner.CalculateCalibrationProgress(
+            24, 0, actionCounts, 24, 6, 2), 0.0001f);
+    }
+
+    [Test]
+    public void ShadowCalibrationRequiresDiverseActiveActions()
+    {
+        int[] laneOnlyCounts = { 18, 3, 3, 0, 0 };
+        int[] diverseCounts = { 18, 3, 0, 3, 0 };
+
+        Assert.IsFalse(AIShadowRunner.HasCalibrationSamples(
+            24, 6, laneOnlyCounts, 24, 6, 2),
+            "Repeated lane changes are only one action category.");
+        Assert.IsTrue(AIShadowRunner.HasCalibrationSamples(
+            24, 6, diverseCounts, 24, 6, 2),
+            "Lane changes plus a vertical action provide enough behavioral variety.");
+    }
+
+    [Test]
+    public void ShadowCalibrationProgressUsesTheWeakestRequirement()
+    {
+        int[] actionCounts = { 18, 3, 0, 3, 0 };
+
+        Assert.AreEqual(0.5f, AIShadowRunner.CalculateCalibrationProgress(
+            24, 3, actionCounts, 24, 6, 2), 0.0001f);
+    }
+
+    [Test]
     public void UiFontIsBundledForRuntime()
     {
         Font font = Resources.Load<Font>("Fonts/NotoSansCJKsc-Regular");

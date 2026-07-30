@@ -142,7 +142,9 @@ public class AIShadowRunner : MonoBehaviour
 
     [Header("Behavior Cloning")]
     [Range(0.001f, 0.5f)] public float learningRate = 0.08f;
-    public int minimumTrainingSamples = 8;
+    public int minimumTrainingSamples = 24;
+    public int minimumActiveTrainingSamples = 6;
+    public int minimumActionCategories = 2;
     public float decisionInterval = 0.35f;
     public float keepSampleInterval = 0.7f;
     public float minimumLaneHoldTime = 0.65f;
@@ -163,6 +165,8 @@ public class AIShadowRunner : MonoBehaviour
     public bool HasActiveOpponent { get; private set; }
     public int Generation => _profile != null ? _profile.generation : 0;
     public int TrainingSampleCount => _profile != null ? _profile.sampleCount : 0;
+    public int ActiveTrainingSampleCount =>
+        _profile != null ? _profile.activeSampleCount : 0;
     public float DuelPressure => HasActiveOpponent
         ? 1f - Mathf.Clamp01(Mathf.Abs(PlayerLead) / 14f)
         : 0f;
@@ -172,8 +176,11 @@ public class AIShadowRunner : MonoBehaviour
     [Serializable]
     private sealed class ShadowProfile
     {
+        public int version;
         public int generation;
         public int sampleCount;
+        public int activeSampleCount;
+        public int[] actionCounts = new int[5];
         public float pace;
         public float bestProgress;
         public float[] weights;
@@ -426,7 +433,10 @@ public class AIShadowRunner : MonoBehaviour
         if (_profile.pace <= 0f) _profile.pace = runPace;
         else _profile.pace = Mathf.Lerp(_profile.pace, runPace, 0.35f);
         _profile.bestProgress = Mathf.Max(_profile.bestProgress, _playerProgress);
-        bool completedCalibration = _profile.sampleCount >= minimumTrainingSamples;
+        bool completedCalibration = HasCalibrationSamples(
+            _profile.sampleCount, _profile.activeSampleCount,
+            _profile.actionCounts, minimumTrainingSamples,
+            minimumActiveTrainingSamples, minimumActionCategories);
         if (challengedOpponent || completedCalibration)
             _profile.generation++;
         _profile.weights = _policy.ExportWeights();
@@ -434,10 +444,13 @@ public class AIShadowRunner : MonoBehaviour
 
         if (!challengedOpponent && !completedCalibration)
         {
-            float calibration = Mathf.Clamp01((float)_profile.sampleCount
-                                               / Mathf.Max(1, minimumTrainingSamples));
-            LastResult = "校准未完成 · 已学习 " + (calibration * 100f).ToString("0")
-                         + "% · 再跑一局继续训练";
+            int categories = CountTrainedActionCategories(_profile.actionCounts);
+            LastResult = "校准未完成 · 有效动作 "
+                         + _profile.activeSampleCount + "/"
+                         + Mathf.Max(1, minimumActiveTrainingSamples)
+                         + " · 动作类型 " + categories + "/"
+                         + Mathf.Max(1, minimumActionCategories)
+                         + " · 再跑一局继续训练";
         }
         else if (!challengedOpponent)
         {
@@ -477,6 +490,11 @@ public class AIShadowRunner : MonoBehaviour
         _sequencePolicy.Learn(_lastTrainingAction, (int)action);
         _lastTrainingAction = (int)action;
         _profile.sampleCount++;
+        EnsureActionCounts();
+        int actionIndex = Mathf.Clamp((int)action, 0, _profile.actionCounts.Length - 1);
+        _profile.actionCounts[actionIndex]++;
+        if (action != ShadowAction.Keep)
+            _profile.activeSampleCount++;
         _samplesSinceCheckpoint++;
 
         if (_samplesSinceCheckpoint >= SamplesPerCheckpoint)
@@ -487,9 +505,13 @@ public class AIShadowRunner : MonoBehaviour
 
         if (!HasActiveOpponent)
         {
-            float progress = Mathf.Clamp01((float)_profile.sampleCount
-                                           / Mathf.Max(1, minimumTrainingSamples));
-            CurrentStatus = "AI影子 · 校准中 " + (progress * 100f).ToString("0") + "%";
+            float progress = CalculateCalibrationProgress(
+                _profile.sampleCount, _profile.activeSampleCount,
+                _profile.actionCounts, minimumTrainingSamples,
+                minimumActiveTrainingSamples, minimumActionCategories);
+            CurrentStatus = "AI影子 · 校准 " + (progress * 100f).ToString("0")
+                            + "% · 有效动作 " + _profile.activeSampleCount
+                            + "/" + Mathf.Max(1, minimumActiveTrainingSamples);
         }
     }
 
@@ -769,7 +791,7 @@ public class AIShadowRunner : MonoBehaviour
             ? " · 序列 " + (_sequenceInfluence * 100f).ToString("0") + "%"
             : "";
         return "AI影子 · 第 " + _profile.generation + " 代 · " + lead
-                + " · 模仿 " + (_decisionConfidence * 100f).ToString("0")
+                + " · 决策置信 " + (_decisionConfidence * 100f).ToString("0")
                 + "%" + sequence + " · 失误 " + _ghostMistakes;
     }
 
@@ -830,8 +852,45 @@ public class AIShadowRunner : MonoBehaviour
     private bool HasTrainedProfile()
     {
         return _profile != null && _profile.generation > 0
-               && _profile.sampleCount >= minimumTrainingSamples
+               && HasCalibrationSamples(
+                   _profile.sampleCount, _profile.activeSampleCount,
+                   _profile.actionCounts, minimumTrainingSamples,
+                   minimumActiveTrainingSamples, minimumActionCategories)
                && _profile.pace > 0f;
+    }
+
+    public static bool HasCalibrationSamples(int totalSamples, int activeSamples,
+        int[] actionCounts, int minimumTotal, int minimumActive,
+        int minimumCategories)
+    {
+        return totalSamples >= Mathf.Max(1, minimumTotal)
+               && activeSamples >= Mathf.Max(1, minimumActive)
+               && CountTrainedActionCategories(actionCounts)
+               >= Mathf.Max(1, minimumCategories);
+    }
+
+    public static float CalculateCalibrationProgress(int totalSamples,
+        int activeSamples, int[] actionCounts, int minimumTotal,
+        int minimumActive, int minimumCategories)
+    {
+        float totalProgress = Mathf.Clamp01(
+            (float)Mathf.Max(0, totalSamples) / Mathf.Max(1, minimumTotal));
+        float activeProgress = Mathf.Clamp01(
+            (float)Mathf.Max(0, activeSamples) / Mathf.Max(1, minimumActive));
+        float categoryProgress = Mathf.Clamp01(
+            (float)CountTrainedActionCategories(actionCounts)
+            / Mathf.Max(1, minimumCategories));
+        return Mathf.Min(totalProgress, activeProgress, categoryProgress);
+    }
+
+    public static int CountTrainedActionCategories(int[] actionCounts)
+    {
+        if (actionCounts == null || actionCounts.Length < 5) return 0;
+        int categories = actionCounts[(int)ShadowAction.Left]
+                         + actionCounts[(int)ShadowAction.Right] > 0 ? 1 : 0;
+        if (actionCounts[(int)ShadowAction.Jump] > 0) categories++;
+        if (actionCounts[(int)ShadowAction.Slide] > 0) categories++;
+        return categories;
     }
 
     private void CreateGhost()
@@ -916,7 +975,8 @@ public class AIShadowRunner : MonoBehaviour
             }
         }
 
-        if (_profile == null) _profile = new ShadowProfile();
+        if (_profile == null) _profile = new ShadowProfile { version = 2 };
+        NormalizeProfile();
         _policy = new AIShadowPolicy(_profile.weights);
         _sequencePolicy = new AIShadowSequencePolicy(_profile.sequenceTransitions,
             _profile.sequencePairCount);
@@ -933,6 +993,41 @@ public class AIShadowRunner : MonoBehaviour
             _profile.sequencePairCount = state.pairCount;
         }
         EchoRunSaveSystem.SaveShadowProfile(JsonUtility.ToJson(_profile));
+    }
+
+    private void NormalizeProfile()
+    {
+        if (_profile.version < 2)
+        {
+            _profile.version = 2;
+            if (_profile.generation > 0)
+            {
+                _profile.sampleCount = Mathf.Max(
+                    _profile.sampleCount, minimumTrainingSamples);
+                _profile.activeSampleCount = Mathf.Max(
+                    _profile.activeSampleCount, minimumActiveTrainingSamples);
+                _profile.actionCounts = new int[5];
+                _profile.actionCounts[(int)ShadowAction.Left] = 1;
+                _profile.actionCounts[(int)ShadowAction.Jump] = 1;
+            }
+        }
+
+        _profile.sampleCount = Mathf.Max(0, _profile.sampleCount);
+        _profile.activeSampleCount = Mathf.Clamp(
+            _profile.activeSampleCount, 0, _profile.sampleCount);
+        EnsureActionCounts();
+    }
+
+    private void EnsureActionCounts()
+    {
+        if (_profile.actionCounts != null && _profile.actionCounts.Length == 5)
+            return;
+
+        int[] normalized = new int[5];
+        if (_profile.actionCounts != null)
+            Array.Copy(_profile.actionCounts, normalized,
+                Mathf.Min(_profile.actionCounts.Length, normalized.Length));
+        _profile.actionCounts = normalized;
     }
 
     void OnDestroy()
