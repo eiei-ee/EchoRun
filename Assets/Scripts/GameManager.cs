@@ -43,25 +43,57 @@ public class GameManager : MonoBehaviour
     private float _prePauseTimeScale = 1f;
     private PlayerController _telemetryPlayer;
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void EnsureRuntimeInstance()
+    {
+        if (FindObjectOfType<GameManager>() != null) return;
+        new GameObject("GameManager_Runtime").AddComponent<GameManager>();
+    }
+
     void Awake()
     {
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
         EchoRunSaveSystem.EnsureInitialized();
         int savedFps = PlayerPrefs.GetInt("TargetFrameRate", 60);
-        Application.targetFrameRate = savedFps > 0 ? savedFps : 60;
+        int runtimeFps = NormalizeFrameRate(
+            savedFps > 0 ? savedFps : 60, IsFrameRateConstrainedPlatform());
+        QualitySettings.vSyncCount = 0;
+        Application.targetFrameRate = runtimeFps;
+        if (runtimeFps != savedFps)
+            EchoRunSaveSystem.SaveFrameRate(runtimeFps);
     }
 
     public void SetFrameRate(int fps)
     {
         if (fps <= 0) return;
-        Application.targetFrameRate = fps;
-        EchoRunSaveSystem.SaveFrameRate(fps);
+        int runtimeFps = NormalizeFrameRate(
+            fps, IsFrameRateConstrainedPlatform());
+        Application.targetFrameRate = runtimeFps;
+        EchoRunSaveSystem.SaveFrameRate(runtimeFps);
     }
 
     public int GetFrameRate()
     {
         return Application.targetFrameRate;
+    }
+
+    public bool SupportsHighFrameRate => !IsFrameRateConstrainedPlatform();
+
+    public static int NormalizeFrameRate(int requested, bool constrainedPlatform)
+    {
+        if (requested <= 30) return 30;
+        if (constrainedPlatform || requested < 90) return 60;
+        return 120;
+    }
+
+    private static bool IsFrameRateConstrainedPlatform()
+    {
+#if UNITY_WEBGL || UNITY_ANDROID
+        return true;
+#else
+        return false;
+#endif
     }
 
     void Start()
@@ -267,6 +299,18 @@ public class GameManager : MonoBehaviour
             AIShadowRunner.Instance != null
                 ? AIShadowRunner.Instance.GetSequenceStateSnapshot()
                 : "");
+    }
+
+    void OnApplicationFocus(bool hasFocus)
+    {
+        if (!hasFocus && State == GameState.Playing)
+            Pause();
+    }
+
+    void OnApplicationPause(bool paused)
+    {
+        if (paused && State == GameState.Playing)
+            Pause();
     }
 
     void OnDestroy()

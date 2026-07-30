@@ -95,7 +95,7 @@ public class BuildConfig
         BuildReport report = BuildPipeline.BuildPlayer(
             GetScenePaths(), outputDir, BuildTarget.WebGL, BuildOptions.None);
         EnsureBuildSucceeded(report, "WebGL");
-        EnableWebGLPersistence(outputDir);
+        OptimizeWebGLShell(outputDir);
         Debug.Log($"WebGL build complete: {outputDir}");
     }
 
@@ -154,12 +154,13 @@ public class BuildConfig
         PlayerSettings.Android.useCustomKeystore = false;
         PlayerSettings.Android.androidIsGame = true;
 
-        PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
-        PlayerSettings.allowedAutorotateToPortrait = true;
-        PlayerSettings.allowedAutorotateToLandscapeLeft = false;
-        PlayerSettings.allowedAutorotateToLandscapeRight = false;
+        PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
+        PlayerSettings.allowedAutorotateToPortrait = false;
+        PlayerSettings.allowedAutorotateToLandscapeLeft = true;
+        PlayerSettings.allowedAutorotateToLandscapeRight = true;
         PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
 
+        QualitySettings.SetQualityLevel(2, true);
         QualitySettings.vSyncCount = 0;
     }
 
@@ -177,10 +178,10 @@ public class BuildConfig
         PlayerSettings.insecureHttpOption = InsecureHttpOption.NotAllowed;
         PlayerSettings.iOS.hideHomeButton = true;
 
-        PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
-        PlayerSettings.allowedAutorotateToPortrait = true;
-        PlayerSettings.allowedAutorotateToLandscapeLeft = false;
-        PlayerSettings.allowedAutorotateToLandscapeRight = false;
+        PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
+        PlayerSettings.allowedAutorotateToPortrait = false;
+        PlayerSettings.allowedAutorotateToLandscapeLeft = true;
+        PlayerSettings.allowedAutorotateToLandscapeRight = true;
         PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
 
         QualitySettings.vSyncCount = 0;
@@ -192,12 +193,15 @@ public class BuildConfig
         PlayerSettings.WebGL.exceptionSupport = WebGLExceptionSupport.None;
         PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Gzip;
         PlayerSettings.WebGL.decompressionFallback = true;
-        PlayerSettings.WebGL.dataCaching = false;
+        PlayerSettings.WebGL.dataCaching = true;
+        PlayerSettings.WebGL.nameFilesAsHashes = true;
         PlayerSettings.WebGL.linkerTarget = WebGLLinkerTarget.Wasm;
         PlayerSettings.WebGL.threadsSupport = false;
 
-        PlayerSettings.defaultWebScreenWidth = 960;
-        PlayerSettings.defaultWebScreenHeight = 600;
+        PlayerSettings.defaultWebScreenWidth = 1280;
+        PlayerSettings.defaultWebScreenHeight = 720;
+        QualitySettings.SetQualityLevel(2, true);
+        QualitySettings.vSyncCount = 0;
     }
 
     static void ConfigureWindows()
@@ -213,9 +217,11 @@ public class BuildConfig
         PlayerSettings.fullScreenMode = FullScreenMode.FullScreenWindow;
         PlayerSettings.resizableWindow = true;
         PlayerSettings.runInBackground = true;
+        QualitySettings.SetQualityLevel(3, true);
+        QualitySettings.vSyncCount = 0;
     }
 
-    static void EnableWebGLPersistence(string outputDir)
+    static void OptimizeWebGLShell(string outputDir)
     {
         string indexPath = Path.Combine(Application.dataPath, "../", outputDir, "index.html");
         if (!File.Exists(indexPath))
@@ -226,17 +232,54 @@ public class BuildConfig
         string html = File.ReadAllText(indexPath);
 
         if (html.Contains(commented))
-        {
             html = html.Replace(commented, enabled);
-            File.WriteAllText(indexPath, html, new UTF8Encoding(false));
-            return;
-        }
 
         if (!html.Contains(enabled))
         {
             throw new BuildFailedException(
                 "WebGL template does not expose autoSyncPersistentDataPath.");
         }
+
+        const string responsiveStyles = @"
+    <meta name=""viewport"" content=""width=device-width,height=device-height,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"">
+    <style id=""echorun-responsive-shell"">
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #090c12; }
+      body { display: flex; align-items: center; justify-content: center; overscroll-behavior: none; }
+      canvas { display: block; touch-action: none; -webkit-user-select: none; user-select: none; }
+      #tuanjie-container.tuanjie-desktop, #unity-container.unity-desktop {
+        width: min(100vw, calc((100vh - 42px) * 16 / 9));
+        max-width: 100vw;
+      }
+      #tuanjie-container.tuanjie-desktop canvas, #unity-container.unity-desktop canvas {
+        width: 100% !important;
+        height: auto !important;
+        aspect-ratio: 16 / 9;
+      }
+      #tuanjie-container.tuanjie-mobile, #unity-container.unity-mobile,
+      #tuanjie-container.tuanjie-mobile canvas, #unity-container.unity-mobile canvas {
+        width: 100% !important;
+        height: 100% !important;
+      }
+      @media (max-width: 900px), (max-height: 620px) {
+        #tuanjie-footer, #unity-footer { display: none; }
+        #tuanjie-container.tuanjie-desktop, #unity-container.unity-desktop {
+          width: min(100vw, calc(100vh * 16 / 9));
+        }
+      }
+    </style>
+";
+        if (!html.Contains("echorun-responsive-shell"))
+            html = html.Replace("</head>", responsiveStyles + "  </head>");
+
+        html = html.Replace(
+            "// config.devicePixelRatio = 1;",
+            "config.devicePixelRatio = Math.min(window.devicePixelRatio || 1, 1.25);");
+        html = html.Replace(
+            "if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {",
+            "config.devicePixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);\n\n"
+            + "      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {");
+
+        File.WriteAllText(indexPath, html, new UTF8Encoding(false));
     }
 
     static void EnsureSceneInBuild()

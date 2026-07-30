@@ -23,6 +23,7 @@ public class BuildScene
 
         EnsureFolder("Assets/Prefabs");
         EnsureFolder("Assets/Prefabs/Materials");
+        RemoveMissingScriptsFromScene();
         CleanupRuntimeUI();
 
         CreateCharacterMaterials();
@@ -405,6 +406,8 @@ public class BuildScene
         // Clear old visuals if re-running
         foreach (Transform child in player.transform)
             Object.DestroyImmediate(child.gameObject);
+        foreach (MonoBehaviour behaviour in player.GetComponents<MonoBehaviour>())
+            Object.DestroyImmediate(behaviour);
         foreach (var c in player.GetComponents<Collider>())
             Object.DestroyImmediate(c);
         MeshRenderer oldMR = player.GetComponent<MeshRenderer>();
@@ -475,8 +478,9 @@ public class BuildScene
         bc.size = new Vector3(300f, 1f, 300f);
 
         // Add GroundFollower to keep ground under player
-        GroundFollower gf = plane.GetComponent<GroundFollower>();
-        if (gf == null) gf = plane.AddComponent<GroundFollower>();
+        foreach (MonoBehaviour behaviour in plane.GetComponents<MonoBehaviour>())
+            Object.DestroyImmediate(behaviour);
+        plane.AddComponent<GroundFollower>();
 
         Material mat = CreateMaterial("GroundMat", new Color(0.025f, 0.045f, 0.075f),
             Color.black, 0.05f, 0.25f);
@@ -487,22 +491,35 @@ public class BuildScene
 
     static void CreateManagers()
     {
-        EnsureManager("GameManager", typeof(GameManager));
-        EnsureManager("InputManager", typeof(InputManager));
-       EnsureManager("TrackManager", typeof(TrackManager));
-       EnsureManager("TrackManager", typeof(AIShadowRunner));
-       EnsureManager("WorldStyler", typeof(WorldStyler));
-       EnsureManager("UIManager", typeof(UIManager));
-       EnsureManager("AudioManager", typeof(AudioManager));
-       EnsureManager("ParticleManager", typeof(ParticleManager));
+        RecreateManager("GameManager", typeof(GameManager));
+        RecreateManager("InputManager", typeof(InputManager));
+        GameObject serializedTrackManager = GameObject.Find("TrackManager");
+        if (serializedTrackManager != null)
+            Object.DestroyImmediate(serializedTrackManager);
+        RecreateManager("WorldStyler", typeof(WorldStyler));
+        RecreateManager("UIManager", typeof(UIManager));
+        RecreateManager("AudioManager", typeof(AudioManager));
+        RecreateManager("ParticleManager", typeof(ParticleManager));
     }
 
-    static void EnsureManager(string name, System.Type comp)
+    static void RecreateManager(string name, params System.Type[] components)
     {
         GameObject go = GameObject.Find(name);
-        if (go == null) go = new GameObject(name);
-        if (go.GetComponent(comp) == null) go.AddComponent(comp);
+        if (go != null) Object.DestroyImmediate(go);
+        go = new GameObject(name);
+        foreach (System.Type component in components)
+            go.AddComponent(component);
         EditorUtility.SetDirty(go);
+    }
+
+    static void RemoveMissingScriptsFromScene()
+    {
+        foreach (GameObject root in SceneManager.GetActiveScene().GetRootGameObjects())
+        {
+            Transform[] transforms = root.GetComponentsInChildren<Transform>(true);
+            foreach (Transform current in transforms)
+                GameObjectUtility.RemoveMonoBehavioursWithMissingScript(current.gameObject);
+        }
     }
 
     // ── configure ──────────────────────────────────────
@@ -562,7 +579,8 @@ public class BuildScene
         if (cam == null) return;
 
         CameraFollow cf = cam.GetComponent<CameraFollow>();
-        if (cf == null) cf = cam.gameObject.AddComponent<CameraFollow>();
+        if (cf != null) Object.DestroyImmediate(cf);
+        cf = cam.gameObject.AddComponent<CameraFollow>();
 
         GameObject player = GameObject.Find("player");
         if (player != null) cf.target = player.transform;

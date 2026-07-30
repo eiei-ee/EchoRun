@@ -5,6 +5,13 @@ public class TrackManager : MonoBehaviour
 {
     public static TrackManager Instance { get; private set; }
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void EnsureRuntimeInstance()
+    {
+        if (FindObjectOfType<TrackManager>() != null) return;
+        new GameObject("TrackManager_Runtime").AddComponent<TrackManager>();
+    }
+
     [Header("Track")]
     public GameObject trackSegmentPrefab;
     public float segmentLength = 20f;
@@ -88,7 +95,8 @@ public class TrackManager : MonoBehaviour
 
     void Update()
     {
-        if (GameManager.Instance.State != GameState.Playing) return;
+        if (GameManager.Instance == null
+            || GameManager.Instance.State != GameState.Playing) return;
         if (_player == null) return;
         if (trackSegmentPrefab == null) return;
 
@@ -781,6 +789,13 @@ public class TrackManager : MonoBehaviour
        instance.transform.SetParent(ownerSegment.transform, true);
        instance.transform.SetPositionAndRotation(position, rotation);
        instance.SetActive(true);
+       if (WorldStyler.Instance != null)
+       {
+           if (instance.GetComponent<Coin>() != null)
+               WorldStyler.Instance.StyleCoin(instance);
+           else if (instance.GetComponent<Obstacle>() != null)
+               WorldStyler.Instance.StyleObstacle(instance);
+       }
        _dynamicObjects.Add(new DynamicEntry
        {
            instance = instance,

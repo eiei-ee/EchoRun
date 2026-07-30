@@ -3,6 +3,20 @@ using UnityEngine.UI;
 
 public class UIManager : MonoBehaviour
 {
+    // Restrained graphite palette: neutral surfaces, muted steel-blue actions,
+    // brass rewards, and red reserved for failures.
+    private static readonly Color Backdrop = new Color(0.035f, 0.045f, 0.06f);
+    private static readonly Color Surface = new Color(0.075f, 0.09f, 0.115f);
+    private static readonly Color SurfaceRaised = new Color(0.12f, 0.145f, 0.18f);
+    private static readonly Color Primary = new Color(0.42f, 0.58f, 0.72f);
+    private static readonly Color PrimaryStrong = new Color(0.22f, 0.36f, 0.50f);
+    private static readonly Color Reward = new Color(0.78f, 0.61f, 0.36f);
+    private static readonly Color Danger = new Color(0.72f, 0.34f, 0.34f);
+    private static readonly Color Success = new Color(0.44f, 0.62f, 0.68f);
+    private static readonly Color TextPrimary = new Color(0.92f, 0.94f, 0.96f);
+    private static readonly Color TextMuted = new Color(0.64f, 0.68f, 0.74f);
+    private static readonly Color Ink = new Color(0.02f, 0.025f, 0.035f);
+
     // ── Menu ──
     GameObject _menuPanel;
     Button _startBtn, _settingsBtn, _characterBtn;
@@ -24,6 +38,9 @@ public class UIManager : MonoBehaviour
     GameObject _buffGroup;
     Text _buffText;
     Button _pauseBtn;
+    GameObject _controlHint;
+    Text _controlHintText;
+    GameObject _landscapeGuard;
 
     // ── Pause ──
     GameObject _pausePanel;
@@ -38,6 +55,21 @@ public class UIManager : MonoBehaviour
     private Font _font;
     private Font _titleFont;
     private GameManager _gm;
+    private RectTransform _safeAreaRoot;
+    private Rect _lastSafeArea;
+    private Vector2Int _lastScreenSize;
+    private float _controlHintTimer;
+    private Sprite _roundedSprite;
+    private Texture2D _roundedTexture;
+
+    private const float ControlHintDuration = 7f;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void EnsureRuntimeInstance()
+    {
+        if (FindObjectOfType<UIManager>() != null) return;
+        new GameObject("UIManager_Runtime").AddComponent<UIManager>();
+    }
 
     void Start()
     {
@@ -59,8 +91,10 @@ public class UIManager : MonoBehaviour
         CreateSettingsPanel();
         CreateCharacterPanel();
         CreateHUDPanel();
+        CreateControlHint();
         CreatePausePanel();
         CreateGameOverPanel();
+        CreateLandscapeGuard();
 
         _gm.OnStateChanged.AddListener(OnGameStateChanged);
         _gm.OnScoreChanged.AddListener(OnScoreChanged);
@@ -73,6 +107,22 @@ public class UIManager : MonoBehaviour
 
     void Update()
     {
+        ApplySafeArea();
+        UpdateLandscapeGuard();
+
+        if (_gm != null && _gm.State == GameState.Menu
+            && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space)))
+        {
+            _gm.StartGame();
+        }
+
+        if (_controlHint != null && _controlHint.activeSelf)
+        {
+            _controlHintTimer -= Time.unscaledDeltaTime;
+            if (_controlHintTimer <= 0f)
+                _controlHint.SetActive(false);
+        }
+
         // Buff timer display
         if (_buffGroup != null && _gm != null && _gm.State == GameState.Playing)
         {
@@ -102,17 +152,36 @@ public class UIManager : MonoBehaviour
 
     void EnsureCanvas()
     {
-        if (FindObjectOfType<Canvas>() != null) return;
+        Canvas canvas = FindObjectOfType<Canvas>();
+        if (canvas == null)
+        {
+            GameObject cgo = new GameObject("Canvas");
+            canvas = cgo.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        }
 
-        GameObject cgo = new GameObject("Canvas");
-        Canvas canvas = cgo.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        CanvasScaler scaler = cgo.AddComponent<CanvasScaler>();
+        CanvasScaler scaler = canvas.GetComponent<CanvasScaler>();
+        if (scaler == null) scaler = canvas.gameObject.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1280, 720);
-        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-        scaler.matchWidthOrHeight = 0.5f;
-        cgo.AddComponent<GraphicRaycaster>();
+        scaler.referenceResolution = new Vector2(1920, 1080);
+        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
+
+        if (canvas.GetComponent<GraphicRaycaster>() == null)
+            canvas.gameObject.AddComponent<GraphicRaycaster>();
+
+        Transform existingSafeArea = canvas.transform.Find("SafeArea");
+        if (existingSafeArea != null)
+        {
+            _safeAreaRoot = existingSafeArea.GetComponent<RectTransform>();
+        }
+        else
+        {
+            GameObject safeArea = new GameObject("SafeArea", typeof(RectTransform));
+            safeArea.transform.SetParent(canvas.transform, false);
+            _safeAreaRoot = safeArea.GetComponent<RectTransform>();
+            Stretch(_safeAreaRoot);
+        }
+        ApplySafeArea(true);
 
         if (FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
         {
@@ -128,46 +197,46 @@ public class UIManager : MonoBehaviour
 
     void CreateMenuPanel()
     {
-        _menuPanel = NewPanel("MenuPanel", new Color(0.01f, 0.025f, 0.05f, 0.68f));
+        _menuPanel = NewPanel("MenuPanel", WithAlpha(Backdrop, 0.78f));
         AddMenuGrid(_menuPanel.transform);
 
         Text protocol = MakeText("Protocol", _menuPanel.transform,
             "ADAPTIVE RIVAL PROTOCOL  //  07", 16, TextAnchor.MiddleCenter);
-        protocol.color = new Color(0.28f, 0.9f, 0.92f);
+        protocol.color = Primary;
         protocol.fontStyle = FontStyle.Bold;
         AnchorText(protocol.GetComponent<RectTransform>(), 0.5f, 0.78f, 620, 30);
 
         Text title = MakeText("Title", _menuPanel.transform, "ECHO//RUN", 76, TextAnchor.MiddleCenter);
         if (_titleFont != null) title.font = _titleFont;
-        title.color = new Color(0.95f, 0.98f, 1f);
+        title.color = TextPrimary;
         title.fontStyle = FontStyle.Bold;
-        AddShadow(title.gameObject, new Color(0f, 0.08f, 0.12f, 0.9f));
+        AddShadow(title.gameObject, WithAlpha(Ink, 0.9f));
         AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.68f, 760, 92);
 
         Text subtitle = MakeText("Subtitle", _menuPanel.transform,
             "回声竞速实验", 22, TextAnchor.MiddleCenter);
-        subtitle.color = new Color(1f, 0.62f, 0.14f);
+        subtitle.color = Reward;
         AnchorText(subtitle.GetComponent<RectTransform>(), 0.5f, 0.61f, 420, 36);
 
         _menuShadowText = MakeText("ShadowMode", _menuPanel.transform,
             "校准阶段  //  等待跑者数据", 21, TextAnchor.MiddleCenter);
-        _menuShadowText.color = new Color(0.72f, 0.83f, 0.86f);
+        _menuShadowText.color = TextMuted;
         _menuShadowText.fontStyle = FontStyle.Bold;
         AnchorText(_menuShadowText.GetComponent<RectTransform>(), 0.5f, 0.53f, 780, 38);
 
         _startBtn = MakeButton("StartBtn", _menuPanel.transform, "启动校准", 28,
             new Vector2(0.5f, 0.39f), new Vector2(360, 68),
-            new Color(0.035f, 0.38f, 0.42f, 0.96f), new Color(0.12f, 0.95f, 0.98f));
+            WithAlpha(PrimaryStrong, 0.98f), Primary);
         _startBtn.onClick.AddListener(() => _gm.StartGame());
 
         _settingsBtn = MakeButton("SettingsBtn", _menuPanel.transform, "设置", 20,
             new Vector2(0.43f, 0.25f), new Vector2(150, 48),
-            new Color(0.075f, 0.1f, 0.15f, 0.94f), new Color(0.28f, 0.52f, 0.58f));
+            WithAlpha(SurfaceRaised, 0.96f), TextMuted);
         _settingsBtn.onClick.AddListener(ShowSettings);
 
         _characterBtn = MakeButton("CharacterBtn", _menuPanel.transform, "跑者", 20,
             new Vector2(0.57f, 0.25f), new Vector2(150, 48),
-            new Color(0.075f, 0.1f, 0.15f, 0.94f), new Color(0.85f, 0.35f, 0.24f));
+            WithAlpha(SurfaceRaised, 0.96f), TextMuted);
         _characterBtn.onClick.AddListener(ShowCharacter);
 
         _menuPanel.SetActive(false);
@@ -179,7 +248,7 @@ public class UIManager : MonoBehaviour
 
     void CreateSettingsPanel()
     {
-        _settingsPanel = NewPanel("SettingsPanel", new Color(0.01f, 0.025f, 0.05f, 0.94f));
+        _settingsPanel = NewPanel("SettingsPanel", WithAlpha(Backdrop, 0.96f));
 
         // ScrollRect setup
         ScrollRect scroll = _settingsPanel.AddComponent<ScrollRect>();
@@ -230,20 +299,26 @@ public class UIManager : MonoBehaviour
 
         MakeLabel("FpsLabel", c, "帧率", new Vector2(0.5f, 0.46f));
         _fps30Btn  = MakeSmallButton("Fps30", c, "30",
-            new Vector2(0.25f, 0.38f), new Vector2(140, 60), new Color(0.3f, 0.3f, 0.35f));
+            new Vector2(0.25f, 0.38f), new Vector2(140, 60), SurfaceRaised);
         _fps60Btn  = MakeSmallButton("Fps60", c, "60",
-            new Vector2(0.5f, 0.38f), new Vector2(140, 60), new Color(0.3f, 0.3f, 0.35f));
+            new Vector2(0.5f, 0.38f), new Vector2(140, 60), SurfaceRaised);
         _fps120Btn = MakeSmallButton("Fps120", c, "120",
-            new Vector2(0.75f, 0.38f), new Vector2(140, 60), new Color(0.3f, 0.3f, 0.35f));
+            new Vector2(0.75f, 0.38f), new Vector2(140, 60), SurfaceRaised);
 
         _fps30Btn.onClick.AddListener(() => { _gm.SetFrameRate(30);  HighlightFps(); });
         _fps60Btn.onClick.AddListener(() => { _gm.SetFrameRate(60);  HighlightFps(); });
         _fps120Btn.onClick.AddListener(() => { _gm.SetFrameRate(120); HighlightFps(); });
+        if (_gm != null && !_gm.SupportsHighFrameRate)
+        {
+            _fps120Btn.gameObject.SetActive(false);
+            SetButtonAnchor(_fps30Btn, new Vector2(0.36f, 0.38f));
+            SetButtonAnchor(_fps60Btn, new Vector2(0.64f, 0.38f));
+        }
         HighlightFps();
 
         _settingsBackBtn = MakeButton("SettingsBackBtn", c, "返回", 34,
             new Vector2(0.5f, 0.22f), new Vector2(280, 76),
-            new Color(0.5f, 0.25f, 0.2f), new Color(0.35f, 0.15f, 0.1f));
+            SurfaceRaised, TextMuted);
         _settingsBackBtn.onClick.AddListener(HideSettings);
 
         _settingsPanel.SetActive(false);
@@ -265,8 +340,8 @@ public class UIManager : MonoBehaviour
     void HighlightFps()
     {
         int cur = _gm != null ? _gm.GetFrameRate() : 60;
-        Color active   = new Color(0.2f, 0.75f, 1f);
-        Color inactive = new Color(0.3f, 0.3f, 0.35f);
+        Color active = PrimaryStrong;
+        Color inactive = SurfaceRaised;
         SetBtnColor(_fps30Btn,  cur == 30  ? active : inactive);
         SetBtnColor(_fps60Btn,  cur == 60  ? active : inactive);
         SetBtnColor(_fps120Btn, cur == 120 ? active : inactive);
@@ -294,7 +369,7 @@ public class UIManager : MonoBehaviour
 
     void CreateCharacterPanel()
     {
-        _characterPanel = NewPanel("CharacterPanel", new Color(0.01f, 0.025f, 0.05f, 0.94f));
+        _characterPanel = NewPanel("CharacterPanel", WithAlpha(Backdrop, 0.96f));
 
         // ScrollRect
         ScrollRect scroll = _characterPanel.AddComponent<ScrollRect>();
@@ -348,7 +423,7 @@ public class UIManager : MonoBehaviour
 
         _characterBackBtn = MakeButton("CharBackBtn", c, "返回", 34,
             new Vector2(0.5f, 0.12f), new Vector2(280, 76),
-            new Color(0.5f, 0.25f, 0.2f), new Color(0.35f, 0.15f, 0.1f));
+            SurfaceRaised, TextMuted);
         _characterBackBtn.onClick.AddListener(HideCharacter);
 
         _characterPanel.SetActive(false);
@@ -366,7 +441,7 @@ public class UIManager : MonoBehaviour
 
         Text nameLabel = MakeText("PresetLabel_" + index, parent,
             label, 26, TextAnchor.MiddleCenter);
-        nameLabel.color = new Color(0.85f, 0.85f, 0.85f);
+        nameLabel.color = TextMuted;
         AnchorText(nameLabel.GetComponent<RectTransform>(), anchor.x, anchor.y - 0.06f, 150, 30);
     }
 
@@ -417,14 +492,14 @@ public class UIManager : MonoBehaviour
 
     void CreateHUDPanel()
     {
-        _hudPanel = NewPanel("HudPanel", new Color(0.015f, 0.035f, 0.065f, 0.78f));
+        _hudPanel = NewPanel("HudPanel", WithAlpha(Backdrop, 0.58f));
         RectTransform rt = _hudPanel.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0, 1); rt.anchorMax = new Vector2(0, 1);
         rt.pivot = new Vector2(0, 1);
         rt.sizeDelta = new Vector2(450, 122);
         rt.anchoredPosition = new Vector2(18, -18);
 
-        AddPanelAccent(_hudPanel.transform, new Color(0.08f, 0.9f, 0.94f), true);
+        AddPanelRule(_hudPanel.transform, Primary);
 
         float y = -45f;
         float rowH = 24f;
@@ -433,13 +508,13 @@ public class UIManager : MonoBehaviour
         // Row 4: AI director state
         _aiDirectorText = MakeHUDText("AIDirectorText", _hudPanel.transform,
             "AI DIRECTOR  //  OBSERVING", 15, new Vector2(leftX, y), new Vector2(380, rowH));
-        _aiDirectorText.color = new Color(0.28f, 0.9f, 0.92f);
+        _aiDirectorText.color = Primary;
         y -= rowH;
 
         // Row 5: behavior-cloned opponent state
         _aiShadowText = MakeHUDText("AIShadowText", _hudPanel.transform,
             "ECHO RIVAL  //  CALIBRATING", 15, new Vector2(leftX, y), new Vector2(390, rowH));
-        _aiShadowText.color = new Color(1f, 0.62f, 0.16f);
+        _aiShadowText.color = Reward;
         y -= rowH;
 
         // Row 6: Buff (hidden by default)
@@ -452,7 +527,7 @@ public class UIManager : MonoBehaviour
         bgRT.sizeDelta = new Vector2(300, 22);
 
         Text buffIcon = MakeText("BuffIcon", _buffGroup.transform, "▶", 20, TextAnchor.MiddleLeft);
-        buffIcon.color = new Color(0.3f, 1f, 0.5f);
+        buffIcon.color = Success;
         RectTransform biRT = buffIcon.GetComponent<RectTransform>();
         biRT.anchorMin = new Vector2(0, 0.5f); biRT.anchorMax = new Vector2(0, 0.5f);
         biRT.pivot = new Vector2(0, 0.5f);
@@ -460,7 +535,7 @@ public class UIManager : MonoBehaviour
         biRT.sizeDelta = new Vector2(24, 24);
 
         _buffText = MakeText("BuffText", _buffGroup.transform, "", 22, TextAnchor.MiddleLeft);
-        _buffText.color = new Color(0.3f, 1f, 0.5f);
+        _buffText.color = Success;
         RectTransform btRT = _buffText.GetComponent<RectTransform>();
         btRT.anchorMin = new Vector2(0, 0.5f); btRT.anchorMax = new Vector2(0, 0.5f);
         btRT.pivot = new Vector2(0, 0.5f);
@@ -478,10 +553,59 @@ public class UIManager : MonoBehaviour
         // Pause button (right side of HUD bar)
         _pauseBtn = MakeIconButton("PauseBtn", _hudPanel.transform, "Ⅱ",
             new Vector2(1, 1), new Vector2(48, 48),
-            new Color(0.08f, 0.13f, 0.18f, 0.96f));
+            WithAlpha(SurfaceRaised, 0.96f));
         _pauseBtn.onClick.AddListener(() => _gm.Pause());
 
         _hudPanel.SetActive(false);
+    }
+
+    void CreateControlHint()
+    {
+        _controlHint = new GameObject("ControlHint", typeof(Image));
+        _controlHint.transform.SetParent(_safeAreaRoot, false);
+        Image background = _controlHint.GetComponent<Image>();
+        background.color = WithAlpha(Backdrop, 0.94f);
+        ApplyRounded(background);
+
+        RectTransform rt = _controlHint.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0.5f, 0f);
+        rt.anchorMax = new Vector2(0.5f, 0f);
+        rt.pivot = new Vector2(0.5f, 0f);
+        rt.anchoredPosition = new Vector2(0f, 34f);
+        rt.sizeDelta = new Vector2(760f, 64f);
+
+        _controlHintText = MakeText("ControlHintText", _controlHint.transform,
+            "", 24, TextAnchor.MiddleCenter);
+        _controlHintText.fontStyle = FontStyle.Bold;
+        _controlHintText.color = TextPrimary;
+        Stretch(_controlHintText.GetComponent<RectTransform>());
+        AddOutline(_controlHintText.gameObject, WithAlpha(Ink, 0.65f));
+        AddPanelRule(_controlHint.transform, Primary);
+        _controlHint.SetActive(false);
+    }
+
+    void CreateLandscapeGuard()
+    {
+        Transform canvasRoot = _safeAreaRoot != null
+            ? _safeAreaRoot.parent
+            : FindObjectOfType<Canvas>()?.transform;
+        if (canvasRoot == null) return;
+
+        _landscapeGuard = new GameObject(
+            "LandscapeGuard", typeof(Image));
+        _landscapeGuard.transform.SetParent(canvasRoot, false);
+        _landscapeGuard.GetComponent<Image>().color =
+            WithAlpha(Backdrop, 0.99f);
+        Stretch(_landscapeGuard.GetComponent<RectTransform>());
+
+        Text message = MakeText("Message", _landscapeGuard.transform,
+            "请横屏游玩\n旋转设备以继续", 42, TextAnchor.MiddleCenter);
+        message.fontStyle = FontStyle.Bold;
+        message.color = TextPrimary;
+        message.lineSpacing = 1.25f;
+        Stretch(message.GetComponent<RectTransform>());
+        AddOutline(message.gameObject, new Color(0f, 0f, 0f, 0.7f));
+        _landscapeGuard.SetActive(false);
     }
 
     Text MakeHUDText(string name, Transform parent, string content, int size,
@@ -505,7 +629,7 @@ public class UIManager : MonoBehaviour
 
     void CreatePausePanel()
     {
-        _pausePanel = NewPanel("PausePanel", new Color(0.01f, 0.025f, 0.05f, 0.86f));
+        _pausePanel = NewPanel("PausePanel", WithAlpha(Backdrop, 0.92f));
 
         Text title = MakeText("PauseTitle", _pausePanel.transform, "PROTOCOL PAUSED", 42, TextAnchor.MiddleCenter);
         title.color = Color.white;
@@ -515,12 +639,12 @@ public class UIManager : MonoBehaviour
 
         _resumeBtn = MakeButton("ResumeBtn", _pausePanel.transform, "继续游戏", 38,
             new Vector2(0.5f, 0.38f), new Vector2(400, 100),
-            new Color(0.035f, 0.38f, 0.42f), new Color(0.12f, 0.95f, 0.98f));
+            PrimaryStrong, Primary);
         _resumeBtn.onClick.AddListener(() => _gm.Resume());
 
         _pauseToMenuBtn = MakeButton("PauseToMenuBtn", _pausePanel.transform, "返回主页", 32,
             new Vector2(0.5f, 0.22f), new Vector2(320, 80),
-            new Color(0.09f, 0.12f, 0.17f), new Color(0.65f, 0.26f, 0.2f));
+            SurfaceRaised, TextMuted);
         _pauseToMenuBtn.onClick.AddListener(() => _gm.ReturnToMenu());
 
         _pausePanel.SetActive(false);
@@ -532,10 +656,10 @@ public class UIManager : MonoBehaviour
 
     void CreateGameOverPanel()
     {
-        _gameOverPanel = NewPanel("GameOverPanel", new Color(0.01f, 0.025f, 0.05f, 0.9f));
+        _gameOverPanel = NewPanel("GameOverPanel", WithAlpha(Backdrop, 0.94f));
 
         Text title = MakeText("GOTitle", _gameOverPanel.transform, "Game Over", 68, TextAnchor.MiddleCenter);
-        title.color = new Color(1f, 0.2f, 0.15f);
+        title.color = Danger;
         title.fontStyle = FontStyle.Bold;
         AddOutline(title.gameObject, new Color(0.5f, 0.05f, 0f));
         AddShadow(title.gameObject, new Color(0, 0, 0, 0.8f));
@@ -552,7 +676,7 @@ public class UIManager : MonoBehaviour
 
         // High score
         _highScoreText = MakeText("HighScore", _gameOverPanel.transform, "最高分: 0", 36, TextAnchor.MiddleCenter);
-        _highScoreText.color = new Color(1f, 0.85f, 0.1f);
+        _highScoreText.color = Reward;
         _highScoreText.fontStyle = FontStyle.Bold;
         AddOutline(_highScoreText.gameObject, new Color(0.3f, 0.2f, 0f));
         AnchorText(_highScoreText.GetComponent<RectTransform>(), 0.5f, 0.52f, 400, 50);
@@ -560,33 +684,37 @@ public class UIManager : MonoBehaviour
 
         // Coins
         _coinResultText = MakeText("CoinResult", _gameOverPanel.transform, "金币: 0", 32, TextAnchor.MiddleCenter);
-        _coinResultText.color = new Color(1f, 0.85f, 0.1f);
+        _coinResultText.color = Reward;
         AnchorText(_coinResultText.GetComponent<RectTransform>(), 0.5f, 0.45f, 500, 40);
         _coinResultText.gameObject.SetActive(false);
 
         _shadowResultText = MakeText("ShadowResult", _gameOverPanel.transform,
             "AI影子正在生成赛后分析", 28, TextAnchor.MiddleCenter);
-        _shadowResultText.color = new Color(0.3f, 0.95f, 1f);
+        _shadowResultText.color = Primary;
         _shadowResultText.fontStyle = FontStyle.Bold;
-        AnchorText(_shadowResultText.GetComponent<RectTransform>(), 0.5f, 0.35f, 820, 80);
+        _shadowResultText.resizeTextForBestFit = true;
+        _shadowResultText.resizeTextMinSize = 18;
+        _shadowResultText.resizeTextMaxSize = 28;
+        _shadowResultText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        AnchorText(_shadowResultText.GetComponent<RectTransform>(), 0.5f, 0.34f, 1100, 90);
 
         // Restart
-        _restartBtn = MakeButton("RestartBtn", _gameOverPanel.transform, "挑战下一代", 38,
-            new Vector2(0.5f, 0.20f), new Vector2(400, 100),
-            new Color(0.035f, 0.38f, 0.42f), new Color(0.12f, 0.95f, 0.98f));
+        _restartBtn = MakeButton("RestartBtn", _gameOverPanel.transform, "挑战下一代", 30,
+            new Vector2(0.5f, 0.18f), new Vector2(380, 76),
+            PrimaryStrong, Primary);
         _restartBtn.onClick.AddListener(() => _gm.Restart());
 
         // Back to menu
-        _goToMenuBtn = MakeButton("GoToMenuBtn", _gameOverPanel.transform, "返回主页", 32,
-            new Vector2(0.5f, 0.08f), new Vector2(320, 80),
-            new Color(0.075f, 0.1f, 0.15f), new Color(0.35f, 0.48f, 0.54f));
+        _goToMenuBtn = MakeButton("GoToMenuBtn", _gameOverPanel.transform, "返回主页", 24,
+            new Vector2(0.5f, 0.07f), new Vector2(280, 60),
+            SurfaceRaised, TextMuted);
         _goToMenuBtn.onClick.AddListener(() => _gm.ReturnToMenu());
 
         // Create consolidated result text last so WebGL dynamic-font atlas rebuilds
         // cannot leave the earlier score rows without geometry.
         _gameOverTitleText = MakeText("GameOverTitle", _gameOverPanel.transform,
             "RUN DECODED", 48, TextAnchor.MiddleCenter);
-        _gameOverTitleText.color = new Color(1f, 0.42f, 0.2f);
+        _gameOverTitleText.color = Danger;
         _gameOverTitleText.fontStyle = FontStyle.Bold;
         AddOutline(_gameOverTitleText.gameObject, new Color(0.4f, 0.05f, 0f));
         AnchorText(_gameOverTitleText.GetComponent<RectTransform>(), 0.5f, 0.76f, 600, 80);
@@ -619,6 +747,7 @@ public class UIManager : MonoBehaviour
         switch (state)
         {
             case GameState.Menu:
+                if (_controlHint != null) _controlHint.SetActive(false);
                 if (_menuPanel != null) _menuPanel.SetActive(true);
                 if (AIShadowRunner.Instance != null)
                 {
@@ -640,17 +769,20 @@ public class UIManager : MonoBehaviour
 
             case GameState.Playing:
                 if (_hudPanel != null) _hudPanel.SetActive(true);
+                ShowControlHintIfNeeded();
                 OnScoreChanged(_gm != null ? _gm.Score : 0);
                 OnCoinsChanged(_gm != null ? _gm.Coins : 0);
                 OnDistanceChanged(_gm != null ? _gm.Distance : 0);
                 break;
 
             case GameState.Paused:
+                if (_controlHint != null) _controlHint.SetActive(false);
                 if (_hudPanel != null) _hudPanel.SetActive(true);
                 if (_pausePanel != null) _pausePanel.SetActive(true);
                 break;
 
             case GameState.GameOver:
+                if (_controlHint != null) _controlHint.SetActive(false);
                 if (_gameOverPanel != null) _gameOverPanel.SetActive(true);
                 if (_shadowResultText != null && AIShadowRunner.Instance != null)
                     _shadowResultText.text = AIShadowRunner.Instance.FinalizeRunIfNeeded();
@@ -680,11 +812,15 @@ public class UIManager : MonoBehaviour
 
     void OnDestroy()
     {
-        if (_gm == null) return;
-        _gm.OnStateChanged.RemoveListener(OnGameStateChanged);
-        _gm.OnScoreChanged.RemoveListener(OnScoreChanged);
-        _gm.OnCoinsChanged.RemoveListener(OnCoinsChanged);
-        _gm.OnDistanceChanged.RemoveListener(OnDistanceChanged);
+        if (_gm != null)
+        {
+            _gm.OnStateChanged.RemoveListener(OnGameStateChanged);
+            _gm.OnScoreChanged.RemoveListener(OnScoreChanged);
+            _gm.OnCoinsChanged.RemoveListener(OnCoinsChanged);
+            _gm.OnDistanceChanged.RemoveListener(OnDistanceChanged);
+        }
+        if (_roundedSprite != null) Destroy(_roundedSprite);
+        if (_roundedTexture != null) Destroy(_roundedTexture);
     }
 
     void OnCoinsChanged(int coins)
@@ -712,11 +848,78 @@ public class UIManager : MonoBehaviour
     GameObject NewPanel(string name, Color color)
     {
         GameObject panel = new GameObject(name, typeof(Image));
-        panel.GetComponent<Image>().color = color;
-        Canvas canvas = FindObjectOfType<Canvas>();
-        panel.transform.SetParent(canvas != null ? canvas.transform : transform, false);
+        Image image = panel.GetComponent<Image>();
+        image.color = color;
+        ApplyRounded(image);
+        panel.transform.SetParent(_safeAreaRoot != null ? _safeAreaRoot : transform, false);
         Stretch(panel.GetComponent<RectTransform>());
         return panel;
+    }
+
+    void ShowControlHintIfNeeded()
+    {
+        if (_controlHint == null || _controlHintText == null) return;
+        bool firstCalibration = AIShadowRunner.Instance == null
+                                || AIShadowRunner.Instance.Generation <= 0;
+        if (!firstCalibration)
+        {
+            _controlHint.SetActive(false);
+            return;
+        }
+
+        _controlHintText.text = UsesTouchLayout()
+            ? "左右滑动变道  ·  上滑跳跃  ·  下滑滑铲"
+            : "A / D 或拖动变道  ·  W / 空格跳跃  ·  S / Ctrl 滑铲";
+        _controlHintTimer = ControlHintDuration;
+        _controlHint.SetActive(true);
+    }
+
+    void UpdateLandscapeGuard()
+    {
+        if (_landscapeGuard == null) return;
+        bool shouldShow = ShouldShowLandscapeGuard(
+            Screen.width, Screen.height, UsesTouchLayout());
+        if (_landscapeGuard.activeSelf == shouldShow) return;
+
+        _landscapeGuard.SetActive(shouldShow);
+        if (shouldShow)
+        {
+            _landscapeGuard.transform.SetAsLastSibling();
+            if (_gm != null && _gm.State == GameState.Playing)
+                _gm.Pause();
+        }
+    }
+
+    public static bool ShouldShowLandscapeGuard(
+        int width, int height, bool touchLayout)
+    {
+        return touchLayout && width > 0 && height > width;
+    }
+
+    private static bool UsesTouchLayout()
+    {
+        return Application.isMobilePlatform || Input.touchSupported;
+    }
+
+    void ApplySafeArea(bool force = false)
+    {
+        if (_safeAreaRoot == null || Screen.width <= 0 || Screen.height <= 0) return;
+        Rect safeArea = Screen.safeArea;
+        Vector2Int screenSize = new Vector2Int(Screen.width, Screen.height);
+        if (!force && safeArea == _lastSafeArea && screenSize == _lastScreenSize) return;
+
+        _lastSafeArea = safeArea;
+        _lastScreenSize = screenSize;
+        Vector2 anchorMin = safeArea.position;
+        Vector2 anchorMax = safeArea.position + safeArea.size;
+        anchorMin.x /= Screen.width;
+        anchorMin.y /= Screen.height;
+        anchorMax.x /= Screen.width;
+        anchorMax.y /= Screen.height;
+        _safeAreaRoot.anchorMin = anchorMin;
+        _safeAreaRoot.anchorMax = anchorMax;
+        _safeAreaRoot.offsetMin = Vector2.zero;
+        _safeAreaRoot.offsetMax = Vector2.zero;
     }
 
     static void Stretch(RectTransform rt)
@@ -734,51 +937,38 @@ public class UIManager : MonoBehaviour
 
     void AddMenuGrid(Transform parent)
     {
-        for (int i = 1; i < 8; i++)
+        for (int i = 0; i < 12; i++)
         {
-            GameObject line = new GameObject("GridV", typeof(Image));
-            line.transform.SetParent(parent, false);
-            line.GetComponent<Image>().color = new Color(0.08f, 0.65f, 0.7f, 0.055f);
-            RectTransform rt = line.GetComponent<RectTransform>();
-            rt.anchorMin = new Vector2(i / 8f, 0f);
-            rt.anchorMax = new Vector2(i / 8f, 1f);
-            rt.sizeDelta = new Vector2(1f, 0f);
-            rt.anchoredPosition = Vector2.zero;
-        }
-
-        for (int i = 1; i < 5; i++)
-        {
-            GameObject line = new GameObject("GridH", typeof(Image));
-            line.transform.SetParent(parent, false);
-            line.GetComponent<Image>().color = new Color(1f, 0.34f, 0.2f, 0.035f);
-            RectTransform rt = line.GetComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0f, i / 5f);
-            rt.anchorMax = new Vector2(1f, i / 5f);
-            rt.sizeDelta = new Vector2(0f, 1f);
+            float angle = i / 12f * Mathf.PI * 2f;
+            Vector2 anchor = new Vector2(
+                0.5f + Mathf.Cos(angle) * 0.43f,
+                0.5f + Mathf.Sin(angle) * 0.36f);
+            GameObject node = new GameObject("TransitNode", typeof(Image));
+            node.transform.SetParent(parent, false);
+            Image image = node.GetComponent<Image>();
+            image.color = WithAlpha(Primary, i % 3 == 0 ? 0.09f : 0.045f);
+            ApplyRounded(image);
+            RectTransform rt = node.GetComponent<RectTransform>();
+            rt.anchorMin = anchor;
+            rt.anchorMax = anchor;
+            rt.sizeDelta = i % 3 == 0 ? new Vector2(8f, 8f) : new Vector2(5f, 5f);
             rt.anchoredPosition = Vector2.zero;
         }
     }
 
-    void AddPanelAccent(Transform parent, Color color, bool vertical)
+    void AddPanelRule(Transform parent, Color color)
     {
-        GameObject accent = new GameObject("SignalAccent", typeof(Image));
+        GameObject accent = new GameObject("SignalRule", typeof(Image));
         accent.transform.SetParent(parent, false);
-        accent.GetComponent<Image>().color = color;
+        Image image = accent.GetComponent<Image>();
+        image.color = color;
+        ApplyRounded(image);
         RectTransform rt = accent.GetComponent<RectTransform>();
-        if (vertical)
-        {
-            rt.anchorMin = new Vector2(0f, 0f);
-            rt.anchorMax = new Vector2(0f, 1f);
-            rt.sizeDelta = new Vector2(4f, 0f);
-            rt.anchoredPosition = Vector2.zero;
-        }
-        else
-        {
-            rt.anchorMin = new Vector2(0f, 1f);
-            rt.anchorMax = new Vector2(1f, 1f);
-            rt.sizeDelta = new Vector2(0f, 3f);
-            rt.anchoredPosition = Vector2.zero;
-        }
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(0f, 1f);
+        rt.pivot = new Vector2(0f, 1f);
+        rt.sizeDelta = new Vector2(58f, 6f);
+        rt.anchoredPosition = new Vector2(18f, -10f);
     }
 
     Text MakeText(string name, Transform parent, string content, int size, TextAnchor align)
@@ -797,7 +987,7 @@ public class UIManager : MonoBehaviour
     void MakeLabel(string name, Transform parent, string content, Vector2 anchor)
     {
         Text label = MakeText(name, parent, content, 30, TextAnchor.MiddleCenter);
-        label.color = new Color(0.8f, 0.8f, 0.8f);
+        label.color = TextMuted;
         AnchorText(label.GetComponent<RectTransform>(), anchor.x, anchor.y, 300, 40);
     }
 
@@ -818,6 +1008,8 @@ public class UIManager : MonoBehaviour
     Button MakeButton(string name, Transform parent, string label, int fontSize,
         Vector2 anchor, Vector2 size, Color mainColor, Color edgeColor)
     {
+        if (UsesTouchLayout())
+            size.y = Mathf.Max(size.y, 104f);
         GameObject go = new GameObject(name, typeof(Image), typeof(Button));
         go.transform.SetParent(parent, false);
         RectTransform rt = go.GetComponent<RectTransform>();
@@ -826,14 +1018,17 @@ public class UIManager : MonoBehaviour
         rt.anchoredPosition = Vector2.zero;
         Image background = go.GetComponent<Image>();
         background.color = mainColor;
+        ApplyRounded(background);
 
-        GameObject edge = new GameObject("SignalEdge", typeof(Image));
+        GameObject edge = new GameObject("SignalRule", typeof(Image));
         edge.transform.SetParent(go.transform, false);
-        edge.GetComponent<Image>().color = edgeColor;
+        Image edgeImage = edge.GetComponent<Image>();
+        edgeImage.color = edgeColor;
+        ApplyRounded(edgeImage);
         RectTransform edgeRt = edge.GetComponent<RectTransform>();
         edgeRt.anchorMin = new Vector2(0f, 0f);
-        edgeRt.anchorMax = new Vector2(0f, 1f);
-        edgeRt.sizeDelta = new Vector2(7f, 0f);
+        edgeRt.anchorMax = new Vector2(1f, 0f);
+        edgeRt.sizeDelta = new Vector2(0f, 3f);
         edgeRt.anchoredPosition = Vector2.zero;
 
         Text labelT = MakeText("Label", go.transform, label, fontSize, TextAnchor.MiddleCenter);
@@ -844,8 +1039,8 @@ public class UIManager : MonoBehaviour
         Button button = go.GetComponent<Button>();
         ColorBlock colors = button.colors;
         colors.normalColor = Color.white;
-        colors.highlightedColor = new Color(1.2f, 1.2f, 1.2f, 1f);
-        colors.pressedColor = new Color(0.72f, 0.82f, 0.84f, 1f);
+        colors.highlightedColor = new Color(1.08f, 1.08f, 1.08f, 1f);
+        colors.pressedColor = new Color(0.78f, 0.84f, 0.81f, 1f);
         colors.selectedColor = colors.highlightedColor;
         colors.fadeDuration = 0.08f;
         button.colors = colors;
@@ -855,13 +1050,17 @@ public class UIManager : MonoBehaviour
     Button MakeSmallButton(string name, Transform parent, string label,
         Vector2 anchor, Vector2 size, Color color)
     {
+        if (UsesTouchLayout())
+            size.y = Mathf.Max(size.y, 104f);
         GameObject go = new GameObject(name, typeof(Image), typeof(Button));
         go.transform.SetParent(parent, false);
         RectTransform rt = go.GetComponent<RectTransform>();
         rt.anchorMin = anchor; rt.anchorMax = anchor;
         rt.sizeDelta = size;
         rt.anchoredPosition = Vector2.zero;
-        go.GetComponent<Image>().color = color;
+        Image image = go.GetComponent<Image>();
+        image.color = color;
+        ApplyRounded(image);
 
         Text labelT = MakeText("Label", go.transform, label, 28, TextAnchor.MiddleCenter);
         labelT.color = Color.white;
@@ -874,6 +1073,11 @@ public class UIManager : MonoBehaviour
     Button MakeIconButton(string name, Transform parent, string label,
         Vector2 anchor, Vector2 size, Color color)
     {
+        if (UsesTouchLayout())
+        {
+            size.x = Mathf.Max(size.x, 104f);
+            size.y = Mathf.Max(size.y, 104f);
+        }
         GameObject go = new GameObject(name, typeof(Image), typeof(Button));
         go.transform.SetParent(parent, false);
         RectTransform rt = go.GetComponent<RectTransform>();
@@ -881,7 +1085,9 @@ public class UIManager : MonoBehaviour
         rt.pivot = anchor;
         rt.sizeDelta = size;
         rt.anchoredPosition = Vector2.zero;
-        go.GetComponent<Image>().color = color;
+        Image image = go.GetComponent<Image>();
+        image.color = color;
+        ApplyRounded(image);
 
         Text labelT = MakeText("Label", go.transform, label, 28, TextAnchor.MiddleCenter);
         labelT.color = Color.white;
@@ -899,7 +1105,9 @@ public class UIManager : MonoBehaviour
         // Background
         GameObject bg = new GameObject("Background", typeof(Image));
         bg.transform.SetParent(go.transform, false);
-        bg.GetComponent<Image>().color = new Color(0.2f, 0.2f, 0.25f);
+        Image bgImage = bg.GetComponent<Image>();
+        bgImage.color = SurfaceRaised;
+        ApplyRounded(bgImage);
         RectTransform bgRT = bg.GetComponent<RectTransform>();
         bgRT.anchorMin = new Vector2(0, 0.5f); bgRT.anchorMax = new Vector2(1, 0.5f);
         bgRT.sizeDelta = new Vector2(0, 16);
@@ -915,7 +1123,9 @@ public class UIManager : MonoBehaviour
         // Fill
         GameObject fill = new GameObject("Fill", typeof(Image));
         fill.transform.SetParent(fillArea.transform, false);
-        fill.GetComponent<Image>().color = new Color(0.2f, 0.7f, 0.3f);
+        Image fillImage = fill.GetComponent<Image>();
+        fillImage.color = Primary;
+        ApplyRounded(fillImage);
         RectTransform fRT = fill.GetComponent<RectTransform>();
         Stretch(fRT);
 
@@ -929,10 +1139,13 @@ public class UIManager : MonoBehaviour
         // Handle
         GameObject handle = new GameObject("Handle", typeof(Image));
         handle.transform.SetParent(handleArea.transform, false);
-        handle.GetComponent<Image>().color = Color.white;
+        Image handleImage = handle.GetComponent<Image>();
+        handleImage.color = Color.white;
+        ApplyRounded(handleImage);
         RectTransform hRT = handle.GetComponent<RectTransform>();
         hRT.anchorMin = new Vector2(0, 0.5f); hRT.anchorMax = new Vector2(0, 0.5f);
-        hRT.sizeDelta = new Vector2(32, 32);
+        float handleSize = UsesTouchLayout() ? 56f : 32f;
+        hRT.sizeDelta = new Vector2(handleSize, handleSize);
         hRT.anchoredPosition = Vector2.zero;
 
         Slider slider = go.GetComponent<Slider>();
@@ -945,9 +1158,67 @@ public class UIManager : MonoBehaviour
 
         RectTransform sRT = go.GetComponent<RectTransform>();
         sRT.anchorMin = anchor; sRT.anchorMax = anchor;
-        sRT.sizeDelta = new Vector2(500, 40);
+        sRT.sizeDelta = UsesTouchLayout()
+            ? new Vector2(600, 72)
+            : new Vector2(500, 40);
         sRT.anchoredPosition = Vector2.zero;
 
         return slider;
+    }
+
+    void ApplyRounded(Image image)
+    {
+        if (image == null) return;
+        if (_roundedSprite == null)
+        {
+            const int size = 64;
+            const float radius = 15f;
+            _roundedTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                name = "RuntimeRoundedUI",
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+            Color32[] pixels = new Color32[size * size];
+            Vector2 center = new Vector2((size - 1) * 0.5f, (size - 1) * 0.5f);
+            Vector2 inner = new Vector2(center.x - radius, center.y - radius);
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 q = new Vector2(
+                        Mathf.Abs(x - center.x) - inner.x,
+                        Mathf.Abs(y - center.y) - inner.y);
+                    float outside = new Vector2(Mathf.Max(q.x, 0f), Mathf.Max(q.y, 0f)).magnitude;
+                    float inside = Mathf.Min(Mathf.Max(q.x, q.y), 0f);
+                    float distance = outside + inside - radius;
+                    byte alpha = (byte)Mathf.RoundToInt(
+                        Mathf.Clamp01(0.5f - distance) * 255f);
+                    pixels[y * size + x] = new Color32(255, 255, 255, alpha);
+                }
+            }
+            _roundedTexture.SetPixels32(pixels);
+            _roundedTexture.Apply(false, true);
+            _roundedSprite = Sprite.Create(_roundedTexture, new Rect(0f, 0f, size, size),
+                new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect,
+                new Vector4(16f, 16f, 16f, 16f));
+            _roundedSprite.name = "RuntimeRoundedUISprite";
+        }
+        image.sprite = _roundedSprite;
+        image.type = Image.Type.Sliced;
+    }
+
+    static void SetButtonAnchor(Button button, Vector2 anchor)
+    {
+        if (button == null) return;
+        RectTransform rt = button.GetComponent<RectTransform>();
+        rt.anchorMin = anchor;
+        rt.anchorMax = anchor;
+    }
+
+    static Color WithAlpha(Color color, float alpha)
+    {
+        color.a = alpha;
+        return color;
     }
 }

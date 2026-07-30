@@ -9,7 +9,7 @@ PlayerSettings:
   hmiUseInternalProfiler: 0
   AndroidFilterTouchesWhenObscured: 0
   AndroidEnableSustainedPerformanceMode: 0
-  defaultScreenOrientation: 0
+  defaultScreenOrientation: 3
   targetDevice: 2
   useOnDemandResources: 0
   accelerometerFrequency: 60
@@ -47,8 +47,8 @@ PlayerSettings:
   m_HolographicTrackingLossScreen: {fileID: 0}
   defaultScreenWidth: 1920
   defaultScreenHeight: 1080
-  defaultScreenWidthWeb: 960
-  defaultScreenHeightWeb: 600
+  defaultScreenWidthWeb: 1280
+  defaultScreenHeightWeb: 720
   m_StereoRenderingPath: 0
   m_ActiveColorSpace: 1
   unsupportedMSAAFallback: 0
@@ -63,10 +63,10 @@ PlayerSettings:
   iosShowActivityIndicatorOnLoading: -1
   androidShowActivityIndicatorOnLoading: -1
   iosUseCustomAppBackgroundBehavior: 0
-  allowedAutorotateToPortrait: 1
+  allowedAutorotateToPortrait: 0
   allowedAutorotateToPortraitUpsideDown: 0
-  allowedAutorotateToLandscapeRight: 0
-  allowedAutorotateToLandscapeLeft: 0
+  allowedAutorotateToLandscapeRight: 1
+  allowedAutorotateToLandscapeLeft: 1
   useOSAutorotation: 1
   use32BitDisplayBuffer: 1
   preserveFramebufferAlpha: 0
@@ -783,9 +783,9 @@ PlayerSettings:
   spritePackerPolicy: 
   webGLMemorySize: 256
   webGLExceptionSupport: 0
-  webGLNameFilesAsHashes: 0
+  webGLNameFilesAsHashes: 1
   webGLShowDiagnostics: 0
-  webGLDataCaching: 0
+  webGLDataCaching: 1
   webGLDebugSymbols: 0
   webGLEmscriptenArgs: 
   webGLModulesDirectory: 
