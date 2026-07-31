@@ -60,6 +60,7 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         Text title = RuntimePanelFactory.Text("Title", _panel.transform,
             "AI 训练档案", 40, TextAnchor.MiddleLeft,
             RuntimePanelFactory.TextPrimary);
+        title.rectTransform.pivot = new Vector2(0f, 0.5f);
         RuntimePanelFactory.Place(title.rectTransform, new Vector2(0.08f, 0.89f),
             new Vector2(650f, 70f), Vector2.zero);
 

@@ -53,6 +53,7 @@ public sealed class PowerUpShopUI : MonoBehaviour
         Text title = RuntimePanelFactory.Text("Title", _panel.transform,
             "补给仓 · 下局生效", 38, TextAnchor.MiddleLeft,
             RuntimePanelFactory.TextPrimary);
+        title.rectTransform.pivot = new Vector2(0f, 0.5f);
         RuntimePanelFactory.Place(title.rectTransform, new Vector2(0.08f, 0.90f),
             new Vector2(540f, 70f), Vector2.zero);
         _walletText = RuntimePanelFactory.Text("Wallet", _panel.transform, "",
@@ -64,6 +65,7 @@ public sealed class PowerUpShopUI : MonoBehaviour
 
         _feedbackText = RuntimePanelFactory.Text("Feedback", _panel.transform, "",
             22, TextAnchor.MiddleLeft, RuntimePanelFactory.TextMuted);
+        _feedbackText.rectTransform.pivot = new Vector2(0f, 0.5f);
         RuntimePanelFactory.Place(_feedbackText.rectTransform, new Vector2(0.10f, 0.08f),
             new Vector2(700f, 50f), Vector2.zero);
         Button close = RuntimePanelFactory.Button("Close", _panel.transform, "返回",
@@ -86,11 +88,13 @@ public sealed class PowerUpShopUI : MonoBehaviour
         Text name = RuntimePanelFactory.Text("Name", row.transform,
             definition.displayName, 28, TextAnchor.MiddleLeft,
             RuntimePanelFactory.TextPrimary);
+        name.rectTransform.pivot = new Vector2(0f, 0.5f);
         RuntimePanelFactory.Place(name.rectTransform, new Vector2(0.03f, 0.63f),
             new Vector2(260f, 44f), Vector2.zero);
         Text description = RuntimePanelFactory.Text("Description", row.transform,
             definition.description, 20, TextAnchor.MiddleLeft,
             RuntimePanelFactory.TextMuted);
+        description.rectTransform.pivot = new Vector2(0f, 0.5f);
         RuntimePanelFactory.Place(description.rectTransform, new Vector2(0.03f, 0.25f),
             new Vector2(390f, 38f), Vector2.zero);
 
