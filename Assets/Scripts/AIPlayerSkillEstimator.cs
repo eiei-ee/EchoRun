@@ -205,4 +205,15 @@ public static class AIPlayerSkillEstimator
         return JsonUtility.FromJson<AIPlayerSkillProfile>(
             JsonUtility.ToJson(_profile));
     }
+
+    public static void ResetTraining()
+    {
+        _profile = new AIPlayerSkillProfile();
+        _profile.Normalize();
+        _initialized = true;
+        _runActive = false;
+        _lastJumpProximity = -1f;
+        _lastSlideProximity = -1f;
+        EchoRunSaveSystem.SaveSkillProfile("");
+    }
 }

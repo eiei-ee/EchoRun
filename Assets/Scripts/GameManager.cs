@@ -37,11 +37,14 @@ public class GameManager : MonoBehaviour
     public UnityEvent<GameState> OnStateChanged = new UnityEvent<GameState>();
     public UnityEvent<int> OnScoreChanged = new UnityEvent<int>();
     public UnityEvent<int> OnCoinsChanged = new UnityEvent<int>();
+    public UnityEvent<int> OnBankedCoinsChanged = new UnityEvent<int>();
     public UnityEvent<float> OnDistanceChanged = new UnityEvent<float>();
 
     private float _distanceTraveled;
     private float _prePauseTimeScale = 1f;
     private PlayerController _telemetryPlayer;
+    private int _lastBaseScore;
+    private float _powerUpBonusScore;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeInstance()
@@ -55,6 +58,11 @@ public class GameManager : MonoBehaviour
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
         EchoRunSaveSystem.EnsureInitialized();
+        GameplayBalance balance = GameBalanceConfig.Current.gameplay;
+        startSpeed = balance.startSpeed;
+        maxSpeed = balance.maxSpeed;
+        speedIncreaseRate = balance.speedIncreaseRate;
+        coinScore = balance.coinScore;
         int savedFps = PlayerPrefs.GetInt("TargetFrameRate", 60);
         int runtimeFps = NormalizeFrameRate(
             savedFps > 0 ? savedFps : 60, IsFrameRateConstrainedPlatform());
@@ -99,7 +107,7 @@ public class GameManager : MonoBehaviour
     void Start()
     {
         HighScore = PlayerPrefs.GetInt("HighScore", 0);
-        TotalCoins = PlayerPrefs.GetInt("TotalCoins", 0);
+        TotalCoins = EchoRunSaveSystem.TotalCoins;
 
         if (_startAfterSceneLoad)
         {
@@ -122,7 +130,14 @@ public class GameManager : MonoBehaviour
             OnDistanceChanged.Invoke(Distance);
         }
 
-        int newScore = Mathf.FloorToInt(_distanceTraveled) + Coins * coinScore;
+        int baseScore = Mathf.FloorToInt(_distanceTraveled) + Coins * coinScore;
+        int baseGain = Mathf.Max(0, baseScore - _lastBaseScore);
+        float multiplier = PowerUpController.Instance != null
+            ? PowerUpController.Instance.ScoreMultiplier
+            : 1f;
+        _powerUpBonusScore += baseGain * Mathf.Max(0f, multiplier - 1f);
+        _lastBaseScore = baseScore;
+        int newScore = baseScore + Mathf.FloorToInt(_powerUpBonusScore);
         if (newScore != Score)
         {
             Score = newScore;
@@ -171,11 +186,17 @@ public class GameManager : MonoBehaviour
                 : "");
 
         Time.timeScale = 1f;
-        CurrentSpeed = startSpeed;
+        PowerUpController.Instance?.BeginRun();
+        float turboBonus = PowerUpController.Instance != null
+            ? PowerUpController.Instance.GetTurboStartBonus()
+            : 0f;
+        CurrentSpeed = Mathf.Min(maxSpeed, startSpeed + turboBonus);
         Score = 0;
         Coins = 0;
         Distance = 0;
         _distanceTraveled = 0;
+        _lastBaseScore = 0;
+        _powerUpBonusScore = 0f;
         BuffTimeRemaining = 0;
         BuffName = null;
         IsDeathSequence = false;
@@ -257,12 +278,36 @@ public class GameManager : MonoBehaviour
         OnCoinsChanged.Invoke(Coins);
     }
 
+    public bool TryPurchasePowerUp(PowerUpId id)
+    {
+        PowerUpBalance definition = GameBalanceConfig.GetPowerUp(id);
+        if (definition == null
+            || !EchoRunSaveSystem.TryPurchasePowerUp(id, definition.cost))
+        {
+            AudioManager.Instance?.PlayUIError();
+            return false;
+        }
+        TotalCoins = EchoRunSaveSystem.TotalCoins;
+        OnBankedCoinsChanged.Invoke(TotalCoins);
+        AudioManager.Instance?.PlayUIConfirm();
+        return true;
+    }
+
+    public bool SelectPowerUp(PowerUpId id)
+    {
+        bool selected = EchoRunSaveSystem.SelectPowerUp(id);
+        if (selected) AudioManager.Instance?.PlayUIConfirm();
+        else AudioManager.Instance?.PlayUIError();
+        return selected;
+    }
+
     void SaveHighScore()
     {
         IsNewHighScore = Score > HighScore;
         if (IsNewHighScore) HighScore = Score;
         TotalCoins += Coins;
         EchoRunSaveSystem.SaveProgress(HighScore, TotalCoins);
+        OnBankedCoinsChanged.Invoke(TotalCoins);
     }
 
     public static void SetNextRunSeed(int seed)

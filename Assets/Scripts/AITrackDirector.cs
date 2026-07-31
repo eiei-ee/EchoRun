@@ -175,6 +175,7 @@ public class AITrackDirector : MonoBehaviour
 
         Instance = this;
         EchoRunSaveSystem.EnsureInitialized();
+        explorationRate = GameBalanceConfig.Current.ai.directorExploration;
         if (_sessionPolicy == null)
         {
             _sessionPolicy = new AILinUcbPolicy(
@@ -275,6 +276,26 @@ public class AITrackDirector : MonoBehaviour
         return _sessionPolicy != null
             ? _sessionPolicy.ExportStateJson()
             : EchoRunSaveSystem.GetDirectorPolicyJson();
+    }
+
+    public void ResetTraining()
+    {
+        _sessionPolicy = new AILinUcbPolicy();
+        ModelUpdateCount = 0;
+        LastPolicyMean = 0f;
+        LastPolicyUncertainty = 0f;
+        LastDecisionSafetyAdjusted = false;
+        CurrentPlan = default;
+        CurrentStatus = "AI导演 · 训练已重置";
+        _pendingDecisions.Clear();
+        _decisionCount = 0;
+        _evaluatedCoins = _evaluatedDodges = _evaluatedHits = 0;
+        _evaluatedDistance = 0f;
+        _laneChanges = _jumps = _slides = _coins = _dodges = _hits = 0;
+        _laneVisits[0] = 0;
+        _laneVisits[1] = 1;
+        _laneVisits[2] = 0;
+        EchoRunSaveSystem.SaveDirector(null, 0, "");
     }
 
     private int ApplySafetyConstraints(int proposedAction, float[] context)

@@ -4,7 +4,7 @@ using UnityEngine;
 [Serializable]
 public sealed class EchoRunSaveData
 {
-    public int version = 4;
+    public int version = 5;
     public int highScore;
     public int totalCoins;
     public int targetFrameRate = 60;
@@ -18,13 +18,15 @@ public sealed class EchoRunSaveData
     public int runSequence;
     public string lastRunTelemetryJson = "";
     public string skillProfileJson = "";
+    public int[] powerUpInventory = new int[4];
+    public int selectedPowerUp = -1;
     public long savedAtUtcTicks;
 }
 
 public static class EchoRunSaveSystem
 {
     public const string SaveKey = "EchoRunSaveV1";
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     private const string ShadowProfileKey = "AIShadowProfileV1";
 
@@ -40,6 +42,15 @@ public static class EchoRunSaveSystem
         {
             EnsureInitialized();
             return _data.directorModelUpdateCount;
+        }
+    }
+
+    public static int TotalCoins
+    {
+        get
+        {
+            EnsureInitialized();
+            return _data.totalCoins;
         }
     }
 
@@ -159,6 +170,83 @@ public static class EchoRunSaveSystem
         WriteArchive(true);
     }
 
+    public static int[] GetPowerUpInventory()
+    {
+        EnsureInitialized();
+        return CloneInventory(_data.powerUpInventory);
+    }
+
+    public static int GetPowerUpCount(PowerUpId id)
+    {
+        EnsureInitialized();
+        int index = (int)id;
+        return index >= 0 && index < _data.powerUpInventory.Length
+            ? _data.powerUpInventory[index]
+            : 0;
+    }
+
+    public static PowerUpId GetSelectedPowerUp()
+    {
+        EnsureInitialized();
+        return Enum.IsDefined(typeof(PowerUpId), _data.selectedPowerUp)
+            ? (PowerUpId)_data.selectedPowerUp
+            : PowerUpId.None;
+    }
+
+    public static bool TryPurchasePowerUp(PowerUpId id, int cost)
+    {
+        EnsureInitialized();
+        int index = (int)id;
+        int normalizedCost = Mathf.Max(0, cost);
+        if (index < 0 || index >= _data.powerUpInventory.Length
+            || _data.totalCoins < normalizedCost)
+            return false;
+
+        _data.totalCoins -= normalizedCost;
+        _data.powerUpInventory[index]++;
+        PlayerPrefs.SetInt("TotalCoins", _data.totalCoins);
+        WriteArchive(true);
+        return true;
+    }
+
+    public static bool SelectPowerUp(PowerUpId id)
+    {
+        EnsureInitialized();
+        int index = (int)id;
+        if (index < 0 || index >= _data.powerUpInventory.Length
+            || _data.powerUpInventory[index] <= 0)
+            return false;
+        _data.selectedPowerUp = index;
+        WriteArchive(true);
+        return true;
+    }
+
+    public static bool ConsumePowerUp(PowerUpId id)
+    {
+        EnsureInitialized();
+        int index = (int)id;
+        if (index < 0 || index >= _data.powerUpInventory.Length
+            || _data.powerUpInventory[index] <= 0)
+            return false;
+        _data.powerUpInventory[index]--;
+        _data.selectedPowerUp = -1;
+        WriteArchive(true);
+        return true;
+    }
+
+    public static void ResetAITraining()
+    {
+        EnsureInitialized();
+        _data.shadowProfileJson = "";
+        _data.directorWeights = null;
+        _data.directorModelUpdateCount = 0;
+        _data.directorPolicyJson = "";
+        _data.lastRunTelemetryJson = "";
+        _data.skillProfileJson = "";
+        PlayerPrefs.DeleteKey(ShadowProfileKey);
+        WriteArchive(true);
+    }
+
     public static void SaveProgress(int highScore, int totalCoins)
     {
         EnsureInitialized();
@@ -221,6 +309,11 @@ public static class EchoRunSaveSystem
         _data.runSequence = Mathf.Max(0, _data.runSequence);
         _data.lastRunTelemetryJson = _data.lastRunTelemetryJson ?? "";
         _data.skillProfileJson = _data.skillProfileJson ?? "";
+        _data.powerUpInventory = CloneInventory(_data.powerUpInventory);
+        _data.selectedPowerUp = _data.selectedPowerUp >= 0
+                                && _data.selectedPowerUp < _data.powerUpInventory.Length
+            ? _data.selectedPowerUp
+            : -1;
     }
 
     private static bool HasLegacyData()
@@ -276,6 +369,16 @@ public static class EchoRunSaveSystem
     private static float[] Clone(float[] values)
     {
         return values == null ? null : (float[])values.Clone();
+    }
+
+    private static int[] CloneInventory(int[] values)
+    {
+        int[] result = new int[4];
+        if (values != null)
+            Array.Copy(values, result, Mathf.Min(values.Length, result.Length));
+        for (int i = 0; i < result.Length; i++)
+            result[i] = Mathf.Max(0, result[i]);
+        return result;
     }
 }
 

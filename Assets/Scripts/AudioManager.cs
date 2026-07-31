@@ -5,6 +5,13 @@ public class AudioManager : MonoBehaviour
 {
     public static AudioManager Instance { get; private set; }
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void EnsureRuntimeInstance()
+    {
+        if (Instance != null || FindObjectOfType<AudioManager>() != null) return;
+        new GameObject("Audio Manager").AddComponent<AudioManager>();
+    }
+
     [Header("Audio Sources")]
     private AudioSource _sfxSource;
     private AudioSource _musicSource;
@@ -16,6 +23,11 @@ public class AudioManager : MonoBehaviour
     public AudioClip dodgeObstacleClip;
     public AudioClip deathClip;
     public AudioClip footstepClip;
+    public AudioClip[] footstepClips;
+    public AudioClip collisionClip;
+    public AudioClip uiClickClip;
+    public AudioClip uiConfirmClip;
+    public AudioClip uiErrorClip;
 
     [Header("Music")]
     public AudioClip bgmClip;
@@ -26,6 +38,7 @@ public class AudioManager : MonoBehaviour
     public float footstepInterval = 0.35f;
     private float _footstepTimer;
     private bool _isPlayingFootsteps;
+    private int _footstepIndex;
 
     // Procedural audio cache
     private Dictionary<string, AudioClip> _procClips = new Dictionary<string, AudioClip>();
@@ -52,6 +65,7 @@ public class AudioManager : MonoBehaviour
 
     void Start()
     {
+        LoadBundledAudio();
         musicVolume = PlayerPrefs.GetFloat("MusicVolume", 0.5f);
         sfxVolume = PlayerPrefs.GetFloat("SfxVolume", 1f);
         if (_musicSource != null) _musicSource.volume = musicVolume;
@@ -70,7 +84,10 @@ public class AudioManager : MonoBehaviour
         if (_footstepTimer >= footstepInterval)
         {
             _footstepTimer = 0f;
-            PlaySFX(footstepClip, 0.18f, "footstep");
+            AudioClip step = footstepClips != null && footstepClips.Length > 0
+                ? footstepClips[_footstepIndex++ % footstepClips.Length]
+                : footstepClip;
+            PlaySFX(step, 0.28f, "footstep");
         }
     }
 
@@ -90,6 +107,10 @@ public class AudioManager : MonoBehaviour
     public void PlayCoin()  => PlaySFX(coinClip, 0.7f, "coin");
     public void PlayDodgeObstacle() => PlaySFX(dodgeObstacleClip, 0.6f, "dodge");
     public void PlayDeath() => PlaySFX(deathClip, 0.9f, "death");
+    public void PlayCollision() => PlaySFX(collisionClip, 0.82f, "death");
+    public void PlayUIClick() => PlaySFX(uiClickClip, 0.55f, "dodge");
+    public void PlayUIConfirm() => PlaySFX(uiConfirmClip, 0.65f, "coin");
+    public void PlayUIError() => PlaySFX(uiErrorClip, 0.65f, "death");
 
     public void SetMusicVolume(float v)
     {
@@ -111,6 +132,23 @@ public class AudioManager : MonoBehaviour
 
         if (clip == null || _sfxSource == null) return;
         _sfxSource.PlayOneShot(clip, sfxVolume * volumeScale);
+    }
+
+    private void LoadBundledAudio()
+    {
+        if (bgmClip == null) bgmClip = Resources.Load<AudioClip>("Audio/bgm_transit");
+        if (coinClip == null) coinClip = Resources.Load<AudioClip>("Audio/coin");
+        if (collisionClip == null) collisionClip = Resources.Load<AudioClip>("Audio/collision");
+        if (uiClickClip == null) uiClickClip = Resources.Load<AudioClip>("Audio/ui_click");
+        if (uiConfirmClip == null) uiConfirmClip = Resources.Load<AudioClip>("Audio/ui_confirm");
+        if (uiErrorClip == null) uiErrorClip = Resources.Load<AudioClip>("Audio/ui_error");
+        if (footstepClips == null || footstepClips.Length == 0)
+        {
+            AudioClip first = Resources.Load<AudioClip>("Audio/footstep_01");
+            AudioClip second = Resources.Load<AudioClip>("Audio/footstep_02");
+            if (first != null && second != null) footstepClips = new[] { first, second };
+            else if (first != null) footstepClips = new[] { first };
+        }
     }
 
     AudioClip GetProceduralClip(string key)
