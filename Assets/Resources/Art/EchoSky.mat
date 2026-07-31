@@ -30,12 +30,12 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _Exposure: 0.52
+    - _Exposure: 0.74
     - _ImageType: 0
     - _Layout: 0
     - _Mapping: 1
     - _MirrorOnBack: 0
     - _Rotation: 0
     m_Colors:
-    - _Tint: {r: 0.56, g: 0.65, b: 0.74, a: 1}
+    - _Tint: {r: 0.84, g: 0.88, b: 0.96, a: 1}
   m_BuildTextureStacks: []
