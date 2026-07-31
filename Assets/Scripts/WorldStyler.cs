@@ -41,7 +41,7 @@ public class WorldStyler : MonoBehaviour
                 : CameraClearFlags.SolidColor;
             camera.farClipPlane = 140f;
             camera.fieldOfView = 56f;
-            camera.backgroundColor = new Color(0.03f, 0.04f, 0.055f);
+            camera.backgroundColor = new Color(0.16f, 0.22f, 0.31f);
 
             CameraFollow follow = camera.GetComponent<CameraFollow>();
             if (follow != null) follow.offset = new Vector3(0f, 4.6f, -8.2f);
@@ -76,14 +76,14 @@ public class WorldStyler : MonoBehaviour
     {
         RenderSettings.fog = true;
         RenderSettings.fogMode = FogMode.Linear;
-        RenderSettings.fogColor = new Color(0.06f, 0.075f, 0.10f);
-        RenderSettings.fogStartDistance = 40f;
-        RenderSettings.fogEndDistance = 112f;
+        RenderSettings.fogColor = new Color(0.27f, 0.36f, 0.49f);
+        RenderSettings.fogStartDistance = 58f;
+        RenderSettings.fogEndDistance = 138f;
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
-        RenderSettings.ambientSkyColor = new Color(0.36f, 0.40f, 0.46f);
-        RenderSettings.ambientEquatorColor = new Color(0.18f, 0.21f, 0.26f);
-        RenderSettings.ambientGroundColor = new Color(0.065f, 0.075f, 0.095f);
-        RenderSettings.reflectionIntensity = 0.36f;
+        RenderSettings.ambientSkyColor = new Color(0.72f, 0.78f, 0.88f);
+        RenderSettings.ambientEquatorColor = new Color(0.44f, 0.52f, 0.64f);
+        RenderSettings.ambientGroundColor = new Color(0.18f, 0.23f, 0.31f);
+        RenderSettings.reflectionIntensity = 0.62f;
 
         Material skyAsset = Resources.Load<Material>("Art/EchoSky");
         if (skyAsset != null)
@@ -98,8 +98,8 @@ public class WorldStyler : MonoBehaviour
         Light key = FindObjectOfType<Light>();
         if (key != null)
         {
-            key.intensity = 1.02f;
-            key.color = new Color(0.90f, 0.93f, 0.98f);
+            key.intensity = 1.34f;
+            key.color = new Color(1f, 0.96f, 0.90f);
             key.shadows = LightShadows.Soft;
         }
 
@@ -109,23 +109,23 @@ public class WorldStyler : MonoBehaviour
         fillObject.transform.rotation = Quaternion.Euler(38f, 145f, 0f);
         Light fill = fillObject.AddComponent<Light>();
         fill.type = LightType.Directional;
-        fill.intensity = 0.42f;
-        fill.color = new Color(0.46f, 0.55f, 0.66f);
+        fill.intensity = 0.72f;
+        fill.color = new Color(0.66f, 0.78f, 1f);
         fill.shadows = LightShadows.None;
     }
 
     private void BuildPalette()
     {
         _structureMaterial = MakeMaterial("EchoStructure",
-            new Color(0.15f, 0.18f, 0.22f), Color.black, 0.38f, 0.52f);
+            new Color(0.43f, 0.49f, 0.58f), new Color(0.018f, 0.025f, 0.038f), 0.58f, 0.74f);
         _deepStructureMaterial = MakeMaterial("EchoDepth",
-            new Color(0.06f, 0.075f, 0.095f), Color.black, 0.1f, 0.28f);
+            new Color(0.16f, 0.21f, 0.29f), new Color(0.008f, 0.014f, 0.025f), 0.30f, 0.50f);
         _cyanMaterial = MakeMaterial("EchoCyan",
-            new Color(0.24f, 0.40f, 0.55f), new Color(0.02f, 0.10f, 0.18f), 0.15f, 0.46f);
+            new Color(0.30f, 0.62f, 0.94f), new Color(0.035f, 0.22f, 0.56f), 0.26f, 0.68f);
         _coralMaterial = MakeMaterial("EchoCoral",
-            new Color(0.65f, 0.28f, 0.25f), new Color(0.22f, 0.03f, 0.025f), 0.1f, 0.38f);
+            new Color(0.94f, 0.40f, 0.31f), new Color(0.52f, 0.055f, 0.025f), 0.16f, 0.52f);
         _goldMaterial = MakeMaterial("EchoGold",
-            new Color(0.72f, 0.54f, 0.30f), new Color(0.24f, 0.10f, 0.02f), 0.45f, 0.58f);
+            new Color(1.00f, 0.68f, 0.30f), new Color(0.54f, 0.20f, 0.018f), 0.58f, 0.76f);
     }
 
     private void BuildStraightEnvironment(Transform parent, int seed)
@@ -153,7 +153,7 @@ public class WorldStyler : MonoBehaviour
         if (variant == 0)
             BuildSignalArch(parent, 6.5f);
         else if (variant == 1)
-            BuildFloatingMarkers(parent);
+            BuildTransitHalos(parent);
         else
             BuildDataTotems(parent);
     }
@@ -232,17 +232,31 @@ public class WorldStyler : MonoBehaviour
             new Vector3(0f, 0f, 90f));
     }
 
-    private void BuildFloatingMarkers(Transform parent)
+    private void BuildTransitHalos(Transform parent)
     {
         for (int side = -1; side <= 1; side += 2)
         {
-            CreateCapsule("FloatMarker", parent, new Vector3(side * 12f, 6f, 1f),
-                new Vector3(0.42f, 1.85f, 0.42f), _structureMaterial,
-                new Vector3(0f, 0f, side * 18f));
-            CreateCapsule("FloatLight", parent, new Vector3(side * 12f, 6f, 0.55f),
-                new Vector3(0.1f, 1.12f, 0.06f),
-                side > 0 ? _goldMaterial : _cyanMaterial,
-                new Vector3(0f, 0f, side * 18f));
+            GameObject halo = new GameObject("TransitHalo");
+            halo.transform.SetParent(parent, false);
+            Vector3 center = new Vector3(side * 12.2f, 4.8f, 0.5f);
+            const int segments = 8;
+            const float radius = 2.2f;
+            for (int i = 0; i < segments; i++)
+            {
+                float a0 = i * Mathf.PI * 2f / segments;
+                float a1 = (i + 1) * Mathf.PI * 2f / segments;
+                Vector3 start = center + new Vector3(
+                    Mathf.Cos(a0) * radius, Mathf.Sin(a0) * radius, 0f);
+                Vector3 end = center + new Vector3(
+                    Mathf.Cos(a1) * radius, Mathf.Sin(a1) * radius, 0f);
+                CreateBeam("HaloArc", halo.transform, start, end, 0.13f,
+                    i == 1 || i == 5
+                        ? (side > 0 ? _goldMaterial : _cyanMaterial)
+                        : _structureMaterial);
+            }
+            CreateCylinder("HaloPylon", halo.transform,
+                new Vector3(center.x, 2.1f, center.z + 0.25f),
+                new Vector3(0.30f, 2.1f, 0.30f), _deepStructureMaterial);
         }
     }
 
@@ -439,7 +453,9 @@ public class WorldStyler : MonoBehaviour
     private static Material MakeMaterial(string name, Color color, Color emission,
         float metallic, float smoothness)
     {
-        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        Shader shader = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline != null
+            ? Shader.Find("Universal Render Pipeline/Lit")
+            : Shader.Find("Standard");
         if (shader == null) shader = Shader.Find("Standard");
         if (shader == null) shader = Shader.Find("Mobile/Diffuse");
         Material material = new Material(shader) { name = name };

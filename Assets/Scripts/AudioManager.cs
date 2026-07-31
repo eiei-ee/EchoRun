@@ -29,6 +29,7 @@ public class AudioManager : MonoBehaviour
 
     // Procedural audio cache
     private Dictionary<string, AudioClip> _procClips = new Dictionary<string, AudioClip>();
+    private const int SampleRate = 22050;
 
     void Awake()
     {
@@ -40,10 +41,12 @@ public class AudioManager : MonoBehaviour
         _sfxSource = gameObject.AddComponent<AudioSource>();
         _sfxSource.playOnAwake = false;
         _sfxSource.loop = false;
+        _sfxSource.spatialBlend = 0f;
 
         _musicSource = gameObject.AddComponent<AudioSource>();
         _musicSource.playOnAwake = false;
         _musicSource.loop = true;
+        _musicSource.spatialBlend = 0f;
         _musicSource.volume = musicVolume;
     }
 
@@ -53,11 +56,10 @@ public class AudioManager : MonoBehaviour
         sfxVolume = PlayerPrefs.GetFloat("SfxVolume", 1f);
         if (_musicSource != null) _musicSource.volume = musicVolume;
 
-        if (bgmClip != null)
-        {
-            _musicSource.clip = bgmClip;
-            _musicSource.Play();
-        }
+        AudioClip music = bgmClip != null ? bgmClip : GetProceduralClip("bgm");
+        if (music == null) return;
+        _musicSource.clip = music;
+        _musicSource.Play();
     }
 
     void Update()
@@ -68,7 +70,7 @@ public class AudioManager : MonoBehaviour
         if (_footstepTimer >= footstepInterval)
         {
             _footstepTimer = 0f;
-            PlaySFX(footstepClip, 0.15f);
+            PlaySFX(footstepClip, 0.18f, "footstep");
         }
     }
 
@@ -118,12 +120,14 @@ public class AudioManager : MonoBehaviour
 
         AudioClip proc = key switch
         {
-            "jump"   => GenerateToneSweep(300f, 550f, 0.15f),
-            "slide"  => GenerateNoise(0.12f),
-            "coin"   => GenerateToneSweep(800f, 1200f, 0.1f),
-            "dodge"  => GenerateToneSweep(400f, 200f, 0.1f),
-            "death"  => GenerateToneSweep(400f, 60f, 0.4f),
-            _        => GenerateNoise(0.05f),
+            "bgm"      => GenerateTransitLoop(),
+            "footstep" => GenerateFootstep(),
+            "jump"     => GenerateToneSweep(260f, 620f, 0.18f),
+            "slide"    => GenerateNoiseBurst(0.18f, 0.18f),
+            "coin"     => GenerateToneSweep(760f, 1320f, 0.13f),
+            "dodge"    => GenerateToneSweep(520f, 240f, 0.14f),
+            "death"    => GenerateToneSweep(360f, 52f, 0.48f),
+            _           => GenerateNoiseBurst(0.06f, 0.12f),
         };
         _procClips[key] = proc;
         return proc;
@@ -131,34 +135,109 @@ public class AudioManager : MonoBehaviour
 
     AudioClip GenerateToneSweep(float freqStart, float freqEnd, float duration)
     {
-        int sampleRate = 44100;
-        int samples = Mathf.CeilToInt(sampleRate * duration);
+        int samples = Mathf.CeilToInt(SampleRate * duration);
         float[] data = new float[samples];
         for (int i = 0; i < samples; i++)
         {
-            float t = (float)i / sampleRate;
+            float t = (float)i / SampleRate;
             float freq = Mathf.Lerp(freqStart, freqEnd, t / duration);
-            float envelope = 1f - (t / duration); // linear fade
-            data[i] = Mathf.Sin(2f * Mathf.PI * freq * t) * envelope * 0.4f;
+            float normalized = Mathf.Clamp01(t / duration);
+            float attack = Mathf.Clamp01(normalized / 0.08f);
+            float envelope = attack * Mathf.Pow(1f - normalized, 1.6f);
+            float phase = 2f * Mathf.PI * freq * t;
+            data[i] = (Mathf.Sin(phase) + Mathf.Sin(phase * 2f) * 0.18f)
+                      * envelope * 0.32f;
         }
-        AudioClip clip = AudioClip.Create("proc_" + duration, samples, 1, sampleRate, false);
+        AudioClip clip = AudioClip.Create("proc_tone_" + duration, samples, 1, SampleRate, false);
         clip.SetData(data, 0);
         return clip;
     }
 
-    AudioClip GenerateNoise(float duration)
+    AudioClip GenerateNoiseBurst(float duration, float level)
     {
-        int sampleRate = 44100;
-        int samples = Mathf.CeilToInt(sampleRate * duration);
+        int samples = Mathf.CeilToInt(SampleRate * duration);
         float[] data = new float[samples];
+        var random = new System.Random(7319 + samples);
+        float filtered = 0f;
         for (int i = 0; i < samples; i++)
         {
-            float t = (float)i / sampleRate;
-            float envelope = 1f - (t / duration);
-            data[i] = (Random.value * 2f - 1f) * envelope * 0.25f;
+            float normalized = i / (float)Mathf.Max(1, samples - 1);
+            float white = (float)(random.NextDouble() * 2.0 - 1.0);
+            filtered = Mathf.Lerp(filtered, white, 0.22f);
+            float envelope = Mathf.Sin(Mathf.PI * normalized)
+                             * Mathf.Pow(1f - normalized, 0.7f);
+            data[i] = filtered * envelope * level;
         }
-        AudioClip clip = AudioClip.Create("proc_noise_" + duration, samples, 1, sampleRate, false);
+        AudioClip clip = AudioClip.Create("proc_noise_" + duration, samples, 1, SampleRate, false);
         clip.SetData(data, 0);
         return clip;
+    }
+
+    AudioClip GenerateFootstep()
+    {
+        const float duration = 0.11f;
+        int samples = Mathf.CeilToInt(SampleRate * duration);
+        float[] data = new float[samples];
+        var random = new System.Random(1907);
+        float filtered = 0f;
+        for (int i = 0; i < samples; i++)
+        {
+            float t = i / (float)SampleRate;
+            float normalized = t / duration;
+            float envelope = Mathf.Pow(1f - Mathf.Clamp01(normalized), 3f);
+            float white = (float)(random.NextDouble() * 2.0 - 1.0);
+            filtered = Mathf.Lerp(filtered, white, 0.14f);
+            float body = Mathf.Sin(2f * Mathf.PI * 82f * t) * 0.62f;
+            data[i] = (body + filtered * 0.38f) * envelope * 0.34f;
+        }
+        AudioClip clip = AudioClip.Create("proc_footstep", samples, 1, SampleRate, false);
+        clip.SetData(data, 0);
+        return clip;
+    }
+
+    AudioClip GenerateTransitLoop()
+    {
+        const float duration = 16f;
+        int samples = Mathf.CeilToInt(SampleRate * duration);
+        float[] data = new float[samples];
+        int[] arpeggio = { 0, 7, 12, 7, 3, 10, 12, 15 };
+
+        for (int i = 0; i < samples; i++)
+        {
+            float t = i / (float)SampleRate;
+            float beatPhase = Mathf.Repeat(t * 2f, 1f);
+            float beatEnvelope = Mathf.Exp(-beatPhase * 11f);
+            float pulse = Mathf.Sin(2f * Mathf.PI * 58f * t) * beatEnvelope;
+
+            float pad = Mathf.Sin(2f * Mathf.PI * 55f * t) * 0.46f
+                        + Mathf.Sin(2f * Mathf.PI * 82.5f * t) * 0.22f
+                        + Mathf.Sin(2f * Mathf.PI * 110f * t) * 0.12f;
+
+            float stepPosition = Mathf.Repeat(t * 2f, 1f);
+            int step = Mathf.FloorToInt(t * 2f) % arpeggio.Length;
+            float noteFrequency = 220f * Mathf.Pow(2f, arpeggio[step] / 12f);
+            float noteEnvelope = Mathf.Sin(Mathf.PI * stepPosition);
+            noteEnvelope *= noteEnvelope * Mathf.Pow(1f - stepPosition, 0.35f);
+            float signal = Mathf.Sin(2f * Mathf.PI * noteFrequency * t)
+                           + Mathf.Sin(2f * Mathf.PI * noteFrequency * 2f * t) * 0.12f;
+
+            float longBreath = 0.72f + Mathf.Sin(2f * Mathf.PI * t / 8f) * 0.18f;
+            data[i] = Mathf.Clamp((pad * 0.105f * longBreath)
+                                  + (pulse * 0.055f)
+                                  + (signal * noteEnvelope * 0.045f), -0.28f, 0.28f);
+        }
+
+        AudioClip clip = AudioClip.Create("proc_transit_loop", samples, 1, SampleRate, false);
+        clip.SetData(data, 0);
+        return clip;
+    }
+
+    void OnDestroy()
+    {
+        if (Instance != this) return;
+        foreach (AudioClip clip in _procClips.Values)
+            if (clip != null) Destroy(clip);
+        _procClips.Clear();
+        Instance = null;
     }
 }
