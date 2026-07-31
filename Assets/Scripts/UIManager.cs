@@ -123,14 +123,20 @@ public class UIManager : MonoBehaviour
                 _controlHint.SetActive(false);
         }
 
-        // Buff timer display
+        // Active power-up display
         if (_buffGroup != null && _gm != null && _gm.State == GameState.Playing)
         {
-            bool active = _gm.BuffTimeRemaining > 0f;
+            string powerUpStatus = PowerUpController.Instance != null
+                ? PowerUpController.Instance.GetStatusText()
+                : "";
+            bool active = !string.IsNullOrEmpty(powerUpStatus)
+                          || _gm.BuffTimeRemaining > 0f;
             if (_buffGroup.activeSelf != active)
                 _buffGroup.SetActive(active);
             if (active && _buffText != null)
-                _buffText.text = string.Format("{0} {1:F1}s", _gm.BuffName ?? "Buff", _gm.BuffTimeRemaining);
+                _buffText.text = !string.IsNullOrEmpty(powerUpStatus)
+                    ? powerUpStatus
+                    : string.Format("{0} {1:F1}s", _gm.BuffName ?? "Buff", _gm.BuffTimeRemaining);
         }
 
         if (_aiDirectorText != null && AITrackDirector.Instance != null)
@@ -1044,6 +1050,7 @@ public class UIManager : MonoBehaviour
         colors.selectedColor = colors.highlightedColor;
         colors.fadeDuration = 0.08f;
         button.colors = colors;
+        button.onClick.AddListener(() => AudioManager.Instance?.PlayUIClick());
         return button;
     }
 
@@ -1067,7 +1074,9 @@ public class UIManager : MonoBehaviour
         labelT.fontStyle = FontStyle.Bold;
         Stretch(labelT.GetComponent<RectTransform>());
 
-        return go.GetComponent<Button>();
+        Button button = go.GetComponent<Button>();
+        button.onClick.AddListener(() => AudioManager.Instance?.PlayUIClick());
+        return button;
     }
 
     Button MakeIconButton(string name, Transform parent, string label,
@@ -1094,7 +1103,9 @@ public class UIManager : MonoBehaviour
         labelT.fontStyle = FontStyle.Bold;
         Stretch(labelT.GetComponent<RectTransform>());
 
-        return go.GetComponent<Button>();
+        Button button = go.GetComponent<Button>();
+        button.onClick.AddListener(() => AudioManager.Instance?.PlayUIClick());
+        return button;
     }
 
     Slider MakeSlider(string name, Transform parent, Vector2 anchor)

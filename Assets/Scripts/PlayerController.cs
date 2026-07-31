@@ -373,6 +373,16 @@ public class PlayerController : MonoBehaviour
                obs.type, false);
            AITrackDirector.Instance?.RecordObstacleHit();
            AIShadowRunner.Instance?.RecordObstacleHit();
+           AudioManager.Instance?.PlayCollision();
+           if (PowerUpController.Instance != null
+               && PowerUpController.Instance.TryAbsorbCollision())
+           {
+               if (TrackManager.Instance != null)
+                   TrackManager.Instance.ReleaseDynamic(other.gameObject);
+               else
+                   other.gameObject.SetActive(false);
+               return;
+           }
            _gm.GameOver();
         }
    }

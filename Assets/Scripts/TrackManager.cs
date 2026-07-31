@@ -73,6 +73,10 @@ public class TrackManager : MonoBehaviour
     {
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
+        TrackBalance balance = GameBalanceConfig.Current.track;
+        obstacleChance = balance.obstacleChance;
+        coinChance = balance.coinChance;
+        turnChance = balance.turnChance;
 
         if (useAITrackDirector)
         {
