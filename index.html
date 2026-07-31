@@ -6,10 +6,37 @@
     <title>Tuanjie WebGL Player | EchoRun</title>
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
+  
+    <meta name="viewport" content="width=device-width,height=device-height,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+    <style id="echorun-responsive-shell">
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #090c12; }
+      body { display: flex; align-items: center; justify-content: center; overscroll-behavior: none; }
+      canvas { display: block; touch-action: none; -webkit-user-select: none; user-select: none; }
+      #tuanjie-container.tuanjie-desktop, #unity-container.unity-desktop {
+        width: min(100vw, calc((100vh - 42px) * 16 / 9));
+        max-width: 100vw;
+      }
+      #tuanjie-container.tuanjie-desktop canvas, #unity-container.unity-desktop canvas {
+        width: 100% !important;
+        height: auto !important;
+        aspect-ratio: 16 / 9;
+      }
+      #tuanjie-container.tuanjie-mobile, #unity-container.unity-mobile,
+      #tuanjie-container.tuanjie-mobile canvas, #unity-container.unity-mobile canvas {
+        width: 100% !important;
+        height: 100% !important;
+      }
+      @media (max-width: 900px), (max-height: 620px) {
+        #tuanjie-footer, #unity-footer { display: none; }
+        #tuanjie-container.tuanjie-desktop, #unity-container.unity-desktop {
+          width: min(100vw, calc(100vh * 16 / 9));
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="tuanjie-container" class="tuanjie-desktop">
-      <canvas id="tuanjie-canvas" width=960 height=600 tabindex="-1"></canvas>
+      <canvas id="tuanjie-canvas" width=1280 height=720 tabindex="-1"></canvas>
       <div id="tuanjie-loading-bar">
         <div id="tuanjie-logo"></div>
         <div id="tuanjie-progress-bar-empty">
@@ -59,12 +86,11 @@
       }
 
       var buildUrl = "Build";
-      var chunkVersion = "07d2af1";
-      var loaderUrl = buildUrl + "/WebGL.loader.js?v=" + chunkVersion;
+      var loaderUrl = buildUrl + "/d88030906d03a56fce720cdde88dd1d5.loader.js";
       var config = {
-        dataUrl: buildUrl + "/WebGL.data.unityweb",
-        frameworkUrl: buildUrl + "/WebGL.framework.js.unityweb?v=" + chunkVersion,
-        codeUrl: buildUrl + "/WebGL.wasm.unityweb",
+        dataUrl: buildUrl + "/c47f47be91b5774c26a989f2db1bf7f8.data.unityweb",
+        frameworkUrl: buildUrl + "/a16e0f6f91ee89221b6236158aac2bcb.framework.js.unityweb",
+        codeUrl: buildUrl + "/5551de0d8974fe5030479df14fadf03d.wasm.unityweb",
         streamingAssetsUrl: "StreamingAssets",
         companyName: "Eiei-ee",
         productName: "EchoRun",
@@ -88,6 +114,8 @@
       // JS_FileSystem_Sync() behavior, but in future Unity version, this will be
       // expected to change.
 
+      config.devicePixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+
       if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
         // Mobile device style: fill the whole browser client area with the game canvas:
 
@@ -100,68 +128,23 @@
 
         // To lower canvas resolution on mobile devices to gain some
         // performance, uncomment the following line:
-        // config.devicePixelRatio = 1;
+        config.devicePixelRatio = Math.min(window.devicePixelRatio || 1, 1.25);
 
 
       } else {
         // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
 
-        canvas.style.width = "960px";
-        canvas.style.height = "600px";
+        canvas.style.width = "1280px";
+        canvas.style.height = "720px";
       }
 
       loadingBar.style.display = "block";
 
-      var dataChunks = [
-        "WebGL.data.part00", "WebGL.data.part01", "WebGL.data.part02",
-        "WebGL.data.part03", "WebGL.data.part04", "WebGL.data.part05",
-        "WebGL.data.part06", "WebGL.data.part07"
-      ];
-      var codeChunks = [
-        "WebGL.wasm.part00", "WebGL.wasm.part01", "WebGL.wasm.part02"
-      ];
-      var chunkObjectUrls = [];
-
-      async function assembleBuildFile(chunkNames, completed, total) {
-        var loaded = 0;
-        var chunks = await Promise.all(chunkNames.map(async (chunkName) => {
-          var response = await fetch(
-            buildUrl + "/" + chunkName + "?v=" + chunkVersion);
-          if (!response.ok) {
-            throw new Error("Unable to load " + chunkName + " (" + response.status + ")");
-          }
-          var bytes = await response.arrayBuffer();
-          loaded++;
-          progressBarFull.style.width =
-            15 * (completed + loaded / chunkNames.length) / total + "%";
-          return bytes;
-        }));
-        var objectUrl = URL.createObjectURL(
-          new Blob(chunks, { type: "application/octet-stream" })
-        );
-        chunkObjectUrls.push(objectUrl);
-        return objectUrl;
-      }
-
-      window.addEventListener("unload", () => {
-        chunkObjectUrls.forEach((url) => URL.revokeObjectURL(url));
-      });
-
       var script = document.createElement("script");
       script.src = loaderUrl;
-      script.onload = async () => {
-        try {
-          config.dataUrl = await assembleBuildFile(dataChunks, 0, 2);
-          config.codeUrl = await assembleBuildFile(codeChunks, 1, 2);
-        } catch (error) {
-          loadingBar.style.display = "none";
-          unityShowBanner("游戏资源加载失败，请刷新后重试。", "error");
-          console.error(error);
-          return;
-        }
-
+      script.onload = () => {
         createTuanjieInstance(canvas, config, (progress) => {
-          progressBarFull.style.width = 15 + 85 * progress + "%";
+          progressBarFull.style.width = 100 * progress + "%";
               }).then((tuanjieInstance) => {
                 loadingBar.style.display = "none";
                 fullscreenButton.onclick = () => {
