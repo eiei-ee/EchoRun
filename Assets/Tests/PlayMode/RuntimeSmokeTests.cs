@@ -25,8 +25,32 @@ public sealed class RuntimeSmokeTests
         yield return null;
 
         Assert.IsNotNull(GameManager.Instance);
+        Assert.IsNotNull(TrackManager.Instance);
         Assert.IsNotNull(PowerUpController.Instance);
         Assert.IsNotNull(AudioManager.Instance);
+    }
+
+    [UnityTest]
+    public IEnumerator RestartedRunRecreatesTrackBeforeAutoStart()
+    {
+        yield return null;
+
+        GameManager.Instance.Restart();
+        yield return null;
+        yield return null;
+
+        Assert.IsNotNull(GameManager.Instance);
+        Assert.AreEqual(GameState.Playing, GameManager.Instance.State);
+        Assert.IsNotNull(TrackManager.Instance);
+
+        yield return null;
+        Assert.Greater(TrackManager.Instance.ActiveSegmentCount, 0,
+            "The restarted run must generate track segments.");
+
+        GameManager.Instance.ReturnToMenu();
+        yield return null;
+        yield return null;
+        Assert.AreEqual(GameState.Menu, GameManager.Instance.State);
     }
 
     [UnityTest]

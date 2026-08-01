@@ -3,6 +3,22 @@ using UnityEngine;
 
 public static class TrackSpawnRules
 {
+    public static bool NeedsSegment(float plannedRouteDistance,
+        float playerRouteDistance, float segmentLength, int poolSize)
+    {
+        float safeLength = Mathf.Max(1f, segmentLength);
+        float lookAheadDistance = safeLength * Mathf.Max(2, poolSize / 2);
+        return plannedRouteDistance - playerRouteDistance < lookAheadDistance;
+    }
+
+    public static bool CanRecycleSegment(float segmentRouteDistance,
+        float playerRouteDistance, float segmentLength, float recycleMultiplier)
+    {
+        float recycleDistance = Mathf.Max(1f, segmentLength)
+                                * Mathf.Max(1f, recycleMultiplier);
+        return playerRouteDistance - segmentRouteDistance > recycleDistance;
+    }
+
     public static bool ShouldSpawnObstacleRow(int straightSegmentsSpawned,
         int obstacleFreeSegments, int warmupSegments, int maxFreeSegments,
         float chance, float chanceRoll)

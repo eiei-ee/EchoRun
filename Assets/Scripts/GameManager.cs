@@ -57,6 +57,7 @@ public class GameManager : MonoBehaviour
     {
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
+        EnsureSceneRuntimeServices();
         EchoRunSaveSystem.EnsureInitialized();
         GameplayBalance balance = GameBalanceConfig.Current.gameplay;
         startSpeed = balance.startSpeed;
@@ -70,6 +71,21 @@ public class GameManager : MonoBehaviour
         Application.targetFrameRate = runtimeFps;
         if (runtimeFps != savedFps)
             EchoRunSaveSystem.SaveFrameRate(runtimeFps);
+    }
+
+    private void EnsureSceneRuntimeServices()
+    {
+        EnsureSceneService<TrackManager>("TrackManager_Runtime");
+        EnsureSceneService<PowerUpShopUI>("Power Up Shop UI");
+        EnsureSceneService<AITrainingDashboardUI>("AI Training Dashboard UI");
+    }
+
+    private void EnsureSceneService<T>(string objectName) where T : Component
+    {
+        if (FindObjectOfType<T>() != null) return;
+        GameObject host = new GameObject(objectName);
+        host.transform.SetParent(transform, false);
+        host.AddComponent<T>();
     }
 
     public void SetFrameRate(int fps)
@@ -88,6 +104,12 @@ public class GameManager : MonoBehaviour
 
     public bool SupportsHighFrameRate => !IsFrameRateConstrainedPlatform();
 
+    public static bool ShouldConstrainHighFrameRate(bool isAndroid,
+        bool isWebGl, bool usesTouchLayout)
+    {
+        return isAndroid || (isWebGl && usesTouchLayout);
+    }
+
     public static int NormalizeFrameRate(int requested, bool constrainedPlatform)
     {
         if (requested <= 30) return 30;
@@ -97,8 +119,11 @@ public class GameManager : MonoBehaviour
 
     private static bool IsFrameRateConstrainedPlatform()
     {
-#if UNITY_WEBGL || UNITY_ANDROID
-        return true;
+#if UNITY_ANDROID
+        return ShouldConstrainHighFrameRate(true, false, true);
+#elif UNITY_WEBGL
+        bool usesTouchLayout = Application.isMobilePlatform || Input.touchSupported;
+        return ShouldConstrainHighFrameRate(false, true, usesTouchLayout);
 #else
         return false;
 #endif
