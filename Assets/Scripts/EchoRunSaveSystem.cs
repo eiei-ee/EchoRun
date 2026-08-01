@@ -312,6 +312,7 @@ public static class EchoRunSaveSystem
         _data.powerUpInventory = CloneInventory(_data.powerUpInventory);
         _data.selectedPowerUp = _data.selectedPowerUp >= 0
                                 && _data.selectedPowerUp < _data.powerUpInventory.Length
+                                && _data.powerUpInventory[_data.selectedPowerUp] > 0
             ? _data.selectedPowerUp
             : -1;
     }
@@ -356,6 +357,8 @@ public static class EchoRunSaveSystem
         PlayerPrefs.SetInt("CharacterPreset", _data.characterPreset);
         if (!string.IsNullOrEmpty(_data.shadowProfileJson))
             PlayerPrefs.SetString(ShadowProfileKey, _data.shadowProfileJson);
+        else
+            PlayerPrefs.DeleteKey(ShadowProfileKey);
     }
 
     private static void WriteArchive(bool flush)

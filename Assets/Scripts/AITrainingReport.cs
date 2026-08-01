@@ -45,21 +45,27 @@ public static class AITrainingReportBuilder
         {
             foreach (AIShadowTrainingSample sample in data.shadowSamples)
             {
+                if (sample.opponentDecision) continue;
                 int action = Mathf.Clamp(sample.action, 0, report.actionSamples.Length - 1);
                 report.actionSamples[action]++;
             }
         }
 
         int learnedIndex = DominantAction(report.actionSamples);
-        report.learnedAction = ActionNames[learnedIndex];
+        report.learnedAction = learnedIndex >= 0
+            ? ActionNames[learnedIndex]
+            : "暂无有效动作";
         int updateGain = Mathf.Max(0,
             report.directorUpdatesAfter - report.directorUpdatesBefore);
         float skillDelta = report.skillAfter - report.skillBefore;
         string skillTrend = skillDelta > 0.01f ? "上调难度判断"
             : (skillDelta < -0.01f ? "加强恢复节奏" : "保持当前节奏");
-        report.summary = "本代重点学习了“" + report.learnedAction + "”，"
-                         + "导演新增 " + updateGain + " 次反馈更新，并倾向"
-                         + skillTrend + "。";
+        report.summary = learnedIndex >= 0
+            ? "本代重点学习了“" + report.learnedAction + "”，"
+              + "导演新增 " + updateGain + " 次反馈更新，并倾向"
+              + skillTrend + "。"
+            : "本代没有采集到新的玩家动作样本，导演新增 " + updateGain
+              + " 次反馈更新，并倾向" + skillTrend + "。";
         return report;
     }
 
@@ -76,10 +82,10 @@ public static class AITrainingReportBuilder
 
     private static int DominantAction(int[] counts)
     {
-        if (counts == null || counts.Length < 5) return 0;
+        if (counts == null || counts.Length < 5) return -1;
         int best = 0;
         for (int i = 1; i < counts.Length; i++)
             if (counts[i] > counts[best]) best = i;
-        return best;
+        return counts[best] > 0 ? best : -1;
     }
 }
