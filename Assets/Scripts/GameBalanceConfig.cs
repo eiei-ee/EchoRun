@@ -87,33 +87,147 @@ public static class GameBalanceConfig
     private static GameBalanceData Load()
     {
         TextAsset asset = Resources.Load<TextAsset>("Config/game-balance");
-        GameBalanceData data = asset != null
-            ? JsonUtility.FromJson<GameBalanceData>(asset.text)
-            : null;
+        GameBalanceData data = null;
+        if (asset != null)
+        {
+            try
+            {
+                data = JsonUtility.FromJson<GameBalanceData>(asset.text);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("Game balance config is invalid; using safe defaults. "
+                                 + exception.Message);
+            }
+        }
         if (data == null)
         {
             Debug.LogWarning("Game balance config is missing; using safe defaults.");
             data = new GameBalanceData();
         }
+        return Normalize(data);
+    }
+
+    private static GameBalanceData Normalize(GameBalanceData data)
+    {
+        data = data ?? new GameBalanceData();
         data.gameplay = data.gameplay ?? new GameplayBalance();
         data.track = data.track ?? new TrackBalance();
         data.ai = data.ai ?? new AIBalance();
+        NormalizeGameplay(data.gameplay);
+        NormalizeTrack(data.track);
+        NormalizeAI(data.ai);
         data.powerUps = NormalizePowerUps(data.powerUps);
         return data;
     }
 
     private static PowerUpBalance[] NormalizePowerUps(PowerUpBalance[] source)
     {
-        PowerUpBalance[] fallback =
+        PowerUpBalance[] fallback = CreateDefaultPowerUps();
+        var normalized = new PowerUpBalance[fallback.Length];
+        for (int expectedIndex = 0; expectedIndex < fallback.Length; expectedIndex++)
+        {
+            PowerUpBalance expected = fallback[expectedIndex];
+            PowerUpBalance candidate = FindById(source, expected.id);
+            normalized[expectedIndex] = NormalizePowerUp(candidate, expected,
+                expectedIndex == (int)PowerUpId.Shield);
+        }
+        return normalized;
+    }
+
+    private static PowerUpBalance[] CreateDefaultPowerUps()
+    {
+        return new[]
         {
             new PowerUpBalance { id = "shield", displayName = "相位护盾", description = "抵消一次碰撞", cost = 60, value = 1f },
             new PowerUpBalance { id = "magnet", displayName = "磁轨吸附", description = "自动吸取附近金币", cost = 45, duration = 20f, value = 1f },
             new PowerUpBalance { id = "scoreBoost", displayName = "双倍协议", description = "积分翻倍", cost = 75, duration = 25f, value = 2f },
             new PowerUpBalance { id = "turboStart", displayName = "涡轮起步", description = "以更高速度起跑", cost = 50, duration = 12f, value = 7f }
         };
-        if (source == null || source.Length != fallback.Length) return fallback;
-        for (int i = 0; i < source.Length; i++)
-            if (source[i] == null) source[i] = fallback[i];
-        return source;
+    }
+
+    private static PowerUpBalance FindById(PowerUpBalance[] source, string id)
+    {
+        if (source == null) return null;
+        foreach (PowerUpBalance candidate in source)
+        {
+            if (candidate != null && string.Equals(candidate.id, id,
+                    StringComparison.OrdinalIgnoreCase))
+                return candidate;
+        }
+        return null;
+    }
+
+    private static PowerUpBalance NormalizePowerUp(PowerUpBalance candidate,
+        PowerUpBalance fallback, bool instant)
+    {
+        candidate = candidate ?? fallback;
+        return new PowerUpBalance
+        {
+            id = fallback.id,
+            displayName = string.IsNullOrWhiteSpace(candidate.displayName)
+                ? fallback.displayName
+                : candidate.displayName,
+            description = string.IsNullOrWhiteSpace(candidate.description)
+                ? fallback.description
+                : candidate.description,
+            cost = candidate.cost > 0 ? candidate.cost : fallback.cost,
+            duration = instant
+                ? 0f
+                : PositiveOrDefault(candidate.duration, fallback.duration),
+            value = PositiveOrDefault(candidate.value, fallback.value)
+        };
+    }
+
+    private static void NormalizeGameplay(GameplayBalance gameplay)
+    {
+        gameplay.startSpeed = Mathf.Clamp(
+            PositiveOrDefault(gameplay.startSpeed, 10f), 1f, 50f);
+        gameplay.maxSpeed = Mathf.Clamp(
+            PositiveOrDefault(gameplay.maxSpeed, 40f),
+            gameplay.startSpeed, 80f);
+        gameplay.speedIncreaseRate = Mathf.Clamp(
+            PositiveOrDefault(gameplay.speedIncreaseRate, 0.5f), 0.01f, 10f);
+        gameplay.coinScore = Mathf.Clamp(gameplay.coinScore > 0
+            ? gameplay.coinScore
+            : 10, 1, 1000);
+        gameplay.magnetRadius = Mathf.Clamp(
+            PositiveOrDefault(gameplay.magnetRadius, 7f), 1f, 30f);
+    }
+
+    private static void NormalizeTrack(TrackBalance track)
+    {
+        track.obstacleChance = ProbabilityOrDefault(track.obstacleChance, 0.7f);
+        track.coinChance = ProbabilityOrDefault(track.coinChance, 0.6f);
+        track.turnChance = ProbabilityOrDefault(track.turnChance, 0.24f);
+    }
+
+    private static void NormalizeAI(AIBalance ai)
+    {
+        ai.shadowLearningRate = Mathf.Clamp(
+            PositiveOrDefault(ai.shadowLearningRate, 0.08f), 0.001f, 0.5f);
+        ai.minimumTrainingSamples = Mathf.Clamp(
+            ai.minimumTrainingSamples > 0 ? ai.minimumTrainingSamples : 24,
+            1, 10000);
+        ai.minimumActiveSamples = Mathf.Clamp(
+            ai.minimumActiveSamples > 0 ? ai.minimumActiveSamples : 6,
+            1, ai.minimumTrainingSamples);
+        ai.directorExploration = ProbabilityOrDefault(
+            ai.directorExploration, 0.35f);
+    }
+
+    private static float ProbabilityOrDefault(float value, float fallback)
+    {
+        return IsFinite(value) ? Mathf.Clamp01(value) : fallback;
+    }
+
+    private static float PositiveOrDefault(float value, float fallback)
+    {
+        return IsFinite(value) && value > 0f ? value : fallback;
+    }
+
+    private static bool IsFinite(float value)
+    {
+        return !float.IsNaN(value) && !float.IsInfinity(value);
     }
 }
