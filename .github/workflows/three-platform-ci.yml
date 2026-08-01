@@ -50,16 +50,22 @@ jobs:
           $resultPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/${{ matrix.testMode }}-results.xml"
           $logPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/${{ matrix.testMode }}.log"
 
-          & $env:TUANJIE_EDITOR `
-            -batchmode `
-            -nographics `
-            -projectPath $env:GITHUB_WORKSPACE `
-            -runTests `
-            -testPlatform "${{ matrix.testMode }}" `
-            -testResults $resultPath `
-            -logFile $logPath
+          $arguments = @(
+            "-batchmode",
+            "-nographics",
+            "-projectPath", $env:GITHUB_WORKSPACE,
+            "-runTests",
+            "-testPlatform", "${{ matrix.testMode }}",
+            "-testResults", $resultPath,
+            "-logFile", $logPath
+          )
+          $process = Start-Process `
+            -FilePath $env:TUANJIE_EDITOR `
+            -ArgumentList $arguments `
+            -Wait `
+            -PassThru
 
-          $exitCode = $LASTEXITCODE
+          $exitCode = $process.ExitCode
           if (Test-Path -LiteralPath $logPath) {
             Get-Content -LiteralPath $logPath -Tail 250
           }
@@ -117,15 +123,21 @@ jobs:
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
           $logPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/build-${{ matrix.name }}.log"
 
-          & $env:TUANJIE_EDITOR `
-            -quit `
-            -batchmode `
-            -nographics `
-            -projectPath $env:GITHUB_WORKSPACE `
-            -executeMethod "${{ matrix.method }}" `
-            -logFile $logPath
+          $arguments = @(
+            "-quit",
+            "-batchmode",
+            "-nographics",
+            "-projectPath", $env:GITHUB_WORKSPACE,
+            "-executeMethod", "${{ matrix.method }}",
+            "-logFile", $logPath
+          )
+          $process = Start-Process `
+            -FilePath $env:TUANJIE_EDITOR `
+            -ArgumentList $arguments `
+            -Wait `
+            -PassThru
 
-          $exitCode = $LASTEXITCODE
+          $exitCode = $process.ExitCode
           if (Test-Path -LiteralPath $logPath) {
             Get-Content -LiteralPath $logPath -Tail 250
           }
