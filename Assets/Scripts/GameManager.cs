@@ -326,7 +326,8 @@ public class GameManager : MonoBehaviour
 
     private void FinishTelemetry(string reason)
     {
-        AIPlayerSkillEstimator.EndRun(Distance);
+        AIPlayerSkillEstimator.EndRun(Distance,
+            AIRunTelemetry.IsCompletedTrainingReason(reason));
         AIRunTelemetry.FinishRun(this, reason,
             AIShadowRunner.Instance != null ? AIShadowRunner.Instance.Generation : 0,
             AITrackDirector.Instance != null

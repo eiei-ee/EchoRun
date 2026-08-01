@@ -103,6 +103,13 @@ public sealed class AIPlayerSkillProfile
         float weight = Mathf.Clamp(distanceGain / 25f, 0.25f, 1f);
         survival.Observe(survived, weight);
     }
+
+    public void RecordRunEnd(float distance, bool completed)
+    {
+        if (!completed) return;
+        completedRuns++;
+        bestDistance = Mathf.Max(bestDistance, distance);
+    }
 }
 
 public static class AIPlayerSkillEstimator
@@ -190,12 +197,11 @@ public static class AIPlayerSkillEstimator
         _profile.RecordSegment(survived, distanceGain);
     }
 
-    public static void EndRun(float distance)
+    public static void EndRun(float distance, bool completed)
     {
         if (!_runActive) return;
         _runActive = false;
-        _profile.completedRuns++;
-        _profile.bestDistance = Mathf.Max(_profile.bestDistance, distance);
+        _profile.RecordRunEnd(distance, completed);
         EchoRunSaveSystem.SaveSkillProfile(JsonUtility.ToJson(_profile));
     }
 

@@ -27,6 +27,7 @@ public sealed class ProgressionAndTrainingTests
         var telemetry = new AIRunTelemetryData
         {
             completed = true,
+            finishReason = "game_over",
             shadowGenerationAtStart = 2,
             shadowGenerationAtEnd = 3,
             directorUpdatesAtStart = 10,
@@ -63,7 +64,11 @@ public sealed class ProgressionAndTrainingTests
     [Test]
     public void TrainingReportOnlyCountsPlayerTrainingSamples()
     {
-        var telemetry = new AIRunTelemetryData { completed = true };
+        var telemetry = new AIRunTelemetryData
+        {
+            completed = true,
+            finishReason = "game_over"
+        };
         telemetry.shadowSamples.Add(new AIShadowTrainingSample
         {
             action = (int)ShadowAction.Jump
@@ -87,7 +92,11 @@ public sealed class ProgressionAndTrainingTests
     [Test]
     public void TrainingReportExplainsWhenNoPlayerSampleWasLearned()
     {
-        var telemetry = new AIRunTelemetryData { completed = true };
+        var telemetry = new AIRunTelemetryData
+        {
+            completed = true,
+            finishReason = "game_over"
+        };
         telemetry.shadowSamples.Add(new AIShadowTrainingSample
         {
             action = (int)ShadowAction.Slide,
@@ -98,6 +107,32 @@ public sealed class ProgressionAndTrainingTests
 
         Assert.AreEqual("暂无有效动作", report.learnedAction);
         StringAssert.Contains("没有采集到新的玩家动作样本", report.summary);
+    }
+
+    [TestCase("menu")]
+    [TestCase("restart")]
+    public void TrainingReportRejectsAbandonedRun(string finishReason)
+    {
+        Assert.IsNull(AITrainingReportBuilder.FromTelemetry(
+            new AIRunTelemetryData
+            {
+                completed = true,
+                finishReason = finishReason
+            }));
+    }
+
+    [Test]
+    public void SkillProfileOnlyCountsCompletedRuns()
+    {
+        var profile = new AIPlayerSkillProfile();
+
+        profile.RecordRunEnd(120f, false);
+        Assert.AreEqual(0, profile.completedRuns);
+        Assert.AreEqual(0f, profile.bestDistance);
+
+        profile.RecordRunEnd(95f, true);
+        Assert.AreEqual(1, profile.completedRuns);
+        Assert.AreEqual(95f, profile.bestDistance);
     }
 
     [Test]
