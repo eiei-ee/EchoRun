@@ -59,8 +59,7 @@ public class UIManager : MonoBehaviour
     private Rect _lastSafeArea;
     private Vector2Int _lastScreenSize;
     private float _controlHintTimer;
-    private Sprite _roundedSprite;
-    private Texture2D _roundedTexture;
+    private readonly RuntimeRoundedSprite _roundedUi = new RuntimeRoundedSprite();
 
     private const float ControlHintDuration = 7f;
 
@@ -825,8 +824,7 @@ public class UIManager : MonoBehaviour
             _gm.OnCoinsChanged.RemoveListener(OnCoinsChanged);
             _gm.OnDistanceChanged.RemoveListener(OnDistanceChanged);
         }
-        if (_roundedSprite != null) Destroy(_roundedSprite);
-        if (_roundedTexture != null) Destroy(_roundedTexture);
+        _roundedUi.Dispose();
     }
 
     void OnCoinsChanged(int coins)
@@ -899,7 +897,8 @@ public class UIManager : MonoBehaviour
     public static bool ShouldShowLandscapeGuard(
         int width, int height, bool touchLayout)
     {
-        return touchLayout && width > 0 && height > width;
+        return UILayoutRules.ShouldShowLandscapeGuard(
+            width, height, touchLayout);
     }
 
     private static bool UsesTouchLayout()
@@ -1179,44 +1178,7 @@ public class UIManager : MonoBehaviour
 
     void ApplyRounded(Image image)
     {
-        if (image == null) return;
-        if (_roundedSprite == null)
-        {
-            const int size = 64;
-            const float radius = 15f;
-            _roundedTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
-            {
-                name = "RuntimeRoundedUI",
-                filterMode = FilterMode.Bilinear,
-                wrapMode = TextureWrapMode.Clamp
-            };
-            Color32[] pixels = new Color32[size * size];
-            Vector2 center = new Vector2((size - 1) * 0.5f, (size - 1) * 0.5f);
-            Vector2 inner = new Vector2(center.x - radius, center.y - radius);
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    Vector2 q = new Vector2(
-                        Mathf.Abs(x - center.x) - inner.x,
-                        Mathf.Abs(y - center.y) - inner.y);
-                    float outside = new Vector2(Mathf.Max(q.x, 0f), Mathf.Max(q.y, 0f)).magnitude;
-                    float inside = Mathf.Min(Mathf.Max(q.x, q.y), 0f);
-                    float distance = outside + inside - radius;
-                    byte alpha = (byte)Mathf.RoundToInt(
-                        Mathf.Clamp01(0.5f - distance) * 255f);
-                    pixels[y * size + x] = new Color32(255, 255, 255, alpha);
-                }
-            }
-            _roundedTexture.SetPixels32(pixels);
-            _roundedTexture.Apply(false, true);
-            _roundedSprite = Sprite.Create(_roundedTexture, new Rect(0f, 0f, size, size),
-                new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect,
-                new Vector4(16f, 16f, 16f, 16f));
-            _roundedSprite.name = "RuntimeRoundedUISprite";
-        }
-        image.sprite = _roundedSprite;
-        image.type = Image.Type.Sliced;
+        _roundedUi.Apply(image);
     }
 
     static void SetButtonAnchor(Button button, Vector2 anchor)
