@@ -112,6 +112,7 @@ public static class AIRunTelemetry
 {
     public const int SchemaVersion = 3;
     public const float StateSampleInterval = 0.25f;
+    public const string CompletedTrainingReason = "game_over";
 
     private const int MaxStateSamples = 7200;
     private const int MaxEventSamples = 4096;
@@ -124,6 +125,18 @@ public static class AIRunTelemetry
 
     public static AIRunTelemetryData ActiveRun => _active;
     public static bool IsRecording => _active != null && !_active.completed;
+
+    public static bool IsCompletedTrainingReason(string reason)
+    {
+        return string.Equals(reason, CompletedTrainingReason,
+            StringComparison.Ordinal);
+    }
+
+    public static bool IsCompletedTrainingRun(AIRunTelemetryData data)
+    {
+        return data != null && data.completed
+               && IsCompletedTrainingReason(data.finishReason);
+    }
 
     public static void BeginRun(int seed, int sequence, int highScore,
         int shadowGeneration, int directorUpdates, float[] shadowWeights,

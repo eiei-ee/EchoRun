@@ -26,7 +26,7 @@ public static class AITrainingReportBuilder
 
     public static AITrainingReport FromTelemetry(AIRunTelemetryData data)
     {
-        if (data == null || !data.completed) return null;
+        if (!AIRunTelemetry.IsCompletedTrainingRun(data)) return null;
         AITrainingReport report = new AITrainingReport
         {
             generationBefore = data.shadowGenerationAtStart,

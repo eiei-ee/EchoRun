@@ -247,6 +247,7 @@ public class AIShadowRunner : MonoBehaviour
         _opponentSequencePolicy = null;
         _runStarted = false;
         _runFinalized = false;
+        _samplesSinceCheckpoint = 0;
         HasActiveOpponent = false;
         PlayerLead = 0f;
         LastResult = "";
