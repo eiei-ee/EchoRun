@@ -2,6 +2,7 @@ using System.Collections;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 
 public sealed class RuntimeSmokeTests
@@ -22,7 +23,8 @@ public sealed class RuntimeSmokeTests
     [UnityTest]
     public IEnumerator RuntimeManagersBootstrapWithoutExceptions()
     {
-        yield return null;
+        for (int frame = 0; frame < 120 && GameManager.Instance == null; frame++)
+            yield return null;
 
         Assert.IsNotNull(GameManager.Instance);
         Assert.IsNotNull(TrackManager.Instance);
@@ -33,11 +35,24 @@ public sealed class RuntimeSmokeTests
     [UnityTest]
     public IEnumerator RestartedRunRecreatesTrackBeforeAutoStart()
     {
-        yield return null;
+        GameManager bootstrapManager = GameManager.Instance;
+        SceneManager.LoadScene(0);
+        for (int frame = 0; frame < 120
+             && (GameManager.Instance == null
+                 || object.ReferenceEquals(GameManager.Instance, bootstrapManager));
+             frame++)
+            yield return null;
 
-        GameManager.Instance.Restart();
-        yield return null;
-        yield return null;
+        Assert.IsNotNull(GameManager.Instance);
+        GameManager firstRunManager = GameManager.Instance;
+
+        firstRunManager.Restart();
+        for (int frame = 0; frame < 120
+             && (GameManager.Instance == null
+                 || object.ReferenceEquals(GameManager.Instance, firstRunManager)
+                 || GameManager.Instance.State != GameState.Playing);
+             frame++)
+            yield return null;
 
         Assert.IsNotNull(GameManager.Instance);
         Assert.AreEqual(GameState.Playing, GameManager.Instance.State);
@@ -47,9 +62,15 @@ public sealed class RuntimeSmokeTests
         Assert.Greater(TrackManager.Instance.ActiveSegmentCount, 0,
             "The restarted run must generate track segments.");
 
-        GameManager.Instance.ReturnToMenu();
-        yield return null;
-        yield return null;
+        GameManager restartedManager = GameManager.Instance;
+        restartedManager.ReturnToMenu();
+        for (int frame = 0; frame < 120
+             && (GameManager.Instance == null
+                 || object.ReferenceEquals(GameManager.Instance, restartedManager)
+                 || GameManager.Instance.State != GameState.Menu);
+             frame++)
+            yield return null;
+        Assert.IsNotNull(GameManager.Instance);
         Assert.AreEqual(GameState.Menu, GameManager.Instance.State);
     }
 
