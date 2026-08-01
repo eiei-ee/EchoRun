@@ -22,6 +22,108 @@ public sealed class ProgressionAndTrainingTests
     }
 
     [Test]
+    public void BalanceNormalizationRepairsUnsafeNumericValues()
+    {
+        var balance = new GameBalanceData
+        {
+            gameplay = new GameplayBalance
+            {
+                startSpeed = -4f,
+                maxSpeed = float.NaN,
+                speedIncreaseRate = float.PositiveInfinity,
+                coinScore = 0,
+                magnetRadius = -2f
+            },
+            track = new TrackBalance
+            {
+                obstacleChance = -1f,
+                coinChance = 3f,
+                turnChance = float.NaN
+            },
+            ai = new AIBalance
+            {
+                shadowLearningRate = float.NaN,
+                minimumTrainingSamples = 0,
+                minimumActiveSamples = 99,
+                directorExploration = 2f
+            }
+        };
+
+        NormalizeBalance(balance);
+
+        Assert.Greater(balance.gameplay.startSpeed, 0f);
+        Assert.GreaterOrEqual(balance.gameplay.maxSpeed, balance.gameplay.startSpeed);
+        Assert.Greater(balance.gameplay.speedIncreaseRate, 0f);
+        Assert.Greater(balance.gameplay.coinScore, 0);
+        Assert.Greater(balance.gameplay.magnetRadius, 0f);
+        Assert.AreEqual(0f, balance.track.obstacleChance);
+        Assert.AreEqual(1f, balance.track.coinChance);
+        Assert.That(balance.track.turnChance, Is.InRange(0f, 1f));
+        Assert.That(balance.ai.shadowLearningRate, Is.InRange(0.001f, 0.5f));
+        Assert.Greater(balance.ai.minimumTrainingSamples, 0);
+        Assert.That(balance.ai.minimumActiveSamples,
+            Is.InRange(1, balance.ai.minimumTrainingSamples));
+        Assert.AreEqual(1f, balance.ai.directorExploration);
+    }
+
+    [Test]
+    public void BalanceNormalizationOrdersPowerUpsByStableId()
+    {
+        var balance = new GameBalanceData
+        {
+            powerUps = new[]
+            {
+                PowerUp("magnet", 101),
+                PowerUp("turboStart", 103),
+                PowerUp("shield", 102),
+                PowerUp("scoreBoost", 104)
+            }
+        };
+
+        NormalizeBalance(balance);
+
+        Assert.AreEqual("shield", balance.powerUps[(int)PowerUpId.Shield].id);
+        Assert.AreEqual(102, balance.powerUps[(int)PowerUpId.Shield].cost);
+        Assert.AreEqual("magnet", balance.powerUps[(int)PowerUpId.Magnet].id);
+        Assert.AreEqual(101, balance.powerUps[(int)PowerUpId.Magnet].cost);
+        Assert.AreEqual("scoreBoost",
+            balance.powerUps[(int)PowerUpId.ScoreBoost].id);
+        Assert.AreEqual(104, balance.powerUps[(int)PowerUpId.ScoreBoost].cost);
+        Assert.AreEqual("turboStart",
+            balance.powerUps[(int)PowerUpId.TurboStart].id);
+        Assert.AreEqual(103, balance.powerUps[(int)PowerUpId.TurboStart].cost);
+    }
+
+    [Test]
+    public void BalanceNormalizationRepairsInvalidPowerUpFields()
+    {
+        var balance = new GameBalanceData
+        {
+            powerUps = new[]
+            {
+                PowerUp("shield", 0, "", "", -1f, -1f),
+                PowerUp("magnet", -1, "", "", -1f, 0f),
+                PowerUp("scoreBoost", -1, "", "", 0f, 0f),
+                PowerUp("turboStart", -1, "", "", float.NaN, -1f)
+            }
+        };
+
+        NormalizeBalance(balance);
+
+        foreach (PowerUpBalance powerUp in balance.powerUps)
+        {
+            Assert.IsNotEmpty(powerUp.displayName);
+            Assert.IsNotEmpty(powerUp.description);
+            Assert.Greater(powerUp.cost, 0);
+            Assert.Greater(powerUp.value, 0f);
+        }
+        Assert.AreEqual(0f, balance.powerUps[(int)PowerUpId.Shield].duration);
+        Assert.Greater(balance.powerUps[(int)PowerUpId.Magnet].duration, 0f);
+        Assert.Greater(balance.powerUps[(int)PowerUpId.ScoreBoost].duration, 0f);
+        Assert.Greater(balance.powerUps[(int)PowerUpId.TurboStart].duration, 0f);
+    }
+
+    [Test]
     public void TrainingReportShowsBeforeAfterAndDominantAction()
     {
         var telemetry = new AIRunTelemetryData
@@ -188,5 +290,28 @@ public sealed class ProgressionAndTrainingTests
             else PlayerPrefs.DeleteKey(legacyKey);
             dataField.SetValue(null, previousData);
         }
+    }
+
+    private static void NormalizeBalance(GameBalanceData balance)
+    {
+        MethodInfo method = typeof(GameBalanceConfig).GetMethod(
+            "Normalize", BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.IsNotNull(method, "GameBalanceConfig.Normalize is missing.");
+        method.Invoke(null, new object[] { balance });
+    }
+
+    private static PowerUpBalance PowerUp(string id, int cost,
+        string displayName = "测试道具", string description = "测试描述",
+        float duration = 10f, float value = 1f)
+    {
+        return new PowerUpBalance
+        {
+            id = id,
+            displayName = displayName,
+            description = description,
+            cost = cost,
+            duration = duration,
+            value = value
+        };
     }
 }
