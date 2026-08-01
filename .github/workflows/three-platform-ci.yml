@@ -33,6 +33,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          clean: false
 
       - name: Verify Tuanjie Editor
         shell: powershell
@@ -46,6 +47,9 @@ jobs:
       - name: Run ${{ matrix.testMode }} tests
         shell: powershell
         run: |
+          if (Test-Path -LiteralPath artifacts) {
+            Remove-Item -LiteralPath artifacts -Recurse -Force
+          }
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
           $resultPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/${{ matrix.testMode }}-results.xml"
           $logPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/${{ matrix.testMode }}.log"
@@ -109,6 +113,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          clean: false
 
       - name: Verify Tuanjie Editor
         shell: powershell
@@ -120,6 +125,13 @@ jobs:
       - name: Build ${{ matrix.name }}
         shell: powershell
         run: |
+          $artifactPath = Join-Path $env:GITHUB_WORKSPACE "${{ matrix.artifact }}"
+          if (Test-Path -LiteralPath $artifactPath) {
+            Remove-Item -LiteralPath $artifactPath -Recurse -Force
+          }
+          if (Test-Path -LiteralPath artifacts) {
+            Remove-Item -LiteralPath artifacts -Recurse -Force
+          }
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
           $logPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/build-${{ matrix.name }}.log"
 
@@ -144,7 +156,7 @@ jobs:
           if ($exitCode -ne 0) {
             throw "${{ matrix.name }} build failed with exit code $exitCode."
           }
-          if (-not (Test-Path -LiteralPath "${{ matrix.artifact }}")) {
+          if (-not (Test-Path -LiteralPath $artifactPath)) {
             throw "Tuanjie did not produce ${{ matrix.artifact }}."
           }
 
