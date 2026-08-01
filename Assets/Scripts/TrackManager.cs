@@ -66,6 +66,7 @@ public class TrackManager : MonoBehaviour
     private const float SEGMENT_RECYCLE_MULT = 5f;
 
     public TrackSegmentData CurrentTurnSegment { get; private set; }
+    public int ActiveSegmentCount => _activeSegments.Count;
     public Vector3 ForwardDirection =>
         Quaternion.Euler(0, _spawnAngle, 0) * Vector3.forward;
 
@@ -104,21 +105,21 @@ public class TrackManager : MonoBehaviour
         if (_player == null) return;
         if (trackSegmentPrefab == null) return;
 
-        float spawnThresholdSqr = (segmentLength * (poolSize / 2));
-        spawnThresholdSqr *= spawnThresholdSqr;
-
-        while (XZSqrDistance(_player.position, _spawnPosition) < spawnThresholdSqr)
+        float playerRouteDistance = GameManager.Instance.Distance;
+        int spawnBudget = Mathf.Max(1, poolSize);
+        while (spawnBudget-- > 0 && TrackSpawnRules.NeedsSegment(
+                   _plannedDistance, playerRouteDistance, segmentLength, poolSize))
         {
             SpawnSegment();
         }
 
-        float recycleThresholdSqr = (segmentLength * SEGMENT_RECYCLE_MULT);
-        recycleThresholdSqr *= recycleThresholdSqr;
-
         while (_activeSegments.Count > 0)
         {
             GameObject seg = _activeSegments[0];
-            if (XZSqrDistance(_player.position, seg.transform.position) < recycleThresholdSqr) break;
+            TrackSegmentData data = seg.GetComponent<TrackSegmentData>();
+            if (data == null || !TrackSpawnRules.CanRecycleSegment(
+                    data.routeDistance, playerRouteDistance, segmentLength,
+                    SEGMENT_RECYCLE_MULT)) break;
             RecycleSegment(seg);
         }
     }
@@ -427,6 +428,7 @@ public class TrackManager : MonoBehaviour
         TrackSegmentData data = segment.GetComponent<TrackSegmentData>();
         if (data == null) data = segment.AddComponent<TrackSegmentData>();
         data.segmentType = segType;
+        data.routeDistance = _plannedDistance;
 
         _activeSegments.Add(segment);
 

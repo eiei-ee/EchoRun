@@ -269,6 +269,26 @@ public class GameStateTests
     }
 
     [Test]
+    public void DesktopWebGlKeepsThe120FrameRateOption()
+    {
+        Assert.IsFalse(GameManager.ShouldConstrainHighFrameRate(
+            false, true, false));
+        Assert.IsTrue(GameManager.ShouldConstrainHighFrameRate(
+            false, true, true));
+        Assert.IsTrue(GameManager.ShouldConstrainHighFrameRate(
+            true, false, false));
+    }
+
+    [Test]
+    public void TrackBufferUsesRouteProgressInsteadOfWorldDisplacement()
+    {
+        Assert.IsTrue(TrackSpawnRules.NeedsSegment(120f, 100f, 20f, 10));
+        Assert.IsFalse(TrackSpawnRules.NeedsSegment(200f, 100f, 20f, 10));
+        Assert.IsTrue(TrackSpawnRules.CanRecycleSegment(80f, 200f, 20f, 5f));
+        Assert.IsFalse(TrackSpawnRules.CanRecycleSegment(100f, 200f, 20f, 5f));
+    }
+
+    [Test]
     public void TouchLayoutRequestsLandscapeOnlyWhenPortrait()
     {
         Assert.IsTrue(UIManager.ShouldShowLandscapeGuard(720, 1280, true));
