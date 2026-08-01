@@ -35,7 +35,7 @@ jobs:
           persist-credentials: false
 
       - name: Verify Tuanjie Editor
-        shell: pwsh
+        shell: powershell
         run: |
           if (-not (Test-Path -LiteralPath $env:TUANJIE_EDITOR)) {
             throw "Tuanjie Editor not found: $env:TUANJIE_EDITOR"
@@ -44,7 +44,7 @@ jobs:
           Write-Host "Using Tuanjie Editor $version"
 
       - name: Run ${{ matrix.testMode }} tests
-        shell: pwsh
+        shell: powershell
         run: |
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
           $resultPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/${{ matrix.testMode }}-results.xml"
@@ -105,14 +105,14 @@ jobs:
           persist-credentials: false
 
       - name: Verify Tuanjie Editor
-        shell: pwsh
+        shell: powershell
         run: |
           if (-not (Test-Path -LiteralPath $env:TUANJIE_EDITOR)) {
             throw "Tuanjie Editor not found: $env:TUANJIE_EDITOR"
           }
 
       - name: Build ${{ matrix.name }}
-        shell: pwsh
+        shell: powershell
         run: |
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
           $logPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/build-${{ matrix.name }}.log"
