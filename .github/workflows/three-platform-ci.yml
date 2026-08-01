@@ -1,54 +1,74 @@
-name: Three-platform CI
+name: Three-platform Tuanjie CI
 
 on:
-  pull_request:
   push:
     branches: [master]
   workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  TUANJIE_EDITOR: D:\unity\tuanjie\2022.3.62t8\Editor\Tuanjie.exe
 
 permissions:
   contents: read
   checks: write
 
+concurrency:
+  group: tuanjie-ci-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   tests:
     name: ${{ matrix.testMode }} tests
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, Windows, X64, tuanjie]
     timeout-minutes: 35
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
-        testMode: [editmode, playmode]
+        testMode: [EditMode, PlayMode]
+
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
 
-      - name: Patch Tuanjie project for Unity CI
-        shell: bash
+      - name: Verify Tuanjie Editor
+        shell: pwsh
         run: |
-          sed -i '/cn.tuanjie.codely.bridge/d' Packages/manifest.json
-          sed -i '/com.unity.modules.infinity/d' Packages/manifest.json
-          cp Packages/packages-lock.unity.json Packages/packages-lock.json
-          sed -i 's/2022.3.62t8/2022.3.62f1/g' ProjectSettings/ProjectVersion.txt
-          find Assets ProjectSettings -type f \( -name '*.scene' -o -name '*.prefab' -o -name '*.asset' -o -name '*.mat' \) \
-            -exec sed -i 's/tag:yousandi.cn,2023:/tag:unity3d.com,2011:/g' {} +
+          if (-not (Test-Path -LiteralPath $env:TUANJIE_EDITOR)) {
+            throw "Tuanjie Editor not found: $env:TUANJIE_EDITOR"
+          }
+          $version = (Get-Item -LiteralPath $env:TUANJIE_EDITOR).VersionInfo.FileVersion
+          Write-Host "Using Tuanjie Editor $version"
 
       - name: Run ${{ matrix.testMode }} tests
-        uses: game-ci/unity-test-runner@v4
-        env:
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-        with:
-          unityVersion: 2022.3.62f1
-          testMode: ${{ matrix.testMode }}
-          githubToken: ${{ secrets.GITHUB_TOKEN }}
-          checkName: ${{ matrix.testMode }} test results
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          $resultPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/${{ matrix.testMode }}-results.xml"
+          $logPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/${{ matrix.testMode }}.log"
+
+          & $env:TUANJIE_EDITOR `
+            -batchmode `
+            -nographics `
+            -projectPath $env:GITHUB_WORKSPACE `
+            -runTests `
+            -testPlatform "${{ matrix.testMode }}" `
+            -testResults $resultPath `
+            -logFile $logPath
+
+          $exitCode = $LASTEXITCODE
+          if (Test-Path -LiteralPath $logPath) {
+            Get-Content -LiteralPath $logPath -Tail 250
+          }
+          if ($exitCode -ne 0) {
+            throw "${{ matrix.testMode }} tests failed with exit code $exitCode."
+          }
+          if (-not (Test-Path -LiteralPath $resultPath)) {
+            throw "Tuanjie did not produce $resultPath."
+          }
 
       - name: Upload test results
         if: always()
@@ -61,50 +81,60 @@ jobs:
   build:
     name: Build ${{ matrix.name }}
     needs: tests
-    runs-on: ubuntu-22.04
-    timeout-minutes: 75
+    runs-on: [self-hosted, Windows, X64, tuanjie]
+    timeout-minutes: 90
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - name: WebGL
-            target: WebGL
             method: BuildConfig.BuildWebGL
             artifact: Builds/WebGL
           - name: Windows
-            target: StandaloneWindows64
             method: BuildConfig.BuildWindows
             artifact: Builds/Windows
           - name: Android
-            target: Android
             method: BuildConfig.BuildAndroid
             artifact: Builds/Android
+
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
 
-      - name: Patch Tuanjie project for Unity CI
-        shell: bash
+      - name: Verify Tuanjie Editor
+        shell: pwsh
         run: |
-          sed -i '/cn.tuanjie.codely.bridge/d' Packages/manifest.json
-          sed -i '/com.unity.modules.infinity/d' Packages/manifest.json
-          cp Packages/packages-lock.unity.json Packages/packages-lock.json
-          sed -i 's/2022.3.62t8/2022.3.62f1/g' ProjectSettings/ProjectVersion.txt
-          find Assets ProjectSettings -type f \( -name '*.scene' -o -name '*.prefab' -o -name '*.asset' -o -name '*.mat' \) \
-            -exec sed -i 's/tag:yousandi.cn,2023:/tag:unity3d.com,2011:/g' {} +
+          if (-not (Test-Path -LiteralPath $env:TUANJIE_EDITOR)) {
+            throw "Tuanjie Editor not found: $env:TUANJIE_EDITOR"
+          }
 
       - name: Build ${{ matrix.name }}
-        uses: game-ci/unity-builder@1d4ee0697f193f54668e98961d79907911f4b4f2 # v4
-        env:
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-        with:
-          targetPlatform: ${{ matrix.target }}
-          buildMethod: ${{ matrix.method }}
-          unityVersion: 2022.3.62f1
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          $logPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/build-${{ matrix.name }}.log"
+
+          & $env:TUANJIE_EDITOR `
+            -quit `
+            -batchmode `
+            -nographics `
+            -projectPath $env:GITHUB_WORKSPACE `
+            -executeMethod "${{ matrix.method }}" `
+            -logFile $logPath
+
+          $exitCode = $LASTEXITCODE
+          if (Test-Path -LiteralPath $logPath) {
+            Get-Content -LiteralPath $logPath -Tail 250
+          }
+          if ($exitCode -ne 0) {
+            throw "${{ matrix.name }} build failed with exit code $exitCode."
+          }
+          if (-not (Test-Path -LiteralPath "${{ matrix.artifact }}")) {
+            throw "Tuanjie did not produce ${{ matrix.artifact }}."
+          }
 
       - name: Upload ${{ matrix.name }} build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -112,3 +142,11 @@ jobs:
           name: EchoRun-${{ matrix.name }}
           path: ${{ matrix.artifact }}
           if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-log-${{ matrix.name }}
+          path: artifacts
+          if-no-files-found: warn
