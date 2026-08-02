@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/eiei-ee/TempleRun/security/advisories/new
+    about: Report an undisclosed security issue privately.
+  - name: Play WebGL build
+    url: https://eiei-ee.github.io/TempleRun/
+    about: Reproduce the issue in the current browser build.
