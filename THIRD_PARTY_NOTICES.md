@@ -27,3 +27,12 @@ Before publishing a Release, verify that every bundled asset has an entry
 above or is original work whose rights you control. Remove or replace any
 asset with missing or incompatible redistribution terms. Package-manager
 dependencies remain subject to the licenses distributed with their packages.
+
+## Historical source notice
+
+Revisions before commit `ffb82b5` may contain an unused
+`Assets/Fonts/arial.ttf` file whose original source and redistribution rights
+were not recorded. The file is not covered by this repository's MIT License
+and was removed from the current default branch. Do not redistribute an older
+source snapshot without removing that file or independently establishing its
+license.
