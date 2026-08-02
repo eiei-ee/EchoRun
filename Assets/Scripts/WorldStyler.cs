@@ -283,13 +283,16 @@ public class WorldStyler : MonoBehaviour
         DisableRenderers(coin);
         GameObject visual = new GameObject("StreamlinedVisual");
         visual.transform.SetParent(coin.transform, false);
-        visual.transform.localRotation = Quaternion.Euler(0f, 0f, 45f);
-        CreateCapsule("EnergyCore", visual.transform, Vector3.zero,
-            new Vector3(0.25f, 0.46f, 0.12f), _goldMaterial);
-        CreateBeam("EnergySpine", visual.transform, new Vector3(0f, -0.52f, 0f),
-            new Vector3(0f, 0.52f, 0f), 0.055f, _cyanMaterial);
-        CreateSphere("EnergyNode", visual.transform, Vector3.zero,
-            new Vector3(0.18f, 0.18f, 0.1f), _coralMaterial);
+
+        // Three intersecting meshes create a complete double-sided token without
+        // multiplying the renderer count along long coin trails.
+        CreateCylinder("TokenRim", visual.transform, Vector3.zero,
+            new Vector3(0.84f, 0.11f, 0.84f), _goldMaterial,
+            new Vector3(90f, 0f, 0f));
+        CreateSphere("TokenInset", visual.transform, Vector3.zero,
+            new Vector3(0.62f, 0.62f, 0.27f), _deepStructureMaterial);
+        CreateSphere("EnergyCore", visual.transform, Vector3.zero,
+            new Vector3(0.27f, 0.27f, 0.32f), _cyanMaterial);
     }
 
     public void StyleObstacle(GameObject obstacle)
@@ -304,40 +307,100 @@ public class WorldStyler : MonoBehaviour
 
         if (data.type == ObstacleType.Low)
         {
-            BuildSegmentedArch("ScannerArc", visual.transform, 0f, 1.5f, 1.65f, 5,
-                _structureMaterial, _coralMaterial, 0.16f);
-            CreateCapsule("ScannerLens", visual.transform, new Vector3(0f, 1.55f, -0.28f),
-                new Vector3(0.48f, 0.1f, 0.08f), _goldMaterial,
-                new Vector3(0f, 0f, 90f));
+            BuildScannerGate(visual.transform);
         }
         else if (data.type == ObstacleType.High)
         {
-            CreateCapsule("JumpShell", visual.transform, new Vector3(0f, -0.46f, 0f),
-                new Vector3(0.46f, 1.56f, 0.42f), _coralMaterial,
-                new Vector3(0f, 0f, 90f));
-            CreateCapsule("JumpLight", visual.transform, new Vector3(0f, -0.48f, -0.44f),
-                new Vector3(0.09f, 0.72f, 0.06f), _goldMaterial,
-                new Vector3(0f, 0f, 90f));
-            CreateSphere("FootL", visual.transform, new Vector3(-1.28f, -0.78f, 0f),
-                new Vector3(0.38f, 0.24f, 0.48f), _structureMaterial);
-            CreateSphere("FootR", visual.transform, new Vector3(1.28f, -0.78f, 0f),
-                new Vector3(0.38f, 0.24f, 0.48f), _structureMaterial);
+            BuildJumpBumper(visual.transform);
         }
         else
         {
-            CreateSphere("ShieldShell", visual.transform, new Vector3(0f, 0.25f, 0f),
-                new Vector3(1.65f, 1.28f, 0.38f), _structureMaterial);
-            for (int i = -1; i <= 1; i++)
-            {
-                CreateCapsule("ShieldSignal", visual.transform,
-                    new Vector3(i * 0.78f, 0.25f, -0.38f),
-                    new Vector3(0.12f, 0.78f, 0.06f), _coralMaterial,
-                    new Vector3(0f, 0f, -24f));
-            }
-            CreateCylinder("ShieldHub", visual.transform, new Vector3(0f, 0.25f, -0.43f),
-                new Vector3(0.35f, 0.07f, 0.35f), _goldMaterial,
-                new Vector3(90f, 0f, 0f));
+            BuildLaneShield(visual.transform);
         }
+    }
+
+    private void BuildScannerGate(Transform parent)
+    {
+        const float side = 1.38f;
+        const float beamY = 0.68f;
+        CreateCapsule("GatePostL", parent, new Vector3(-side, -0.08f, 0f),
+            new Vector3(0.23f, 0.78f, 0.27f), _structureMaterial);
+        CreateCapsule("GatePostR", parent, new Vector3(side, -0.08f, 0f),
+            new Vector3(0.23f, 0.78f, 0.27f), _structureMaterial);
+        CreateCapsule("GateShoulder", parent, new Vector3(0f, beamY, 0f),
+            new Vector3(0.28f, 1.38f, 0.31f), _structureMaterial,
+            new Vector3(0f, 0f, 90f));
+        CreateSphere("GateJointL", parent, new Vector3(-side, beamY, 0f),
+            new Vector3(0.31f, 0.31f, 0.34f), _deepStructureMaterial);
+        CreateSphere("GateJointR", parent, new Vector3(side, beamY, 0f),
+            new Vector3(0.31f, 0.31f, 0.34f), _deepStructureMaterial);
+        CreateCapsule("ScannerLight", parent, new Vector3(0f, beamY, -0.32f),
+            new Vector3(0.075f, 1.02f, 0.045f), _goldMaterial,
+            new Vector3(0f, 0f, 90f));
+        for (int i = -1; i <= 1; i++)
+        {
+            CreateSphere("ScannerNode", parent,
+                new Vector3(i * 0.62f, beamY, -0.39f),
+                new Vector3(0.12f, 0.12f, 0.065f),
+                i == 0 ? _coralMaterial : _cyanMaterial);
+        }
+    }
+
+    private void BuildJumpBumper(Transform parent)
+    {
+        Vector3 leftFoot = new Vector3(-1.34f, -0.87f, 0f);
+        Vector3 leftCrest = new Vector3(-0.42f, -0.38f, 0f);
+        Vector3 rightCrest = new Vector3(0.42f, -0.38f, 0f);
+        Vector3 rightFoot = new Vector3(1.34f, -0.87f, 0f);
+
+        CreateBeam("BumperRampL", parent, leftFoot, leftCrest,
+            0.24f, _structureMaterial);
+        CreateBeam("BumperCrown", parent, leftCrest, rightCrest,
+            0.27f, _structureMaterial);
+        CreateBeam("BumperRampR", parent, rightCrest, rightFoot,
+            0.24f, _structureMaterial);
+        CreateSphere("BumperJointL", parent, leftCrest,
+            new Vector3(0.27f, 0.27f, 0.31f), _deepStructureMaterial);
+        CreateSphere("BumperJointR", parent, rightCrest,
+            new Vector3(0.27f, 0.27f, 0.31f), _deepStructureMaterial);
+        CreateSphere("BumperFootL", parent, leftFoot,
+            new Vector3(0.34f, 0.20f, 0.44f), _deepStructureMaterial);
+        CreateSphere("BumperFootR", parent, rightFoot,
+            new Vector3(0.34f, 0.20f, 0.44f), _deepStructureMaterial);
+
+        Vector3 signalOffset = new Vector3(0f, 0f, -0.27f);
+        CreateBeam("BumperSignalL", parent,
+            leftFoot + signalOffset, leftCrest + signalOffset,
+            0.065f, _coralMaterial);
+        CreateBeam("BumperSignalC", parent,
+            leftCrest + signalOffset, rightCrest + signalOffset,
+            0.075f, _goldMaterial);
+        CreateBeam("BumperSignalR", parent,
+            rightCrest + signalOffset, rightFoot + signalOffset,
+            0.065f, _coralMaterial);
+    }
+
+    private void BuildLaneShield(Transform parent)
+    {
+        Vector3 center = new Vector3(0f, 0.25f, 0f);
+        CreateSphere("ShieldShell", parent, center,
+            new Vector3(1.62f, 1.28f, 0.34f), _structureMaterial);
+        CreateSphere("ShieldInset", parent, center + new Vector3(0f, 0f, -0.34f),
+            new Vector3(1.36f, 1.03f, 0.17f), _deepStructureMaterial);
+        CreateSphere("ShieldLens", parent, center + new Vector3(0f, 0f, -0.53f),
+            new Vector3(0.70f, 0.82f, 0.075f), _deepStructureMaterial);
+        CreateCapsule("ShieldCore", parent, center + new Vector3(0f, 0f, -0.62f),
+            new Vector3(0.12f, 0.62f, 0.045f), _cyanMaterial);
+        CreateBeam("ShieldChevronL", parent,
+            new Vector3(-0.86f, -0.42f, -0.55f),
+            new Vector3(-0.42f, 0.88f, -0.55f), 0.07f, _goldMaterial);
+        CreateBeam("ShieldChevronR", parent,
+            new Vector3(0.86f, -0.42f, -0.55f),
+            new Vector3(0.42f, 0.88f, -0.55f), 0.07f, _goldMaterial);
+        CreateSphere("ShieldHubL", parent, new Vector3(-1.50f, 0.25f, -0.18f),
+            new Vector3(0.24f, 0.30f, 0.30f), _cyanMaterial);
+        CreateSphere("ShieldHubR", parent, new Vector3(1.50f, 0.25f, -0.18f),
+            new Vector3(0.24f, 0.30f, 0.30f), _cyanMaterial);
     }
 
     private void StyleCharacter()

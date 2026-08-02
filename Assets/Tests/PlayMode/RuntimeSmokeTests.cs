@@ -33,6 +33,70 @@ public sealed class RuntimeSmokeTests
     }
 
     [UnityTest]
+    public IEnumerator StyledGameplayPropsKeepTheirGameplayColliders()
+    {
+        for (int frame = 0; frame < 120 && WorldStyler.Instance == null; frame++)
+            yield return null;
+
+        Assert.IsNotNull(WorldStyler.Instance);
+        GameObject coin = null;
+        var obstacles = new GameObject[3];
+
+        try
+        {
+            coin = new GameObject("VisualTestCoin");
+            BoxCollider coinCollider = coin.AddComponent<BoxCollider>();
+            coinCollider.isTrigger = true;
+            WorldStyler.Instance.StyleCoin(coin);
+
+            Transform coinVisual = coin.transform.Find("StreamlinedVisual");
+            Assert.IsNotNull(coinVisual);
+            Assert.IsNotNull(coinVisual.Find("TokenRim"));
+            Assert.IsNotNull(coinVisual.Find("TokenInset"));
+            Assert.IsNotNull(coinVisual.Find("EnergyCore"));
+            Assert.AreEqual(3, coinVisual.childCount,
+                "Coin trails must keep the lightweight three-renderer style.");
+            Assert.AreSame(coinCollider, coin.GetComponent<BoxCollider>());
+            Assert.IsTrue(coinCollider.isTrigger);
+
+            string[] signatureParts =
+            {
+                "GateShoulder",
+                "BumperCrown",
+                "ShieldShell"
+            };
+            for (int i = 0; i < obstacles.Length; i++)
+            {
+                GameObject obstacle = new GameObject("VisualTestObstacle_" + i);
+                obstacles[i] = obstacle;
+                BoxCollider gameplayCollider = obstacle.AddComponent<BoxCollider>();
+                gameplayCollider.isTrigger = true;
+                Obstacle data = obstacle.AddComponent<Obstacle>();
+                data.type = (ObstacleType)i;
+
+                WorldStyler.Instance.StyleObstacle(obstacle);
+
+                Transform visual = obstacle.transform.Find("StreamlinedVisual");
+                Assert.IsNotNull(visual);
+                Assert.IsNotNull(visual.Find(signatureParts[i]));
+                Assert.AreSame(gameplayCollider,
+                    obstacle.GetComponent<BoxCollider>());
+                Assert.IsTrue(gameplayCollider.isTrigger);
+            }
+
+            yield return null;
+        }
+        finally
+        {
+            if (coin != null) Object.Destroy(coin);
+            foreach (GameObject obstacle in obstacles)
+            {
+                if (obstacle != null) Object.Destroy(obstacle);
+            }
+        }
+    }
+
+    [UnityTest]
     public IEnumerator RestartedRunRecreatesTrackBeforeAutoStart()
     {
         GameManager bootstrapManager = GameManager.Instance;
