@@ -6,13 +6,13 @@ product
 
 ## Users
 
-Tencent Game Creation Competition open AI-track judges and players evaluating both game quality and whether AI is indispensable to the playable experience. They need to understand the controls quickly, train a personal shadow, challenge it in the next run, and observe both the opponent and road plan evolve from their behavior.
+Players and open-source game developers evaluating both game quality and whether AI is indispensable to the playable experience. They need to understand the controls quickly, train a personal shadow, challenge it in the next run, and observe both the opponent and road plan evolve from their behavior.
 
 ## Product Purpose
 
-Deliver an AI-native shadow-racing runner built with Tuanjie Engine for the Tencent Game Creation Competition open AI track. The first run trains an online behavior-cloning model; later runs ask the player to beat a visible, non-colliding opponent modeled on their own action style. A second online model directs road rhythm from the live duel gap, making personal AI competition rather than score accumulation the core loop.
+Deliver an AI-native shadow-racing runner and reusable Tuanjie Engine reference. The first run trains an online behavior-cloning model; later runs ask the player to beat a visible, non-colliding opponent modeled on their own action style. A second online model directs road rhythm from the live duel gap, making personal AI competition rather than score accumulation the core loop.
 
-## Competition Goals
+## Product Goals
 
 - Demonstrate a real runtime behavior model that learns and persists player actions.
 - Make the AI shadow a visible opponent with a formal win/loss result and generations.
