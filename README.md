@@ -1,5 +1,24 @@
 # ECHO//RUN：AI 回声竞速
 
+[![Three-platform Tuanjie CI](https://github.com/eiei-ee/TempleRun/actions/workflows/three-platform-ci.yml/badge.svg)](https://github.com/eiei-ee/TempleRun/actions/workflows/three-platform-ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/eiei-ee/TempleRun)](https://github.com/eiei-ee/TempleRun/releases/latest)
+[![Play WebGL](https://img.shields.io/badge/Play-WebGL-ff8a3d)](https://eiei-ee.github.io/TempleRun/)
+
+> **Project status:** public alpha. The playable loop and three-platform CI are
+> operational; APIs and data formats may still change before 1.0.
+
+ECHO//RUN is an open-source, AI-native endless-runner reference built with
+Tuanjie Engine 2022.3 and C#. It demonstrates online behavior cloning, a
+contextual-bandit track director, deterministic route-safety constraints,
+runtime-generated UI and geometry, object pooling, and reproducible WebGL,
+Windows, and Android builds.
+
+The repository is intended both as a playable game and as a practical example
+for developers exploring Tuanjie/Unity runtime AI and cross-platform delivery.
+It does not depend on a hosted inference service: learning and inference run
+locally in the player.
+
 基于团结引擎（Unity 2022.3）与 C# 开发的 AI 原生 3D 竞速跑酷游戏，支持 WebGL 浏览器即玩与 Android 运行。
 
 > 项目定位：面向腾讯游戏创作大赛 AI 游戏开放赛道的 AI 原生竞速跑酷原型
@@ -76,9 +95,35 @@ AIShadowRunner 使用纯 C# 在线多分类行为克隆模型。输入包含玩�
 ## 本地开发
 
 ```bash
-# 使用团结引擎打开项目
-# 打开 Project 窗口选择本仓库目录
-
-# 运行测试
-# Window → General → Test Runner → Run All
+# Clone, then open the repository root with Tuanjie Engine 2022.3.62t8.
+# Run tests from Window → General → Test Runner → Run All.
 ```
+
+完整环境、测试和构建命令见 [docs/BUILDING.md](docs/BUILDING.md)。
+
+## 开源协作 / Open-source collaboration
+
+| 文档 | 内容 |
+| --- | --- |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 开发流程、测试要求、资源许可规则 |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 运行时架构、AI 边界和安全约束 |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | 已验证能力和公开路线图 |
+| [SECURITY.md](SECURITY.md) | 安全边界和漏洞报告方式 |
+| [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | 字体、音乐和音效来源与许可证 |
+| [MAINTAINERS.md](MAINTAINERS.md) | 维护者、职责与决策流程 |
+
+Bug、兼容性问题和可复用性改进都欢迎通过 GitHub Issues 提交。首次贡献前请先阅读贡献指南；涉及新字体、音频、图像、模型或插件的 PR 必须同时提供来源和再分发许可。
+
+## License / 许可证
+
+The source code in this repository is licensed under the MIT License.
+Third-party assets, including fonts, audio, models, and other media, are
+excluded unless explicitly stated otherwise. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details.
+
+## Releases
+
+The release notes and publishing checklist for the first public version are in
+[docs/releases/v0.1.0.md](docs/releases/v0.1.0.md). Build output, caches, and
+the Unity `Library` directory are intentionally excluded from the repository
+and must not be uploaded as GitHub Release assets.

@@ -42,5 +42,8 @@ acceptance. Client-provided totals must be treated only as claims.
 
 ## Reporting
 
-Report suspected vulnerabilities privately to the repository owner. Include
-the affected revision, platform, reproduction steps, and expected impact.
+Do not open a public issue for an undisclosed vulnerability. Use
+[GitHub private vulnerability reporting](https://github.com/eiei-ee/TempleRun/security/advisories/new)
+and include the affected revision, platform, reproduction steps, expected
+impact, and any suggested mitigation. The maintainer will acknowledge a valid
+report as soon as practical and coordinate disclosure after a fix is ready.
