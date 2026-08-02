@@ -61,7 +61,7 @@ public sealed class RuntimeSmokeTests
 
             string[] signatureParts =
             {
-                "GateShoulder",
+                "ScannerShell",
                 "BumperCrown",
                 "ShieldShell"
             };

@@ -321,29 +321,21 @@ public class WorldStyler : MonoBehaviour
 
     private void BuildScannerGate(Transform parent)
     {
-        const float side = 1.38f;
-        const float beamY = 0.68f;
-        CreateCapsule("GatePostL", parent, new Vector3(-side, -0.08f, 0f),
-            new Vector3(0.23f, 0.78f, 0.27f), _structureMaterial);
-        CreateCapsule("GatePostR", parent, new Vector3(side, -0.08f, 0f),
-            new Vector3(0.23f, 0.78f, 0.27f), _structureMaterial);
-        CreateCapsule("GateShoulder", parent, new Vector3(0f, beamY, 0f),
-            new Vector3(0.28f, 1.38f, 0.31f), _structureMaterial,
+        const float halfWidth = 1.46f;
+        const float archHeight = 1.52f;
+        BuildSegmentedArch("ScannerShell", parent, 0f,
+            halfWidth, archHeight, 6, _structureMaterial,
+            _coralMaterial, 0.23f);
+
+        // A compact floating lens gives the arch a clear front and avoids the
+        // road-sign silhouette of a horizontal bar on two posts.
+        CreateCapsule("ScannerLens", parent,
+            new Vector3(0f, archHeight, -0.27f),
+            new Vector3(0.13f, 0.34f, 0.065f), _goldMaterial,
             new Vector3(0f, 0f, 90f));
-        CreateSphere("GateJointL", parent, new Vector3(-side, beamY, 0f),
-            new Vector3(0.31f, 0.31f, 0.34f), _deepStructureMaterial);
-        CreateSphere("GateJointR", parent, new Vector3(side, beamY, 0f),
-            new Vector3(0.31f, 0.31f, 0.34f), _deepStructureMaterial);
-        CreateCapsule("ScannerLight", parent, new Vector3(0f, beamY, -0.32f),
-            new Vector3(0.075f, 1.02f, 0.045f), _goldMaterial,
-            new Vector3(0f, 0f, 90f));
-        for (int i = -1; i <= 1; i++)
-        {
-            CreateSphere("ScannerNode", parent,
-                new Vector3(i * 0.62f, beamY, -0.39f),
-                new Vector3(0.12f, 0.12f, 0.065f),
-                i == 0 ? _coralMaterial : _cyanMaterial);
-        }
+        CreateSphere("ScannerEye", parent,
+            new Vector3(0f, archHeight, -0.36f),
+            new Vector3(0.18f, 0.18f, 0.075f), _cyanMaterial);
     }
 
     private void BuildJumpBumper(Transform parent)
