@@ -1,9 +1,9 @@
 # ECHO//RUN：AI 回声竞速
 
-[![Three-platform Tuanjie CI](https://github.com/eiei-ee/TempleRun/actions/workflows/three-platform-ci.yml/badge.svg)](https://github.com/eiei-ee/TempleRun/actions/workflows/three-platform-ci.yml)
+[![Three-platform Tuanjie CI](https://github.com/eiei-ee/EchoRun/actions/workflows/three-platform-ci.yml/badge.svg)](https://github.com/eiei-ee/EchoRun/actions/workflows/three-platform-ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/eiei-ee/TempleRun)](https://github.com/eiei-ee/TempleRun/releases/latest)
-[![Play WebGL](https://img.shields.io/badge/Play-WebGL-ff8a3d)](https://eiei-ee.github.io/TempleRun/)
+[![Release](https://img.shields.io/github/v/release/eiei-ee/EchoRun)](https://github.com/eiei-ee/EchoRun/releases/latest)
+[![Play WebGL](https://img.shields.io/badge/Play-WebGL-ff8a3d)](https://eiei-ee.github.io/EchoRun/)
 
 > **Project status:** public alpha. The playable loop, browser demo, and
 > Windows release are available. Automated WebGL, Windows, and Android
@@ -26,7 +26,7 @@ WebGL 浏览器试玩和 Windows x64 正式下载；Android 构建在完成对�
 
 ## 试玩
 
-**浏览器即玩：https://eiei-ee.github.io/TempleRun/**
+**浏览器即玩：https://eiei-ee.github.io/EchoRun/**
 
 支持键盘操作：A/D 或 ← → 左右变道，W 或 ↑ 跳跃，S 或 ↓ 滑铲，Esc 暂停或继续。网页端和桌面端也可按住鼠标拖动，移动端使用触屏滑动并建议横屏游玩。
 
@@ -116,9 +116,9 @@ excluded unless explicitly stated otherwise. See
 
 ## Releases
 
-The current official download is the Windows x64 package in
-[v0.1.0](https://github.com/eiei-ee/TempleRun/releases/tag/v0.1.0). Its scope,
-integrity check, and known limitations are documented in
+The previous release was withdrawn during asset-provenance cleanup. The next
+official download will be `v0.1.1` after its Windows package is rebuilt and
+verified. The withdrawn release record is retained in
 [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md). Build output, caches, and
 the Unity `Library` directory are intentionally excluded from the repository
 and must not be uploaded as GitHub Release assets.
