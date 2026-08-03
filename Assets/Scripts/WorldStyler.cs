@@ -307,92 +307,82 @@ public class WorldStyler : MonoBehaviour
 
         if (data.type == ObstacleType.Low)
         {
-            BuildScannerGate(visual.transform);
+            BuildSlideShutter(visual.transform);
         }
         else if (data.type == ObstacleType.High)
         {
-            BuildJumpBumper(visual.transform);
+            BuildJumpBlock(visual.transform);
         }
         else
         {
-            BuildLaneShield(visual.transform);
+            BuildLaneBulkhead(visual.transform);
         }
     }
 
-    private void BuildScannerGate(Transform parent)
+    private void BuildSlideShutter(Transform parent)
     {
-        const float halfWidth = 1.46f;
-        const float archHeight = 1.52f;
-        BuildSegmentedArch("ScannerShell", parent, 0f,
-            halfWidth, archHeight, 6, _structureMaterial,
-            _coralMaterial, 0.23f);
-
-        // A compact floating lens gives the arch a clear front and avoids the
-        // road-sign silhouette of a horizontal bar on two posts.
-        CreateCapsule("ScannerLens", parent,
-            new Vector3(0f, archHeight, -0.27f),
-            new Vector3(0.13f, 0.34f, 0.065f), _goldMaterial,
+        // A continuous overhead shutter communicates "slide" without leaving
+        // a misleading walk-through gap inside the gameplay collider.
+        CreateCapsule("SlideShutterBody", parent,
+            new Vector3(0f, 0.78f, 0f),
+            new Vector3(0.62f, 1.62f, 0.50f), _structureMaterial,
             new Vector3(0f, 0f, 90f));
-        CreateSphere("ScannerEye", parent,
-            new Vector3(0f, archHeight, -0.36f),
-            new Vector3(0.18f, 0.18f, 0.075f), _cyanMaterial);
+        CreateCapsule("SlideShutterInset", parent,
+            new Vector3(0f, 0.78f, -0.43f),
+            new Vector3(0.40f, 1.43f, 0.08f), _deepStructureMaterial,
+            new Vector3(0f, 0f, 90f));
+        CreateCapsule("SlideShutterSignal", parent,
+            new Vector3(0f, 0.78f, -0.53f),
+            new Vector3(0.10f, 1.24f, 0.045f), _cyanMaterial,
+            new Vector3(0f, 0f, 90f));
+
+        CreateCapsule("SlideShutterPylonL", parent,
+            new Vector3(-1.46f, 0.10f, 0.08f),
+            new Vector3(0.28f, 0.72f, 0.34f), _deepStructureMaterial);
+        CreateCapsule("SlideShutterPylonR", parent,
+            new Vector3(1.46f, 0.10f, 0.08f),
+            new Vector3(0.28f, 0.72f, 0.34f), _deepStructureMaterial);
     }
 
-    private void BuildJumpBumper(Transform parent)
+    private void BuildJumpBlock(Transform parent)
     {
-        Vector3 leftFoot = new Vector3(-1.34f, -0.87f, 0f);
-        Vector3 leftCrest = new Vector3(-0.42f, -0.38f, 0f);
-        Vector3 rightCrest = new Vector3(0.42f, -0.38f, 0f);
-        Vector3 rightFoot = new Vector3(1.34f, -0.87f, 0f);
-
-        CreateBeam("BumperRampL", parent, leftFoot, leftCrest,
-            0.24f, _structureMaterial);
-        CreateBeam("BumperCrown", parent, leftCrest, rightCrest,
-            0.27f, _structureMaterial);
-        CreateBeam("BumperRampR", parent, rightCrest, rightFoot,
-            0.24f, _structureMaterial);
-        CreateSphere("BumperJointL", parent, leftCrest,
-            new Vector3(0.27f, 0.27f, 0.31f), _deepStructureMaterial);
-        CreateSphere("BumperJointR", parent, rightCrest,
-            new Vector3(0.27f, 0.27f, 0.31f), _deepStructureMaterial);
-        CreateSphere("BumperFootL", parent, leftFoot,
-            new Vector3(0.34f, 0.20f, 0.44f), _deepStructureMaterial);
-        CreateSphere("BumperFootR", parent, rightFoot,
-            new Vector3(0.34f, 0.20f, 0.44f), _deepStructureMaterial);
-
-        Vector3 signalOffset = new Vector3(0f, 0f, -0.27f);
-        CreateBeam("BumperSignalL", parent,
-            leftFoot + signalOffset, leftCrest + signalOffset,
-            0.065f, _coralMaterial);
-        CreateBeam("BumperSignalC", parent,
-            leftCrest + signalOffset, rightCrest + signalOffset,
-            0.075f, _goldMaterial);
-        CreateBeam("BumperSignalR", parent,
-            rightCrest + signalOffset, rightFoot + signalOffset,
-            0.065f, _coralMaterial);
+        // One unbroken low body matches the full-width jump collider. There are
+        // no joints, floating nodes or diagonal gaps that look traversable.
+        CreateCapsule("JumpBlockBody", parent,
+            new Vector3(0f, -0.45f, 0f),
+            new Vector3(0.72f, 1.58f, 0.52f), _structureMaterial,
+            new Vector3(0f, 0f, 90f));
+        CreateCapsule("JumpBlockInset", parent,
+            new Vector3(0f, -0.45f, -0.45f),
+            new Vector3(0.46f, 1.39f, 0.08f), _deepStructureMaterial,
+            new Vector3(0f, 0f, 90f));
+        CreateCapsule("JumpBlockSignal", parent,
+            new Vector3(0f, -0.45f, -0.55f),
+            new Vector3(0.11f, 1.20f, 0.045f), _coralMaterial,
+            new Vector3(0f, 0f, 90f));
     }
 
-    private void BuildLaneShield(Transform parent)
+    private void BuildLaneBulkhead(Transform parent)
     {
         Vector3 center = new Vector3(0f, 0.25f, 0f);
-        CreateSphere("ShieldShell", parent, center,
-            new Vector3(1.62f, 1.28f, 0.34f), _structureMaterial);
-        CreateSphere("ShieldInset", parent, center + new Vector3(0f, 0f, -0.34f),
-            new Vector3(1.36f, 1.03f, 0.17f), _deepStructureMaterial);
-        CreateSphere("ShieldLens", parent, center + new Vector3(0f, 0f, -0.53f),
-            new Vector3(0.70f, 0.82f, 0.075f), _deepStructureMaterial);
-        CreateCapsule("ShieldCore", parent, center + new Vector3(0f, 0f, -0.62f),
-            new Vector3(0.12f, 0.62f, 0.045f), _cyanMaterial);
-        CreateBeam("ShieldChevronL", parent,
-            new Vector3(-0.86f, -0.42f, -0.55f),
-            new Vector3(-0.42f, 0.88f, -0.55f), 0.07f, _goldMaterial);
-        CreateBeam("ShieldChevronR", parent,
-            new Vector3(0.86f, -0.42f, -0.55f),
-            new Vector3(0.42f, 0.88f, -0.55f), 0.07f, _goldMaterial);
-        CreateSphere("ShieldHubL", parent, new Vector3(-1.50f, 0.25f, -0.18f),
-            new Vector3(0.24f, 0.30f, 0.30f), _cyanMaterial);
-        CreateSphere("ShieldHubR", parent, new Vector3(1.50f, 0.25f, -0.18f),
-            new Vector3(0.24f, 0.30f, 0.30f), _cyanMaterial);
+        // Sphere scale is the rendered diameter. Match the 3.4 x 2.7 collider
+        // instead of the previous half-width panel.
+        CreateSphere("LaneBulkheadBody", parent, center,
+            new Vector3(3.30f, 2.62f, 0.58f), _structureMaterial);
+        CreateSphere("LaneBulkheadInset", parent,
+            center + new Vector3(0f, 0f, -0.52f),
+            new Vector3(2.82f, 2.16f, 0.18f), _deepStructureMaterial);
+        CreateCapsule("LaneBulkheadCore", parent,
+            center + new Vector3(0f, 0f, -0.67f),
+            new Vector3(0.18f, 0.78f, 0.045f), _cyanMaterial);
+        CreateCapsule("LaneBulkheadRailL", parent,
+            center + new Vector3(-0.72f, 0f, -0.65f),
+            new Vector3(0.10f, 0.72f, 0.045f), _goldMaterial,
+            new Vector3(0f, 0f, -18f));
+        CreateCapsule("LaneBulkheadRailR", parent,
+            center + new Vector3(0.72f, 0f, -0.65f),
+            new Vector3(0.10f, 0.72f, 0.045f), _goldMaterial,
+            new Vector3(0f, 0f, 18f));
     }
 
     private void StyleCharacter()

@@ -61,9 +61,21 @@ public sealed class RuntimeSmokeTests
 
             string[] signatureParts =
             {
-                "ScannerShell",
-                "BumperCrown",
-                "ShieldShell"
+                "SlideShutterBody",
+                "JumpBlockBody",
+                "LaneBulkheadBody"
+            };
+            Vector3[] colliderSizes =
+            {
+                new Vector3(3.4f, 1.8f, 0.7f),
+                new Vector3(3.2f, 0.9f, 0.7f),
+                new Vector3(3.4f, 2.7f, 0.9f)
+            };
+            Vector3[] colliderCenters =
+            {
+                new Vector3(0f, 0.65f, 0f),
+                new Vector3(0f, -0.45f, 0f),
+                new Vector3(0f, 0.25f, 0f)
             };
             for (int i = 0; i < obstacles.Length; i++)
             {
@@ -71,6 +83,8 @@ public sealed class RuntimeSmokeTests
                 obstacles[i] = obstacle;
                 BoxCollider gameplayCollider = obstacle.AddComponent<BoxCollider>();
                 gameplayCollider.isTrigger = true;
+                gameplayCollider.size = colliderSizes[i];
+                gameplayCollider.center = colliderCenters[i];
                 Obstacle data = obstacle.AddComponent<Obstacle>();
                 data.type = (ObstacleType)i;
 
@@ -82,6 +96,12 @@ public sealed class RuntimeSmokeTests
                 Assert.AreSame(gameplayCollider,
                     obstacle.GetComponent<BoxCollider>());
                 Assert.IsTrue(gameplayCollider.isTrigger);
+
+                Bounds visualBounds = CombinedRendererBounds(visual);
+                Assert.GreaterOrEqual(visualBounds.size.x,
+                    gameplayCollider.bounds.size.x * 0.9f,
+                    data.type + " visual must visibly block its collider width.");
+                AssertNoPointLikeObstacleParts(visual);
             }
 
             yield return null;
@@ -92,6 +112,30 @@ public sealed class RuntimeSmokeTests
             foreach (GameObject obstacle in obstacles)
             {
                 if (obstacle != null) Object.Destroy(obstacle);
+            }
+        }
+    }
+
+    private static Bounds CombinedRendererBounds(Transform root)
+    {
+        Renderer[] renderers = root.GetComponentsInChildren<Renderer>();
+        Assert.IsNotEmpty(renderers);
+        Bounds bounds = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+            bounds.Encapsulate(renderers[i].bounds);
+        return bounds;
+    }
+
+    private static void AssertNoPointLikeObstacleParts(Transform visual)
+    {
+        string[] forbiddenNames = { "Node", "Joint", "Hub", "Eye", "Dot" };
+        Transform[] parts = visual.GetComponentsInChildren<Transform>();
+        foreach (Transform part in parts)
+        {
+            foreach (string forbiddenName in forbiddenNames)
+            {
+                Assert.IsFalse(part.name.Contains(forbiddenName),
+                    "Point-like obstacle decoration remains: " + part.name);
             }
         }
     }
