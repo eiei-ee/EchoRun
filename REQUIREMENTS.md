@@ -1,120 +1,52 @@
-﻿# Temple Run 复刻 — 需求文档
+# ECHO//RUN — Current requirements
 
-## 设计原则
-- 这个游戏只需要"跑、躲、吃、死、重来"。凡不能直接支撑这五件事的，都是噪音。
-- 删错比留错强——多余的代码 = 多余的 bug。
+This document describes the current public-alpha scope. It supersedes the
+original prototype notes and avoids presenting ECHO//RUN as an imitation of
+another game.
 
+## Product loop
 
-## 已完成
+The player calibrates the local shadow model in an initial run, then races an
+evolving non-colliding AI shadow in later runs. A contextual-bandit director
+adapts pacing while deterministic validators retain final authority over route
+safety.
 
-### 1. 跑
+## Required player experience
 
-| 需求 | 状态 |
-|------|------|
-| 三车道左右切换（A/D / ← → / 滑动） | ✅ |
-| 无限道路生成（对象池 + 程序化几何体回退） | ✅ |
-| 转弯路段（左右 90°） | ✅ |
-| 速度随时间递增 | ✅ |
-| 距离追踪（HUD 实时显示米数） | ✅ |
+- Three-lane movement, jumping, sliding, obstacle avoidance, collectibles,
+  scoring, death, restart, pause, and persistent local progress.
+- Keyboard, mouse-drag, and touch input, with responsive WebGL and mobile
+  layouts.
+- A locally executed behavior-cloning shadow that trains from player actions
+  and is frozen for the next run.
+- An adaptive track director whose choices cannot produce an impossible route.
+- Clear calibration, progress, win/loss, and error feedback.
 
-### 2. 躲
+## Engineering requirements
 
-| 需求 | 状态 |
-|------|------|
-| 跳跃（W/Space/↑，AnimationCurve 控制） | ✅ |
-| 滑铲（S/Ctrl/↓，碰撞体缩短 + 模型上移补偿） | ✅ |
-| Low 障碍（滑铲通过）/ High 障碍（跳跃通过）/ Barrier 障碍（变道） | ✅ |
-| 障碍物类型随难度递进（前期 Low，中期 High，后期 Barrier） | ✅ |
-| 至少一条安全车道永不全堵 | ✅ |
-| 车道连续性（安全车道每段最多偏移 1 格） | ✅ |
-| 撞障碍触发死亡 | ✅ |
+- Route generation must preserve at least one valid route; learned AI can
+  influence pacing but cannot bypass deterministic safety checks.
+- Recurring runtime track content must use pooling where practical.
+- EditMode and PlayMode regression suites must cover gameplay and restart
+  behavior.
+- WebGL, Windows x64, and Android are build targets. A target may be described
+  as an official download only after its release artifact has been tested and
+  attached to GitHub Releases.
+- Source, dependencies, and bundled assets must have documented redistribution
+  rights. Signing keys, credentials, editor licenses, generated builds, and
+  local training exports must not enter the repository.
 
-### 3. 吃
+## Out of scope for the public alpha
 
-| 需求 | 状态 |
-|------|------|
-| 金币沿路分布，安全车道密集引导，相邻车道稀疏 | ✅ |
-| 收集后消失，每枚 +10 分 | ✅ |
-| 金币总数跨局累加 | ✅ |
+- Online leaderboards, rewards, or any client-trusted competitive scoring.
+- Cloud inference or hosted player telemetry.
+- Claims of platform availability without a tested release artifact.
 
-### 4. 死与结算
+## Source of truth
 
-| 需求 | 状态 |
-|------|------|
-| 死亡慢动作（0.3x，1.2 秒）+ 摄像机震动 | ✅ |
-| 结算面板显示分数 / 金币 / 最高分 / 是否新纪录 | ✅ |
-| PlayerPrefs 持久化最高分和总金币 | ✅ |
-| 重来按钮 + 返回主菜单按钮 | ✅ |
-
-### 5. 暂停
-
-| 需求 | 状态 |
-|------|------|
-| HUD 暂停按钮 → 暂停面板（继续 / 返回主页） | ✅ |
-| 暂停时游戏冻结，Time.timeScale = 0 | ✅ |
-
-### 6. UI
-
-| 需求 | 状态 |
-|------|------|
-| 主菜单（开始游戏 / 设置 / 角色） | ✅ |
-| 设置面板（BGM 音量滑块 / SFX 音量滑块 / 帧率选择；WebGL/Android 最高 60，桌面最高 120） | ✅ |
-| 角色面板（6 套配色预设，PlayerPrefs 记住选择） | ✅ |
-| HUD（左上角分数 / 距离 / 金币 / Buff 倒计时 / 暂停按钮） | ✅ |
-| 暂停面板 | ✅ |
-| 结算面板 | ✅ |
-| 全部 Canvas 运行时自建，不依赖 BuildScene | ✅ |
-| 首局键盘 / 触屏操作引导 | ✅ |
-| 16:9 / 16:10 / 移动端横屏安全区适配 | ✅ |
-| WebGL 画布随浏览器窗口等比缩放，移动端限制 DPR 稳帧 | ✅ |
-| 移动端竖屏保护与触屏按钮 / 滑块热区放大 | ✅ |
-
-### 7. 视听
-
-| 需求 | 状态 |
-|------|------|
-| 跑步/跳跃/滑铲程序化骨骼动画 | ✅ |
-| 摄像机第三人称跟随 + 死亡震屏 | ✅ |
-| 音效钩子（跳跃/滑铲/金币/躲避/死亡/脚步/BGM）全部 null-safe | ✅ |
-| BGM/SFX 音量可调，值存 PlayerPrefs | ✅ |
-| 粒子特效（金币火花 / 跑步尘土 / 滑铲尘土 / 死亡爆炸） | ✅ |
-
-### 8. 输入
-
-| 需求 | 状态 |
-|------|------|
-| 键盘 / 触屏 / 网页及桌面端鼠标拖动全支持 | ✅ |
-| 同帧多键不丢（Queue 队列） | ✅ |
-| 滑动阈值按屏幕短边和 DPI 自适应 | ✅ |
-| 切换标签页、窗口失焦或应用进入后台时自动暂停 | ✅ |
-
-### 9. 鲁棒性
-
-| 需求 | 状态 |
-|------|------|
-| 预制体引用为空时自建程序化几何体 | ✅ |
-| 碰撞检测基于组件，不依赖 Tag | ✅ |
-| 所有跨 Manager 调用 null-safe（`?.`） | ✅ |
-| 零编译 error / warning | ✅ |
-
-
-## 待实现
-
-| # | 需求 | 规模 |
-|---|------|------|
-| 1 | 道具系统（磁铁吸金、加速、护盾、双倍金币） | 中 |
-| 2 | 障碍密度阶段性提升（每 500 分加一档） | 小 |
-| 3 | 高品质模型和贴图替换程序化几何体 | 大 |
-| 4 | 真实音效文件替换程序化音效 | 小 |
-| 5 | 环境视觉变化（每 N 段切换地面/天空色） | 小 |
-
-
-## 技术约定
-
-- 用 `GetComponent<T>()` 不用 `CompareTag`
-- 不设 `gameObject.tag = "..."`（Tag 可能未注册）
-- 编辑器设 SerializedObject 后先 SaveScene 再 Refresh
-- C# 文件 patch 避开第一行（UTF-8 BOM），大段改动直接重写文件
-- Tuanjie meta GUID 不手写
-- SmoothDamp 第四参数是时间，不是 1/速率
-- Manager 调用统一 `Instance?.Method()` 格式
+- [README.md](README.md) for the public project overview and supported
+  downloads.
+- [PRODUCT.md](PRODUCT.md) for the product intent.
+- [docs/ROADMAP.md](docs/ROADMAP.md) for planned work.
+- [docs/BUILDING.md](docs/BUILDING.md) for reproducible setup, tests, and
+  builds.
