@@ -31,3 +31,21 @@ MemoryCaptures/
 
 # Local AI training exports
 TrainingData/
+
+# Local credentials and release signing material
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.mobileprovision
+*.provisionprofile
+key.properties
+google-services.json
+
+# Distributable packages belong in GitHub Releases, not source control
+*.apk
+*.aab
+*.ipa
