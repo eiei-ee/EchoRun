@@ -5,8 +5,10 @@
 [![Release](https://img.shields.io/github/v/release/eiei-ee/TempleRun)](https://github.com/eiei-ee/TempleRun/releases/latest)
 [![Play WebGL](https://img.shields.io/badge/Play-WebGL-ff8a3d)](https://eiei-ee.github.io/TempleRun/)
 
-> **Project status:** public alpha. The playable loop and three-platform CI are
-> operational; APIs and data formats may still change before 1.0.
+> **Project status:** public alpha. The playable loop, browser demo, and
+> Windows release are available. Automated WebGL, Windows, and Android
+> verification runs on the self-hosted CI runner when it is online; APIs and
+> data formats may still change before 1.0.
 
 ECHO//RUN is an open-source, AI-native endless-runner reference built with
 Tuanjie Engine 2022.3 and C#. It demonstrates online behavior cloning, a
@@ -19,7 +21,8 @@ for developers exploring Tuanjie/Unity runtime AI and cross-platform delivery.
 It does not depend on a hosted inference service: learning and inference run
 locally in the player.
 
-基于团结引擎（Unity 2022.3）与 C# 开发的 AI 原生 3D 竞速跑酷游戏，支持 WebGL 浏览器即玩与 Android 运行。
+基于团结引擎（Unity 2022.3）与 C# 开发的 AI 原生 3D 竞速跑酷游戏，提供
+WebGL 浏览器试玩和 Windows x64 正式下载；Android 构建在完成对应版本测试后发布。
 
 ## 试玩
 
@@ -113,7 +116,9 @@ excluded unless explicitly stated otherwise. See
 
 ## Releases
 
-The release notes and publishing checklist for the first public version are in
+The current official download is the Windows x64 package in
+[v0.1.0](https://github.com/eiei-ee/TempleRun/releases/tag/v0.1.0). Its scope,
+integrity check, and known limitations are documented in
 [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md). Build output, caches, and
 the Unity `Library` directory are intentionally excluded from the repository
 and must not be uploaded as GitHub Release assets.
