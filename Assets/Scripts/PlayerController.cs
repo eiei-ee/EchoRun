@@ -9,7 +9,6 @@ public class PlayerController : MonoBehaviour
     [Header("Jump")]
     public float jumpHeight = 3f;
     public float jumpDuration = 0.6f;
-    public AnimationCurve jumpCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
 
     [Header("Slide")]
     public float slideDuration = 0.8f;
@@ -181,14 +180,17 @@ public class PlayerController : MonoBehaviour
         if (IsJumping)
         {
             _jumpTimer += Time.fixedDeltaTime;
-            float progress = _jumpTimer / jumpDuration;
-            float targetHeight = jumpCurve.Evaluate(progress) * jumpHeight;
+            float progress = Mathf.Clamp01(_jumpTimer / Mathf.Max(0.01f, jumpDuration));
+            float targetHeight = EvaluateJumpArc(progress) * jumpHeight;
             float targetY = _jumpGroundY + targetHeight;
             vel.y = (targetY - _rb.position.y) / Time.fixedDeltaTime;
 
             if (progress >= 1f)
             {
                 IsJumping = false;
+                Vector3 landedPosition = _rb.position;
+                landedPosition.y = _jumpGroundY;
+                _rb.position = landedPosition;
                 vel.y = 0;
             }
         }
@@ -383,8 +385,44 @@ public class PlayerController : MonoBehaviour
                    other.gameObject.SetActive(false);
                return;
            }
+           StopBeforeObstacle(other);
            _gm.GameOver();
         }
+   }
+
+   public static float EvaluateJumpArc(float progress)
+   {
+       float t = Mathf.Clamp01(progress);
+       return 4f * t * (1f - t);
+   }
+
+   public static Vector3 CalculateObstacleStopPosition(Bounds obstacleBounds,
+       Vector3 playerPosition, Vector3 forward, float clearance)
+   {
+       Vector3 direction = forward.sqrMagnitude > 0.0001f
+           ? forward.normalized
+           : Vector3.forward;
+       Vector3 extents = obstacleBounds.extents;
+       float projectedHalfDepth = Mathf.Abs(direction.x) * extents.x
+                                  + Mathf.Abs(direction.y) * extents.y
+                                  + Mathf.Abs(direction.z) * extents.z;
+       float obstacleFront = Vector3.Dot(obstacleBounds.center, direction)
+                             - projectedHalfDepth;
+       float safeProjection = obstacleFront - Mathf.Max(0f, clearance);
+       float correction = safeProjection - Vector3.Dot(playerPosition, direction);
+       return correction < 0f
+           ? playerPosition + direction * correction
+           : playerPosition;
+   }
+
+   void StopBeforeObstacle(Collider obstacle)
+   {
+       float clearance = _capsuleCollider != null
+           ? _capsuleCollider.radius + 0.05f
+           : 0.45f;
+       _rb.position = CalculateObstacleStopPosition(
+           obstacle.bounds, _rb.position, ForwardDirection, clearance);
+       _rb.velocity = Vector3.zero;
    }
 
    float GetColliderBottomY()

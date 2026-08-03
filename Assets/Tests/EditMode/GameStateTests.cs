@@ -736,6 +736,49 @@ public class GameStateTests
     }
 
     [Test]
+    public void PlayerJumpArcLandsWithinConfiguredDuration()
+    {
+        Assert.AreEqual(0f, PlayerController.EvaluateJumpArc(0f), 0.0001f);
+        Assert.AreEqual(1f, PlayerController.EvaluateJumpArc(0.5f), 0.0001f);
+        Assert.AreEqual(0f, PlayerController.EvaluateJumpArc(1f), 0.0001f);
+    }
+
+    [Test]
+    public void ObstacleRowsLeaveAFullJumpAndRecoveryWindowAtMaximumSpeed()
+    {
+        float spacing = TrackSpawnRules.MinimumObstacleRowSpacing(40f, 0.6f, 20f);
+
+        Assert.AreEqual(36f, spacing, 0.001f);
+        Assert.IsFalse(TrackSpawnRules.CanSpawnObstacleRow(35.9f, 0f, spacing));
+        Assert.IsTrue(TrackSpawnRules.CanSpawnObstacleRow(36f, 0f, spacing));
+    }
+
+    [Test]
+    public void GeneratedObstacleTypesExcludeAmbiguousFullHeightBarrier()
+    {
+        for (int difficultyStep = 0; difficultyStep <= 10; difficultyStep++)
+        {
+            for (int rollStep = 0; rollStep <= 10; rollStep++)
+            {
+                int type = TrackSpawnRules.SelectObstaclePrefabIndex(
+                    difficultyStep / 10f, rollStep / 10f);
+                Assert.That(type, Is.InRange(0, 1));
+            }
+        }
+    }
+
+    [Test]
+    public void FailedCollisionStopsPlayerInFrontOfObstacle()
+    {
+        Bounds obstacle = new Bounds(
+            new Vector3(0f, 1f, 10f), new Vector3(3.4f, 2.7f, 0.9f));
+        Vector3 stopped = PlayerController.CalculateObstacleStopPosition(
+            obstacle, new Vector3(0f, 1f, 10.2f), Vector3.forward, 0.45f);
+
+        Assert.LessOrEqual(stopped.z, obstacle.min.z - 0.45f + 0.0001f);
+    }
+
+    [Test]
     public void TrackObstacleFairnessTargetsStarvedEdgeLane()
     {
         int[] drought = { 1, 0, 8 };

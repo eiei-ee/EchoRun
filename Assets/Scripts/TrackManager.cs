@@ -57,6 +57,7 @@ public class TrackManager : MonoBehaviour
     private int _obstacleFreeSegments;
     private int _straightSegmentsSpawned;
     private readonly int[] _laneObstacleDrought = new int[3];
+    private float _lastObstacleRouteDistance = float.NegativeInfinity;
     private int _straightSegmentsSinceLastTurn;
     private float _plannedDistance;
     private Transform _player;
@@ -579,9 +580,29 @@ public class TrackManager : MonoBehaviour
             if (obsZ > end - 1f)
                 obsZ = coinZ - 3f - AIRunRandom.Range(0f, 3f);
             obsZ = Mathf.Clamp(obsZ, buffer + 1f, end - 1f);
-            if (SpawnObstacleRow(
+            TrackSegmentData segmentData = segment.GetComponent<TrackSegmentData>();
+            float rowRouteDistance = (segmentData != null
+                ? segmentData.routeDistance
+                : _plannedDistance) + obsZ;
+            float currentSpeed = GameManager.Instance != null
+                ? GameManager.Instance.CurrentSpeed
+                : 10f;
+            PlayerController playerController = _player != null
+                ? _player.GetComponent<PlayerController>()
+                : null;
+            float jumpDuration = playerController != null
+                ? playerController.jumpDuration
+                : 0.6f;
+            float minimumSpacing = TrackSpawnRules.MinimumObstacleRowSpacing(
+                currentSpeed, jumpDuration, segmentLength);
+            if (TrackSpawnRules.CanSpawnObstacleRow(
+                    rowRouteDistance, _lastObstacleRouteDistance, minimumSpacing)
+                && SpawnObstacleRow(
                     segment, obsZ, diff, safeLane, plan.maxBlockedLanes) > 0)
+            {
                 _obstacleFreeSegments = 0;
+                _lastObstacleRouteDistance = rowRouteDistance;
+            }
         }
    }
 
@@ -679,19 +700,11 @@ public class TrackManager : MonoBehaviour
        {
            int lane = lanes[i];
 
-            // Progressive obstacle types: harder types appear at higher difficulty
-           int type;
-            if (difficulty < 0.3f)
-                type = 0; // early game: only Low obstacles
-            else if (difficulty < 0.6f)
-                type = AIRunRandom.Value < 0.35f ? 1 : 0; // mid game: Low + High
-            else
-                type = AIRunRandom.Value < 0.3f
-                    ? 2
-                    : (AIRunRandom.Value < 0.5f ? 1 : 0); // late: all types
-
-            // Never put a Barrier when only 1 lane is blocked (can't dodge)
-            if (blocked == 1 && type == 2) type = 1;
+            // Full-height barriers were visually ambiguous and could create
+            // jump sequences with no recoverable timing window. Lane changes
+            // remain meaningful because every row still preserves a safe lane.
+            int type = TrackSpawnRules.SelectObstaclePrefabIndex(
+                difficulty, AIRunRandom.Value);
 
             if (SpawnObstacleAt(
                     segment, lane,

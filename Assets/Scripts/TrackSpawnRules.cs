@@ -28,6 +28,32 @@ public static class TrackSpawnRules
         return chanceRoll < Mathf.Clamp01(chance);
     }
 
+    public static float MinimumObstacleRowSpacing(float speed,
+        float jumpDuration, float segmentLength)
+    {
+        float actionRecoveryDistance = Mathf.Max(1f, speed)
+                                       * (Mathf.Max(0.2f, jumpDuration) + 0.3f);
+        return Mathf.Max(Mathf.Max(1f, segmentLength) * 1.25f,
+            actionRecoveryDistance);
+    }
+
+    public static bool CanSpawnObstacleRow(float routeDistance,
+        float previousRouteDistance, float minimumSpacing)
+    {
+        if (float.IsNegativeInfinity(previousRouteDistance)) return true;
+        return routeDistance - previousRouteDistance
+               >= Mathf.Max(0f, minimumSpacing);
+    }
+
+    public static int SelectObstaclePrefabIndex(float difficulty, float typeRoll)
+    {
+        float normalizedDifficulty = Mathf.Clamp01(difficulty);
+        if (normalizedDifficulty < 0.3f) return 0;
+
+        float highObstacleChance = normalizedDifficulty < 0.6f ? 0.35f : 0.5f;
+        return Mathf.Clamp01(typeRoll) < highObstacleChance ? 1 : 0;
+    }
+
     public static int ChooseFairSafeLane(int proposedLane, int previousSafeLane,
         int[] laneObstacleDrought)
     {
