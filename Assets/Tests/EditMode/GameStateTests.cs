@@ -746,11 +746,11 @@ public class GameStateTests
     [Test]
     public void ObstacleRowsLeaveAFullJumpAndRecoveryWindowAtMaximumSpeed()
     {
-        float spacing = TrackSpawnRules.MinimumObstacleRowSpacing(40f, 0.6f, 20f);
+        float spacing = TrackSpawnRules.MinimumObstacleRowSpacing(40f, 0.9f, 20f);
 
-        Assert.AreEqual(36f, spacing, 0.001f);
-        Assert.IsFalse(TrackSpawnRules.CanSpawnObstacleRow(35.9f, 0f, spacing));
-        Assert.IsTrue(TrackSpawnRules.CanSpawnObstacleRow(36f, 0f, spacing));
+        Assert.AreEqual(48f, spacing, 0.001f);
+        Assert.IsFalse(TrackSpawnRules.CanSpawnObstacleRow(47.9f, 0f, spacing));
+        Assert.IsTrue(TrackSpawnRules.CanSpawnObstacleRow(48f, 0f, spacing));
     }
 
     [Test]

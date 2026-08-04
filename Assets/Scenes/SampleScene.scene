@@ -376,7 +376,7 @@ MonoBehaviour:
   laneDistance: 3
   laneSwitchSpeed: 20
   jumpHeight: 3
-  jumpDuration: 0.6
+  jumpDuration: 0.9
   jumpCurve:
     serializedVersion: 2
     m_Curve:

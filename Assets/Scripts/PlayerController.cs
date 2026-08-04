@@ -8,7 +8,7 @@ public class PlayerController : MonoBehaviour
 
     [Header("Jump")]
     public float jumpHeight = 3f;
-    public float jumpDuration = 0.6f;
+    public float jumpDuration = 0.9f;
 
     [Header("Slide")]
     public float slideDuration = 0.8f;
@@ -44,6 +44,8 @@ public class PlayerController : MonoBehaviour
     private GameManager _gm;
     private InputManager _input;
     private TrackManager _trackMgr;
+    private readonly RaycastHit[] _obstacleSweepHits = new RaycastHit[8];
+    private Collider _lastSweptObstacle;
 
     private const float GROUND_RAY_DIST = 0.3f;
 
@@ -158,6 +160,9 @@ public class PlayerController : MonoBehaviour
         UpdateForwardDirection();
 
         Vector3 forward = ForwardDirection;
+        SweepForObstacleContact(forward);
+        if (_gm.State != GameState.Playing || _gm.IsDeathSequence) return;
+
         Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
 
         Vector3 vel = _rb.velocity;
@@ -350,9 +355,72 @@ public class PlayerController : MonoBehaviour
         }
 
         Obstacle obs = other.GetComponent<Obstacle>();
-        if (obs != null)
-        {
-            if (obs.type == ObstacleType.Low && IsSliding)
+        if (obs != null && other != _lastSweptObstacle)
+            HandleObstacleContact(other, obs);
+   }
+
+   void SweepForObstacleContact(Vector3 forward)
+   {
+       if (_capsuleCollider == null || forward.sqrMagnitude < 0.0001f) return;
+
+       if (_lastSweptObstacle != null)
+       {
+           Vector3 offset = _lastSweptObstacle.bounds.center - _rb.position;
+           if (Vector3.Dot(offset, forward) <= 0f)
+               _lastSweptObstacle = null;
+       }
+
+       GetCapsuleSweepShape(out Vector3 pointA, out Vector3 pointB,
+           out float radius);
+       float distance = _gm.CurrentSpeed * Time.fixedDeltaTime + 0.05f;
+       int hitCount = Physics.CapsuleCastNonAlloc(pointA, pointB, radius,
+           forward.normalized, _obstacleSweepHits, distance,
+           Physics.AllLayers, QueryTriggerInteraction.Collide);
+
+       Collider closestObstacle = null;
+       float closestDistance = float.MaxValue;
+       for (int i = 0; i < hitCount; i++)
+       {
+           Collider candidate = _obstacleSweepHits[i].collider;
+           if (candidate == null || candidate == _lastSweptObstacle) continue;
+           if (candidate.GetComponent<Obstacle>() == null) continue;
+           if (_obstacleSweepHits[i].distance < closestDistance)
+           {
+               closestObstacle = candidate;
+               closestDistance = _obstacleSweepHits[i].distance;
+           }
+       }
+
+       if (closestObstacle == null) return;
+
+       _lastSweptObstacle = closestObstacle;
+       HandleObstacleContact(closestObstacle,
+           closestObstacle.GetComponent<Obstacle>());
+   }
+
+   void GetCapsuleSweepShape(out Vector3 pointA, out Vector3 pointB,
+       out float radius)
+   {
+       Vector3 scale = transform.lossyScale;
+       float maxScale = Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.y),
+           Mathf.Abs(scale.z));
+       radius = _capsuleCollider.radius * maxScale;
+       Vector3 axis = _capsuleCollider.direction == 0
+           ? transform.right
+           : (_capsuleCollider.direction == 2 ? transform.forward : transform.up);
+       float height = _capsuleCollider.height * maxScale;
+       float pointOffset = Mathf.Max(0f, height * 0.5f - radius);
+       Vector3 center = transform.TransformPoint(_capsuleCollider.center);
+       pointA = center + axis * pointOffset;
+       pointB = center - axis * pointOffset;
+   }
+
+   void HandleObstacleContact(Collider other, Obstacle obs)
+   {
+       if (obs == null || _gm == null || _gm.State != GameState.Playing
+           || _gm.IsDeathSequence) return;
+
+       if (obs.type == ObstacleType.Low && IsSliding)
             {
                 AIPlayerSkillEstimator.RecordObstacleOutcome(
                     obs.type, true);
@@ -387,7 +455,6 @@ public class PlayerController : MonoBehaviour
            }
            StopBeforeObstacle(other);
            _gm.GameOver();
-        }
    }
 
    public static float EvaluateJumpArc(float progress)
