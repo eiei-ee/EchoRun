@@ -682,7 +682,7 @@ public class GameStateTests
         GameObject owner = new GameObject("Segment");
         _objects.Add(owner);
 
-        GameObject otherLanePrefab = CreateObstaclePrefab("OtherLane", ObstacleType.Low);
+        GameObject otherLanePrefab = CreateObstaclePrefab("OtherLane", ObstacleType.Barrier);
         GameObject ownLanePrefab = CreateObstaclePrefab("OwnLane", ObstacleType.High);
         InvokePrivate(manager, "SpawnDynamic", otherLanePrefab, owner,
             new Vector3(-manager.laneDistance, 1f, 1f), Quaternion.identity);
@@ -983,6 +983,46 @@ public class GameStateTests
         Assert.AreEqual(10f, velocity.z, 0.0001f);
         Assert.Greater(velocity.magnitude, 10f,
             "Diagonal sweep distance must exceed forward-only distance.");
+    }
+
+    [Test]
+    public void SlideShutterSpawnsAtTrackCenterForEveryRequestedLane()
+    {
+        TrackManager manager = Create<TrackManager>("TrackManager");
+        GameObject segment = new GameObject("StraightSegment");
+        _objects.Add(segment);
+        GameObject low = CreateObstaclePrefab("Low", ObstacleType.Low);
+        GameObject high = CreateObstaclePrefab("High", ObstacleType.High);
+        GameObject barrier = CreateObstaclePrefab("Barrier", ObstacleType.Barrier);
+        manager.obstaclePrefabs = new[] { low, high, barrier };
+
+        Assert.IsTrue((bool)InvokePrivate(
+            manager, "SpawnObstacleAt", segment, 0, 5f, 0));
+        Assert.AreEqual(1, segment.transform.childCount);
+        Assert.AreEqual(0f, segment.transform.GetChild(0).position.x, 0.0001f,
+            "A full-track shutter must be centered even when a side lane requested it.");
+    }
+
+    [Test]
+    public void SlideShutterIsUpcomingInEveryLane()
+    {
+        TrackManager manager = Create<TrackManager>("TrackManager");
+        GameObject owner = new GameObject("Segment");
+        _objects.Add(owner);
+        GameObject low = CreateObstaclePrefab("FullTrackLow", ObstacleType.Low);
+        InvokePrivate(manager, "SpawnDynamic", low, owner,
+            new Vector3(0f, 1f, 4f), Quaternion.identity);
+
+        for (int lane = 0; lane < 3; lane++)
+        {
+            Vector3 position = new Vector3((lane - 1) * manager.laneDistance,
+                0f, 0f);
+            Assert.IsTrue(manager.TryGetUpcomingObstacleInLane(
+                position, Vector3.forward, lane, new HashSet<int>(),
+                out _, out ObstacleType type, out _),
+                "The slide shutter must be detected from lane " + lane + ".");
+            Assert.AreEqual(ObstacleType.Low, type);
+        }
     }
 
     private T Create<T>(string name) where T : Component

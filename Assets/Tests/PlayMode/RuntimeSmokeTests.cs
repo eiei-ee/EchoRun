@@ -67,7 +67,7 @@ public sealed class RuntimeSmokeTests
             };
             Vector3[] colliderSizes =
             {
-                new Vector3(2.8f, 1.8f, 0.7f),
+                new Vector3(8.6f, 1.8f, 0.7f),
                 new Vector3(3.2f, 0.9f, 0.7f),
                 new Vector3(3.4f, 2.7f, 0.9f)
             };
@@ -106,8 +106,10 @@ public sealed class RuntimeSmokeTests
                     data.type + " visual must not extend beyond its collider.");
                 if (data.type == ObstacleType.Low)
                 {
-                    Assert.LessOrEqual(gameplayCollider.bounds.size.x, 3f,
-                        "The slide shutter must stay inside one 3m lane.");
+                    Assert.GreaterOrEqual(gameplayCollider.bounds.size.x, 8.4f,
+                        "The slide shutter must cover all three lanes.");
+                    Assert.LessOrEqual(gameplayCollider.bounds.size.x, 9f,
+                        "The slide shutter must stay inside the 9m track.");
                 }
                 AssertNoPointLikeObstacleParts(visual);
             }

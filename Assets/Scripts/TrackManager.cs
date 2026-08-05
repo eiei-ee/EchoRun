@@ -248,6 +248,8 @@ public class TrackManager : MonoBehaviour
             float laneDelta = Vector3.Dot(offset, right) / Mathf.Max(0.1f, laneDistance);
             int candidateLane = Mathf.Clamp(
                 currentLane + Mathf.RoundToInt(laneDelta), 0, 2);
+            if (obstacle.type == ObstacleType.Low)
+                candidateLane = currentLane;
             if (currentLaneOnly && candidateLane != currentLane) continue;
 
             Vector3 obstaclePosition = entry.instance.transform.position;
@@ -683,7 +685,8 @@ public class TrackManager : MonoBehaviour
 
    // ---- obstacle patterns ----
 
-    // Guarantees at least 1 lane is always open
+    // Lane obstacles preserve an open lane. A slide shutter spans the track,
+    // but remains recoverable from every lane by sliding.
     int SpawnObstacleRow(GameObject segment, float obsZ, float difficulty, int safeLane,
         int maxBlockedLanes)
     {
@@ -706,6 +709,21 @@ public class TrackManager : MonoBehaviour
             int type = TrackSpawnRules.SelectObstaclePrefabIndex(
                 difficulty, AIRunRandom.Value);
 
+            if (type == 0)
+            {
+                if (spawned > 0)
+                    type = 1;
+                else if (SpawnObstacleAt(segment, 1,
+                             obsZ + AIRunRandom.Range(-0.8f, 0.8f), type))
+                {
+                    for (int droughtLane = 0;
+                         droughtLane < _laneObstacleDrought.Length;
+                         droughtLane++)
+                        _laneObstacleDrought[droughtLane] = 0;
+                    return 1;
+                }
+            }
+
             if (SpawnObstacleAt(
                     segment, lane,
                     obsZ + AIRunRandom.Range(-0.8f, 0.8f), type))
@@ -723,7 +741,7 @@ public class TrackManager : MonoBehaviour
             || prefabIndex >= obstaclePrefabs.Length || obstaclePrefabs[prefabIndex] == null)
             return false;
 
-        float x = (lane - 1) * laneDistance;
+        float x = prefabIndex == 0 ? 0f : (lane - 1) * laneDistance;
         Vector3 lp = new Vector3(x, 1f, z);
         Vector3 wp = segment.transform.TransformPoint(lp);
         Quaternion rot = segment.transform.rotation;
@@ -963,7 +981,7 @@ public class TrackManager : MonoBehaviour
     GameObject[] CreateProcObstacles()
     {
         ObstacleType[] types = { ObstacleType.Low, ObstacleType.High, ObstacleType.Barrier };
-        Vector3[] sizes  = { new Vector3(3f, 1f, 0.6f), new Vector3(0.8f, 3.5f, 0.6f), new Vector3(3.5f, 2.5f, 0.8f) };
+        Vector3[] sizes  = { new Vector3(8.6f, 1f, 0.6f), new Vector3(0.8f, 3.5f, 0.6f), new Vector3(3.5f, 2.5f, 0.8f) };
         Color[] colors    = { new Color(1f, 0.45f, 0.1f), new Color(0.85f, 0.15f, 0.05f), new Color(0.9f, 0.25f, 0.15f) };
         Shader sh = Shader.Find("Standard");
         if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
