@@ -986,7 +986,7 @@ public class GameStateTests
     }
 
     [Test]
-    public void SlideShutterSpawnsAtTrackCenterForEveryRequestedLane()
+    public void SlideShutterSpawnsInTheRequestedLane()
     {
         TrackManager manager = Create<TrackManager>("TrackManager");
         GameObject segment = new GameObject("StraightSegment");
@@ -999,29 +999,31 @@ public class GameStateTests
         Assert.IsTrue((bool)InvokePrivate(
             manager, "SpawnObstacleAt", segment, 0, 5f, 0));
         Assert.AreEqual(1, segment.transform.childCount);
-        Assert.AreEqual(0f, segment.transform.GetChild(0).position.x, 0.0001f,
-            "A full-track shutter must be centered even when a side lane requested it.");
+        Assert.AreEqual(-manager.laneDistance,
+            segment.transform.GetChild(0).position.x, 0.0001f,
+            "A lane-sized shutter must remain in its requested lane.");
     }
 
     [Test]
-    public void SlideShutterIsUpcomingInEveryLane()
+    public void SlideShutterIsUpcomingOnlyInItsLane()
     {
         TrackManager manager = Create<TrackManager>("TrackManager");
         GameObject owner = new GameObject("Segment");
         _objects.Add(owner);
         GameObject low = CreateObstaclePrefab("FullTrackLow", ObstacleType.Low);
         InvokePrivate(manager, "SpawnDynamic", low, owner,
-            new Vector3(0f, 1f, 4f), Quaternion.identity);
+            new Vector3(-manager.laneDistance, 1f, 4f), Quaternion.identity);
 
         for (int lane = 0; lane < 3; lane++)
         {
             Vector3 position = new Vector3((lane - 1) * manager.laneDistance,
                 0f, 0f);
-            Assert.IsTrue(manager.TryGetUpcomingObstacleInLane(
+            bool found = manager.TryGetUpcomingObstacleInLane(
                 position, Vector3.forward, lane, new HashSet<int>(),
-                out _, out ObstacleType type, out _),
-                "The slide shutter must be detected from lane " + lane + ".");
-            Assert.AreEqual(ObstacleType.Low, type);
+                out _, out ObstacleType type, out _);
+            Assert.AreEqual(lane == 0, found,
+                "The slide shutter lane query was wrong for lane " + lane + ".");
+            if (found) Assert.AreEqual(ObstacleType.Low, type);
         }
     }
 

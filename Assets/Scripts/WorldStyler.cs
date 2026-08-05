@@ -325,22 +325,22 @@ public class WorldStyler : MonoBehaviour
         // a misleading walk-through gap inside the gameplay collider.
         CreateCapsule("SlideShutterBody", parent,
             new Vector3(0f, 0.78f, 0f),
-            new Vector3(0.62f, 4.20f, 0.50f), _structureMaterial,
+            new Vector3(0.62f, 1.65f, 0.50f), _structureMaterial,
             new Vector3(0f, 0f, 90f));
         CreateCapsule("SlideShutterInset", parent,
             new Vector3(0f, 0.78f, -0.43f),
-            new Vector3(0.40f, 4.00f, 0.08f), _deepStructureMaterial,
+            new Vector3(0.40f, 1.43f, 0.08f), _deepStructureMaterial,
             new Vector3(0f, 0f, 90f));
         CreateCapsule("SlideShutterSignal", parent,
             new Vector3(0f, 0.78f, -0.53f),
-            new Vector3(0.10f, 3.70f, 0.045f), _cyanMaterial,
+            new Vector3(0.10f, 1.24f, 0.045f), _cyanMaterial,
             new Vector3(0f, 0f, 90f));
 
         CreateCapsule("SlideShutterPylonL", parent,
-            new Vector3(-4.00f, 0.10f, 0.08f),
+            new Vector3(-1.46f, 0.10f, 0.08f),
             new Vector3(0.28f, 0.72f, 0.34f), _deepStructureMaterial);
         CreateCapsule("SlideShutterPylonR", parent,
-            new Vector3(4.00f, 0.10f, 0.08f),
+            new Vector3(1.46f, 0.10f, 0.08f),
             new Vector3(0.28f, 0.72f, 0.34f), _deepStructureMaterial);
     }
 
