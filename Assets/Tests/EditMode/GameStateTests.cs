@@ -970,6 +970,21 @@ public class GameStateTests
             "The same obstacle contact must not be processed twice.");
     }
 
+    [Test]
+    public void ObstacleSweepIncludesLaneSwitchMovement()
+    {
+        Vector3 velocity = PlayerController.CalculatePlanarVelocity(
+            Vector3.forward, 10f, Vector3.right, 0f, 3f, 20f, 0.02f,
+            out float nextOffset);
+
+        Assert.AreEqual(0.4f, nextOffset, 0.0001f);
+        Assert.AreEqual(20f, velocity.x, 0.0001f,
+            "The sweep must include lateral lane-switch movement.");
+        Assert.AreEqual(10f, velocity.z, 0.0001f);
+        Assert.Greater(velocity.magnitude, 10f,
+            "Diagonal sweep distance must exceed forward-only distance.");
+    }
+
     private T Create<T>(string name) where T : Component
     {
         GameObject go = new GameObject(name);

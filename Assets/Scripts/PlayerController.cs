@@ -161,26 +161,22 @@ public class PlayerController : MonoBehaviour
         UpdateForwardDirection();
 
         Vector3 forward = ForwardDirection;
-        SweepForObstacleContact(forward);
-        if (_gm.State != GameState.Playing || _gm.IsDeathSequence) return;
-
         Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
-
-        Vector3 vel = _rb.velocity;
-
-        // Forward speed in facing direction
-        Vector3 forwardVel = forward * _gm.CurrentSpeed;
-        vel.x = forwardVel.x;
-        vel.z = forwardVel.z;
 
         // Lane switching - use tracked scalar offset, not world position projection
         float targetLateral = (CurrentLane - 1) * laneDistance;
         float currentOffset = _laneOffset;
-        _laneOffset = Mathf.MoveTowards(currentOffset, targetLateral,
-                                         laneSwitchSpeed * Time.fixedDeltaTime);
-        float lateralVel = (_laneOffset - currentOffset) / Time.fixedDeltaTime;
-        vel.x += right.x * lateralVel;
-        vel.z += right.z * lateralVel;
+        Vector3 planarVelocity = CalculatePlanarVelocity(forward,
+            _gm.CurrentSpeed, right, currentOffset, targetLateral,
+            laneSwitchSpeed, Time.fixedDeltaTime, out float nextOffset);
+
+        SweepForObstacleContact(planarVelocity);
+        if (_gm.State != GameState.Playing || _gm.IsDeathSequence) return;
+
+        _laneOffset = nextOffset;
+        Vector3 vel = _rb.velocity;
+        vel.x = planarVelocity.x;
+        vel.z = planarVelocity.z;
 
         // Jump
         if (IsJumping)
@@ -360,14 +356,14 @@ public class PlayerController : MonoBehaviour
             HandleObstacleContact(other, obs);
    }
 
-   void SweepForObstacleContact(Vector3 forward)
+   void SweepForObstacleContact(Vector3 movement)
    {
-       if (_capsuleCollider == null || forward.sqrMagnitude < 0.0001f) return;
+       if (_capsuleCollider == null || movement.sqrMagnitude < 0.0001f) return;
 
        if (_lastSweptObstacle != null)
        {
            Vector3 offset = _lastSweptObstacle.bounds.center - _rb.position;
-           if (Vector3.Dot(offset, forward) <= 0f)
+           if (Vector3.Dot(offset, ForwardDirection) <= 0f)
                _lastSweptObstacle = null;
        }
 
@@ -390,9 +386,9 @@ public class PlayerController : MonoBehaviour
            return;
        }
 
-       float distance = _gm.CurrentSpeed * Time.fixedDeltaTime + 0.05f;
+       float distance = movement.magnitude * Time.fixedDeltaTime + 0.05f;
        int hitCount = Physics.CapsuleCastNonAlloc(pointA, pointB, radius,
-           forward.normalized, _obstacleSweepHits, distance,
+           movement.normalized, _obstacleSweepHits, distance,
            Physics.AllLayers, QueryTriggerInteraction.Collide);
 
        Collider closestObstacle = null;
@@ -494,6 +490,19 @@ public class PlayerController : MonoBehaviour
    {
        float t = Mathf.Clamp01(progress);
        return 4f * t * (1f - t);
+   }
+
+   public static Vector3 CalculatePlanarVelocity(Vector3 forward,
+       float forwardSpeed, Vector3 right, float currentOffset,
+       float targetOffset, float switchSpeed, float fixedDeltaTime,
+       out float nextOffset)
+   {
+       float deltaTime = Mathf.Max(0.0001f, fixedDeltaTime);
+       nextOffset = Mathf.MoveTowards(currentOffset, targetOffset,
+           Mathf.Max(0f, switchSpeed) * deltaTime);
+       float lateralSpeed = (nextOffset - currentOffset) / deltaTime;
+       return forward.normalized * Mathf.Max(0f, forwardSpeed)
+              + right.normalized * lateralSpeed;
    }
 
    public static Vector3 CalculateObstacleStopPosition(Bounds obstacleBounds,
