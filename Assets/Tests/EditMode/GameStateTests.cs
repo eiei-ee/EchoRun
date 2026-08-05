@@ -947,6 +947,29 @@ public class GameStateTests
         Assert.AreEqual(0f, GetPrivateField<float>(runner, "_ghostStumbleTimer"));
     }
 
+    [Test]
+    public void OverlapFallbackFindsObstacleOnColliderParent()
+    {
+        GameObject obstacleRoot = new GameObject("PooledObstacleRoot");
+        _objects.Add(obstacleRoot);
+        obstacleRoot.AddComponent<Obstacle>().type = ObstacleType.Low;
+
+        GameObject colliderChild = new GameObject("GameplayTrigger");
+        _objects.Add(colliderChild);
+        colliderChild.transform.SetParent(obstacleRoot.transform, false);
+        BoxCollider trigger = colliderChild.AddComponent<BoxCollider>();
+        trigger.isTrigger = true;
+
+        Collider found = PlayerController.FindObstacleCollider(
+            new Collider[] { null, trigger }, 2, null);
+
+        Assert.AreSame(trigger, found,
+            "An already-overlapping pooled obstacle must still be detected.");
+        Assert.IsNull(PlayerController.FindObstacleCollider(
+            new Collider[] { trigger }, 1, trigger),
+            "The same obstacle contact must not be processed twice.");
+    }
+
     private T Create<T>(string name) where T : Component
     {
         GameObject go = new GameObject(name);

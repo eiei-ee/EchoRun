@@ -45,6 +45,7 @@ public class PlayerController : MonoBehaviour
     private InputManager _input;
     private TrackManager _trackMgr;
     private readonly RaycastHit[] _obstacleSweepHits = new RaycastHit[8];
+    private readonly Collider[] _obstacleOverlapHits = new Collider[8];
     private Collider _lastSweptObstacle;
 
     private const float GROUND_RAY_DIST = 0.3f;
@@ -354,7 +355,7 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        Obstacle obs = other.GetComponent<Obstacle>();
+        Obstacle obs = other.GetComponentInParent<Obstacle>();
         if (obs != null && other != _lastSweptObstacle)
             HandleObstacleContact(other, obs);
    }
@@ -372,6 +373,23 @@ public class PlayerController : MonoBehaviour
 
        GetCapsuleSweepShape(out Vector3 pointA, out Vector3 pointB,
            out float radius);
+
+       // CapsuleCast does not report colliders that already overlap the
+       // capsule. Pooled triggers and low frame rates can place the player
+       // inside an obstacle before this check runs, so handle overlaps first.
+       int overlapCount = Physics.OverlapCapsuleNonAlloc(pointA, pointB,
+           radius, _obstacleOverlapHits, Physics.AllLayers,
+           QueryTriggerInteraction.Collide);
+       Collider overlappingObstacle = FindObstacleCollider(
+           _obstacleOverlapHits, overlapCount, _lastSweptObstacle);
+       if (overlappingObstacle != null)
+       {
+           _lastSweptObstacle = overlappingObstacle;
+           HandleObstacleContact(overlappingObstacle,
+               overlappingObstacle.GetComponentInParent<Obstacle>());
+           return;
+       }
+
        float distance = _gm.CurrentSpeed * Time.fixedDeltaTime + 0.05f;
        int hitCount = Physics.CapsuleCastNonAlloc(pointA, pointB, radius,
            forward.normalized, _obstacleSweepHits, distance,
@@ -383,7 +401,7 @@ public class PlayerController : MonoBehaviour
        {
            Collider candidate = _obstacleSweepHits[i].collider;
            if (candidate == null || candidate == _lastSweptObstacle) continue;
-           if (candidate.GetComponent<Obstacle>() == null) continue;
+           if (candidate.GetComponentInParent<Obstacle>() == null) continue;
            if (_obstacleSweepHits[i].distance < closestDistance)
            {
                closestObstacle = candidate;
@@ -395,7 +413,22 @@ public class PlayerController : MonoBehaviour
 
        _lastSweptObstacle = closestObstacle;
        HandleObstacleContact(closestObstacle,
-           closestObstacle.GetComponent<Obstacle>());
+           closestObstacle.GetComponentInParent<Obstacle>());
+   }
+
+   public static Collider FindObstacleCollider(Collider[] candidates, int count,
+       Collider ignored)
+   {
+       if (candidates == null) return null;
+       int limit = Mathf.Min(Mathf.Max(0, count), candidates.Length);
+       for (int i = 0; i < limit; i++)
+       {
+           Collider candidate = candidates[i];
+           if (candidate == null || candidate == ignored) continue;
+           if (candidate.GetComponentInParent<Obstacle>() != null)
+               return candidate;
+       }
+       return null;
    }
 
    void GetCapsuleSweepShape(out Vector3 pointA, out Vector3 pointB,
