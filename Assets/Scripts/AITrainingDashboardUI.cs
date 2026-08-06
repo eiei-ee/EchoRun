@@ -48,47 +48,68 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
 
     private void Build(Transform parent)
     {
+        bool compactPortrait = UILayoutRules.IsCompactPortrait(
+            Screen.width, Screen.height);
+        Vector2 launcherAnchor = compactPortrait
+            ? new Vector2(0.82f, 0.07f)
+            : new Vector2(0.90f, 0.09f);
+        Vector2 launcherSize = compactPortrait
+            ? new Vector2(260f, 96f)
+            : new Vector2(220f, 68f);
         Button launcher = RuntimePanelFactory.Button("AITrainingLauncher", parent,
-            "AI 训练", new Vector2(0.90f, 0.09f), new Vector2(220f, 68f),
-            RuntimePanelFactory.Raised, 26);
+            "AI 训练", launcherAnchor, launcherSize,
+            RuntimePanelFactory.Raised, compactPortrait ? 30 : 26);
         launcher.onClick.AddListener(Open);
         _launcher = launcher.gameObject;
 
         _panel = RuntimePanelFactory.PanelObject("AITrainingDashboard", parent,
-            new Vector2(0.5f, 0.5f), new Vector2(1050f, 700f),
+            new Vector2(0.5f, 0.5f), compactPortrait
+                ? new Vector2(930f, 1500f)
+                : new Vector2(1050f, 700f),
             RuntimePanelFactory.Panel);
         Text title = RuntimePanelFactory.Text("Title", _panel.transform,
-            "AI 训练档案", 40, TextAnchor.MiddleLeft,
+            "AI 训练档案", compactPortrait ? 44 : 40, TextAnchor.MiddleLeft,
             RuntimePanelFactory.TextPrimary);
         title.rectTransform.pivot = new Vector2(0f, 0.5f);
-        RuntimePanelFactory.Place(title.rectTransform, new Vector2(0.08f, 0.89f),
-            new Vector2(650f, 70f), Vector2.zero);
+        RuntimePanelFactory.Place(title.rectTransform,
+            compactPortrait ? new Vector2(0.08f, 0.93f) : new Vector2(0.08f, 0.89f),
+            compactPortrait ? new Vector2(760f, 90f) : new Vector2(650f, 70f),
+            Vector2.zero);
 
         _metrics = RuntimePanelFactory.Text("Metrics", _panel.transform, "",
-            26, TextAnchor.UpperLeft, RuntimePanelFactory.TextPrimary);
+            compactPortrait ? 30 : 26, TextAnchor.UpperLeft,
+            RuntimePanelFactory.TextPrimary);
         _metrics.lineSpacing = 1.25f;
-        RuntimePanelFactory.Place(_metrics.rectTransform, new Vector2(0.34f, 0.59f),
-            new Vector2(580f, 300f), Vector2.zero);
+        RuntimePanelFactory.Place(_metrics.rectTransform,
+            compactPortrait ? new Vector2(0.5f, 0.68f) : new Vector2(0.34f, 0.59f),
+            compactPortrait ? new Vector2(780f, 500f) : new Vector2(580f, 300f),
+            Vector2.zero);
 
         GameObject insight = RuntimePanelFactory.PanelObject("Insight", _panel.transform,
-            new Vector2(0.5f, 0.29f), new Vector2(900f, 150f),
+            compactPortrait ? new Vector2(0.5f, 0.38f) : new Vector2(0.5f, 0.29f),
+            compactPortrait ? new Vector2(780f, 280f) : new Vector2(900f, 150f),
             new Color(0.10f, 0.16f, 0.22f, 1f));
         _summary = RuntimePanelFactory.Text("Summary", insight.transform, "",
-            25, TextAnchor.MiddleLeft, RuntimePanelFactory.TextPrimary);
+            compactPortrait ? 29 : 25, TextAnchor.MiddleLeft,
+            RuntimePanelFactory.TextPrimary);
         RuntimePanelFactory.Stretch(_summary.rectTransform, 28f);
 
         _resetHint = RuntimePanelFactory.Text("ResetHint", _panel.transform,
             "重置会清空影子、导演和玩家能力模型。", 19,
             TextAnchor.MiddleLeft, RuntimePanelFactory.TextMuted);
-        RuntimePanelFactory.Place(_resetHint.rectTransform, new Vector2(0.26f, 0.09f),
-            new Vector2(520f, 50f), Vector2.zero);
+        RuntimePanelFactory.Place(_resetHint.rectTransform,
+            compactPortrait ? new Vector2(0.5f, 0.17f) : new Vector2(0.26f, 0.09f),
+            compactPortrait ? new Vector2(760f, 90f) : new Vector2(520f, 50f),
+            Vector2.zero);
         Button reset = RuntimePanelFactory.Button("Reset", _panel.transform, "重置训练",
-            new Vector2(0.64f, 0.09f), new Vector2(210f, 58f),
-            new Color(0.55f, 0.22f, 0.22f), 22);
+            compactPortrait ? new Vector2(0.30f, 0.07f) : new Vector2(0.64f, 0.09f),
+            compactPortrait ? new Vector2(320f, 100f) : new Vector2(210f, 58f),
+            new Color(0.55f, 0.22f, 0.22f), compactPortrait ? 28 : 22);
         reset.onClick.AddListener(ConfirmReset);
         Button close = RuntimePanelFactory.Button("Close", _panel.transform, "返回",
-            new Vector2(0.87f, 0.09f), new Vector2(180f, 58f),
-            RuntimePanelFactory.Raised, 22);
+            compactPortrait ? new Vector2(0.72f, 0.07f) : new Vector2(0.87f, 0.09f),
+            compactPortrait ? new Vector2(280f, 100f) : new Vector2(180f, 58f),
+            RuntimePanelFactory.Raised, compactPortrait ? 28 : 22);
         close.onClick.AddListener(() => _panel.SetActive(false));
         _panel.SetActive(false);
     }

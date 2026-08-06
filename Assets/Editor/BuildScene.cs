@@ -941,7 +941,7 @@ public class BuildScene
         Font font = AssetDatabase.LoadAssetAtPath<Font>(
             "Assets/Resources/Fonts/NotoSansCJKsc-Regular.otf");
         if (font != null) text.font = font;
-        else text.font = Font.CreateDynamicFontFromOSFont("Arial", fontSize);
+        else text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         return text;
     }
 

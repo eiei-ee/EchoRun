@@ -201,6 +201,7 @@ PlayerSettings:
     Android: com.eieiee.echorun
     Standalone: com.eieiee.echorun
     WebGL: com.eieiee.echorun
+    WeixinMiniGame: com.eieiee.echorun
     iPhone: com.eieiee.echorun
   buildNumber:
     Standalone: 0
@@ -830,7 +831,7 @@ PlayerSettings:
     Standalone: 2
     VisionOS: 1
     WebGL: 1
-    WeixinMiniGame: 1
+    WeixinMiniGame: 3
     Windows Store Apps: 1
     XboxOne: 1
     iPhone: 1
@@ -948,7 +949,7 @@ PlayerSettings:
   OpenHarmonyUseCustomModuleJsonFive: 0
   OpenHarmonyUseCustomTuanjiePlayerAbility: 0
   apiCompatibilityLevel: 6
-  weixinMiniGameMemorySize: 32
+  weixinMiniGameMemorySize: 256
   weixinMiniGameExceptionSupport: 1
   weixinMiniGameExceptionOnlyEnableForUserCodes: 0
   weixinMiniGameNameFilesAsHashes: 0
@@ -958,8 +959,8 @@ PlayerSettings:
   weixinMiniGameEmscriptenArgs: 
   weixinMiniGameModulesDirectory: 
   weixinMiniGameTemplate: APPLICATION:Default
-  weixinMiniGameAnalyzeBuildSize: 0
-  weixinMiniGameUseEmbeddedResources: 0
+  weixinMiniGameAnalyzeBuildSize: 1
+  weixinMiniGameUseEmbeddedResources: 1
   weixinMiniGameCompressionFormat: 0
   weixinMiniGameWasmArithmeticExceptions: 0
   weixinMiniGameLinkerTarget: 1
@@ -978,8 +979,8 @@ PlayerSettings:
   weixinMiniGameInjectStrippedMethodLogger: 0
   weixinMiniGameEnableDotNetWasmExceptionHandling: 1
   weixinMiniGamePreserveEventDelegate: 0
-  activeSubplatform: 0
-  serializedFileTypeTreeMemoryOptimization: 0
+  activeSubplatform: 1
+  serializedFileTypeTreeMemoryOptimization: 1
   stripBuiltinResources: 0
   minigameMTRendering: 0
   weixinMiniGameInvariantPosition: 0

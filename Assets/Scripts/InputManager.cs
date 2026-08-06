@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using System;
 using System.Collections.Generic;
 using UnityEngine.EventSystems;
 
@@ -21,6 +22,8 @@ public class InputManager : MonoBehaviour
     private bool _swipeDetected;
     private bool _ignoreTouch;
     private Queue<SwipeDirection> _swipeQueue = new Queue<SwipeDirection>();
+
+    public event Action<SwipeDirection, bool> SwipeResolved;
 
     void Awake()
     {
@@ -105,27 +108,39 @@ public class InputManager : MonoBehaviour
         float shortEdge = Mathf.Min(Screen.width, Screen.height);
         float threshold = ResolveSwipeThreshold(
             minSwipeDistance, shortEdge, Screen.dpi);
-        if (delta.magnitude < threshold) return;
+        SwipeDirection direction = ClassifySwipe(delta, threshold);
+        if (direction == SwipeDirection.None) return;
 
         _swipeDetected = true;
-        float absX = Mathf.Abs(delta.x);
-        float absY = Mathf.Abs(delta.y);
-
-        if (absX > absY)
-        {
-            if (delta.x > 0) _swipeQueue.Enqueue(SwipeDirection.Right);
-            else _swipeQueue.Enqueue(SwipeDirection.Left);
-        }
-        else
-        {
-            if (delta.y > 0) _swipeQueue.Enqueue(SwipeDirection.Up);
-            else _swipeQueue.Enqueue(SwipeDirection.Down);
-        }
+        _swipeQueue.Enqueue(direction);
     }
 
     public SwipeDirection GetSwipe()
     {
         return _swipeQueue.Count > 0 ? _swipeQueue.Dequeue() : SwipeDirection.None;
+    }
+
+    public void ReportSwipeResult(SwipeDirection direction, bool accepted)
+    {
+        if (direction == SwipeDirection.None) return;
+        SwipeResolved?.Invoke(direction, accepted);
+    }
+
+    public static SwipeDirection ClassifySwipe(Vector2 delta, float threshold)
+    {
+        if (delta.magnitude < Mathf.Max(1f, threshold))
+            return SwipeDirection.None;
+
+        float absX = Mathf.Abs(delta.x);
+        float absY = Mathf.Abs(delta.y);
+
+        // A small vertical bias makes an intentionally upward, slightly
+        // diagonal phone gesture reliably count as Jump without turning a
+        // clearly horizontal lane swipe into a vertical action.
+        if (absY >= absX * 0.85f)
+            return delta.y >= 0f ? SwipeDirection.Up : SwipeDirection.Down;
+
+        return delta.x >= 0f ? SwipeDirection.Right : SwipeDirection.Left;
     }
 
     public void ClearInput()
