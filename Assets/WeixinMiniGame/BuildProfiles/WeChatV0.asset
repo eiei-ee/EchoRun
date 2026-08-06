@@ -17,9 +17,9 @@ MonoBehaviour:
   m_ModuleName: WeixinMiniGame
   m_BuildPath: Builds/WeixinMiniGameV0-Profile
   m_PlatformSettings:
-    rid: 4314237481283747840
+    rid: 4314237481834774528
   m_MiniGameSettings:
-    rid: 4314237481283747841
+    rid: 4314237481834774529
   m_PlayerSettingsYaml:
     m_Settings:
     - line: '| m_ObjectHideFlags: 0'
@@ -71,7 +71,7 @@ MonoBehaviour:
     - line: '| defaultScreenWidthWeb: 1280'
     - line: '| defaultScreenHeightWeb: 720'
     - line: '| m_StereoRenderingPath: 0'
-    - line: '| m_ActiveColorSpace: 1'
+    - line: '| m_ActiveColorSpace: 0'
     - line: '| unsupportedMSAAFallback: 0'
     - line: '| m_SpriteBatchVertexThreshold: 300'
     - line: '| m_MTRendering: 1'
@@ -1034,7 +1034,7 @@ MonoBehaviour:
   references:
     version: 2
     RefIds:
-    - rid: 4314237481283747840
+    - rid: 4314237481834774528
       type: {class: MiniGamePlatformSettings, ns: UnityEditor.WeixinMiniGame, asm: UnityEditor.WeixinMiniGame.Extensions}
       data:
         m_Development: 0
@@ -1054,20 +1054,20 @@ MonoBehaviour:
         m_CodeOptimization: 4
         m_MiniGameGenerateWasmAnalysisReport: 0
         m_MiniGameWasmInlineParam: 200
-    - rid: 4314237481283747841
-      type: {class: DefaultWeChatMiniGameSettings, ns: UnityEditor.ExternalMiniGame, asm: UnityEditor.CoreModule}
+    - rid: 4314237481834774529
+      type: {class: WeixinMiniGameSettings, ns: WeChatWASM, asm: WxEditor}
       data:
         m_HostName: WeChat
         m_Editor:
-          rid: 4314237481283747842
+          rid: 4314237481834774530
         ProjectConf:
-          projectName: 
+          projectName: EchoRun
           Appid: 
           CDN: 
           assetLoadType: 0
           compressDataPackage: 0
           VideoUrl: 
-          relativeDST: 
+          relativeDST: Builds/WeixinMiniGameV0-Profile
           DST: 
           StreamCDN: 
           bundleHashLength: 32
@@ -1094,6 +1094,7 @@ MonoBehaviour:
           UseCompressedTexture: 0
           UseMiniGameChat: 0
           PreloadWXFont: 0
+          disableMultiTouch: 0
         CompileOptions:
           DevelopBuild: 0
           AutoProfile: 0
@@ -1101,21 +1102,22 @@ MonoBehaviour:
           Il2CppOptimizeSize: 1
           profilingFuncs: 1
           Webgl2: 0
-          enableiOSMetal: 0
-          enableEmscriptenGLX: 0
           fbslim: 0
           DeleteStreamingAssets: 1
           ProfilingMemory: 0
           CleanBuild: 0
           CustomNodePath: 
-          autoAdaptScreen: 1
+          autoAdaptScreen: 0
           showMonitorSuggestModal: 1
           enableProfileStats: 0
           enableRenderAnalysis: 0
           enablePerfAnalysis: 0
           iOSAutoGCInterval: 10000
           enableIOSPerformancePlus: 0
+          enableiOSMetal: 0
+          enableEmscriptenGLX: 0
           brotliMT: 1
+          enableWasm2023: 0
         CompressTexture:
           halfSize: 0
           useDXT5: 0
@@ -1147,8 +1149,8 @@ MonoBehaviour:
           Mathematical_Operators: 1
           CustomUnicode: 
         m_AutomaticFillInstantGame: 1
-    - rid: 4314237481283747842
-      type: {class: DefaultWeChatMiniGameSettingsEditor, ns: UnityEditor.ExternalMiniGame, asm: UnityEditor.CoreModule}
+    - rid: 4314237481834774530
+      type: {class: WeixinMiniGameSettingsEditor, ns: WeChatWASM, asm: WxEditor}
       data:
         m_HostName: 
         tex: {fileID: 0}

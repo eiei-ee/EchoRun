@@ -113,6 +113,7 @@ public class BuildConfig
             PlayerSettings.allowedAutorotateToPortraitUpsideDown;
         bool previousLandscapeLeft = PlayerSettings.allowedAutorotateToLandscapeLeft;
         bool previousLandscapeRight = PlayerSettings.allowedAutorotateToLandscapeRight;
+        ColorSpace previousColorSpace = PlayerSettings.colorSpace;
         int previousQualityLevel = QualitySettings.GetQualityLevel();
 
         try
@@ -121,9 +122,14 @@ public class BuildConfig
             ConfigureWeixinMiniGame();
             EnsureSceneInBuild();
 
-            const string sdkConfigPath =
+            const string legacySdkConfigPath =
                 "Assets/WX-WASM-SDK-V2/Editor/MiniGameConfig.asset";
-            if (AssetDatabase.LoadAssetAtPath<ScriptableObject>(sdkConfigPath) == null)
+            const string packageSdkConfigPath =
+                "Packages/com.qq.weixin.minigame/Editor/MiniGameConfig.asset";
+            bool hasOfficialSdk =
+                AssetDatabase.LoadAssetAtPath<Object>(packageSdkConfigPath) != null
+                || AssetDatabase.LoadAssetAtPath<Object>(legacySdkConfigPath) != null;
+            if (!hasOfficialSdk)
             {
                 throw new BuildFailedException(
                     "Missing official WeChat Mini Game SDK package "
@@ -140,6 +146,14 @@ public class BuildConfig
                 "Assets/WeixinMiniGame/BuildProfiles/WeChatV0.asset";
             BuildProfile profile = AssetDatabase.LoadAssetAtPath<BuildProfile>(
                 profileAssetPath);
+            if (profile != null
+                && (profile.miniGameSettings == null
+                    || profile.miniGameSettings.GetType().FullName
+                        != "WeChatWASM.WeixinMiniGameSettings"))
+            {
+                AssetDatabase.DeleteAsset(profileAssetPath);
+                profile = null;
+            }
             if (profile == null)
             {
                 EnsureDirectory("Assets/WeixinMiniGame/BuildProfiles");
@@ -153,7 +167,9 @@ public class BuildConfig
                     "Unable to create WeChat build profile.");
 
             profile.buildPath = outputDir;
+            ConfigureWeixinBuildProfile(profile, outputDir);
             profile.CreatePlayerSettingsFromGlobal();
+            ConfigureWeixinProfilePlayerSettings(profile);
             EditorUtility.SetDirty(profile);
             AssetDatabase.SaveAssets();
             BuildMiniGameError result = BuildPipeline.BuildMiniGame(
@@ -172,6 +188,7 @@ public class BuildConfig
                 previousPortraitUpsideDown;
             PlayerSettings.allowedAutorotateToLandscapeLeft = previousLandscapeLeft;
             PlayerSettings.allowedAutorotateToLandscapeRight = previousLandscapeRight;
+            PlayerSettings.colorSpace = previousColorSpace;
             QualitySettings.SetQualityLevel(previousQualityLevel, true);
             AssetDatabase.SaveAssets();
         }
@@ -206,6 +223,56 @@ public class BuildConfig
         int errors = report == null ? 0 : report.summary.totalErrors;
         throw new BuildFailedException(
             $"{platform} build failed: {result} ({errors} errors).");
+    }
+
+    static void ConfigureWeixinBuildProfile(BuildProfile profile, string outputDir)
+    {
+        object settings = profile.miniGameSettings;
+        if (settings == null)
+            throw new BuildFailedException("WeChat MiniGame settings are missing.");
+
+        var projectConfField = settings.GetType().GetField("ProjectConf");
+        object projectConf = projectConfField?.GetValue(settings);
+        if (projectConf == null)
+            throw new BuildFailedException("WeChat ProjectConf is missing.");
+
+        var relativeDstField = projectConf.GetType().GetField("relativeDST");
+        var dstField = projectConf.GetType().GetField("DST");
+        if (relativeDstField == null || dstField == null)
+            throw new BuildFailedException("WeChat export path fields are missing.");
+
+        relativeDstField.SetValue(projectConf, outputDir);
+        dstField.SetValue(projectConf, Path.GetFullPath(outputDir));
+
+        var projectNameField = projectConf.GetType().GetField("projectName");
+        projectNameField?.SetValue(projectConf, ProductName);
+
+        string appId = System.Environment.GetEnvironmentVariable(
+            "WECHAT_MINIGAME_APPID");
+        if (!string.IsNullOrWhiteSpace(appId))
+        {
+            var appIdField = projectConf.GetType().GetField("Appid");
+            if (appIdField == null)
+                throw new BuildFailedException("WeChat Appid field is missing.");
+            appIdField.SetValue(projectConf, appId.Trim());
+        }
+    }
+
+    static void ConfigureWeixinProfilePlayerSettings(BuildProfile profile)
+    {
+        if (profile.playerSettings == null)
+            throw new BuildFailedException(
+                "WeChat Build Profile PlayerSettings are missing.");
+
+        var serializedSettings = new SerializedObject(profile.playerSettings);
+        SerializedProperty colorSpace =
+            serializedSettings.FindProperty("m_ActiveColorSpace");
+        if (colorSpace == null)
+            throw new BuildFailedException(
+                "WeChat Build Profile color-space setting is missing.");
+
+        colorSpace.intValue = (int)ColorSpace.Gamma;
+        serializedSettings.ApplyModifiedPropertiesWithoutUndo();
     }
 
     static void ConfigureBaseSettings()
@@ -293,6 +360,7 @@ public class BuildConfig
         PlayerSettings.MiniGame.analyzeBuildSize = true;
         PlayerSettings.MiniGame.useEmbeddedResources = true;
         PlayerSettings.MiniGame.threadsSupport = false;
+        PlayerSettings.colorSpace = ColorSpace.Gamma;
         PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
         PlayerSettings.allowedAutorotateToPortrait = true;
         PlayerSettings.allowedAutorotateToLandscapeLeft = false;
