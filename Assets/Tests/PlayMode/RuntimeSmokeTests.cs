@@ -61,19 +61,19 @@ public sealed class RuntimeSmokeTests
 
             string[] signatureParts =
             {
-                "SlideShutterBody",
+                "SlideDroneBody",
                 "JumpBlockBody",
                 "LaneBulkheadBody"
             };
             Vector3[] colliderSizes =
             {
-                new Vector3(3.8f, 1.8f, 0.7f),
+                new Vector3(3.1f, 0.82f, 1.2f),
                 new Vector3(3.2f, 0.9f, 0.7f),
                 new Vector3(3.4f, 2.7f, 0.9f)
             };
             Vector3[] colliderCenters =
             {
-                new Vector3(0f, 0.65f, 0f),
+                new Vector3(0f, 0.95f, 0f),
                 new Vector3(0f, -0.45f, 0f),
                 new Vector3(0f, 0.25f, 0f)
             };
@@ -98,22 +98,21 @@ public sealed class RuntimeSmokeTests
                 Assert.IsTrue(gameplayCollider.isTrigger);
 
                 Bounds visualBounds = CombinedRendererBounds(visual);
-                float minimumCoverage = data.type == ObstacleType.Low
-                    ? 0.85f
-                    : 0.9f;
                 Assert.GreaterOrEqual(visualBounds.size.x,
-                    gameplayCollider.bounds.size.x * minimumCoverage,
+                    gameplayCollider.bounds.size.x * 0.9f,
                     data.type + " visual must visibly block its collider width.");
                 Assert.LessOrEqual(visualBounds.size.x,
                     gameplayCollider.bounds.size.x * 1.05f,
                     data.type + " visual must not extend beyond its collider.");
                 if (data.type == ObstacleType.Low)
                 {
-                    Assert.LessOrEqual(visualBounds.size.x, 3.5f,
-                        "The slide shutter visual must remain lane-sized.");
-                    Assert.Greater(gameplayCollider.bounds.size.x,
-                        visualBounds.size.x,
-                        "The collider needs a small invisible margin at both ends.");
+                    Assert.IsNull(visual.Find("SlideShutterBody"),
+                        "The old slide shutter must not return.");
+                    Assert.LessOrEqual(visualBounds.size.x, 3.15f,
+                        "The slide drone must remain lane-sized.");
+                    Assert.AreEqual(gameplayCollider.bounds.min.y,
+                        visualBounds.min.y, 0.06f,
+                        "The slide drone must visibly match its collider bottom.");
                 }
                 AssertNoPointLikeObstacleParts(visual);
             }

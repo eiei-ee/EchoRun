@@ -72,8 +72,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 3.8, y: 1.8, z: 0.7}
-  m_Center: {x: 0, y: 0.65, z: 0}
+  m_Size: {x: 3.1, y: 0.82, z: 1.2}
+  m_Center: {x: 0, y: 0.95, z: 0}
 --- !u!1 &2830855449318429546
 GameObject:
   m_ObjectHideFlags: 0
@@ -87,7 +87,7 @@ GameObject:
   - component: {fileID: 8812969372603538043}
   m_Layer: 0
   m_HasEditorInfo: 1
-  m_Name: ScannerBeaconR
+  m_Name: SlideDroneSignalR
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -102,8 +102,8 @@ Transform:
   m_GameObject: {fileID: 2830855449318429546}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 1.45, y: 1.68, z: -0.38}
-  m_LocalScale: {x: 0.48, y: 0.34, z: 0.1}
+  m_LocalPosition: {x: 0.42, y: 0.95, z: -0.63}
+  m_LocalScale: {x: 0.13, y: 0.32, z: 0.06}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 6915862250071428685}
@@ -174,7 +174,7 @@ GameObject:
   - component: {fileID: 2064974002361891273}
   m_Layer: 0
   m_HasEditorInfo: 1
-  m_Name: ScannerBeam
+  m_Name: SlideDroneBody
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -189,8 +189,8 @@ Transform:
   m_GameObject: {fileID: 3462613443195872450}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1.42, z: 0}
-  m_LocalScale: {x: 3.3, y: 0.42, z: 0.68}
+  m_LocalPosition: {x: 0, y: 0.95, z: 0}
+  m_LocalScale: {x: 2.8, y: 0.82, z: 1.05}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 6915862250071428685}
@@ -261,7 +261,7 @@ GameObject:
   - component: {fileID: 3350694317405733198}
   m_Layer: 0
   m_HasEditorInfo: 1
-  m_Name: ScannerPostL
+  m_Name: SlideDronePodL
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -276,8 +276,8 @@ Transform:
   m_GameObject: {fileID: 4830446678494360024}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -1.45, y: 0.9, z: 0}
-  m_LocalScale: {x: 0.38, y: 1.9, z: 0.7}
+  m_LocalPosition: {x: -1.24, y: 0.95, z: 0}
+  m_LocalScale: {x: 0.55, y: 0.66, z: 1.18}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 6915862250071428685}
@@ -348,7 +348,7 @@ GameObject:
   - component: {fileID: 8213919466339263824}
   m_Layer: 0
   m_HasEditorInfo: 1
-  m_Name: ScannerBeaconL
+  m_Name: SlideDroneSignalL
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -363,8 +363,8 @@ Transform:
   m_GameObject: {fileID: 5365543082791301764}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -1.45, y: 1.68, z: -0.38}
-  m_LocalScale: {x: 0.48, y: 0.34, z: 0.1}
+  m_LocalPosition: {x: -0.42, y: 0.95, z: -0.63}
+  m_LocalScale: {x: 0.13, y: 0.32, z: 0.06}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 6915862250071428685}
@@ -435,7 +435,7 @@ GameObject:
   - component: {fileID: 1594392470716778259}
   m_Layer: 0
   m_HasEditorInfo: 1
-  m_Name: ScannerPostR
+  m_Name: SlideDronePodR
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -450,8 +450,8 @@ Transform:
   m_GameObject: {fileID: 5990926298796760590}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 1.45, y: 0.9, z: 0}
-  m_LocalScale: {x: 0.38, y: 1.9, z: 0.7}
+  m_LocalPosition: {x: 1.24, y: 0.95, z: 0}
+  m_LocalScale: {x: 0.55, y: 0.66, z: 1.18}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 6915862250071428685}
@@ -522,7 +522,7 @@ GameObject:
   - component: {fileID: 7218851852269084765}
   m_Layer: 0
   m_HasEditorInfo: 1
-  m_Name: ScannerSignal
+  m_Name: SlideDroneFace
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -537,8 +537,8 @@ Transform:
   m_GameObject: {fileID: 7120894748064569661}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1.42, z: -0.38}
-  m_LocalScale: {x: 1.45, y: 0.13, z: 0.09}
+  m_LocalPosition: {x: 0, y: 0.95, z: -0.56}
+  m_LocalScale: {x: 2.28, y: 0.43, z: 0.1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 6915862250071428685}

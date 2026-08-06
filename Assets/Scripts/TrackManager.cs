@@ -963,7 +963,8 @@ public class TrackManager : MonoBehaviour
     GameObject[] CreateProcObstacles()
     {
         ObstacleType[] types = { ObstacleType.Low, ObstacleType.High, ObstacleType.Barrier };
-        Vector3[] sizes  = { new Vector3(3.8f, 1f, 0.6f), new Vector3(0.8f, 3.5f, 0.6f), new Vector3(3.5f, 2.5f, 0.8f) };
+        Vector3[] sizes  = { new Vector3(3.1f, 0.82f, 1.2f), new Vector3(3.2f, 0.9f, 0.7f), new Vector3(3.4f, 2.7f, 0.9f) };
+        Vector3[] centers = { new Vector3(0f, 0.95f, 0f), new Vector3(0f, -0.45f, 0f), new Vector3(0f, 0.25f, 0f) };
         Color[] colors    = { new Color(1f, 0.45f, 0.1f), new Color(0.85f, 0.15f, 0.05f), new Color(0.9f, 0.25f, 0.15f) };
         Shader sh = Shader.Find("Standard");
         if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
@@ -973,11 +974,12 @@ public class TrackManager : MonoBehaviour
         {
             obs[i] = GameObject.CreatePrimitive(PrimitiveType.Cube);
             obs[i].name = "ProcObstacle_" + i;
-            obs[i].transform.localScale = sizes[i];
             if (sh != null) obs[i].GetComponent<MeshRenderer>().material = new Material(sh) { color = colors[i] };
             BoxCollider bc = obs[i].GetComponent<BoxCollider>();
             if (bc == null) bc = obs[i].AddComponent<BoxCollider>();
-            bc.isTrigger = true; bc.size = Vector3.one;
+            bc.isTrigger = true;
+            bc.size = sizes[i];
+            bc.center = centers[i];
             Obstacle o = obs[i].AddComponent<Obstacle>();
             o.type = types[i];
             obs[i].SetActive(false); obs[i].transform.SetParent(transform);

@@ -307,7 +307,7 @@ public class WorldStyler : MonoBehaviour
 
         if (data.type == ObstacleType.Low)
         {
-            BuildSlideShutter(visual.transform);
+            BuildSlideDrone(visual.transform);
         }
         else if (data.type == ObstacleType.High)
         {
@@ -319,29 +319,30 @@ public class WorldStyler : MonoBehaviour
         }
     }
 
-    private void BuildSlideShutter(Transform parent)
+    private void BuildSlideDrone(Transform parent)
     {
-        // A continuous overhead shutter communicates "slide" without leaving
-        // a misleading walk-through gap inside the gameplay collider.
-        CreateCapsule("SlideShutterBody", parent,
-            new Vector3(0f, 0.78f, 0f),
-            new Vector3(0.62f, 1.65f, 0.50f), _structureMaterial,
-            new Vector3(0f, 0f, 90f));
-        CreateCapsule("SlideShutterInset", parent,
-            new Vector3(0f, 0.78f, -0.43f),
-            new Vector3(0.40f, 1.43f, 0.08f), _deepStructureMaterial,
-            new Vector3(0f, 0f, 90f));
-        CreateCapsule("SlideShutterSignal", parent,
-            new Vector3(0f, 0.78f, -0.53f),
-            new Vector3(0.10f, 1.24f, 0.045f), _cyanMaterial,
-            new Vector3(0f, 0f, 90f));
-
-        CreateCapsule("SlideShutterPylonL", parent,
-            new Vector3(-1.46f, 0.10f, 0.08f),
-            new Vector3(0.28f, 0.72f, 0.34f), _deepStructureMaterial);
-        CreateCapsule("SlideShutterPylonR", parent,
-            new Vector3(1.46f, 0.10f, 0.08f),
-            new Vector3(0.28f, 0.72f, 0.34f), _deepStructureMaterial);
+        // A compact hovering machine replaces the old rail. Its solid outline
+        // matches the gameplay collider and leaves a clear slide gap below it.
+        CreateCube("SlideDroneBody", parent,
+            new Vector3(0f, 0.95f, 0f),
+            new Vector3(2.80f, 0.82f, 1.05f), _structureMaterial);
+        CreateCube("SlideDroneFace", parent,
+            new Vector3(0f, 0.95f, -0.56f),
+            new Vector3(2.28f, 0.43f, 0.10f), _deepStructureMaterial);
+        CreateSphere("SlideDronePodL", parent,
+            new Vector3(-1.24f, 0.95f, 0f),
+            new Vector3(0.55f, 0.66f, 1.18f), _deepStructureMaterial);
+        CreateSphere("SlideDronePodR", parent,
+            new Vector3(1.24f, 0.95f, 0f),
+            new Vector3(0.55f, 0.66f, 1.18f), _deepStructureMaterial);
+        CreateCube("SlideDroneSignalL", parent,
+            new Vector3(-0.42f, 0.95f, -0.63f),
+            new Vector3(0.13f, 0.32f, 0.06f), _cyanMaterial,
+            new Vector3(0f, 0f, -30f));
+        CreateCube("SlideDroneSignalR", parent,
+            new Vector3(0.42f, 0.95f, -0.63f),
+            new Vector3(0.13f, 0.32f, 0.06f), _cyanMaterial,
+            new Vector3(0f, 0f, 30f));
     }
 
     private void BuildJumpBlock(Transform parent)

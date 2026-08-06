@@ -986,7 +986,7 @@ public class GameStateTests
     }
 
     [Test]
-    public void SlideShutterSpawnsInTheRequestedLane()
+    public void SlideDroneSpawnsInTheRequestedLane()
     {
         TrackManager manager = Create<TrackManager>("TrackManager");
         GameObject segment = new GameObject("StraightSegment");
@@ -1001,16 +1001,16 @@ public class GameStateTests
         Assert.AreEqual(1, segment.transform.childCount);
         Assert.AreEqual(-manager.laneDistance,
             segment.transform.GetChild(0).position.x, 0.0001f,
-            "A lane-sized shutter must remain in its requested lane.");
+            "A lane-sized slide drone must remain in its requested lane.");
     }
 
     [Test]
-    public void SlideShutterIsUpcomingOnlyInItsLane()
+    public void SlideDroneIsUpcomingOnlyInItsLane()
     {
         TrackManager manager = Create<TrackManager>("TrackManager");
         GameObject owner = new GameObject("Segment");
         _objects.Add(owner);
-        GameObject low = CreateObstaclePrefab("FullTrackLow", ObstacleType.Low);
+        GameObject low = CreateObstaclePrefab("SlideDrone", ObstacleType.Low);
         InvokePrivate(manager, "SpawnDynamic", low, owner,
             new Vector3(-manager.laneDistance, 1f, 4f), Quaternion.identity);
 
@@ -1022,9 +1022,27 @@ public class GameStateTests
                 position, Vector3.forward, lane, new HashSet<int>(),
                 out _, out ObstacleType type, out _);
             Assert.AreEqual(lane == 0, found,
-                "The slide shutter lane query was wrong for lane " + lane + ".");
+                "The slide drone lane query was wrong for lane " + lane + ".");
             if (found) Assert.AreEqual(ObstacleType.Low, type);
         }
+    }
+
+    [Test]
+    public void ProceduralObstaclesKeepUnitRootScale()
+    {
+        TrackManager manager = Create<TrackManager>("TrackManager");
+        var obstacles = (GameObject[])InvokePrivate(
+            manager, "CreateProcObstacles");
+        foreach (GameObject obstacle in obstacles) _objects.Add(obstacle);
+
+        Assert.AreEqual(3, obstacles.Length);
+        foreach (GameObject obstacle in obstacles)
+            Assert.AreEqual(Vector3.one, obstacle.transform.localScale,
+                "Runtime styling must not inherit a second obstacle scale.");
+
+        BoxCollider lowCollider = obstacles[0].GetComponent<BoxCollider>();
+        Assert.AreEqual(new Vector3(3.1f, 0.82f, 1.2f), lowCollider.size);
+        Assert.AreEqual(new Vector3(0f, 0.95f, 0f), lowCollider.center);
     }
 
     private T Create<T>(string name) where T : Component
