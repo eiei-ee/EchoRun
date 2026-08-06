@@ -66,6 +66,25 @@ public class AIShadowRunner : MonoBehaviour
     private Transform _ghostVisual;
     private Vector3 _ghostVisualScale = Vector3.one;
     private Vector3 _ghostVisualPosition;
+    private Transform _ghostHead;
+    private Transform _ghostTorso;
+    private Transform _ghostLeftArm;
+    private Transform _ghostRightArm;
+    private Transform _ghostLeftUpperLeg;
+    private Transform _ghostRightUpperLeg;
+    private Transform _ghostLeftLowerLeg;
+    private Transform _ghostRightLowerLeg;
+    private Vector3 _ghostHeadBasePosition;
+    private Vector3 _ghostTorsoBasePosition;
+    private Vector3 _ghostTorsoBaseScale;
+    private Quaternion _ghostHeadBaseRotation;
+    private Quaternion _ghostTorsoBaseRotation;
+    private Quaternion _ghostLeftArmBaseRotation;
+    private Quaternion _ghostRightArmBaseRotation;
+    private Quaternion _ghostLeftUpperLegBaseRotation;
+    private Quaternion _ghostRightUpperLegBaseRotation;
+    private Quaternion _ghostLeftLowerLegBaseRotation;
+    private Quaternion _ghostRightLowerLegBaseRotation;
     private Vector3 _ghostForward = Vector3.forward;
     private Material _ghostMaterial;
     private int _ghostLane = 1;
@@ -627,12 +646,11 @@ public class AIShadowRunner : MonoBehaviour
 
         if (_ghostVisual != null)
         {
-            Vector3 scale = _ghostVisualScale;
             float slideAmount = EvaluateSlideAmount(
                 _ghostSlideTimer, GetGhostSlideDuration());
-            scale.y *= Mathf.Lerp(1f, 0.52f, slideAmount);
-            _ghostVisual.localScale = scale;
+            _ghostVisual.localScale = _ghostVisualScale;
             _ghostVisual.localPosition = _ghostVisualPosition;
+            ApplyGhostSlidePose(slideAmount);
         }
 
         if (_ghostMaterial != null)
@@ -776,6 +794,7 @@ public class AIShadowRunner : MonoBehaviour
             _ghostVisual = visual.transform;
             _ghostVisualScale = _ghostVisual.localScale;
             _ghostVisualPosition = _ghostVisual.localPosition;
+            CacheGhostPoseParts();
 
             foreach (Collider collider in visual.GetComponentsInChildren<Collider>(true))
                 Destroy(collider);
@@ -797,6 +816,94 @@ public class AIShadowRunner : MonoBehaviour
         _ghost.transform.position = _player != null
             ? _player.transform.position + Vector3.forward * 2f
             : Vector3.zero;
+    }
+
+    private void CacheGhostPoseParts()
+    {
+        if (_ghostVisual == null) return;
+
+        _ghostHead = _ghostVisual.Find("Head");
+        _ghostTorso = _ghostVisual.Find("Torso");
+        _ghostLeftArm = _ghostVisual.Find("Arm_Upper_L");
+        _ghostRightArm = _ghostVisual.Find("Arm_Upper_R");
+        _ghostLeftUpperLeg = _ghostVisual.Find("Leg_Upper_L");
+        _ghostRightUpperLeg = _ghostVisual.Find("Leg_Upper_R");
+        _ghostLeftLowerLeg = _ghostVisual.Find("Leg_Upper_L/Leg_Lower_L");
+        _ghostRightLowerLeg = _ghostVisual.Find("Leg_Upper_R/Leg_Lower_R");
+
+        if (_ghostHead != null)
+        {
+            _ghostHeadBasePosition = _ghostHead.localPosition;
+            _ghostHeadBaseRotation = _ghostHead.localRotation;
+        }
+        if (_ghostTorso != null)
+        {
+            _ghostTorsoBasePosition = _ghostTorso.localPosition;
+            _ghostTorsoBaseScale = _ghostTorso.localScale;
+            _ghostTorsoBaseRotation = _ghostTorso.localRotation;
+        }
+        if (_ghostLeftArm != null)
+            _ghostLeftArmBaseRotation = _ghostLeftArm.localRotation;
+        if (_ghostRightArm != null)
+            _ghostRightArmBaseRotation = _ghostRightArm.localRotation;
+        if (_ghostLeftUpperLeg != null)
+            _ghostLeftUpperLegBaseRotation = _ghostLeftUpperLeg.localRotation;
+        if (_ghostRightUpperLeg != null)
+            _ghostRightUpperLegBaseRotation = _ghostRightUpperLeg.localRotation;
+        if (_ghostLeftLowerLeg != null)
+            _ghostLeftLowerLegBaseRotation = _ghostLeftLowerLeg.localRotation;
+        if (_ghostRightLowerLeg != null)
+            _ghostRightLowerLegBaseRotation = _ghostRightLowerLeg.localRotation;
+    }
+
+    private void ApplyGhostSlidePose(float slideAmount)
+    {
+        float amount = Mathf.Clamp01(slideAmount);
+        if (_ghostTorso == null && _ghostHead == null
+            && _ghostLeftUpperLeg == null && _ghostRightUpperLeg == null)
+        {
+            Vector3 fallbackScale = _ghostVisualScale;
+            fallbackScale.y *= Mathf.Lerp(1f, 0.52f, amount);
+            _ghostVisual.localScale = fallbackScale;
+            return;
+        }
+
+        if (_ghostHead != null)
+        {
+            _ghostHead.localPosition = _ghostHeadBasePosition
+                + new Vector3(0f, -0.72f, 0.18f) * amount;
+            _ghostHead.localRotation = _ghostHeadBaseRotation
+                * Quaternion.Euler(28f * amount, 0f, 0f);
+        }
+        if (_ghostTorso != null)
+        {
+            _ghostTorso.localPosition = _ghostTorsoBasePosition
+                + new Vector3(0f, -0.32f, 0.14f) * amount;
+            Vector3 torsoScale = _ghostTorsoBaseScale;
+            torsoScale.y *= Mathf.Lerp(1f, 0.58f, amount);
+            _ghostTorso.localScale = torsoScale;
+            _ghostTorso.localRotation = _ghostTorsoBaseRotation
+                * Quaternion.Euler(38f * amount, 0f, 0f);
+        }
+        SetGhostPartRotation(_ghostLeftArm, _ghostLeftArmBaseRotation,
+            -52f * amount);
+        SetGhostPartRotation(_ghostRightArm, _ghostRightArmBaseRotation,
+            -52f * amount);
+        SetGhostPartRotation(_ghostLeftUpperLeg,
+            _ghostLeftUpperLegBaseRotation, -68f * amount);
+        SetGhostPartRotation(_ghostRightUpperLeg,
+            _ghostRightUpperLegBaseRotation, -68f * amount);
+        SetGhostPartRotation(_ghostLeftLowerLeg,
+            _ghostLeftLowerLegBaseRotation, 96f * amount);
+        SetGhostPartRotation(_ghostRightLowerLeg,
+            _ghostRightLowerLegBaseRotation, 96f * amount);
+    }
+
+    private static void SetGhostPartRotation(Transform part,
+        Quaternion baseRotation, float pitch)
+    {
+        if (part != null)
+            part.localRotation = baseRotation * Quaternion.Euler(pitch, 0f, 0f);
     }
 
     private void ApplyGhostMaterial(GameObject visual)

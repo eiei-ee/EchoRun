@@ -627,6 +627,20 @@ public class GameStateTests
         GameObject visual = new GameObject("visual");
         _objects.Add(visual);
         visual.transform.SetParent(ghost.transform, false);
+        GameObject head = new GameObject("Head");
+        _objects.Add(head);
+        head.transform.SetParent(visual.transform, false);
+        head.transform.localPosition = new Vector3(0f, 2.08f, 0f);
+        GameObject torso = new GameObject("Torso");
+        _objects.Add(torso);
+        torso.transform.SetParent(visual.transform, false);
+        torso.transform.localPosition = new Vector3(0f, 1.35f, 0f);
+        GameObject upperLeg = new GameObject("Leg_Upper_L");
+        _objects.Add(upperLeg);
+        upperLeg.transform.SetParent(visual.transform, false);
+        GameObject lowerLeg = new GameObject("Leg_Lower_L");
+        _objects.Add(lowerLeg);
+        lowerLeg.transform.SetParent(upperLeg.transform, false);
 
         AIShadowRunner runner = manager.GetComponent<AIShadowRunner>();
         Assert.IsNotNull(runner);
@@ -636,6 +650,7 @@ public class GameStateTests
         SetPrivateField(runner, "_ghostVisualScale", Vector3.one);
         SetPrivateField(runner, "_ghostVisualPosition", Vector3.zero);
         SetPrivateField(runner, "_ghostGroundY", 0f);
+        InvokePrivate(runner, "CacheGhostPoseParts");
 
         InvokePrivate(runner, "ApplyObstacleReaction");
         float startedTimer = GetPrivateField<float>(runner, "_ghostSlideTimer");
@@ -644,8 +659,18 @@ public class GameStateTests
 
         SetPrivateField(runner, "_ghostSlideTimer", startedTimer - 0.12f);
         InvokePrivate(runner, "UpdateGhostPose");
-        Assert.Less(visual.transform.localScale.y, 0.7f,
-            "The reaction must be visible as a crouched shadow pose.");
+        Assert.AreEqual(Vector3.one, visual.transform.localScale,
+            "The shadow root must not sink by scaling the whole body.");
+        Assert.Less(head.transform.localPosition.y, 1.5f,
+            "The head must lower into a visible crouch.");
+        Assert.Less(torso.transform.localScale.y, 0.7f,
+            "The torso must compress during the slide.");
+        Assert.Greater(Quaternion.Angle(Quaternion.identity,
+            upperLeg.transform.localRotation), 50f,
+            "The upper leg must swing into the slide pose.");
+        Assert.Greater(Quaternion.Angle(Quaternion.identity,
+            lowerLeg.transform.localRotation), 75f,
+            "The knee must bend instead of sinking the whole model.");
 
         SetPrivateField(runner, "_ghostSlideTimer", 0f);
         InvokePrivate(runner, "ApplyObstacleReaction");
