@@ -1062,13 +1062,13 @@ MonoBehaviour:
           rid: 4314237481834774530
         ProjectConf:
           projectName: EchoRun
-          Appid: 
+          Appid: wx0d080ce970cf217c
           CDN: 
-          assetLoadType: 0
+          assetLoadType: 1
           compressDataPackage: 0
           VideoUrl: 
           relativeDST: Builds/WeixinMiniGameV0-Profile
-          DST: 
+          DST: C:\Users\zzz\Desktop\TempleRun\Builds\WeixinMiniGameV0-Profile
           StreamCDN: 
           bundleHashLength: 32
           bundlePathIdentifier: StreamingAssets;
