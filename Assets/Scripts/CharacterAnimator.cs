@@ -156,6 +156,7 @@ public class CharacterAnimator : MonoBehaviour
     private void LateUpdate()
     {
         if (_externalDriver) return;
+        if (_player == null) _player = GetComponentInParent<PlayerController>();
         if (_player == null) return;
 
         if (_gm == null) _gm = GameManager.Instance;

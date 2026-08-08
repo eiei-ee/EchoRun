@@ -698,6 +698,39 @@ public class GameStateTests
     }
 
     [Test]
+    public void CharacterAnimatorFindsPlayerAfterLateParenting()
+    {
+        GameObject visual = new GameObject("CharacterModel");
+        _objects.Add(visual);
+        GameObject upperArm = new GameObject("Arm_Upper_L");
+        _objects.Add(upperArm);
+        upperArm.transform.SetParent(visual.transform, false);
+        GameObject lowerArm = new GameObject("Arm_Lower_L");
+        _objects.Add(lowerArm);
+        lowerArm.transform.SetParent(upperArm.transform, false);
+        CharacterAnimator characterAnimator = visual.AddComponent<CharacterAnimator>();
+        InvokePrivate(characterAnimator, "Initialize");
+        Assert.IsNull(GetPrivateField<PlayerController>(characterAnimator, "_player"));
+
+        GameObject playerObject = new GameObject("player");
+        _objects.Add(playerObject);
+        PlayerController player = playerObject.AddComponent<PlayerController>();
+        visual.transform.SetParent(playerObject.transform, false);
+        GameManager manager = Create<GameManager>("GameManager");
+        manager.StartGame();
+        SetPrivateField(characterAnimator, "_gm", manager);
+
+        InvokePrivate(characterAnimator, "LateUpdate");
+
+        Assert.AreSame(player,
+            GetPrivateField<PlayerController>(characterAnimator, "_player"),
+            "The animator must recover when prefab parenting happens after Awake.");
+        Assert.Greater(Quaternion.Angle(Quaternion.identity,
+            upperArm.transform.localRotation), 5f,
+            "Recovered animators must write a running pose to the model bones.");
+    }
+
+    [Test]
     public void ShadowSlidesOnceForAnApproachingLowObstacle()
     {
         TrackManager manager = Create<TrackManager>("TrackManager");
