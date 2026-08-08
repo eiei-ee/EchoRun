@@ -36,6 +36,10 @@ public class CharacterAnimator : MonoBehaviour
     private Vector3 _bodyBaseScale;
     private Quaternion _leftFootBaseRot;
     private Quaternion _rightFootBaseRot;
+    private Quaternion _leftUpperArmBaseRot;
+    private Quaternion _rightUpperArmBaseRot;
+    private Quaternion _leftUpperLegBaseRot;
+    private Quaternion _rightUpperLegBaseRot;
     private Animator _animator;
     private GameManager _gm;
 
@@ -59,6 +63,10 @@ public class CharacterAnimator : MonoBehaviour
 
         if (leftFoot != null) _leftFootBaseRot = leftFoot.localRotation;
         if (rightFoot != null) _rightFootBaseRot = rightFoot.localRotation;
+        if (leftUpperArm != null) _leftUpperArmBaseRot = leftUpperArm.localRotation;
+        if (rightUpperArm != null) _rightUpperArmBaseRot = rightUpperArm.localRotation;
+        if (leftUpperLeg != null) _leftUpperLegBaseRot = leftUpperLeg.localRotation;
+        if (rightUpperLeg != null) _rightUpperLegBaseRot = rightUpperLeg.localRotation;
     }
 
     void InitFromHumanoid()
@@ -118,13 +126,13 @@ public class CharacterAnimator : MonoBehaviour
         float legSwing = Mathf.Sin(_runPhase) * legSwingAngle;
 
         if (leftUpperArm != null)
-            leftUpperArm.localRotation = Quaternion.Euler(armSwing, 0, 0);
+            leftUpperArm.localRotation = _leftUpperArmBaseRot * Quaternion.Euler(armSwing, 0, 0);
         if (rightUpperArm != null)
-            rightUpperArm.localRotation = Quaternion.Euler(-armSwing, 0, 0);
+            rightUpperArm.localRotation = _rightUpperArmBaseRot * Quaternion.Euler(-armSwing, 0, 0);
         if (leftUpperLeg != null)
-            leftUpperLeg.localRotation = Quaternion.Euler(-legSwing, 0, 0);
+            leftUpperLeg.localRotation = _leftUpperLegBaseRot * Quaternion.Euler(-legSwing, 0, 0);
         if (rightUpperLeg != null)
-            rightUpperLeg.localRotation = Quaternion.Euler(legSwing, 0, 0);
+            rightUpperLeg.localRotation = _rightUpperLegBaseRot * Quaternion.Euler(legSwing, 0, 0);
 
         // Foot roll: lift heel on forward swing, toe on back swing
         float footPitch = Mathf.Sin(_runPhase) * 25f;
@@ -135,24 +143,30 @@ public class CharacterAnimator : MonoBehaviour
 
         float bob = Mathf.Abs(Mathf.Sin(_runPhase * 2f)) * bobAmplitude;
         if (bodyTransform != null)
+        {
             bodyTransform.localPosition = _bodyBasePos + Vector3.up * bob;
+            bodyTransform.localScale = Vector3.Lerp(
+                bodyTransform.localScale, _bodyBaseScale, Time.deltaTime * POSE_LERP_SPEED);
+        }
     }
 
     void ApplyJumpPose()
     {
         float t = Time.deltaTime * POSE_LERP_SPEED;
         if (leftUpperArm != null)
-            leftUpperArm.localRotation = Quaternion.Slerp(leftUpperArm.localRotation, Quaternion.Euler(-jumpArmRaiseAngle, 0, 0), t);
+            leftUpperArm.localRotation = Quaternion.Slerp(leftUpperArm.localRotation, _leftUpperArmBaseRot * Quaternion.Euler(-jumpArmRaiseAngle, 0, 0), t);
         if (rightUpperArm != null)
-            rightUpperArm.localRotation = Quaternion.Slerp(rightUpperArm.localRotation, Quaternion.Euler(-jumpArmRaiseAngle, 0, 0), t);
+            rightUpperArm.localRotation = Quaternion.Slerp(rightUpperArm.localRotation, _rightUpperArmBaseRot * Quaternion.Euler(-jumpArmRaiseAngle, 0, 0), t);
         if (leftUpperLeg != null)
-            leftUpperLeg.localRotation = Quaternion.Slerp(leftUpperLeg.localRotation, Quaternion.Euler(jumpLegTuckAngle, 0, 0), t);
+            leftUpperLeg.localRotation = Quaternion.Slerp(leftUpperLeg.localRotation, _leftUpperLegBaseRot * Quaternion.Euler(jumpLegTuckAngle, 0, 0), t);
         if (rightUpperLeg != null)
-            rightUpperLeg.localRotation = Quaternion.Slerp(rightUpperLeg.localRotation, Quaternion.Euler(jumpLegTuckAngle, 0, 0), t);
+            rightUpperLeg.localRotation = Quaternion.Slerp(rightUpperLeg.localRotation, _rightUpperLegBaseRot * Quaternion.Euler(jumpLegTuckAngle, 0, 0), t);
         if (leftFoot != null)
             leftFoot.localRotation = Quaternion.Slerp(leftFoot.localRotation, _leftFootBaseRot * Quaternion.Euler(30, 0, 0), t);
         if (rightFoot != null)
             rightFoot.localRotation = Quaternion.Slerp(rightFoot.localRotation, _rightFootBaseRot * Quaternion.Euler(30, 0, 0), t);
+        if (bodyTransform != null)
+            bodyTransform.localScale = Vector3.Lerp(bodyTransform.localScale, _bodyBaseScale, t);
     }
 
     void ApplySlidePose()
@@ -166,9 +180,9 @@ public class CharacterAnimator : MonoBehaviour
 
         float t = Time.deltaTime * POSE_LERP_SPEED;
         if (leftUpperLeg != null)
-            leftUpperLeg.localRotation = Quaternion.Slerp(leftUpperLeg.localRotation, Quaternion.Euler(-slideLegForwardAngle, 0, 0), t);
+            leftUpperLeg.localRotation = Quaternion.Slerp(leftUpperLeg.localRotation, _leftUpperLegBaseRot * Quaternion.Euler(-slideLegForwardAngle, 0, 0), t);
         if (rightUpperLeg != null)
-            rightUpperLeg.localRotation = Quaternion.Slerp(rightUpperLeg.localRotation, Quaternion.Euler(-slideLegForwardAngle, 0, 0), t);
+            rightUpperLeg.localRotation = Quaternion.Slerp(rightUpperLeg.localRotation, _rightUpperLegBaseRot * Quaternion.Euler(-slideLegForwardAngle, 0, 0), t);
         if (leftFoot != null)
             leftFoot.localRotation = Quaternion.Slerp(leftFoot.localRotation, _leftFootBaseRot, t);
         if (rightFoot != null)
@@ -179,13 +193,13 @@ public class CharacterAnimator : MonoBehaviour
     {
         float t = Time.deltaTime * POSE_LERP_SPEED;
         if (leftUpperArm != null)
-            leftUpperArm.localRotation = Quaternion.Slerp(leftUpperArm.localRotation, Quaternion.identity, t);
+            leftUpperArm.localRotation = Quaternion.Slerp(leftUpperArm.localRotation, _leftUpperArmBaseRot, t);
         if (rightUpperArm != null)
-            rightUpperArm.localRotation = Quaternion.Slerp(rightUpperArm.localRotation, Quaternion.identity, t);
+            rightUpperArm.localRotation = Quaternion.Slerp(rightUpperArm.localRotation, _rightUpperArmBaseRot, t);
         if (leftUpperLeg != null)
-            leftUpperLeg.localRotation = Quaternion.Slerp(leftUpperLeg.localRotation, Quaternion.identity, t);
+            leftUpperLeg.localRotation = Quaternion.Slerp(leftUpperLeg.localRotation, _leftUpperLegBaseRot, t);
         if (rightUpperLeg != null)
-            rightUpperLeg.localRotation = Quaternion.Slerp(rightUpperLeg.localRotation, Quaternion.identity, t);
+            rightUpperLeg.localRotation = Quaternion.Slerp(rightUpperLeg.localRotation, _rightUpperLegBaseRot, t);
         if (leftFoot != null)
             leftFoot.localRotation = Quaternion.Slerp(leftFoot.localRotation, _leftFootBaseRot, t);
         if (rightFoot != null)

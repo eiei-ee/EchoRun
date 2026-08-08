@@ -104,21 +104,40 @@ public class BuildScene
     {
         GameObject model = (GameObject)PrefabUtility.InstantiatePrefab(prefab, player.transform);
         model.name = "CharacterModel";
-        model.transform.localPosition = new Vector3(0, -0.55f, 0);
+        model.transform.localPosition = new Vector3(0, -1f, 0);
+        model.transform.localRotation = Quaternion.identity;
 
-        // Ensure CharacterAnimator has useHumanoidRig enabled
         CharacterAnimator ca = model.GetComponent<CharacterAnimator>();
         if (ca == null) ca = model.AddComponent<CharacterAnimator>();
         SerializedObject caSo = new SerializedObject(ca);
-        caSo.FindProperty("useHumanoidRig").boolValue = true;
+        caSo.FindProperty("useHumanoidRig").boolValue = false;
+        caSo.FindProperty("leftUpperArm").objectReferenceValue = FindDescendant(model.transform, "LeftUpperArm");
+        caSo.FindProperty("rightUpperArm").objectReferenceValue = FindDescendant(model.transform, "RightUpperArm");
+        caSo.FindProperty("leftUpperLeg").objectReferenceValue = FindDescendant(model.transform, "LeftUpperLeg");
+        caSo.FindProperty("rightUpperLeg").objectReferenceValue = FindDescendant(model.transform, "RightUpperLeg");
+        caSo.FindProperty("leftFoot").objectReferenceValue = FindDescendant(model.transform, "LeftFoot");
+        caSo.FindProperty("rightFoot").objectReferenceValue = FindDescendant(model.transform, "RightFoot");
+        caSo.FindProperty("bodyTransform").objectReferenceValue = FindDescendant(model.transform, "Spine");
         caSo.ApplyModifiedProperties();
 
-        // Adjust capsule collider for humanoid proportions
         CapsuleCollider cc = player.GetComponent<CapsuleCollider>();
-        if (cc != null) { cc.height = 2f; cc.radius = 0.35f; }
+        if (cc != null)
+        {
+            cc.height = 2.2f;
+            cc.radius = 0.4f;
+            cc.center = new Vector3(0, 1f, 0);
+        }
 
         Debug.Log("Using humanoid character model");
         return model;
+    }
+
+    static Transform FindDescendant(Transform root, string name)
+    {
+        Transform[] descendants = root.GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < descendants.Length; i++)
+            if (descendants[i].name == name) return descendants[i];
+        return null;
     }
 
     static GameObject CreateProceduralCharacterModel(GameObject player)
@@ -436,7 +455,10 @@ public class BuildScene
 
         // ── Character Model ──
         GameObject humanoidPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
-            "Assets/Models/HumanoidCharacter.prefab");
+            "Assets/Models/EchoRunner/EchoRunner_v1.fbx");
+        if (humanoidPrefab == null)
+            humanoidPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+                "Assets/Models/HumanoidCharacter.prefab");
 
         GameObject model;
         if (humanoidPrefab != null)
@@ -941,7 +963,7 @@ public class BuildScene
         Font font = AssetDatabase.LoadAssetAtPath<Font>(
             "Assets/Resources/Fonts/NotoSansCJKsc-Regular.otf");
         if (font != null) text.font = font;
-        else text.font = Font.CreateDynamicFontFromOSFont("Arial", fontSize);
+        else text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         return text;
     }
 

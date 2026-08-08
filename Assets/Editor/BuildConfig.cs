@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using UnityEditor;
 using UnityEditor.Build;
+using UnityEditor.Build.Profile;
 using UnityEditor.Build.Reporting;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -99,6 +100,100 @@ public class BuildConfig
         Debug.Log($"WebGL build complete: {outputDir}");
     }
 
+    [MenuItem("Tools/Build WeChat MiniGame v0")]
+    public static void BuildWeixinMiniGameV0()
+    {
+        OpenPrimaryScene();
+        EditorUserBuildSettings.SwitchActiveBuildTarget(
+            BuildTargetGroup.WeixinMiniGame, BuildTarget.WeixinMiniGame);
+
+        UIOrientation previousOrientation = PlayerSettings.defaultInterfaceOrientation;
+        bool previousPortrait = PlayerSettings.allowedAutorotateToPortrait;
+        bool previousPortraitUpsideDown =
+            PlayerSettings.allowedAutorotateToPortraitUpsideDown;
+        bool previousLandscapeLeft = PlayerSettings.allowedAutorotateToLandscapeLeft;
+        bool previousLandscapeRight = PlayerSettings.allowedAutorotateToLandscapeRight;
+        ColorSpace previousColorSpace = PlayerSettings.colorSpace;
+        int previousQualityLevel = QualitySettings.GetQualityLevel();
+
+        try
+        {
+            ConfigureBaseSettings();
+            ConfigureWeixinMiniGame();
+            EnsureSceneInBuild();
+
+            const string legacySdkConfigPath =
+                "Assets/WX-WASM-SDK-V2/Editor/MiniGameConfig.asset";
+            const string packageSdkConfigPath =
+                "Packages/com.qq.weixin.minigame/Editor/MiniGameConfig.asset";
+            bool hasOfficialSdk =
+                AssetDatabase.LoadAssetAtPath<Object>(packageSdkConfigPath) != null
+                || AssetDatabase.LoadAssetAtPath<Object>(legacySdkConfigPath) != null;
+            if (!hasOfficialSdk)
+            {
+                throw new BuildFailedException(
+                    "Missing official WeChat Mini Game SDK package "
+                    + "'com.qq.weixin.minigame' (WX-WASM-SDK-V2). "
+                    + "Install it from the WeChat Build Profile before building.");
+            }
+
+            const string outputDir = "Builds/WeixinMiniGameV0-Profile";
+            EnsureDirectory(outputDir);
+
+            PlayerSettings.MiniGame.SetActiveSubplatform(
+                MiniGameBuildSubtarget.WeChat, true);
+            const string profileAssetPath =
+                "Assets/WeixinMiniGame/BuildProfiles/WeChatV0.asset";
+            BuildProfile profile = AssetDatabase.LoadAssetAtPath<BuildProfile>(
+                profileAssetPath);
+            if (profile != null
+                && (profile.miniGameSettings == null
+                    || profile.miniGameSettings.GetType().FullName
+                        != "WeChatWASM.WeixinMiniGameSettings"))
+            {
+                AssetDatabase.DeleteAsset(profileAssetPath);
+                profile = null;
+            }
+            if (profile == null)
+            {
+                EnsureDirectory("Assets/WeixinMiniGame/BuildProfiles");
+                profile = BuildProfile.CreateInstance(
+                    BuildTarget.WeixinMiniGame, MiniGameBuildSubtarget.WeChat);
+                if (profile != null)
+                    AssetDatabase.CreateAsset(profile, profileAssetPath);
+            }
+            if (profile == null)
+                throw new BuildFailedException(
+                    "Unable to create WeChat build profile.");
+
+            profile.buildPath = outputDir;
+            ConfigureWeixinBuildProfile(profile, outputDir);
+            profile.CreatePlayerSettingsFromGlobal();
+            ConfigureWeixinProfilePlayerSettings(profile);
+            EditorUtility.SetDirty(profile);
+            AssetDatabase.SaveAssets();
+            BuildMiniGameError result = BuildPipeline.BuildMiniGame(
+                profile, BuildOptions.None);
+            if (result != BuildMiniGameError.Succeeded)
+                throw new BuildFailedException(
+                    $"WeChat MiniGame profile build failed: {result}.");
+
+            Debug.Log($"WeChat MiniGame v0 profile build complete: {outputDir}");
+        }
+        finally
+        {
+            PlayerSettings.defaultInterfaceOrientation = previousOrientation;
+            PlayerSettings.allowedAutorotateToPortrait = previousPortrait;
+            PlayerSettings.allowedAutorotateToPortraitUpsideDown =
+                previousPortraitUpsideDown;
+            PlayerSettings.allowedAutorotateToLandscapeLeft = previousLandscapeLeft;
+            PlayerSettings.allowedAutorotateToLandscapeRight = previousLandscapeRight;
+            PlayerSettings.colorSpace = previousColorSpace;
+            QualitySettings.SetQualityLevel(previousQualityLevel, true);
+            AssetDatabase.SaveAssets();
+        }
+    }
+
     [MenuItem("Tools/Build Windows 64-bit")]
     public static void BuildWindows()
     {
@@ -130,6 +225,56 @@ public class BuildConfig
             $"{platform} build failed: {result} ({errors} errors).");
     }
 
+    static void ConfigureWeixinBuildProfile(BuildProfile profile, string outputDir)
+    {
+        object settings = profile.miniGameSettings;
+        if (settings == null)
+            throw new BuildFailedException("WeChat MiniGame settings are missing.");
+
+        var projectConfField = settings.GetType().GetField("ProjectConf");
+        object projectConf = projectConfField?.GetValue(settings);
+        if (projectConf == null)
+            throw new BuildFailedException("WeChat ProjectConf is missing.");
+
+        var relativeDstField = projectConf.GetType().GetField("relativeDST");
+        var dstField = projectConf.GetType().GetField("DST");
+        if (relativeDstField == null || dstField == null)
+            throw new BuildFailedException("WeChat export path fields are missing.");
+
+        relativeDstField.SetValue(projectConf, outputDir);
+        dstField.SetValue(projectConf, Path.GetFullPath(outputDir));
+
+        var projectNameField = projectConf.GetType().GetField("projectName");
+        projectNameField?.SetValue(projectConf, ProductName);
+
+        string appId = System.Environment.GetEnvironmentVariable(
+            "WECHAT_MINIGAME_APPID");
+        if (!string.IsNullOrWhiteSpace(appId))
+        {
+            var appIdField = projectConf.GetType().GetField("Appid");
+            if (appIdField == null)
+                throw new BuildFailedException("WeChat Appid field is missing.");
+            appIdField.SetValue(projectConf, appId.Trim());
+        }
+    }
+
+    static void ConfigureWeixinProfilePlayerSettings(BuildProfile profile)
+    {
+        if (profile.playerSettings == null)
+            throw new BuildFailedException(
+                "WeChat Build Profile PlayerSettings are missing.");
+
+        var serializedSettings = new SerializedObject(profile.playerSettings);
+        SerializedProperty colorSpace =
+            serializedSettings.FindProperty("m_ActiveColorSpace");
+        if (colorSpace == null)
+            throw new BuildFailedException(
+                "WeChat Build Profile color-space setting is missing.");
+
+        colorSpace.intValue = (int)ColorSpace.Gamma;
+        serializedSettings.ApplyModifiedPropertiesWithoutUndo();
+    }
+
     static void ConfigureBaseSettings()
     {
         PlayerSettings.companyName = CompanyName;
@@ -139,6 +284,7 @@ public class BuildConfig
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.WebGL, BundleId);
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.iOS, BundleId);
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Standalone, BundleId);
+        PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.WeixinMiniGame, BundleId);
     }
 
     static void ConfigureAndroid()
@@ -201,6 +347,29 @@ public class BuildConfig
         PlayerSettings.defaultWebScreenWidth = 1280;
         PlayerSettings.defaultWebScreenHeight = 720;
         QualitySettings.SetQualityLevel(2, true);
+        QualitySettings.vSyncCount = 0;
+    }
+
+    static void ConfigureWeixinMiniGame()
+    {
+        PlayerSettings.MiniGame.SetActiveSubplatform(
+            MiniGameBuildSubtarget.WeChat, true);
+        PlayerSettings.MiniGame.memorySize = 256;
+        PlayerSettings.MiniGame.useSlimMetaFileFormat = true;
+        PlayerSettings.MiniGame.serializedFileTypeTreeMemoryOptimization = true;
+        PlayerSettings.MiniGame.analyzeBuildSize = true;
+        PlayerSettings.MiniGame.useEmbeddedResources = true;
+        PlayerSettings.MiniGame.threadsSupport = false;
+        PlayerSettings.colorSpace = ColorSpace.Gamma;
+        PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
+        PlayerSettings.allowedAutorotateToPortrait = true;
+        PlayerSettings.allowedAutorotateToLandscapeLeft = false;
+        PlayerSettings.allowedAutorotateToLandscapeRight = false;
+        PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
+        PlayerSettings.SetManagedStrippingLevel(
+            BuildTargetGroup.WeixinMiniGame, ManagedStrippingLevel.High);
+        PlayerSettings.insecureHttpOption = InsecureHttpOption.NotAllowed;
+        QualitySettings.SetQualityLevel(1, true);
         QualitySettings.vSyncCount = 0;
     }
 

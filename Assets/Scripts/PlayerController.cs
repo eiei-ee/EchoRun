@@ -243,6 +243,7 @@ public class PlayerController : MonoBehaviour
         if (swipe == SwipeDirection.None) return;
 
         int previousLane = CurrentLane;
+        bool accepted = false;
 
         switch (swipe)
         {
@@ -252,6 +253,7 @@ public class PlayerController : MonoBehaviour
                     AIShadowRunner.Instance?.RecordPlayerAction(
                         ShadowAction.Left, CurrentLane);
                     CurrentLane--;
+                    accepted = true;
                 }
                 break;
             case SwipeDirection.Right:
@@ -260,6 +262,7 @@ public class PlayerController : MonoBehaviour
                     AIShadowRunner.Instance?.RecordPlayerAction(
                         ShadowAction.Right, CurrentLane);
                     CurrentLane++;
+                    accepted = true;
                 }
                 break;
             case SwipeDirection.Up:
@@ -272,6 +275,7 @@ public class PlayerController : MonoBehaviour
                     _jumpGroundY = _rb.position.y;
                     AITrackDirector.Instance?.RecordJump();
                     AudioManager.Instance?.PlayJump();
+                    accepted = true;
                }
                 break;
             case SwipeDirection.Down:
@@ -290,12 +294,15 @@ public class PlayerController : MonoBehaviour
                    characterModel.localScale = new Vector3(_originalModelScale.x, slideScaleY, _originalModelScale.z);
                 if (characterModel != null)
                     characterModel.localPosition = _originalModelPos + Vector3.up * (_originalColliderHeight - slideColliderHeight) * 0.5f;
+                accepted = true;
                 }
                 break;
         }
 
         if (CurrentLane != previousLane)
             AITrackDirector.Instance?.RecordLaneChange(CurrentLane);
+
+        _input?.ReportSwipeResult(swipe, accepted);
     }
 
     void UpdateSlide()

@@ -260,6 +260,46 @@ public class GameStateTests
     }
 
     [Test]
+    public void IntendedJumpGesturesExceedNinetyPercentClassificationTarget()
+    {
+        const int samples = 101;
+        int jumps = 0;
+        for (int i = 0; i < samples; i++)
+        {
+            float horizontalNoise = Mathf.Lerp(-0.9f, 0.9f,
+                i / (float)(samples - 1));
+            Vector2 intendedJump = new Vector2(horizontalNoise * 120f, 120f);
+            if (InputManager.ClassifySwipe(intendedJump, 30f)
+                == SwipeDirection.Up)
+                jumps++;
+        }
+
+        Assert.Greater((float)jumps / samples, 0.90f,
+            "Representative diagonal upward gestures must classify as Jump.");
+        Assert.AreEqual(SwipeDirection.Right,
+            InputManager.ClassifySwipe(new Vector2(120f, 60f), 30f),
+            "A clearly horizontal lane change must remain horizontal.");
+    }
+
+    [Test]
+    public void SwipeResultReportsAcceptedAndBlockedActions()
+    {
+        InputManager input = Create<InputManager>("InputManagerFeedback");
+        SwipeDirection reportedDirection = SwipeDirection.None;
+        bool reportedAccepted = true;
+        input.SwipeResolved += (direction, accepted) =>
+        {
+            reportedDirection = direction;
+            reportedAccepted = accepted;
+        };
+
+        input.ReportSwipeResult(SwipeDirection.Up, false);
+
+        Assert.AreEqual(SwipeDirection.Up, reportedDirection);
+        Assert.IsFalse(reportedAccepted);
+    }
+
+    [Test]
     public void ConstrainedPlatformsCapSavedHighFrameRates()
     {
         Assert.AreEqual(30, GameManager.NormalizeFrameRate(30, true));
@@ -297,6 +337,15 @@ public class GameStateTests
     }
 
     [Test]
+    public void WeixinPortraitLayoutDoesNotRequestLandscapeGuard()
+    {
+        Assert.IsFalse(UILayoutRules.ShouldShowLandscapeGuard(
+            720, 1280, true, true));
+        Assert.IsTrue(UILayoutRules.IsCompactPortrait(720, 1280));
+        Assert.IsFalse(UILayoutRules.IsCompactPortrait(1280, 720));
+    }
+
+    [Test]
     public void ShadowCalibrationRejectsPassiveKeepSamples()
     {
         int[] actionCounts = { 24, 0, 0, 0, 0 };
@@ -328,6 +377,27 @@ public class GameStateTests
 
         Assert.AreEqual(0.5f, AIShadowRunner.CalculateCalibrationProgress(
             24, 3, actionCounts, 24, 6, 2), 0.0001f);
+    }
+
+    [Test]
+    public void ShadowCanReachCalibrationContractWithinThreeRounds()
+    {
+        int[] actionCounts = { 0, 0, 0, 0, 0 };
+        int totalSamples = 0;
+        int activeSamples = 0;
+
+        for (int round = 0; round < 3; round++)
+        {
+            totalSamples += 8;
+            actionCounts[(int)ShadowAction.Keep] += 6;
+            actionCounts[(int)(round % 2 == 0
+                ? ShadowAction.Jump : ShadowAction.Left)] += 2;
+            activeSamples += 2;
+        }
+
+        Assert.IsTrue(AIShadowRunner.HasCalibrationSamples(
+            totalSamples, activeSamples, actionCounts, 24, 6, 2),
+            "Eight representative samples per completed round must calibrate by round three.");
     }
 
     [Test]
@@ -835,8 +905,10 @@ public class GameStateTests
             "Dynamic objects require an unscaled track root for correct world placement.");
     }
 
-    [Test]
-    public void TurnCoverageAlwaysProvidesConnectedEntryCornerAndExit()
+    [TestCase(-1)]
+    [TestCase(1)]
+    public void TurnCoverageTouchesFollowingStraightWithoutCoplanarOverlap(
+        int turnDirection)
     {
         TrackManager manager = Create<TrackManager>("TrackManager");
         GameObject turn = new GameObject("TurnSegment");
@@ -844,22 +916,28 @@ public class GameStateTests
         MethodInfo ensureCoverage = typeof(TrackManager).GetMethod(
             "EnsureTurnCoverage", BindingFlags.Instance | BindingFlags.NonPublic);
 
-        ensureCoverage.Invoke(manager, new object[] { turn, 1 });
+        ensureCoverage.Invoke(manager, new object[] { turn, turnDirection });
 
         Transform coverage = turn.transform.Find("RuntimeTurnCoverage");
         Assert.IsNotNull(coverage);
         Transform entry = coverage.Find("EntryCoverage");
-        Transform corner = coverage.Find("CornerCoverage");
         Transform exit = coverage.Find("ExitCoverage");
         Assert.IsNotNull(entry);
-        Assert.IsNotNull(corner);
         Assert.IsNotNull(exit);
         Assert.IsNotNull(entry.GetComponent<BoxCollider>());
-        Assert.IsNotNull(corner.GetComponent<BoxCollider>());
         Assert.IsNotNull(exit.GetComponent<BoxCollider>());
-        Assert.AreEqual(0f, entry.localPosition.x, 0.001f);
-        Assert.AreEqual(manager.segmentLength * 0.5f,
-            exit.localPosition.x, 0.001f);
+
+        float exitCenter = exit.localPosition.x * turnDirection;
+        float exitHalfLength = exit.localScale.z * 0.5f;
+        float coverageJoin = entry.localScale.x * 0.5f;
+        float nextStraightNearEdge = manager.segmentLength * 0.5f;
+
+        Assert.AreEqual(coverageJoin,
+            exitCenter - exitHalfLength, 0.001f,
+            "Exit coverage must start where entry coverage ends.");
+        Assert.AreEqual(nextStraightNearEdge,
+            exitCenter + exitHalfLength, 0.001f,
+            "Exit coverage must stop at the next straight's near edge.");
         Assert.AreEqual(manager.segmentLength * 0.5f,
             exit.localPosition.z, 0.001f);
     }

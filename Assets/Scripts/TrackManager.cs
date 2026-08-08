@@ -887,7 +887,7 @@ public class TrackManager : MonoBehaviour
             if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
             if (shader == null) shader = Shader.Find("Mobile/Diffuse");
             if (shader != null)
-                material = new Material(shader) { color = new Color(0.25f, 0.28f, 0.35f) };
+                material = MakeMatteRoadMaterial(shader);
         }
 
         GameObject coverage = new GameObject("RuntimeTurnCoverage");
@@ -897,14 +897,18 @@ public class TrackManager : MonoBehaviour
         CreateTurnSurface("EntryCoverage", coverage.transform,
             new Vector3(0f, -0.15f, segmentLength * 0.5f),
             Quaternion.identity, new Vector3(15f, 0.3f, segmentLength), layer, material);
+        // Exit strip fills only the gap between the turn and the following
+        // straight. Extending it under that straight creates coplanar overlap,
+        // which z-fights across the entire first road block after every turn.
+        const float roadHalfWidth = 7.5f;
+        float nextStraightNearEdge = segmentLength * 0.5f;
+        float exitLength = nextStraightNearEdge - roadHalfWidth;
+        float exitCenterX = roadHalfWidth + exitLength * 0.5f;
         CreateTurnSurface("ExitCoverage", coverage.transform,
-            new Vector3(turnDirection * segmentLength * 0.5f, -0.15f,
+            new Vector3(turnDirection * exitCenterX, -0.15f,
                 segmentLength * 0.5f),
             Quaternion.Euler(0f, 90f, 0f),
-            new Vector3(15f, 0.3f, segmentLength), layer, material);
-        CreateTurnSurface("CornerCoverage", coverage.transform,
-            new Vector3(0f, -0.14f, segmentLength * 0.5f),
-            Quaternion.identity, new Vector3(15f, 0.32f, 15f), layer, material);
+            new Vector3(15f, 0.3f, exitLength), layer, material);
     }
 
     static void CreateTurnSurface(string name, Transform parent, Vector3 localPosition,
@@ -919,6 +923,18 @@ public class TrackManager : MonoBehaviour
         surface.transform.localScale = localScale;
         if (material != null)
             surface.GetComponent<MeshRenderer>().sharedMaterial = material;
+    }
+
+    // Road surfaces must be matte: the Standard shader's default smoothness
+    // picks up specular + skybox reflections, which flicker as white light
+    // at segment seams in the WebGL/minigame renderer.
+    static Material MakeMatteRoadMaterial(Shader shader)
+    {
+        Material material = new Material(shader) { color = new Color(0.25f, 0.28f, 0.35f) };
+        if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0f);
+        if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0f);
+        if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
+        return material;
     }
 
     GameObject CreateProcTrackRoot(string name, int layer)
@@ -937,10 +953,7 @@ public class TrackManager : MonoBehaviour
         surface.transform.localPosition = new Vector3(0f, -0.15f, 0f);
         surface.transform.localScale = new Vector3(9f, 0.3f, 20f);
         if (sh != null)
-            surface.GetComponent<MeshRenderer>().material = new Material(sh)
-            {
-                color = new Color(0.25f, 0.28f, 0.35f)
-            };
+            surface.GetComponent<MeshRenderer>().material = MakeMatteRoadMaterial(sh);
 
         root.SetActive(false);
         root.transform.SetParent(transform);

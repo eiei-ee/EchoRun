@@ -9,6 +9,13 @@
       },
       "url": "https://packages.tuanjie.cn"
     },
+    "com.qq.weixin.minigame": {
+      "version": "https://github.com/wechat-miniprogram/minigame-tuanjie-transform-sdk.git#v0.1.32",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {},
+      "hash": "f67e7851c345f514e9079819cae16273ff05b33c"
+    },
     "com.unity.collab-proxy": {
       "version": "2.12.4",
       "depth": 0,
@@ -118,9 +125,9 @@
       "depth": 0,
       "source": "registry",
       "dependencies": {
-        "com.unity.modules.audio": "1.0.0",
         "com.unity.modules.director": "1.0.0",
         "com.unity.modules.animation": "1.0.0",
+        "com.unity.modules.audio": "1.0.0",
         "com.unity.modules.particlesystem": "1.0.0"
       },
       "url": "https://packages.tuanjie.cn"

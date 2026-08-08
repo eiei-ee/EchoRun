@@ -77,8 +77,6 @@ public class UIManager : MonoBehaviour
 
         _font = Resources.Load<Font>("Fonts/NotoSansCJKsc-Regular");
         if (_font == null)
-            _font = Font.CreateDynamicFontFromOSFont("Arial", 16);
-        if (_font == null)
         {
             _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             Debug.LogWarning("Bundled Noto Sans CJK font is missing; Chinese text may not render.");
@@ -881,8 +879,9 @@ public class UIManager : MonoBehaviour
     void UpdateLandscapeGuard()
     {
         if (_landscapeGuard == null) return;
-        bool shouldShow = ShouldShowLandscapeGuard(
-            Screen.width, Screen.height, UsesTouchLayout());
+        bool shouldShow = UILayoutRules.ShouldShowLandscapeGuard(
+            Screen.width, Screen.height, UsesTouchLayout(),
+            AllowsPortraitLayout());
         if (_landscapeGuard.activeSelf == shouldShow) return;
 
         _landscapeGuard.SetActive(shouldShow);
@@ -899,6 +898,15 @@ public class UIManager : MonoBehaviour
     {
         return UILayoutRules.ShouldShowLandscapeGuard(
             width, height, touchLayout);
+    }
+
+    private static bool AllowsPortraitLayout()
+    {
+#if MINIGAME_SUBPLATFORM_WEIXIN
+        return true;
+#else
+        return false;
+#endif
     }
 
     private static bool UsesTouchLayout()
