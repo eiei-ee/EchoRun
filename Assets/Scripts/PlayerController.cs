@@ -12,7 +12,6 @@ public class PlayerController : MonoBehaviour
 
     [Header("Slide")]
     public float slideDuration = 0.8f;
-    public float slideScaleY = 0.5f;
     public float slideColliderHeight = 1f;
 
     [Header("Ground Check")]
@@ -35,7 +34,7 @@ public class PlayerController : MonoBehaviour
     private float _runTrailTimer;
     private float _jumpGroundY;
     private float _originalColliderHeight;
-   private Vector3 _originalModelScale = Vector3.one;
+    private Vector3 _originalColliderCenter;
     private Vector3 _originalModelPos;
     private CapsuleCollider _capsuleCollider;
     private Rigidbody _rb;
@@ -68,12 +67,13 @@ public class PlayerController : MonoBehaviour
 
         _capsuleCollider = GetComponent<CapsuleCollider>();
         if (_capsuleCollider != null)
+        {
             _originalColliderHeight = _capsuleCollider.height;
+            _originalColliderCenter = _capsuleCollider.center;
+        }
 
         if (characterModel != null)
         {
-            _originalModelScale = characterModel.localScale;
-
             // Position model at capsule bottom so feet sit on the track surface
             if (_capsuleCollider != null)
             {
@@ -287,13 +287,8 @@ public class PlayerController : MonoBehaviour
        _slideTimer = 0f;
          _slideTrailTimer = 0f;
        AITrackDirector.Instance?.RecordSlide();
-       AudioManager.Instance?.PlaySlide();
-                    if (_capsuleCollider != null)
-                        _capsuleCollider.height = slideColliderHeight;
-               if (characterModel != null)
-                   characterModel.localScale = new Vector3(_originalModelScale.x, slideScaleY, _originalModelScale.z);
-                if (characterModel != null)
-                    characterModel.localPosition = _originalModelPos + Vector3.up * (_originalColliderHeight - slideColliderHeight) * 0.5f;
+                    AudioManager.Instance?.PlaySlide();
+                    ApplySlideCollider();
                 accepted = true;
                 }
                 break;
@@ -322,13 +317,30 @@ public class PlayerController : MonoBehaviour
        if (_slideTimer >= slideDuration)
        {
            IsSliding = false;
-           if (characterModel != null)
-               characterModel.localScale = _originalModelScale;
             if (characterModel != null)
                 characterModel.localPosition = _originalModelPos;
            if (_capsuleCollider != null)
+           {
                _capsuleCollider.height = _originalColliderHeight;
+               _capsuleCollider.center = _originalColliderCenter;
+           }
        }
+    }
+
+    private void ApplySlideCollider()
+    {
+        if (_capsuleCollider == null) return;
+
+        // Keep the capsule bottom fixed while lowering its top. The model itself
+        // stays at scale 1; CharacterAnimator supplies the visible crouch pose.
+        float minimumHeight = _capsuleCollider.radius * 2f;
+        float height = Mathf.Clamp(slideColliderHeight,
+            minimumHeight, _originalColliderHeight);
+        float bottom = _originalColliderCenter.y - _originalColliderHeight * 0.5f;
+        Vector3 center = _originalColliderCenter;
+        center.y = bottom + height * 0.5f;
+        _capsuleCollider.height = height;
+        _capsuleCollider.center = center;
     }
 
     bool IsGrounded()

@@ -674,6 +674,30 @@ public class GameStateTests
     }
 
     [Test]
+    public void SlideColliderLowersTopWithoutMovingBottom()
+    {
+        GameObject playerObject = new GameObject("player");
+        _objects.Add(playerObject);
+        CapsuleCollider capsule = playerObject.AddComponent<CapsuleCollider>();
+        capsule.center = new Vector3(0f, 1.1f, 0f);
+        capsule.height = 2.2f;
+        capsule.radius = 0.4f;
+        PlayerController player = playerObject.AddComponent<PlayerController>();
+        player.slideColliderHeight = 0.9f;
+        SetPrivateField(player, "_capsuleCollider", capsule);
+        SetPrivateField(player, "_originalColliderHeight", capsule.height);
+        SetPrivateField(player, "_originalColliderCenter", capsule.center);
+
+        float originalBottom = capsule.center.y - capsule.height * 0.5f;
+        InvokePrivate(player, "ApplySlideCollider");
+
+        Assert.AreEqual(0.9f, capsule.height, 0.0001f);
+        Assert.AreEqual(originalBottom,
+            capsule.center.y - capsule.height * 0.5f, 0.0001f,
+            "Sliding must not lift the player capsule away from the track.");
+    }
+
+    [Test]
     public void ShadowSlidesOnceForAnApproachingLowObstacle()
     {
         TrackManager manager = Create<TrackManager>("TrackManager");
@@ -711,16 +735,23 @@ public class GameStateTests
         GameObject lowerLeg = new GameObject("Leg_Lower_L");
         _objects.Add(lowerLeg);
         lowerLeg.transform.SetParent(upperLeg.transform, false);
+        GameObject rearUpperLeg = new GameObject("Leg_Upper_R");
+        _objects.Add(rearUpperLeg);
+        rearUpperLeg.transform.SetParent(visual.transform, false);
+        GameObject rearLowerLeg = new GameObject("Leg_Lower_R");
+        _objects.Add(rearLowerLeg);
+        rearLowerLeg.transform.SetParent(rearUpperLeg.transform, false);
+        CharacterAnimator characterAnimator = visual.AddComponent<CharacterAnimator>();
+        characterAnimator.SetExternalDriver();
 
         AIShadowRunner runner = manager.GetComponent<AIShadowRunner>();
         Assert.IsNotNull(runner);
         SetPrivateField(runner, "_player", player);
         SetPrivateField(runner, "_ghost", ghost);
         SetPrivateField(runner, "_ghostVisual", visual.transform);
-        SetPrivateField(runner, "_ghostVisualScale", Vector3.one);
         SetPrivateField(runner, "_ghostVisualPosition", Vector3.zero);
+        SetPrivateField(runner, "_ghostAnimator", characterAnimator);
         SetPrivateField(runner, "_ghostGroundY", 0f);
-        InvokePrivate(runner, "CacheGhostPoseParts");
 
         InvokePrivate(runner, "ApplyObstacleReaction");
         float startedTimer = GetPrivateField<float>(runner, "_ghostSlideTimer");
@@ -729,18 +760,21 @@ public class GameStateTests
 
         SetPrivateField(runner, "_ghostSlideTimer", startedTimer - 0.12f);
         InvokePrivate(runner, "UpdateGhostPose");
+        characterAnimator.ApplyExternalMotion(
+            false, true, Vector3.forward, 10f, 0.2f);
         Assert.AreEqual(Vector3.one, visual.transform.localScale,
             "The shadow root must not sink by scaling the whole body.");
-        Assert.Less(head.transform.localPosition.y, 1.5f,
-            "The head must lower into a visible crouch.");
-        Assert.Less(torso.transform.localScale.y, 0.7f,
-            "The torso must compress during the slide.");
+        Assert.AreEqual(Vector3.one, torso.transform.localScale,
+            "The torso must keep its authored proportions during the slide.");
+        Assert.Greater(Quaternion.Angle(Quaternion.identity,
+            torso.transform.localRotation), 20f,
+            "The torso must lean into a visible slide pose.");
         Assert.Greater(Quaternion.Angle(Quaternion.identity,
             upperLeg.transform.localRotation), 50f,
             "The upper leg must swing into the slide pose.");
         Assert.Greater(Quaternion.Angle(Quaternion.identity,
-            lowerLeg.transform.localRotation), 75f,
-            "The knee must bend instead of sinking the whole model.");
+            rearLowerLeg.transform.localRotation), 75f,
+            "The rear knee must bend instead of sinking the whole model.");
 
         SetPrivateField(runner, "_ghostSlideTimer", 0f);
         InvokePrivate(runner, "ApplyObstacleReaction");
