@@ -392,6 +392,8 @@ public class WorldStyler : MonoBehaviour
         if (player == null) return;
         Transform model = player.transform.Find("CharacterModel");
         if (model == null || model.Find("StreamlinedSuit") != null) return;
+        if (model.Find("EchoRunner_Rig") != null ||
+            model.GetComponentInChildren<SkinnedMeshRenderer>(true) != null) return;
 
         string[] boxParts = { "ChestPlate", "ChestSignal", "SignalBelt", "HelmetBand", "Mouth" };
         for (int i = 0; i < boxParts.Length; i++)
