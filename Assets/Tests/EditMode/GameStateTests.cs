@@ -731,6 +731,29 @@ public class GameStateTests
     }
 
     [Test]
+    public void CharacterAnimatorForcesLateProceduralPosesIntoSkinning()
+    {
+        GameObject visual = new GameObject("CharacterModel");
+        _objects.Add(visual);
+        GameObject meshObject = new GameObject("SkinnedMesh");
+        _objects.Add(meshObject);
+        meshObject.transform.SetParent(visual.transform, false);
+        SkinnedMeshRenderer renderer =
+            meshObject.AddComponent<SkinnedMeshRenderer>();
+        renderer.updateWhenOffscreen = false;
+        renderer.forceMatrixRecalculationPerRender = false;
+
+        CharacterAnimator characterAnimator =
+            visual.AddComponent<CharacterAnimator>();
+        InvokePrivate(characterAnimator, "Initialize");
+
+        Assert.IsFalse(renderer.updateWhenOffscreen,
+            "Offscreen skinning should stay disabled for the WeChat budget.");
+        Assert.IsTrue(renderer.forceMatrixRecalculationPerRender,
+            "LateUpdate bone changes must reach WebGL/WeChat skinning.");
+    }
+
+    [Test]
     public void ShadowSlidesOnceForAnApproachingLowObstacle()
     {
         TrackManager manager = Create<TrackManager>("TrackManager");

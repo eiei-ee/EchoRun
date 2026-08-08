@@ -92,13 +92,15 @@ public class CharacterAnimator : MonoBehaviour
             {
                 InitFromHumanoid();
 
-                // A controller-less Humanoid Animator can still restore the avatar's
-                // bind pose after Update. Once the bones are mapped, disable it so
-                // this lightweight procedural animator remains the single pose owner.
-                if (_animator.runtimeAnimatorController == null)
-                    _animator.enabled = false;
+                // Keep the Animator active so WebGL/WeChat continues updating the
+                // skinned-mesh bone matrices. Procedural poses are written later in
+                // LateUpdate, after Humanoid evaluation.
+                _animator.applyRootMotion = false;
+                _animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
             }
         }
+
+        PrepareSkinnedMeshes();
 
         // These fallbacks also support the current Generic EchoRunner skeleton.
         leftUpperArm = FindBone(leftUpperArm, "LeftUpperArm", "LeftArm", "Arm_Upper_L");
@@ -168,6 +170,17 @@ public class CharacterAnimator : MonoBehaviour
 
         ApplyMotion(_player.IsJumping, _player.IsSliding,
             _player.ForwardDirection, _gm.CurrentSpeed, Time.deltaTime);
+    }
+
+    private void PrepareSkinnedMeshes()
+    {
+        // Procedural poses are applied in LateUpdate. WebGL/WeChat can otherwise
+        // reuse the matrices produced by Animator evaluation earlier in the frame,
+        // leaving the rendered mesh in its bind pose while Transforms are moving.
+        SkinnedMeshRenderer[] renderers =
+            GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+            renderers[i].forceMatrixRecalculationPerRender = true;
     }
 
     // The AI shadow owns movement state, but reuses exactly the same pose code.
