@@ -897,11 +897,12 @@ public class TrackManager : MonoBehaviour
         CreateTurnSurface("EntryCoverage", coverage.transform,
             new Vector3(0f, -0.15f, segmentLength * 0.5f),
             Quaternion.identity, new Vector3(15f, 0.3f, segmentLength), layer, material);
-        // Exit strip starts at the edge of the entry road's width so the two
-        // surfaces touch instead of overlapping. Coplanar overlap z-fights and
-        // flickers at the turn corner.
+        // Exit strip fills only the gap between the turn and the following
+        // straight. Extending it under that straight creates coplanar overlap,
+        // which z-fights across the entire first road block after every turn.
         const float roadHalfWidth = 7.5f;
-        float exitLength = segmentLength - roadHalfWidth;
+        float nextStraightNearEdge = segmentLength * 0.5f;
+        float exitLength = nextStraightNearEdge - roadHalfWidth;
         float exitCenterX = roadHalfWidth + exitLength * 0.5f;
         CreateTurnSurface("ExitCoverage", coverage.transform,
             new Vector3(turnDirection * exitCenterX, -0.15f,

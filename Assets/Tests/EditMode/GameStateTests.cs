@@ -905,8 +905,10 @@ public class GameStateTests
             "Dynamic objects require an unscaled track root for correct world placement.");
     }
 
-    [Test]
-    public void TurnCoverageAlwaysProvidesConnectedEntryCornerAndExit()
+    [TestCase(-1)]
+    [TestCase(1)]
+    public void TurnCoverageTouchesFollowingStraightWithoutCoplanarOverlap(
+        int turnDirection)
     {
         TrackManager manager = Create<TrackManager>("TrackManager");
         GameObject turn = new GameObject("TurnSegment");
@@ -914,22 +916,28 @@ public class GameStateTests
         MethodInfo ensureCoverage = typeof(TrackManager).GetMethod(
             "EnsureTurnCoverage", BindingFlags.Instance | BindingFlags.NonPublic);
 
-        ensureCoverage.Invoke(manager, new object[] { turn, 1 });
+        ensureCoverage.Invoke(manager, new object[] { turn, turnDirection });
 
         Transform coverage = turn.transform.Find("RuntimeTurnCoverage");
         Assert.IsNotNull(coverage);
         Transform entry = coverage.Find("EntryCoverage");
-        Transform corner = coverage.Find("CornerCoverage");
         Transform exit = coverage.Find("ExitCoverage");
         Assert.IsNotNull(entry);
-        Assert.IsNotNull(corner);
         Assert.IsNotNull(exit);
         Assert.IsNotNull(entry.GetComponent<BoxCollider>());
-        Assert.IsNotNull(corner.GetComponent<BoxCollider>());
         Assert.IsNotNull(exit.GetComponent<BoxCollider>());
-        Assert.AreEqual(0f, entry.localPosition.x, 0.001f);
-        Assert.AreEqual(manager.segmentLength * 0.5f,
-            exit.localPosition.x, 0.001f);
+
+        float exitCenter = exit.localPosition.x * turnDirection;
+        float exitHalfLength = exit.localScale.z * 0.5f;
+        float coverageJoin = entry.localScale.x * 0.5f;
+        float nextStraightNearEdge = manager.segmentLength * 0.5f;
+
+        Assert.AreEqual(coverageJoin,
+            exitCenter - exitHalfLength, 0.001f,
+            "Exit coverage must start where entry coverage ends.");
+        Assert.AreEqual(nextStraightNearEdge,
+            exitCenter + exitHalfLength, 0.001f,
+            "Exit coverage must stop at the next straight's near edge.");
         Assert.AreEqual(manager.segmentLength * 0.5f,
             exit.localPosition.z, 0.001f);
     }
