@@ -130,6 +130,7 @@ public class AIShadowRunner : MonoBehaviour
             return;
 
         if (!_runStarted) BeginRun();
+        if (HasActiveOpponent && _ghost == null) CreateGhost();
 
         _runTime += Time.deltaTime;
         _playerProgress = _gameManager.Distance
@@ -617,7 +618,9 @@ public class AIShadowRunner : MonoBehaviour
         }
 
         if (TryGetGhostGroundHeight(target, out float groundHeight))
-            _ghostGroundY = groundHeight + _ghostRootToLowestPoint + 0.02f;
+            // Authored run clips can extend the foot slightly below the bind-pose
+            // bounds used by CacheGhostGroundOffset.
+            _ghostGroundY = groundHeight + _ghostRootToLowestPoint + 0.04f;
         else if (!_player.IsJumping)
             _ghostGroundY = _player.transform.position.y;
         target.y = _ghostGroundY + jumpHeight;
@@ -776,38 +779,25 @@ public class AIShadowRunner : MonoBehaviour
             return;
         }
 
+        if (_player == null) _player = FindObjectOfType<PlayerController>();
+        if (_player == null || _player.characterModel == null) return;
+
         _ghost = new GameObject("AI Shadow Runner");
-        if (_player != null && _player.characterModel != null)
-        {
-            GameObject visual = Instantiate(_player.characterModel.gameObject, _ghost.transform);
-            visual.name = "ShadowVisual";
-            _ghostVisual = visual.transform;
-            _ghostVisualPosition = _ghostVisual.localPosition;
-            _ghostAnimator = visual.GetComponent<CharacterAnimator>();
-            if (_ghostAnimator == null)
-                _ghostAnimator = visual.GetComponentInChildren<CharacterAnimator>(true);
-            if (_ghostAnimator != null) _ghostAnimator.SetExternalDriver();
 
-            foreach (Collider collider in visual.GetComponentsInChildren<Collider>(true))
-                Destroy(collider);
-            ApplyGhostMaterial(visual);
-        }
-        else
-        {
-            GameObject body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            body.name = "ShadowVisual";
-            body.transform.SetParent(_ghost.transform, false);
-            body.transform.localPosition = Vector3.up;
-            Destroy(body.GetComponent<Collider>());
-            _ghostVisual = body.transform;
-            _ghostVisualPosition = body.transform.localPosition;
-            _ghostAnimator = null;
-            ApplyGhostMaterial(body);
-        }
+        GameObject visual = Instantiate(_player.characterModel.gameObject, _ghost.transform);
+        visual.name = "ShadowVisual";
+        _ghostVisual = visual.transform;
+        _ghostVisualPosition = _ghostVisual.localPosition;
+        _ghostAnimator = visual.GetComponent<CharacterAnimator>();
+        if (_ghostAnimator == null)
+            _ghostAnimator = visual.GetComponentInChildren<CharacterAnimator>(true);
+        if (_ghostAnimator != null) _ghostAnimator.SetExternalDriver();
 
-        _ghost.transform.position = _player != null
-            ? _player.transform.position + Vector3.forward * 2f
-            : Vector3.zero;
+        foreach (Collider collider in visual.GetComponentsInChildren<Collider>(true))
+            Destroy(collider);
+        ApplyGhostMaterial(visual);
+
+        _ghost.transform.position = _player.transform.position + Vector3.forward * 2f;
         CacheGhostGroundOffset();
     }
 

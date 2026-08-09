@@ -15,7 +15,7 @@ MonoBehaviour:
   m_BuildTarget: 47
   m_Subtarget: 0
   m_ModuleName: WeixinMiniGame
-  m_BuildPath: Builds/WeixinMiniGameV0-Profile
+  m_BuildPath: Builds/WeixinMiniGameV0-Clean
   m_PlatformSettings:
     rid: 4314237481834774528
   m_MiniGameSettings:
@@ -137,7 +137,7 @@ MonoBehaviour:
     - line: '| useMacAppStoreValidation: 0'
     - line: '| wglDisableFBODepthStencil: 0'
     - line: '| macAppStoreCategory: public.app-category.games'
-    - line: '| gpuSkinning: 1'
+    - line: '| gpuSkinning: 0'
     - line: '| gpuSkinningTransformFeedback: 0'
     - line: '| vertexShaderSkinning: 0'
     - line: '| xboxPIXTextureCapture: 0'
@@ -1067,8 +1067,8 @@ MonoBehaviour:
           assetLoadType: 1
           compressDataPackage: 0
           VideoUrl: 
-          relativeDST: Builds/WeixinMiniGameV0-Profile
-          DST: C:\Users\zzz\Desktop\TempleRun\Builds\WeixinMiniGameV0-Profile
+          relativeDST: Builds/WeixinMiniGameV0-Clean
+          DST: "C:\\Users\\zzz\\Desktop\\\u5F52\u6863\\TempleRun\\Builds\\WeixinMiniGameV0-Clean"
           StreamCDN: 
           bundleHashLength: 32
           bundlePathIdentifier: StreamingAssets;
@@ -1105,7 +1105,7 @@ MonoBehaviour:
           fbslim: 0
           DeleteStreamingAssets: 1
           ProfilingMemory: 0
-          CleanBuild: 0
+          CleanBuild: 1
           CustomNodePath: 
           autoAdaptScreen: 0
           showMonitorSuggestModal: 1

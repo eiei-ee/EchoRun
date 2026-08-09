@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Profile;
@@ -114,6 +115,7 @@ public class BuildConfig
         bool previousLandscapeLeft = PlayerSettings.allowedAutorotateToLandscapeLeft;
         bool previousLandscapeRight = PlayerSettings.allowedAutorotateToLandscapeRight;
         ColorSpace previousColorSpace = PlayerSettings.colorSpace;
+        bool previousGpuSkinning = PlayerSettings.gpuSkinning;
         int previousQualityLevel = QualitySettings.GetQualityLevel();
 
         try
@@ -137,7 +139,7 @@ public class BuildConfig
                     + "Install it from the WeChat Build Profile before building.");
             }
 
-            const string outputDir = "Builds/WeixinMiniGameV0-Profile";
+            const string outputDir = "Builds/WeixinMiniGameV0-Clean";
             EnsureDirectory(outputDir);
 
             PlayerSettings.MiniGame.SetActiveSubplatform(
@@ -178,6 +180,7 @@ public class BuildConfig
                 throw new BuildFailedException(
                     $"WeChat MiniGame profile build failed: {result}.");
 
+            FinalizeWeixinMiniGameOutput(outputDir);
             Debug.Log($"WeChat MiniGame v0 profile build complete: {outputDir}");
         }
         finally
@@ -189,6 +192,7 @@ public class BuildConfig
             PlayerSettings.allowedAutorotateToLandscapeLeft = previousLandscapeLeft;
             PlayerSettings.allowedAutorotateToLandscapeRight = previousLandscapeRight;
             PlayerSettings.colorSpace = previousColorSpace;
+            PlayerSettings.gpuSkinning = previousGpuSkinning;
             QualitySettings.SetQualityLevel(previousQualityLevel, true);
             AssetDatabase.SaveAssets();
         }
@@ -247,6 +251,25 @@ public class BuildConfig
         var projectNameField = projectConf.GetType().GetField("projectName");
         projectNameField?.SetValue(projectConf, ProductName);
 
+        // Keep the profile and the generated JavaScript in agreement. The SDK
+        // template contains $COMPRESS_DATA_PACKAGE and an interrupted/skipped
+        // conversion pass otherwise leaves a ReferenceError in check-version.js.
+        var compressDataPackageField =
+            projectConf.GetType().GetField("compressDataPackage");
+        if (compressDataPackageField == null)
+            throw new BuildFailedException(
+                "WeChat compressDataPackage field is missing.");
+        compressDataPackageField.SetValue(projectConf, false);
+
+        var compileOptionsField = settings.GetType().GetField("CompileOptions");
+        object compileOptions = compileOptionsField?.GetValue(settings);
+        var cleanBuildField =
+            compileOptions?.GetType().GetField("CleanBuild");
+        if (cleanBuildField == null)
+            throw new BuildFailedException(
+                "WeChat CleanBuild field is missing.");
+        cleanBuildField.SetValue(compileOptions, true);
+
         string appId = System.Environment.GetEnvironmentVariable(
             "WECHAT_MINIGAME_APPID");
         if (!string.IsNullOrWhiteSpace(appId))
@@ -272,7 +295,184 @@ public class BuildConfig
                 "WeChat Build Profile color-space setting is missing.");
 
         colorSpace.intValue = (int)ColorSpace.Gamma;
+        SerializedProperty gpuSkinning =
+            serializedSettings.FindProperty("gpuSkinning");
+        if (gpuSkinning == null)
+            throw new BuildFailedException(
+                "WeChat Build Profile GPU-skinning setting is missing.");
+
+        gpuSkinning.boolValue = false;
         serializedSettings.ApplyModifiedPropertiesWithoutUndo();
+
+        // BuildProfile serializes its PlayerSettings as YAML lines. Updating the
+        // transient PlayerSettings object alone does not persist this value in
+        // this editor version, so write the profile's serialized copy as well.
+        var serializedProfile = new SerializedObject(profile);
+        SerializedProperty settingsYaml =
+            serializedProfile.FindProperty("m_PlayerSettingsYaml");
+        SerializedProperty settingsLines =
+            settingsYaml?.FindPropertyRelative("m_Settings");
+        bool updatedGpuSkinning = false;
+        if (settingsLines != null && settingsLines.isArray)
+        {
+            for (int i = 0; i < settingsLines.arraySize; i++)
+            {
+                SerializedProperty line = settingsLines.GetArrayElementAtIndex(i)
+                    .FindPropertyRelative("line");
+                if (line == null || !line.stringValue.Contains("gpuSkinning:"))
+                    continue;
+
+                line.stringValue = "| gpuSkinning: 0";
+                updatedGpuSkinning = true;
+                break;
+            }
+        }
+
+        if (!updatedGpuSkinning)
+            throw new BuildFailedException(
+                "WeChat Build Profile serialized GPU-skinning setting is missing.");
+
+        serializedProfile.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    static void FinalizeWeixinMiniGameOutput(string outputDir)
+    {
+        string miniGameDir = Path.GetFullPath(Path.Combine(outputDir, "minigame"));
+        string checkVersionPath = Path.Combine(miniGameDir, "check-version.js");
+        string gameJsPath = Path.Combine(miniGameDir, "game.js");
+        string gameJsonPath = Path.Combine(miniGameDir, "game.json");
+
+        if (!File.Exists(checkVersionPath)
+            || !File.Exists(gameJsPath)
+            || !File.Exists(gameJsonPath))
+        {
+            throw new BuildFailedException(
+                "WeChat SDK did not generate the required minigame files.");
+        }
+
+        ReplaceGeneratedText(
+            checkVersionPath, "$COMPRESS_DATA_PACKAGE", "false");
+        ReplaceGeneratedText(
+            gameJsPath, "$COMPRESS_DATA_PACKAGE", "false");
+
+        string gameJs = File.ReadAllText(gameJsPath, Encoding.UTF8);
+        const string checkVersionImport =
+            "import checkVersion from './check-version';";
+        if (!gameJs.Contains(checkVersionImport))
+            throw new BuildFailedException(
+                "WeChat game.js does not contain the version-check import.");
+        string versionModuleName = "check-version-echorun-"
+            + System.DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+        string versionModulePath = Path.Combine(
+            miniGameDir, versionModuleName + ".js");
+        File.Copy(checkVersionPath, versionModulePath, true);
+        gameJs = gameJs.Replace(
+            checkVersionImport,
+            "import checkVersion from './" + versionModuleName + "';");
+
+        // WeChat DevTools can retain the unversioned module in its module cache.
+        // Every SDK import must point at the cache-busted copy, not only game.js.
+        RewriteCheckVersionImports(miniGameDir, versionModuleName);
+
+        string compressBootstrapName = "compress-config-echorun-"
+            + System.DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+        string compressBootstrapPath = Path.Combine(
+            miniGameDir, compressBootstrapName + ".js");
+        File.WriteAllText(
+            compressBootstrapPath,
+            "GameGlobal['$' + 'COMPRESS_DATA_PACKAGE'] = false;\n",
+            new UTF8Encoding(false));
+        gameJs = "import './" + compressBootstrapName + "';\n" + gameJs;
+
+        const string startGame = "gameManager.startGame();";
+        const string preferredFrameRate =
+            "wx.setPreferredFramesPerSecond(60);";
+        if (!gameJs.Contains(preferredFrameRate))
+        {
+            if (!gameJs.Contains(startGame))
+                throw new BuildFailedException(
+                    "WeChat game.js does not contain the game startup call.");
+            gameJs = gameJs.Replace(
+                startGame, startGame + "\n        " + preferredFrameRate);
+        }
+        File.WriteAllText(gameJsPath, gameJs, new UTF8Encoding(false));
+
+        string gameJson = File.ReadAllText(gameJsonPath, Encoding.UTF8);
+        const string objectArrayPattern =
+            @"""parallelPreloadSubpackages""\s*:\s*\[\s*"
+            + @"\{\s*""name""\s*:\s*""wasmcode""\s*\}\s*,\s*"
+            + @"\{\s*""name""\s*:\s*""data-package""\s*\}\s*\]";
+        const string stringArray =
+            "\"parallelPreloadSubpackages\" : [\n"
+            + "    \"wasmcode\",\n"
+            + "    \"data-package\"\n"
+            + "  ]";
+        gameJson = Regex.Replace(gameJson, objectArrayPattern, stringArray);
+        File.WriteAllText(gameJsonPath, gameJson, new UTF8Encoding(false));
+
+        var staleCheckVersionImport = new Regex(
+            @"['""](?:\./|\.\./)+check-version['""]");
+        foreach (string path in Directory.GetFiles(
+                     miniGameDir, "*", SearchOption.AllDirectories))
+        {
+            string extension = Path.GetExtension(path).ToLowerInvariant();
+            if (extension != ".js" && extension != ".json") continue;
+            string generatedText = File.ReadAllText(path, Encoding.UTF8);
+            if (generatedText.Contains("$COMPRESS_DATA_PACKAGE")
+                && path != compressBootstrapPath)
+            {
+                throw new BuildFailedException(
+                    "Unresolved $COMPRESS_DATA_PACKAGE in " + path);
+            }
+            if (extension == ".js" && staleCheckVersionImport.IsMatch(generatedText))
+            {
+                throw new BuildFailedException(
+                    "Unversioned check-version import in " + path);
+            }
+        }
+    }
+
+    static void RewriteCheckVersionImports(
+        string miniGameDir, string versionModuleName)
+    {
+        var importPattern = new Regex(
+            @"(?<quote>['""])(?:\./|\.\./)+check-version(?<end>['""])");
+
+        foreach (string path in Directory.GetFiles(
+                     miniGameDir, "*.js", SearchOption.AllDirectories))
+        {
+            string directory = Path.GetDirectoryName(path);
+            string relativeDirectory = directory.Length == miniGameDir.Length
+                ? string.Empty
+                : directory.Substring(miniGameDir.Length + 1);
+            string[] directories = relativeDirectory.Split(
+                new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+                System.StringSplitOptions.RemoveEmptyEntries);
+
+            var modulePath = new StringBuilder();
+            if (directories.Length == 0)
+                modulePath.Append("./");
+            else
+                for (int i = 0; i < directories.Length; i++)
+                    modulePath.Append("../");
+            modulePath.Append(versionModuleName);
+
+            string text = File.ReadAllText(path, Encoding.UTF8);
+            string rewritten = importPattern.Replace(
+                text,
+                "${quote}" + modulePath + "${end}");
+            if (rewritten != text)
+                File.WriteAllText(path, rewritten, new UTF8Encoding(false));
+        }
+    }
+
+    static void ReplaceGeneratedText(
+        string path, string oldValue, string newValue)
+    {
+        string text = File.ReadAllText(path, Encoding.UTF8);
+        if (!text.Contains(oldValue)) return;
+        File.WriteAllText(
+            path, text.Replace(oldValue, newValue), new UTF8Encoding(false));
     }
 
     static void ConfigureBaseSettings()
@@ -360,6 +560,10 @@ public class BuildConfig
         PlayerSettings.MiniGame.analyzeBuildSize = true;
         PlayerSettings.MiniGame.useEmbeddedResources = true;
         PlayerSettings.MiniGame.threadsSupport = false;
+        // The WeChat WebGL 1 renderer can keep late procedural bone poses in the
+        // bind pose when GPU skinning is enabled. CPU skinning consumes the final
+        // bone transforms and keeps the runner and AI shadow animated.
+        PlayerSettings.gpuSkinning = false;
         PlayerSettings.colorSpace = ColorSpace.Gamma;
         PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
         PlayerSettings.allowedAutorotateToPortrait = true;

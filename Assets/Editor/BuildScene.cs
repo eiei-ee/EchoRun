@@ -113,6 +113,8 @@ public class BuildScene
         caSo.FindProperty("useHumanoidRig").boolValue = false;
         caSo.FindProperty("leftUpperArm").objectReferenceValue = FindDescendant(model.transform, "LeftUpperArm");
         caSo.FindProperty("rightUpperArm").objectReferenceValue = FindDescendant(model.transform, "RightUpperArm");
+        caSo.FindProperty("leftLowerArm").objectReferenceValue = FindDescendant(model.transform, "LeftLowerArm");
+        caSo.FindProperty("rightLowerArm").objectReferenceValue = FindDescendant(model.transform, "RightLowerArm");
         caSo.FindProperty("leftUpperLeg").objectReferenceValue = FindDescendant(model.transform, "LeftUpperLeg");
         caSo.FindProperty("rightUpperLeg").objectReferenceValue = FindDescendant(model.transform, "RightUpperLeg");
         caSo.FindProperty("leftFoot").objectReferenceValue = FindDescendant(model.transform, "LeftFoot");
@@ -286,6 +288,8 @@ public class BuildScene
         SerializedObject animSo = new SerializedObject(anim);
         animSo.FindProperty("leftUpperArm").objectReferenceValue = armUpperL.transform;
         animSo.FindProperty("rightUpperArm").objectReferenceValue = armUpperR.transform;
+        animSo.FindProperty("leftLowerArm").objectReferenceValue = armLowerL.transform;
+        animSo.FindProperty("rightLowerArm").objectReferenceValue = armLowerR.transform;
         animSo.FindProperty("leftUpperLeg").objectReferenceValue = legUpperL.transform;
         animSo.FindProperty("rightUpperLeg").objectReferenceValue = legUpperR.transform;
         animSo.FindProperty("leftFoot").objectReferenceValue = footL.transform;

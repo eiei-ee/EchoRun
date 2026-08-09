@@ -3,17 +3,22 @@ using UnityEngine;
 public class CharacterAnimator : MonoBehaviour
 {
     [Header("Run Cycle")]
-    public float runSwingSpeed = 12f;
-    public float armSwingAngle = 28f;
-    public float armTuckAngle = 18f;
-    public float elbowBendAngle = 52f;
-    public float elbowBendVariation = 8f;
-    public float legSwingAngle = 45f;
-    public float bobAmplitude = 0.06f;
+    public float runSwingSpeed = 10f;
+    public float armSwingAngle = 32f;
+    public float armTuckAngle = 68f;
+    public float elbowBendAngle = 72f;
+    public float elbowBendVariation = 12f;
+    public float legSwingAngle = 34f;
+    public float kneeFlexAngle = 72f;
+    public float runSpineLean = 8f;
+    public float bobAmplitude = 0.045f;
 
     [Header("Jump Pose")]
-    public float jumpArmRaiseAngle = 70f;
-    public float jumpLegTuckAngle = 55f;
+    public float jumpArmRaiseAngle = 52f;
+    public float jumpLegTuckAngle = 58f;
+    public float jumpElbowBendAngle = 72f;
+    public float jumpKneeBendAngle = 88f;
+    public float jumpSpineLean = 14f;
 
     [Header("Slide Pose")]
     public float slideHipDrop = 0.52f;
@@ -37,11 +42,15 @@ public class CharacterAnimator : MonoBehaviour
     public Transform rightLowerLeg;
     public Transform leftFoot;
     public Transform rightFoot;
+    public Transform leftHand;
+    public Transform rightHand;
     public Transform hipsTransform;
     public Transform bodyTransform;
 
     [Header("Humanoid")]
     public bool useHumanoidRig;
+    public bool useAuthoredAnimations = true;
+    public bool stabilizeAuthoredRun = true;
 
     private PlayerController _player;
     private GameManager _gm;
@@ -49,6 +58,7 @@ public class CharacterAnimator : MonoBehaviour
     private bool _initialized;
     private bool _externalDriver;
     private float _runPhase;
+    private int _activeAuthoredState;
 
     private Vector3 _hipsBasePos;
     private Vector3 _bodyBasePos;
@@ -70,6 +80,9 @@ public class CharacterAnimator : MonoBehaviour
     private Quaternion _rightLowerLegBaseRot;
 
     private const float PoseLerpSpeed = 10f;
+    private static readonly int IdleState = Animator.StringToHash("Idle");
+    private static readonly int RunState = Animator.StringToHash("Run");
+    private static readonly int JumpState = Animator.StringToHash("Jump");
 
     private void Awake()
     {
@@ -113,6 +126,8 @@ public class CharacterAnimator : MonoBehaviour
         rightLowerLeg = FindBone(rightLowerLeg, "RightLowerLeg", "RightLeg", "Leg_Lower_R");
         leftFoot = FindBone(leftFoot, "LeftFoot", "Foot_L");
         rightFoot = FindBone(rightFoot, "RightFoot", "Foot_R");
+        leftHand = FindBone(leftHand, "LeftHand", "Hand_L");
+        rightHand = FindBone(rightHand, "RightHand", "Hand_R");
         hipsTransform = FindBone(hipsTransform, "Hips", "Pelvis");
         bodyTransform = FindBone(bodyTransform, "Spine", "Torso");
 
@@ -151,6 +166,8 @@ public class CharacterAnimator : MonoBehaviour
         rightLowerLeg = _animator.GetBoneTransform(HumanBodyBones.RightLowerLeg);
         leftFoot = _animator.GetBoneTransform(HumanBodyBones.LeftFoot);
         rightFoot = _animator.GetBoneTransform(HumanBodyBones.RightFoot);
+        leftHand = _animator.GetBoneTransform(HumanBodyBones.LeftHand);
+        rightHand = _animator.GetBoneTransform(HumanBodyBones.RightHand);
         hipsTransform = _animator.GetBoneTransform(HumanBodyBones.Hips);
         bodyTransform = _animator.GetBoneTransform(HumanBodyBones.Spine);
     }
@@ -164,7 +181,10 @@ public class CharacterAnimator : MonoBehaviour
         if (_gm == null) _gm = GameManager.Instance;
         if (_gm == null || _gm.State != GameState.Playing)
         {
-            ApplyIdlePose(Time.deltaTime);
+            if (CanUseAuthoredAnimations())
+                ApplyAuthoredMotion(false, 0f, true);
+            else
+                ApplyIdlePose(Time.deltaTime);
             return;
         }
 
@@ -203,9 +223,68 @@ public class CharacterAnimator : MonoBehaviour
     {
         RotateTowardForward(forward, deltaTime);
 
+        if (CanUseAuthoredAnimations())
+        {
+            ApplyAuthoredMotion(isJumping, speed, false);
+            if (isSliding)
+                ApplySlidePose(deltaTime);
+            else if (!isJumping)
+                StabilizeAuthoredRunCore();
+            return;
+        }
+
         if (isJumping) ApplyJumpPose(deltaTime);
         else if (isSliding) ApplySlidePose(deltaTime);
         else ApplyRunPose(speed, deltaTime);
+    }
+
+    private bool CanUseAuthoredAnimations()
+    {
+        return useAuthoredAnimations
+            && _animator != null
+            && _animator.runtimeAnimatorController != null;
+    }
+
+    private void ApplyAuthoredMotion(bool isJumping, float speed, bool idle)
+    {
+        int targetState = idle ? IdleState : isJumping ? JumpState : RunState;
+        if (!_animator.HasState(0, targetState)) return;
+
+        if (_activeAuthoredState != targetState)
+        {
+            if (_activeAuthoredState == 0)
+                _animator.Play(targetState, 0, 0f);
+            else
+                _animator.CrossFade(targetState, 0.12f, 0);
+            _activeAuthoredState = targetState;
+        }
+
+        _animator.speed = targetState == RunState
+            ? Mathf.Clamp(speed / 10f, 0.85f, 1.4f)
+            : 1f;
+    }
+
+    private void StabilizeAuthoredRunCore()
+    {
+        if (!stabilizeAuthoredRun) return;
+        StabilizeCoreBone(hipsTransform, _hipsBasePos, _hipsBaseRot);
+        StabilizeCoreBone(bodyTransform, _bodyBasePos, _bodyBaseRot);
+    }
+
+    private static void StabilizeCoreBone(
+        Transform bone, Vector3 basePosition, Quaternion baseRotation)
+    {
+        if (bone == null) return;
+
+        Vector3 position = bone.localPosition;
+        position.x = basePosition.x;
+        bone.localPosition = position;
+
+        Quaternion relativeRotation =
+            Quaternion.Inverse(baseRotation) * bone.localRotation;
+        Vector3 relativeEuler = relativeRotation.eulerAngles;
+        relativeEuler.z = 0f;
+        bone.localRotation = baseRotation * Quaternion.Euler(relativeEuler);
     }
 
     private void RotateTowardForward(Vector3 forward, float deltaTime)
@@ -219,8 +298,9 @@ public class CharacterAnimator : MonoBehaviour
     private void ApplyRunPose(float speed, float deltaTime)
     {
         _runPhase += deltaTime * runSwingSpeed * (Mathf.Max(1f, speed) / 10f);
-        float armSwing = Mathf.Sin(_runPhase) * armSwingAngle;
-        float legSwing = Mathf.Sin(_runPhase) * legSwingAngle;
+        float stride = Mathf.Sin(_runPhase);
+        float armSwing = stride * armSwingAngle;
+        float legSwing = stride * legSwingAngle;
         float elbowBend = elbowBendAngle
             + (0.5f - 0.5f * Mathf.Cos(_runPhase * 2f)) * elbowBendVariation;
 
@@ -230,46 +310,78 @@ public class CharacterAnimator : MonoBehaviour
         ApplyRunArm(rightUpperArm, rightLowerArm,
             _rightUpperArmBaseRootRot, _rightLowerArmBaseRootRot,
             -armSwing, -armTuckAngle, elbowBend);
+        AimRunningForearm(leftLowerArm, leftHand, true);
+        AimRunningForearm(rightLowerArm, rightHand, false);
         SetLocalRotation(leftUpperLeg,
             _leftUpperLegBaseRot * Quaternion.Euler(-legSwing, 0f, 0f));
         SetLocalRotation(rightUpperLeg,
             _rightUpperLegBaseRot * Quaternion.Euler(legSwing, 0f, 0f));
-        BlendLocalRotation(leftLowerLeg, _leftLowerLegBaseRot, deltaTime);
-        BlendLocalRotation(rightLowerLeg, _rightLowerLegBaseRot, deltaTime);
+        float leftRecovery = 0.5f - 0.5f * Mathf.Cos(_runPhase);
+        float rightRecovery = 1f - leftRecovery;
+        float leftKneeBend = Mathf.Lerp(10f, kneeFlexAngle, leftRecovery);
+        float rightKneeBend = Mathf.Lerp(10f, kneeFlexAngle, rightRecovery);
+        SetLocalRotation(leftLowerLeg,
+            _leftLowerLegBaseRot * Quaternion.Euler(-leftKneeBend, 0f, 0f));
+        SetLocalRotation(rightLowerLeg,
+            _rightLowerLegBaseRot * Quaternion.Euler(-rightKneeBend, 0f, 0f));
 
-        float footPitch = Mathf.Sin(_runPhase) * 25f;
+        float leftFootPitch = Mathf.Lerp(-14f, 20f, leftRecovery)
+            + legSwing * 0.1f;
+        float rightFootPitch = Mathf.Lerp(-14f, 20f, rightRecovery)
+            - legSwing * 0.1f;
         SetLocalRotation(leftFoot,
-            _leftFootBaseRot * Quaternion.Euler(footPitch, 0f, 0f));
+            _leftFootBaseRot * Quaternion.Euler(leftFootPitch, 0f, 0f));
         SetLocalRotation(rightFoot,
-            _rightFootBaseRot * Quaternion.Euler(-footPitch, 0f, 0f));
+            _rightFootBaseRot * Quaternion.Euler(rightFootPitch, 0f, 0f));
 
         float bob = Mathf.Abs(Mathf.Sin(_runPhase * 2f)) * bobAmplitude;
-        BlendCorePose(_hipsBasePos, _hipsBaseRot,
-            _bodyBasePos + Vector3.up * bob, _bodyBaseRot, deltaTime);
+        Quaternion hipsRotation = _hipsBaseRot
+            * Quaternion.Euler(0f, stride * 3f, 0f);
+        Quaternion bodyRotation = _bodyBaseRot
+            * Quaternion.Euler(runSpineLean, -stride * 4f, 0f);
+        BlendCorePose(_hipsBasePos, hipsRotation,
+            _bodyBasePos + Vector3.up * bob, bodyRotation, deltaTime);
     }
 
     private void ApplyJumpPose(float deltaTime)
     {
-        BlendLocalRotation(leftUpperArm,
-            _leftUpperArmBaseRot * Quaternion.Euler(-jumpArmRaiseAngle, 0f, 0f), deltaTime);
-        BlendLocalRotation(rightUpperArm,
-            _rightUpperArmBaseRot * Quaternion.Euler(-jumpArmRaiseAngle, 0f, 0f), deltaTime);
-        BlendLocalRotation(leftLowerArm, _leftLowerArmBaseRot, deltaTime);
-        BlendLocalRotation(rightLowerArm, _rightLowerArmBaseRot, deltaTime);
+        // Freeze the lead side from the last run stride so the pose stays stable
+        // throughout the jump instead of swapping limbs in mid-air.
+        bool leftLegLeads = Mathf.Sin(_runPhase) >= 0f;
+        float leadingArmSwing = -jumpArmRaiseAngle;
+        float trailingArmSwing = jumpArmRaiseAngle * 0.35f;
+        ApplyRunArm(leftUpperArm, leftLowerArm,
+            _leftUpperArmBaseRootRot, _leftLowerArmBaseRootRot,
+            leftLegLeads ? trailingArmSwing : leadingArmSwing,
+            armTuckAngle, jumpElbowBendAngle);
+        ApplyRunArm(rightUpperArm, rightLowerArm,
+            _rightUpperArmBaseRootRot, _rightLowerArmBaseRootRot,
+            leftLegLeads ? leadingArmSwing : trailingArmSwing,
+            -armTuckAngle, jumpElbowBendAngle);
+
+        float leftThighAngle = leftLegLeads
+            ? jumpLegTuckAngle : -jumpLegTuckAngle * 0.3f;
+        float rightThighAngle = leftLegLeads
+            ? -jumpLegTuckAngle * 0.3f : jumpLegTuckAngle;
+        float leftKneeAngle = leftLegLeads
+            ? -jumpKneeBendAngle : -jumpKneeBendAngle * 0.55f;
+        float rightKneeAngle = leftLegLeads
+            ? -jumpKneeBendAngle * 0.55f : -jumpKneeBendAngle;
         BlendLocalRotation(leftUpperLeg,
-            _leftUpperLegBaseRot * Quaternion.Euler(jumpLegTuckAngle, 0f, 0f), deltaTime);
+            _leftUpperLegBaseRot * Quaternion.Euler(leftThighAngle, 0f, 0f), deltaTime);
         BlendLocalRotation(rightUpperLeg,
-            _rightUpperLegBaseRot * Quaternion.Euler(jumpLegTuckAngle, 0f, 0f), deltaTime);
+            _rightUpperLegBaseRot * Quaternion.Euler(rightThighAngle, 0f, 0f), deltaTime);
         BlendLocalRotation(leftLowerLeg,
-            _leftLowerLegBaseRot * Quaternion.Euler(-35f, 0f, 0f), deltaTime);
+            _leftLowerLegBaseRot * Quaternion.Euler(leftKneeAngle, 0f, 0f), deltaTime);
         BlendLocalRotation(rightLowerLeg,
-            _rightLowerLegBaseRot * Quaternion.Euler(-35f, 0f, 0f), deltaTime);
+            _rightLowerLegBaseRot * Quaternion.Euler(rightKneeAngle, 0f, 0f), deltaTime);
         BlendLocalRotation(leftFoot,
-            _leftFootBaseRot * Quaternion.Euler(30f, 0f, 0f), deltaTime);
+            _leftFootBaseRot * Quaternion.Euler(leftLegLeads ? 22f : -8f, 0f, 0f), deltaTime);
         BlendLocalRotation(rightFoot,
-            _rightFootBaseRot * Quaternion.Euler(30f, 0f, 0f), deltaTime);
+            _rightFootBaseRot * Quaternion.Euler(leftLegLeads ? -8f : 22f, 0f, 0f), deltaTime);
         BlendCorePose(_hipsBasePos, _hipsBaseRot,
-            _bodyBasePos, _bodyBaseRot, deltaTime);
+            _bodyBasePos,
+            _bodyBaseRot * Quaternion.Euler(jumpSpineLean, 0f, 0f), deltaTime);
     }
 
     private void ApplySlidePose(float deltaTime)
@@ -355,6 +467,22 @@ public class CharacterAnimator : MonoBehaviour
             lowerArm.rotation = transform.rotation * swing * elbow * tuck
                 * lowerBaseRootRotation;
         }
+    }
+
+    private void AimRunningForearm(
+        Transform lowerArm, Transform hand, bool isLeft)
+    {
+        if (lowerArm == null || hand == null) return;
+        Vector3 currentDirection = hand.position - lowerArm.position;
+        if (currentDirection.sqrMagnitude < 0.000001f) return;
+
+        // Solve from the actual elbow-to-wrist vector instead of assuming a
+        // local Mixamo axis. Hands travel forward/up and slightly inward.
+        Vector3 localTarget = new Vector3(
+            isLeft ? 0.08f : -0.08f, 0.35f, 0.93f).normalized;
+        Vector3 targetDirection = transform.TransformDirection(localTarget);
+        lowerArm.rotation = Quaternion.FromToRotation(
+            currentDirection.normalized, targetDirection) * lowerArm.rotation;
     }
 
     private void BlendLocalRotation(Transform bone, Quaternion target, float deltaTime)

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Reflection;
 using NUnit.Framework;
+using UnityEditor;
 using UnityEngine;
 
 public class GameStateTests
@@ -754,6 +755,350 @@ public class GameStateTests
     }
 
     [Test]
+    public void CharacterAnimatorRunUsesHumanOpposedLimbMechanics()
+    {
+        GameObject visual = new GameObject("CharacterModel");
+        _objects.Add(visual);
+        Transform leftUpperArm = CreateBone("LeftUpperArm", visual.transform);
+        Transform rightUpperArm = CreateBone("RightUpperArm", visual.transform);
+        Transform leftLowerArm = CreateBone("LeftLowerArm", leftUpperArm);
+        Transform rightLowerArm = CreateBone("RightLowerArm", rightUpperArm);
+        Transform leftUpperLeg = CreateBone("LeftUpperLeg", visual.transform);
+        Transform rightUpperLeg = CreateBone("RightUpperLeg", visual.transform);
+        Transform leftLowerLeg = CreateBone("LeftLowerLeg", leftUpperLeg);
+        Transform rightLowerLeg = CreateBone("RightLowerLeg", rightUpperLeg);
+        Transform leftFoot = CreateBone("LeftFoot", leftLowerLeg);
+        Transform rightFoot = CreateBone("RightFoot", rightLowerLeg);
+        Transform spine = CreateBone("Spine", visual.transform);
+
+        CharacterAnimator characterAnimator =
+            visual.AddComponent<CharacterAnimator>();
+        characterAnimator.runSwingSpeed = 0f;
+        characterAnimator.SetExternalDriver();
+        SetPrivateField(characterAnimator, "_runPhase", Mathf.PI * 0.25f);
+        characterAnimator.ApplyExternalMotion(
+            false, false, Vector3.forward, 10f, 1f);
+
+        Assert.Greater(Quaternion.Angle(
+            Quaternion.identity, leftUpperArm.localRotation), 55f,
+            "The shoulders must drop out of the horizontal T pose.");
+        Assert.Greater(Quaternion.Angle(
+            Quaternion.identity, rightUpperArm.localRotation), 55f,
+            "Both arms must stay close to the torso while running.");
+        Assert.Greater(Quaternion.Angle(
+            Quaternion.identity, leftLowerArm.localRotation), 45f,
+            "The left elbow must remain bent like a runner's arm.");
+        Assert.Greater(Quaternion.Angle(
+            Quaternion.identity, rightLowerArm.localRotation), 45f,
+            "The right elbow must remain bent like a runner's arm.");
+        Assert.Greater(Quaternion.Angle(
+            leftUpperArm.localRotation, rightUpperArm.localRotation), 35f,
+            "The arms must counter-swing instead of moving as one bar.");
+        Assert.Greater(Quaternion.Angle(
+            leftUpperLeg.localRotation, rightUpperLeg.localRotation), 35f,
+            "The thighs must stride in opposite directions.");
+        Assert.Greater(Quaternion.Angle(
+            leftLowerLeg.localRotation, rightLowerLeg.localRotation), 35f,
+            "The recovery leg must bend while the support leg extends.");
+        Assert.Greater(Quaternion.Angle(
+            leftFoot.localRotation, rightFoot.localRotation), 12f,
+            "The feet must alternate between recovery and push-off angles.");
+        Assert.Greater(Quaternion.Angle(
+            Quaternion.identity, spine.localRotation), 4f,
+            "A running torso needs a small forward lean.");
+    }
+
+    [Test]
+    public void HumanAnimationControllerContainsRetargetedMotionClips()
+    {
+        const string controllerPath =
+            "Assets/Animations/HumanMotion/EchoRunHuman.controller";
+        RuntimeAnimatorController controller =
+            AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
+                controllerPath);
+        Assert.IsNotNull(controller,
+            "The ExoGray model must use an authored Animator Controller.");
+
+        AnimationClip run = System.Array.Find(
+            controller.animationClips, clip => clip.name == "HumanRun");
+        AnimationClip idle = System.Array.Find(
+            controller.animationClips, clip => clip.name == "HumanIdle");
+        AnimationClip falling = System.Array.Find(
+            controller.animationClips, clip => clip.name == "HumanFalling");
+        Assert.IsNotNull(run);
+        Assert.IsNotNull(idle);
+        Assert.IsNotNull(falling);
+        Assert.IsTrue(run.isHumanMotion);
+        Assert.IsTrue(run.isLooping,
+            "The authored running clip must loop without procedural resets.");
+    }
+
+    [Test]
+    public void AuthoredRunRetargetsOntoTheActualExoGraySkeleton()
+    {
+        GameObject modelAsset = AssetDatabase.LoadAssetAtPath<GameObject>(
+            "Assets/Models/Mixamo/ExoGray/ExoGray_TPose.fbx");
+        RuntimeAnimatorController controller =
+            AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
+                "Assets/Animations/HumanMotion/EchoRunHuman.controller");
+        Assert.IsNotNull(modelAsset);
+        Assert.IsNotNull(controller);
+
+        GameObject model = Object.Instantiate(modelAsset);
+        _objects.Add(model);
+        Animator animator = model.GetComponent<Animator>();
+        Assert.IsNotNull(animator);
+        Assert.IsTrue(animator.isHuman);
+        Transform leftArm =
+            animator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
+        Transform rightArm =
+            animator.GetBoneTransform(HumanBodyBones.RightUpperArm);
+        Transform leftLeg =
+            animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg);
+        Transform rightLeg =
+            animator.GetBoneTransform(HumanBodyBones.RightUpperLeg);
+        Quaternion leftArmBind = leftArm.localRotation;
+        Quaternion rightArmBind = rightArm.localRotation;
+        Quaternion leftLegBind = leftLeg.localRotation;
+        Quaternion rightLegBind = rightLeg.localRotation;
+
+        animator.runtimeAnimatorController = controller;
+        animator.applyRootMotion = false;
+        animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+        animator.Rebind();
+        animator.Update(0f);
+        animator.Play(Animator.StringToHash("Run"), 0, 0.25f);
+        animator.Update(0.1f);
+
+        Assert.Greater(Quaternion.Angle(leftArmBind, leftArm.localRotation), 8f);
+        Assert.Greater(Quaternion.Angle(rightArmBind, rightArm.localRotation), 8f);
+        Assert.Greater(Quaternion.Angle(leftLegBind, leftLeg.localRotation), 8f);
+        Assert.Greater(Quaternion.Angle(rightLegBind, rightLeg.localRotation), 8f);
+        Assert.Greater(Quaternion.Angle(
+            leftArm.localRotation, rightArm.localRotation), 15f,
+            "The authored run must preserve opposing human arm motion.");
+    }
+
+    [Test]
+    public void AuthoredRunKeepsTheRunnerCenteredWithoutSideRoll()
+    {
+        GameObject modelAsset = AssetDatabase.LoadAssetAtPath<GameObject>(
+            "Assets/Models/Mixamo/ExoGray/ExoGray_TPose.fbx");
+        RuntimeAnimatorController controller =
+            AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
+                "Assets/Animations/HumanMotion/EchoRunHuman.controller");
+        Assert.IsNotNull(modelAsset);
+        Assert.IsNotNull(controller);
+
+        GameObject model = Object.Instantiate(modelAsset);
+        _objects.Add(model);
+        Animator animator = model.GetComponent<Animator>();
+        animator.runtimeAnimatorController = controller;
+        animator.applyRootMotion = false;
+        animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+        animator.Rebind();
+        animator.Update(0f);
+
+        CharacterAnimator characterAnimator =
+            model.AddComponent<CharacterAnimator>();
+        characterAnimator.useHumanoidRig = true;
+        SetPrivateField(characterAnimator, "_initialized", false);
+        InvokePrivate(characterAnimator, "Initialize");
+        characterAnimator.SetExternalDriver();
+
+        Transform hips = animator.GetBoneTransform(HumanBodyBones.Hips);
+        Transform spine = animator.GetBoneTransform(HumanBodyBones.Spine);
+        float hipsCenterX = hips.localPosition.x;
+        float spineCenterX = spine.localPosition.x;
+        Quaternion hipsBaseRotation = hips.localRotation;
+        Quaternion spineBaseRotation = spine.localRotation;
+        float[] runTimes = { 0.1f, 0.35f, 0.6f, 0.85f };
+
+        for (int i = 0; i < runTimes.Length; i++)
+        {
+            animator.Play(Animator.StringToHash("Run"), 0, runTimes[i]);
+            animator.Update(0f);
+            characterAnimator.ApplyExternalMotion(
+                false, false, Vector3.forward, 10f, 0f);
+
+            Assert.AreEqual(hipsCenterX, hips.localPosition.x, 0.0001f);
+            Assert.AreEqual(spineCenterX, spine.localPosition.x, 0.0001f);
+            Quaternion hipsRelative =
+                Quaternion.Inverse(hipsBaseRotation) * hips.localRotation;
+            Quaternion spineRelative =
+                Quaternion.Inverse(spineBaseRotation) * spine.localRotation;
+            Assert.Less(Mathf.Abs(Mathf.DeltaAngle(
+                0f, hipsRelative.eulerAngles.z)), 0.1f);
+            Assert.Less(Mathf.Abs(Mathf.DeltaAngle(
+                0f, spineRelative.eulerAngles.z)), 0.1f);
+        }
+    }
+
+    [Test]
+    public void ActualRunnerForearmsPointForwardInsteadOfOutward()
+    {
+        const string modelPath =
+            "Assets/Models/Mixamo/ExoGray/ExoGray_TPose.fbx";
+        GameObject modelAsset =
+            AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
+        Assert.IsNotNull(modelAsset);
+        GameObject model = Object.Instantiate(modelAsset);
+        _objects.Add(model);
+
+        CharacterAnimator characterAnimator =
+            model.AddComponent<CharacterAnimator>();
+        characterAnimator.useHumanoidRig = true;
+        characterAnimator.runSwingSpeed = 0f;
+        SetPrivateField(characterAnimator, "_initialized", false);
+        InvokePrivate(characterAnimator, "Initialize");
+        characterAnimator.SetExternalDriver();
+
+        Animator animator = model.GetComponentInChildren<Animator>();
+        Assert.IsNotNull(animator);
+        Transform leftElbow =
+            animator.GetBoneTransform(HumanBodyBones.LeftLowerArm);
+        Transform rightElbow =
+            animator.GetBoneTransform(HumanBodyBones.RightLowerArm);
+        Transform leftHand = animator.GetBoneTransform(HumanBodyBones.LeftHand);
+        Transform rightHand = animator.GetBoneTransform(HumanBodyBones.RightHand);
+        Assert.IsNotNull(leftElbow);
+        Assert.IsNotNull(rightElbow);
+        Assert.IsNotNull(leftHand);
+        Assert.IsNotNull(rightHand);
+
+        float[] phases = { 0f, Mathf.PI * 0.5f, Mathf.PI, Mathf.PI * 1.5f };
+        for (int i = 0; i < phases.Length; i++)
+        {
+            SetPrivateField(characterAnimator, "_runPhase", phases[i]);
+            characterAnimator.ApplyExternalMotion(
+                false, false, Vector3.forward, 10f, 1f);
+            Vector3 leftForearm =
+                (leftHand.position - leftElbow.position).normalized;
+            Vector3 rightForearm =
+                (rightHand.position - rightElbow.position).normalized;
+            Assert.Greater(
+                Vector3.Dot(leftForearm, model.transform.forward), 0.55f,
+                "The left hand must travel forward from the elbow at phase " + i);
+            Assert.Greater(
+                Vector3.Dot(rightForearm, model.transform.forward), 0.55f,
+                "The right hand must travel forward from the elbow at phase " + i);
+            Assert.Less(Mathf.Abs(
+                    Vector3.Dot(leftForearm, model.transform.right)), 0.35f,
+                "The left forearm must not flare sideways at phase " + i);
+            Assert.Less(Mathf.Abs(
+                    Vector3.Dot(rightForearm, model.transform.right)), 0.35f,
+                "The right forearm must not flare sideways at phase " + i);
+        }
+    }
+
+    [Test]
+    public void CharacterAnimatorJumpUsesAStaggeredBentLimbPose()
+    {
+        GameObject visual = new GameObject("CharacterModel");
+        _objects.Add(visual);
+        Transform leftUpperArm = CreateBone("LeftUpperArm", visual.transform);
+        Transform rightUpperArm = CreateBone("RightUpperArm", visual.transform);
+        Transform leftLowerArm = CreateBone("LeftLowerArm", leftUpperArm);
+        Transform rightLowerArm = CreateBone("RightLowerArm", rightUpperArm);
+        Transform leftUpperLeg = CreateBone("LeftUpperLeg", visual.transform);
+        Transform rightUpperLeg = CreateBone("RightUpperLeg", visual.transform);
+        CreateBone("LeftLowerLeg", leftUpperLeg);
+        CreateBone("RightLowerLeg", rightUpperLeg);
+        Transform spine = CreateBone("Spine", visual.transform);
+
+        CharacterAnimator characterAnimator =
+            visual.AddComponent<CharacterAnimator>();
+        characterAnimator.SetExternalDriver();
+        characterAnimator.ApplyExternalMotion(
+            true, false, Vector3.forward, 10f, 1f);
+
+        Assert.Greater(Quaternion.Angle(
+            leftUpperArm.localRotation, rightUpperArm.localRotation), 25f,
+            "Jump arms must counter-swing instead of forming a symmetric V.");
+        Assert.Greater(Quaternion.Angle(
+            Quaternion.identity, leftLowerArm.localRotation), 35f,
+            "The left elbow must bend during a jump.");
+        Assert.Greater(Quaternion.Angle(
+            Quaternion.identity, rightLowerArm.localRotation), 35f,
+            "The right elbow must bend during a jump.");
+        Assert.Greater(Quaternion.Angle(
+            leftUpperLeg.localRotation, rightUpperLeg.localRotation), 40f,
+            "One knee must lead while the trailing leg extends behind.");
+        Assert.Greater(Quaternion.Angle(
+            Quaternion.identity, spine.localRotation), 8f,
+            "The torso must lean into the jump instead of staying upright.");
+    }
+
+    [Test]
+    public void ShadowCreatedBeforeStartStillClonesThePlayerVisual()
+    {
+        GameObject playerObject = new GameObject("player");
+        _objects.Add(playerObject);
+        PlayerController player = playerObject.AddComponent<PlayerController>();
+        GameObject visual = new GameObject("CharacterModel");
+        _objects.Add(visual);
+        visual.transform.SetParent(playerObject.transform, false);
+        GameObject marker = new GameObject("PlayerVisualMarker");
+        _objects.Add(marker);
+        marker.transform.SetParent(visual.transform, false);
+        player.characterModel = visual.transform;
+
+        AIShadowRunner runner = Create<AIShadowRunner>("AIShadowRunner");
+        SetPrivateField(runner, "_player", null);
+
+        InvokePrivate(runner, "CreateGhost");
+
+        GameObject ghost = GetPrivateField<GameObject>(runner, "_ghost");
+        Assert.IsNotNull(ghost);
+        Assert.IsNotNull(ghost.transform.Find("ShadowVisual/PlayerVisualMarker"),
+            "CreateGhost must resolve the scene player instead of permanently " +
+            "falling back to a visible capsule when Start has not run yet.");
+    }
+
+    [Test]
+    public void SceneRuntimeScriptsResolveToCompiledClasses()
+    {
+        string[] paths =
+        {
+            "Assets/Scripts/AudioManager.cs",
+            "Assets/Scripts/CameraFollow.cs",
+            "Assets/Scripts/CharacterAnimator.cs",
+            "Assets/Scripts/Coin.cs",
+            "Assets/Scripts/GameManager.cs",
+            "Assets/Scripts/GroundFollower.cs",
+            "Assets/Scripts/InputManager.cs",
+            "Assets/Scripts/Obstacle.cs",
+            "Assets/Scripts/ParticleManager.cs",
+            "Assets/Scripts/PlayerController.cs",
+            "Assets/Scripts/TrackSegmentData.cs",
+            "Assets/Scripts/UIManager.cs"
+        };
+        System.Type[] expected =
+        {
+            typeof(AudioManager),
+            typeof(CameraFollow),
+            typeof(CharacterAnimator),
+            typeof(Coin),
+            typeof(GameManager),
+            typeof(GroundFollower),
+            typeof(InputManager),
+            typeof(Obstacle),
+            typeof(ParticleManager),
+            typeof(PlayerController),
+            typeof(TrackSegmentData),
+            typeof(UIManager)
+        };
+
+        for (int i = 0; i < paths.Length; i++)
+        {
+            MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(paths[i]);
+            Assert.IsNotNull(script, paths[i] + " was not imported as a MonoScript.");
+            Assert.AreEqual(expected[i], script.GetClass(),
+                paths[i] + " lost its compiled class binding.");
+        }
+    }
+
+    [Test]
     public void ShadowSlidesOnceForAnApproachingLowObstacle()
     {
         TrackManager manager = Create<TrackManager>("TrackManager");
@@ -1251,6 +1596,14 @@ public class GameStateTests
         prefab.AddComponent<Obstacle>().type = type;
         _objects.Add(prefab);
         return prefab;
+    }
+
+    private Transform CreateBone(string name, Transform parent)
+    {
+        GameObject bone = new GameObject(name);
+        _objects.Add(bone);
+        bone.transform.SetParent(parent, false);
+        return bone.transform;
     }
 
     private static void SetPrivateField(object target, string name, object value)

@@ -33,6 +33,10 @@ MemoryCaptures/
 # Local AI training exports
 TrainingData/
 
+# Local Codex diagnostics and test artifacts
+TempCodex*
+artifacts/
+
 # Local credentials and release signing material
 .env
 .env.*

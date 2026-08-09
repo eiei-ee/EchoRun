@@ -12,6 +12,8 @@ license or terms.
 | Impact Sounds | `Assets/Resources/Audio/footstep_01.ogg`, `Assets/Resources/Audio/footstep_02.ogg`, `Assets/Resources/Audio/collision.ogg` | [Kenney](https://kenney.nl/assets/impact-sounds) | CC0. |
 | RPG Audio | `Assets/Resources/Audio/coin.ogg` | [Kenney](https://kenney.nl/assets/rpg-audio) | CC0. |
 | Interface Sounds | `Assets/Resources/Audio/ui_click.ogg`, `Assets/Resources/Audio/ui_confirm.ogg`, `Assets/Resources/Audio/ui_error.ogg` | [Kenney](https://kenney.nl/assets/interface-sounds) | CC0. |
+| Exo Gray humanoid character | `Assets/Models/Mixamo/ExoGray` | [Adobe Mixamo](https://helpx.adobe.com/creative-cloud/faq/mixamo-faq.html) | Adobe permits royalty-free use of Mixamo characters and animations in personal, commercial, and non-profit video-game projects. The character remains subject to Adobe's terms and is not covered by this repository's MIT license. |
+| Standard Assets humanoid animations | `Assets/Animations/HumanMotion` | [Unity Standard Assets Characters](https://github.com/Unity-Technologies/Standard-Assets-Characters) | Unity Companion License; the source notice and license text are included at `Assets/ThirdParty/UnityStandardAssets`. |
 
 ## Assets created for this project
 

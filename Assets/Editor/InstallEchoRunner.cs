@@ -43,6 +43,8 @@ public static class InstallEchoRunner
         SerializedObject animatorObject = new SerializedObject(animator);
         SetReference(animatorObject, "leftUpperArm", model.transform, "LeftUpperArm");
         SetReference(animatorObject, "rightUpperArm", model.transform, "RightUpperArm");
+        SetReference(animatorObject, "leftLowerArm", model.transform, "LeftLowerArm");
+        SetReference(animatorObject, "rightLowerArm", model.transform, "RightLowerArm");
         SetReference(animatorObject, "leftUpperLeg", model.transform, "LeftUpperLeg");
         SetReference(animatorObject, "rightUpperLeg", model.transform, "RightUpperLeg");
         SetReference(animatorObject, "leftFoot", model.transform, "LeftFoot");
