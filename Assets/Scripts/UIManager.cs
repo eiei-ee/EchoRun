@@ -225,20 +225,26 @@ public class UIManager : MonoBehaviour
             "校准阶段  //  等待跑者数据", 21, TextAnchor.MiddleCenter);
         _menuShadowText.color = TextMuted;
         _menuShadowText.fontStyle = FontStyle.Bold;
-        AnchorText(_menuShadowText.GetComponent<RectTransform>(), 0.5f, 0.53f, 780, 38);
+        _menuShadowText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        _menuShadowText.verticalOverflow = VerticalWrapMode.Truncate;
+        _menuShadowText.lineSpacing = 1.08f;
+        _menuShadowText.resizeTextForBestFit = true;
+        _menuShadowText.resizeTextMinSize = 16;
+        _menuShadowText.resizeTextMaxSize = 21;
+        AnchorText(_menuShadowText.GetComponent<RectTransform>(), 0.5f, 0.48f, 960, 145);
 
         _startBtn = MakeButton("StartBtn", _menuPanel.transform, "启动校准", 28,
-            new Vector2(0.5f, 0.39f), new Vector2(360, 68),
+            new Vector2(0.5f, 0.31f), new Vector2(360, 68),
             WithAlpha(PrimaryStrong, 0.98f), Primary);
         _startBtn.onClick.AddListener(() => _gm.StartGame());
 
         _settingsBtn = MakeButton("SettingsBtn", _menuPanel.transform, "设置", 20,
-            new Vector2(0.43f, 0.25f), new Vector2(150, 48),
+            new Vector2(0.43f, 0.19f), new Vector2(150, 48),
             WithAlpha(SurfaceRaised, 0.96f), TextMuted);
         _settingsBtn.onClick.AddListener(ShowSettings);
 
         _characterBtn = MakeButton("CharacterBtn", _menuPanel.transform, "跑者", 20,
-            new Vector2(0.57f, 0.25f), new Vector2(150, 48),
+            new Vector2(0.57f, 0.19f), new Vector2(150, 48),
             WithAlpha(SurfaceRaised, 0.96f), TextMuted);
         _characterBtn.onClick.AddListener(ShowCharacter);
 
@@ -499,7 +505,7 @@ public class UIManager : MonoBehaviour
         RectTransform rt = _hudPanel.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0, 1); rt.anchorMax = new Vector2(0, 1);
         rt.pivot = new Vector2(0, 1);
-        rt.sizeDelta = new Vector2(450, 122);
+        rt.sizeDelta = new Vector2(650, 174);
         rt.anchoredPosition = new Vector2(18, -18);
 
         AddPanelRule(_hudPanel.transform, Primary);
@@ -510,15 +516,18 @@ public class UIManager : MonoBehaviour
 
         // Row 4: AI director state
         _aiDirectorText = MakeHUDText("AIDirectorText", _hudPanel.transform,
-            "AI DIRECTOR  //  OBSERVING", 15, new Vector2(leftX, y), new Vector2(380, rowH));
+            "AI DIRECTOR  //  OBSERVING", 15, new Vector2(leftX, y), new Vector2(570, rowH));
         _aiDirectorText.color = Primary;
         y -= rowH;
 
         // Row 5: behavior-cloned opponent state
         _aiShadowText = MakeHUDText("AIShadowText", _hudPanel.transform,
-            "ECHO RIVAL  //  CALIBRATING", 15, new Vector2(leftX, y), new Vector2(390, rowH));
+            "ECHO RIVAL  //  CALIBRATING", 16, new Vector2(leftX, y), new Vector2(570, 72));
         _aiShadowText.color = Reward;
-        y -= rowH;
+        _aiShadowText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        _aiShadowText.verticalOverflow = VerticalWrapMode.Truncate;
+        _aiShadowText.lineSpacing = 1.05f;
+        y -= 78f;
 
         // Row 6: Buff (hidden by default)
         _buffGroup = new GameObject("BuffGroup", typeof(RectTransform));
@@ -551,7 +560,7 @@ public class UIManager : MonoBehaviour
         // when WebGL rebuilds the dynamic font atlas.
         _statsText = MakeHUDText("StatsText", _hudPanel.transform,
             "SCORE 00000   RANGE 000m   SHARDS 00", 17,
-            new Vector2(leftX, -11f), new Vector2(380, 30));
+            new Vector2(leftX, -11f), new Vector2(570, 30));
 
         // Pause button (right side of HUD bar)
         _pauseBtn = MakeIconButton("PauseBtn", _hudPanel.transform, "Ⅱ",
@@ -699,7 +708,9 @@ public class UIManager : MonoBehaviour
         _shadowResultText.resizeTextMinSize = 18;
         _shadowResultText.resizeTextMaxSize = 28;
         _shadowResultText.horizontalOverflow = HorizontalWrapMode.Wrap;
-        AnchorText(_shadowResultText.GetComponent<RectTransform>(), 0.5f, 0.34f, 1100, 90);
+        _shadowResultText.verticalOverflow = VerticalWrapMode.Truncate;
+        _shadowResultText.lineSpacing = 1.05f;
+        AnchorText(_shadowResultText.GetComponent<RectTransform>(), 0.5f, 0.38f, 1160, 180);
 
         // Restart
         _restartBtn = MakeButton("RestartBtn", _gameOverPanel.transform, "挑战下一代", 30,
@@ -720,7 +731,7 @@ public class UIManager : MonoBehaviour
         _gameOverTitleText.color = Danger;
         _gameOverTitleText.fontStyle = FontStyle.Bold;
         AddOutline(_gameOverTitleText.gameObject, new Color(0.4f, 0.05f, 0f));
-        AnchorText(_gameOverTitleText.GetComponent<RectTransform>(), 0.5f, 0.76f, 600, 80);
+        AnchorText(_gameOverTitleText.GetComponent<RectTransform>(), 0.5f, 0.81f, 700, 80);
 
         _gameOverStatsText = MakeText("GameOverStats", _gameOverPanel.transform,
             "得分  0\n最高  0\n金币  0", 34, TextAnchor.MiddleCenter);
@@ -728,7 +739,7 @@ public class UIManager : MonoBehaviour
         _gameOverStatsText.fontStyle = FontStyle.Bold;
         _gameOverStatsText.lineSpacing = 1.05f;
         AddOutline(_gameOverStatsText.gameObject, new Color(0, 0, 0, 0.7f));
-        AnchorText(_gameOverStatsText.GetComponent<RectTransform>(), 0.5f, 0.55f, 620, 150);
+        AnchorText(_gameOverStatsText.GetComponent<RectTransform>(), 0.5f, 0.62f, 720, 120);
 
         _gameOverPanel.SetActive(false);
     }
@@ -754,11 +765,7 @@ public class UIManager : MonoBehaviour
                 if (_menuPanel != null) _menuPanel.SetActive(true);
                 if (AIShadowRunner.Instance != null)
                 {
-                    int generation = AIShadowRunner.Instance.Generation;
-                    string menuStatus = generation > 0
-                        ? "本地档案已载入 · 第" + generation
-                          + "代 · 最高分" + (_gm != null ? _gm.HighScore : 0)
-                        : "本地档案已创建 · 首局将训练个人AI影子";
+                    string menuStatus = AIShadowRunner.Instance.GetMenuStatus();
                     if (_menuShadowText != null) _menuShadowText.text = menuStatus;
                     Text startLabel = _startBtn != null
                         ? _startBtn.GetComponentInChildren<Text>()
@@ -789,6 +796,14 @@ public class UIManager : MonoBehaviour
                 if (_gameOverPanel != null) _gameOverPanel.SetActive(true);
                 if (_shadowResultText != null && AIShadowRunner.Instance != null)
                     _shadowResultText.text = AIShadowRunner.Instance.FinalizeRunIfNeeded();
+                if (_gameOverTitleText != null && AIShadowRunner.Instance != null)
+                {
+                    AIShadowRunner shadow = AIShadowRunner.Instance;
+                    _gameOverTitleText.text = !shadow.LastRunWasChallenge
+                        ? "CALIBRATION DECODED"
+                        : shadow.LastRunWon ? "CONTRACT CLEARED" : "ECHO PREVAILS";
+                    _gameOverTitleText.color = shadow.LastRunWon ? Success : Danger;
+                }
                 if (_gm != null)
                 {
                     string newRecord = _gm.IsNewHighScore ? "\n新纪录!" : "";
@@ -799,10 +814,10 @@ public class UIManager : MonoBehaviour
                     if (_coinResultText != null)
                         _coinResultText.text = "金币: " + _gm.Coins + "  |  总计: " + _gm.TotalCoins;
                     if (_gameOverStatsText != null)
-                        _gameOverStatsText.text = "得分  " + _gm.Score + newRecord
-                                                   + "\n最高  " + _gm.HighScore
-                                                   + "\n金币  " + _gm.Coins
-                                                   + "  ·  总计 " + _gm.TotalCoins;
+                        _gameOverStatsText.text = "过程指标  得分 " + _gm.Score + newRecord
+                                                   + "  ·  距离 " + _gm.Distance.ToString("0") + "m"
+                                                   + "\n金币 " + _gm.Coins
+                                                   + "  ·  历史最高 " + _gm.HighScore;
                 }
                 break;
         }

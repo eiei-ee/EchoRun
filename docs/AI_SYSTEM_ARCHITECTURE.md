@@ -38,6 +38,30 @@ The shadow freezes a style snapshot at the beginning of a run. Inputs from the
 current run train the next shadow generation and cannot alter the opponent that
 the player is currently racing.
 
+## Echo Contract pipeline
+
+`EchoContractPolicy` converts the frozen style snapshot into one bounded,
+explainable rule primitive:
+
+1. `BreakLaneHabit` moves the high-value safe route away from the learned lane;
+2. `ChangeVerticalHabit` creates a rewarded challenge lane whose obstacle type
+   requires the less-used jump or slide action;
+3. `DisruptRhythm` alternates high and low obstacle requirements so a repeated
+   action sequence is no longer optimal.
+
+`EchoContractEvaluator` measures only successful, relevant counter-behaviour.
+Counter-actions add duel progress; repeating the learned habit adds progress to
+the echo. `AITrackDirector.ApplyEchoContract` writes the selected rule into the
+next `AITrackPlan`, and `TrackManager` realizes it while keeping an independent
+safe lane open. The learned model proposes the personal rule, but deterministic
+route validation still owns physical safety.
+
+Challenge victory is the conjunction `contract completed && player lead >= 0`.
+Distance, coins, dodges, and score remain feedback signals but cannot bypass the
+AI-generated objective. The UI exposes the same contract before the run, during
+the duel, and in the post-run learning report; the diagnostic dashboard remains
+available separately for technical inspection.
+
 ## Decision pipeline
 
 `AIShadowPolicy` and `AIShadowSequencePolicy` produce contextual base scores.
@@ -72,5 +96,7 @@ the same pipeline in play mode and refreshes at four times per second.
 - Global AI publishes intent; it does not issue character actions.
 - Style modifies valid choices; it never bypasses feasibility or safety.
 - Player and shadow observations must not be mixed within the active generation.
+- A challenge cannot be won by distance or score without completing its frozen
+  Echo Contract.
 - Add new persistent fields through a save-data version bump and normalization.
 - Keep decision randomness run-seeded so telemetry and replays are reproducible.

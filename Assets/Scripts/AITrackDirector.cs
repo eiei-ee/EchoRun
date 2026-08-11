@@ -22,6 +22,9 @@ public struct AITrackPlan
     public int maxBlockedLanes;
     public int safeLane;
     public bool shouldTurn;
+    public EchoContractType echoContractType;
+    public int echoChallengeLane;
+    public ShadowAction echoTargetAction;
 }
 
 // Online linear contextual bandit. Its weights are the runtime model and are
@@ -240,6 +243,11 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
 
         CurrentPlan = BuildPlan(intent, baseDifficulty, baseObstacleChance,
             baseCoinChance, baseTurnChance, previousSafeLane, canTurn);
+        CurrentPlan = ApplyEchoContract(
+            CurrentPlan, AIShadowRunner.Instance != null
+                ? AIShadowRunner.Instance.ActiveContract
+                : null,
+            _decisionCount);
         CurrentShadowDirective = BuildShadowDirective(intent);
         int telemetryDecisionId =
             AIRunTelemetry.RecordDirectorDecision(
@@ -431,7 +439,10 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             maxCoinCount = 8,
             maxBlockedLanes = baseDifficulty > 0.5f ? 2 : 1,
             safeLane = previousSafeLane,
-            shouldTurn = false
+            shouldTurn = false,
+            echoContractType = EchoContractType.None,
+            echoChallengeLane = -1,
+            echoTargetAction = ShadowAction.Keep
         };
 
         float turnMultiplier = 1f;
@@ -485,6 +496,33 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         plan.shouldTurn = canTurn
                           && AIRunRandom.Value
                           < Mathf.Clamp01(baseTurnChance * turnMultiplier);
+        return plan;
+    }
+
+    public static AITrackPlan ApplyEchoContract(AITrackPlan plan,
+        EchoContractData contract, int decisionCount)
+    {
+        if (contract == null || contract.type == EchoContractType.None
+            || contract.completed)
+            return plan;
+
+        plan.echoContractType = contract.type;
+        plan.echoTargetAction = contract.targetAction;
+        if (contract.type == EchoContractType.BreakLaneHabit)
+        {
+            plan.safeLane = Mathf.Clamp(contract.targetLane, 0, 2);
+            plan.coinChance = Mathf.Max(plan.coinChance, 0.9f);
+            plan.minCoinCount = Mathf.Max(plan.minCoinCount, 7);
+            plan.maxCoinCount = Mathf.Max(plan.maxCoinCount, 10);
+            return plan;
+        }
+
+        int safeLane = Mathf.Clamp(plan.safeLane, 0, 2);
+        int offset = Mathf.Abs(decisionCount) % 2 == 0 ? 1 : 2;
+        plan.echoChallengeLane = (safeLane + offset) % 3;
+        plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.72f);
+        plan.coinChance = Mathf.Max(plan.coinChance, 0.8f);
+        plan.maxBlockedLanes = Mathf.Max(1, plan.maxBlockedLanes);
         return plan;
     }
 
@@ -559,7 +597,11 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             case AIDirectorIntent.RecordPush: label = "纪录冲刺"; break;
             default: label = "观察中"; break;
         }
-        return string.Format("AI导演 · {0} {1:0}%", label, plan.difficulty * 100f);
+        string contract = plan.echoContractType != EchoContractType.None
+            ? " · 契约改写赛道"
+            : "";
+        return string.Format("AI导演 · {0} {1:0}%{2}",
+            label, plan.difficulty * 100f, contract);
     }
 
     void OnDestroy()

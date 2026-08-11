@@ -4,7 +4,7 @@ using UnityEngine;
 [Serializable]
 public sealed class EchoRunSaveData
 {
-    public int version = 6;
+    public int version = 7;
     public int highScore;
     public int totalCoins;
     public int targetFrameRate = 60;
@@ -19,6 +19,7 @@ public sealed class EchoRunSaveData
     public string lastRunTelemetryJson = "";
     public string skillProfileJson = "";
     public string playerStyleJson = "";
+    public string lastEchoContractJson = "";
     public int[] powerUpInventory = new int[4];
     public int selectedPowerUp = -1;
     public long savedAtUtcTicks;
@@ -27,7 +28,7 @@ public sealed class EchoRunSaveData
 public static class EchoRunSaveSystem
 {
     public const string SaveKey = "EchoRunSaveV1";
-    public const int CurrentVersion = 6;
+    public const int CurrentVersion = 7;
 
     private const string ShadowProfileKey = "AIShadowProfileV1";
 
@@ -184,6 +185,19 @@ public static class EchoRunSaveSystem
         WriteArchive(true);
     }
 
+    public static string GetLastEchoContractJson()
+    {
+        EnsureInitialized();
+        return _data.lastEchoContractJson ?? "";
+    }
+
+    public static void SaveLastEchoContract(string contractJson)
+    {
+        EnsureInitialized();
+        _data.lastEchoContractJson = contractJson ?? "";
+        WriteArchive(true);
+    }
+
     public static int[] GetPowerUpInventory()
     {
         EnsureInitialized();
@@ -258,6 +272,7 @@ public static class EchoRunSaveSystem
         _data.lastRunTelemetryJson = "";
         _data.skillProfileJson = "";
         _data.playerStyleJson = "";
+        _data.lastEchoContractJson = "";
         PlayerPrefs.DeleteKey(ShadowProfileKey);
         WriteArchive(true);
     }
@@ -325,6 +340,7 @@ public static class EchoRunSaveSystem
         _data.lastRunTelemetryJson = _data.lastRunTelemetryJson ?? "";
         _data.skillProfileJson = _data.skillProfileJson ?? "";
         _data.playerStyleJson = _data.playerStyleJson ?? "";
+        _data.lastEchoContractJson = _data.lastEchoContractJson ?? "";
         _data.powerUpInventory = CloneInventory(_data.powerUpInventory);
         _data.selectedPowerUp = _data.selectedPowerUp >= 0
                                 && _data.selectedPowerUp < _data.powerUpInventory.Length

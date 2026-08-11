@@ -560,6 +560,18 @@ public class TrackManager : MonoBehaviour
         int maxCoins = Mathf.Max(minCoins + 1, plan.maxCoinCount);
         SpawnCoinLine(segment, safeLane, coinZ,
             AIRunRandom.Range(minCoins, maxCoins));
+        int echoChallengeLane = plan.echoChallengeLane;
+        if (plan.echoContractType == EchoContractType.ChangeVerticalHabit
+            || plan.echoContractType == EchoContractType.DisruptRhythm)
+        {
+            if (echoChallengeLane < 0 || echoChallengeLane > 2
+                || echoChallengeLane == safeLane)
+                echoChallengeLane = (safeLane + 1) % 3;
+            // The contract route carries visibly denser rewards but remains
+            // optional: the untouched safe lane preserves route solvability.
+            SpawnCoinLine(segment, echoChallengeLane, coinZ + 0.6f,
+                AIRunRandom.Range(7, 10));
+        }
         // Sometimes add sparse coins on an adjacent lane
         if (AIRunRandom.Value < plan.coinChance)
         {
@@ -598,7 +610,8 @@ public class TrackManager : MonoBehaviour
             if (TrackSpawnRules.CanSpawnObstacleRow(
                     rowRouteDistance, _lastObstacleRouteDistance, minimumSpacing)
                 && SpawnObstacleRow(
-                    segment, obsZ, diff, safeLane, plan.maxBlockedLanes) > 0)
+                    segment, obsZ, diff, safeLane, plan.maxBlockedLanes,
+                    plan, echoChallengeLane) > 0)
             {
                 _obstacleFreeSegments = 0;
                 _lastObstacleRouteDistance = rowRouteDistance;
@@ -631,7 +644,10 @@ public class TrackManager : MonoBehaviour
             maxCoinCount = 8,
             maxBlockedLanes = difficulty > 0.5f ? 2 : 1,
             safeLane = safeLane,
-            shouldTurn = canTurn && AIRunRandom.Value < turnChance
+            shouldTurn = canTurn && AIRunRandom.Value < turnChance,
+            echoContractType = EchoContractType.None,
+            echoChallengeLane = -1,
+            echoTargetAction = ShadowAction.Keep
         };
     }
 
@@ -685,15 +701,16 @@ public class TrackManager : MonoBehaviour
 
     // Guarantees at least 1 lane is always open
     int SpawnObstacleRow(GameObject segment, float obsZ, float difficulty, int safeLane,
-        int maxBlockedLanes)
+        int maxBlockedLanes, AITrackPlan plan, int echoChallengeLane)
     {
        if (obstaclePrefabs == null || obstaclePrefabs.Length < 3) return 0;
 
        // How many lanes to block (1 or 2, never 3)
         int blocked = difficulty > 0.5f ? 2 : 1;
         blocked = Mathf.Clamp(blocked, 1, Mathf.Clamp(maxBlockedLanes, 1, 2));
-        int[] lanes = SelectBlockedLanes(
-            safeLane, blocked, _laneObstacleDrought);
+        int[] lanes = SelectContractBlockedLanes(
+            safeLane, blocked, _laneObstacleDrought,
+            plan.echoContractType, echoChallengeLane);
         int spawned = 0;
 
        for (int i = 0; i < lanes.Length; i++)
@@ -703,8 +720,9 @@ public class TrackManager : MonoBehaviour
             // Full-height barriers were visually ambiguous and could create
             // jump sequences with no recoverable timing window. Lane changes
             // remain meaningful because every row still preserves a safe lane.
-            int type = TrackSpawnRules.SelectObstaclePrefabIndex(
-                difficulty, AIRunRandom.Value);
+            int type = SelectContractObstaclePrefabIndex(
+                plan.echoContractType, plan.echoTargetAction,
+                _straightSegmentsSpawned, difficulty, AIRunRandom.Value);
 
             if (SpawnObstacleAt(
                     segment, lane,
@@ -752,6 +770,43 @@ public class TrackManager : MonoBehaviour
     {
         return TrackSpawnRules.SelectBlockedLanes(
             safeLane, blockedLaneCount, laneObstacleDrought);
+    }
+
+    public static int[] SelectContractBlockedLanes(int safeLane,
+        int blockedLaneCount, int[] laneObstacleDrought,
+        EchoContractType contractType, int challengeLane)
+    {
+        int[] normal = SelectBlockedLanes(
+            safeLane, blockedLaneCount, laneObstacleDrought);
+        bool usesChallengeLane = contractType == EchoContractType.ChangeVerticalHabit
+                                 || contractType == EchoContractType.DisruptRhythm;
+        int safe = Mathf.Clamp(safeLane, 0, 2);
+        if (!usesChallengeLane || challengeLane < 0 || challengeLane > 2
+            || challengeLane == safe || normal.Length == 0)
+            return normal;
+
+        normal[0] = challengeLane;
+        if (normal.Length > 1 && normal[1] == challengeLane)
+        {
+            for (int lane = 0; lane < 3; lane++)
+            {
+                if (lane == safe || lane == challengeLane) continue;
+                normal[1] = lane;
+                break;
+            }
+        }
+        return normal;
+    }
+
+    public static int SelectContractObstaclePrefabIndex(
+        EchoContractType contractType, ShadowAction targetAction,
+        int straightSegmentIndex, float difficulty, float typeRoll)
+    {
+        if (contractType == EchoContractType.ChangeVerticalHabit)
+            return targetAction == ShadowAction.Jump ? 1 : 0;
+        if (contractType == EchoContractType.DisruptRhythm)
+            return Mathf.Abs(straightSegmentIndex) % 2 == 0 ? 0 : 1;
+        return TrackSpawnRules.SelectObstaclePrefabIndex(difficulty, typeRoll);
     }
 
    GameObject SpawnDynamic(GameObject prefab, GameObject ownerSegment,

@@ -6,8 +6,12 @@ another game.
 
 ## Product loop
 
-The player calibrates the local shadow model in an initial run, then races an
-evolving non-colliding AI shadow in later runs. A contextual-bandit director
+The player calibrates a local style model, receives a human-readable Echo
+Contract generated from that frozen style, then races the corresponding
+non-colliding AI shadow. Each contract changes a playable rule and names the
+counter-behaviour required to break it. A run is won only when the player both
+completes the counter-objective and finishes ahead of the echo; score is a
+process metric, not the primary victory condition. A contextual-bandit director
 adapts pacing while deterministic validators retain final authority over route
 safety.
 
@@ -19,13 +23,21 @@ safety.
   layouts.
 - A locally executed behavior-cloning shadow that trains from player actions
   and is frozen for the next run.
+- A per-generation Echo Contract derived from lane, vertical-action, or rhythm
+  habits. It must alter track rewards or obstacle composition and expose a
+  measurable counter-objective.
+- Pre-run learned-trait/rule/objective disclosure, live contract progress and
+  pressure/recovery feedback, and post-run learning/next-generation analysis.
 - An adaptive track director whose choices cannot produce an impossible route.
-- Clear calibration, progress, win/loss, and error feedback.
+- Clear calibration, contract progress, win/loss, and error feedback.
 
 ## Engineering requirements
 
 - Route generation must preserve at least one valid route; learned AI can
   influence pacing but cannot bypass deterministic safety checks.
+- Distance lead without contract completion must never produce a challenge win.
+- Current-run observations may train only the next generation; the active
+  opponent, style snapshot, and contract stay frozen for the duel.
 - Recurring runtime track content must use pooling where practical.
 - EditMode and PlayMode regression suites must cover gameplay and restart
   behavior.

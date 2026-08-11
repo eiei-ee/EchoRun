@@ -474,7 +474,7 @@ public class PlayerController : MonoBehaviour
                 AIPlayerSkillEstimator.RecordObstacleOutcome(
                     obs.type, true);
                 AITrackDirector.Instance?.RecordDodge();
-                AIShadowRunner.Instance?.RecordDodge();
+                AIShadowRunner.Instance?.RecordDodge(obs.type);
                 AudioManager.Instance?.PlayDodgeObstacle();
                return;
            }
@@ -484,7 +484,7 @@ public class PlayerController : MonoBehaviour
                 AIPlayerSkillEstimator.RecordObstacleOutcome(
                     obs.type, true);
                 AITrackDirector.Instance?.RecordDodge();
-                AIShadowRunner.Instance?.RecordDodge();
+                AIShadowRunner.Instance?.RecordDodge(obs.type);
                 AudioManager.Instance?.PlayDodgeObstacle();
                 return;
             }

@@ -30,10 +30,14 @@ public class AIShadowRunner : MonoBehaviour
     public string LastResult { get; private set; } = "";
     public float PlayerLead { get; private set; }
     public bool HasActiveOpponent { get; private set; }
+    public bool LastRunWasChallenge { get; private set; }
+    public bool LastRunWon { get; private set; }
     public int Generation => _profile != null ? _profile.generation : 0;
     public int TrainingSampleCount => _profile != null ? _profile.sampleCount : 0;
     public int ActiveTrainingSampleCount =>
         _profile != null ? _profile.activeSampleCount : 0;
+    public EchoContractData ActiveContract =>
+        _contractEvaluator != null ? _contractEvaluator.Contract : null;
     public float DuelPressure => HasActiveOpponent
         ? 1f - Mathf.Clamp01(Mathf.Abs(PlayerLead) / 14f)
         : 0f;
@@ -64,6 +68,7 @@ public class AIShadowRunner : MonoBehaviour
     private readonly ShadowDecisionMaker _decisionMaker =
         new ShadowDecisionMaker();
     private PlayerStyleData _opponentStyle;
+    private EchoContractEvaluator _contractEvaluator;
     private IShadowDirectiveSource _directiveSource;
     private System.Random _decisionRandom = new System.Random(1337);
     private GameManager _gameManager;
@@ -146,9 +151,14 @@ public class AIShadowRunner : MonoBehaviour
         TrackPlayerSlideOpportunity();
 
         _runTime += Time.deltaTime;
+        if (HasActiveOpponent && _contractEvaluator != null)
+            _contractEvaluator.TickLane(_player.CurrentLane, Time.deltaTime);
         _playerProgress = _gameManager.Distance
                           + _runCoins * coinProgressBonus
-                          + _runDodges * dodgeProgressBonus;
+                          + _runDodges * dodgeProgressBonus
+                          + (_contractEvaluator != null
+                              ? _contractEvaluator.Contract.playerProgressBonus
+                              : 0f);
 
         _keepSampleTimer += Time.deltaTime;
         if (_keepSampleTimer >= keepSampleInterval)
@@ -170,7 +180,10 @@ public class AIShadowRunner : MonoBehaviour
         float stumbleSpeed = _ghostStumbleTimer > 0f ? 0.25f : 1f;
         _ghostProgress += Mathf.Max(1f, _profile.pace)
                           * shadowPaceMultiplier * stumbleSpeed * Time.deltaTime;
-        PlayerLead = _playerProgress - _ghostProgress;
+        float contractShadowBonus = _contractEvaluator != null
+            ? _contractEvaluator.Contract.shadowProgressBonus
+            : 0f;
+        PlayerLead = _playerProgress - (_ghostProgress + contractShadowBonus);
 
         _decisionTimer += Time.deltaTime;
         if (_decisionTimer >= decisionInterval)
@@ -197,9 +210,25 @@ public class AIShadowRunner : MonoBehaviour
 
     public string GetMenuStatus()
     {
-        return HasTrainedProfile()
-            ? "挑战第 " + _profile.generation + " 代个人 AI 影子"
-            : "首局校准：AI 将学习你的跑酷习惯";
+        if (!HasTrainedProfile())
+            return "首局校准：AI 将学习你的路线、动作与节奏";
+
+        PlayerStyleData style = StyleTracker.GetSnapshot();
+        EchoContractData preview = EchoContractPolicy.Create(
+            style, _profile.generation);
+        return "第 " + _profile.generation + " 代回声已生成\n"
+               + "AI画像：" + EchoContractPolicy.BuildStyleSummary(style) + "\n"
+               + preview.title + " · " + preview.learnedTrait + "\n"
+               + "规则：" + preview.ruleDescription + "\n目标：" + preview.objective;
+    }
+
+    public string GetContractHudText()
+    {
+        if (_contractEvaluator != null)
+            return _contractEvaluator.BuildHudText();
+        return HasActiveOpponent
+            ? "回声契约正在生成"
+            : "校准目标：用至少两类动作建立个人行为模型";
     }
 
     public void RecordPlayerAction(ShadowAction action, int laneBeforeAction)
@@ -249,7 +278,14 @@ public class AIShadowRunner : MonoBehaviour
 
     public void RecordDodge()
     {
+        RecordDodge(ObstacleType.Barrier);
+    }
+
+    public void RecordDodge(ObstacleType obstacleType)
+    {
         _runDodges++;
+        if (HasActiveOpponent && _contractEvaluator != null)
+            _contractEvaluator.RecordDodge(obstacleType);
         AIRunTelemetry.RecordEvent("dodge", 0,
             _player != null ? _player.CurrentLane : -1, _runDodges);
     }
@@ -257,7 +293,8 @@ public class AIShadowRunner : MonoBehaviour
     public void RecordObstacleHit()
     {
         ResolvePlayerSlideOpportunity();
-        if (HasActiveOpponent) PlayerLead -= 2f;
+        if (HasActiveOpponent && _contractEvaluator != null)
+            _contractEvaluator.RecordHit();
         AIRunTelemetry.RecordEvent("obstacle_hit", 0,
             _player != null ? _player.CurrentLane : -1, PlayerLead);
     }
@@ -294,6 +331,7 @@ public class AIShadowRunner : MonoBehaviour
         _opponentPolicy = null;
         _opponentSequencePolicy = null;
         _opponentStyle = null;
+        _contractEvaluator = null;
         LastDecisionTrace = null;
         _runStarted = false;
         _runFinalized = false;
@@ -301,8 +339,11 @@ public class AIShadowRunner : MonoBehaviour
         HasActiveOpponent = false;
         PlayerLead = 0f;
         LastResult = "";
+        LastRunWasChallenge = false;
+        LastRunWon = false;
         CurrentStatus = "AI影子 · 训练已重置";
         EchoRunSaveSystem.SaveShadowProfile("");
+        EchoRunSaveSystem.SaveLastEchoContract("");
     }
 
     private void OnGameStateChanged(GameState state)
@@ -360,11 +401,14 @@ public class AIShadowRunner : MonoBehaviour
             AIShadowSequenceState state = _sequencePolicy.ExportState();
             _opponentSequencePolicy = new AIShadowSequencePolicy(
                 state.transitions, state.pairCount);
+            _contractEvaluator = new EchoContractEvaluator(
+                EchoContractPolicy.Create(_opponentStyle, _profile.generation));
             CreateGhost();
-            CurrentStatus = "AI影子 · 第 " + _profile.generation + " 代已加入挑战";
+            CurrentStatus = _contractEvaluator.BuildHudText();
         }
         else
         {
+            _contractEvaluator = null;
             CurrentStatus = "AI影子 · 校准中 0%";
             SetGhostActive(false);
         }
@@ -376,7 +420,12 @@ public class AIShadowRunner : MonoBehaviour
         _runFinalized = true;
 
         bool challengedOpponent = HasActiveOpponent;
-        bool playerWon = PlayerLead >= 0f;
+        bool contractCompleted = _contractEvaluator != null
+                                 && _contractEvaluator.Contract.completed;
+        bool playerWon = IsContractVictory(
+            PlayerLead, challengedOpponent, contractCompleted);
+        LastRunWasChallenge = challengedOpponent;
+        LastRunWon = playerWon;
         float runPace = _playerProgress / Mathf.Max(1f, _runTime);
         if (_profile.pace <= 0f) _profile.pace = runPace;
         else _profile.pace = Mathf.Lerp(_profile.pace, runPace, 0.35f);
@@ -402,20 +451,47 @@ public class AIShadowRunner : MonoBehaviour
         }
         else if (!challengedOpponent)
         {
-            LastResult = "校准完成 · 第 1 代 AI 影子已生成";
+            EchoContractData nextContract = EchoContractPolicy.Create(
+                StyleTracker.GetSnapshot(), _profile.generation);
+            LastResult = "校准完成 · 第 1 代 AI 回声已生成\n"
+                         + nextContract.learnedTrait + "\n"
+                         + "下一局规则：" + nextContract.ruleDescription;
         }
         else if (playerWon)
         {
-            LastResult = "挑战成功 · 领先影子 " + Mathf.Abs(PlayerLead).ToString("0.0")
-                         + "m · 影子失误 " + _ghostMistakes
-                         + " 次 · 第 " + _profile.generation + " 代已进化";
+            EchoContractData nextContract = EchoContractPolicy.Create(
+                StyleTracker.GetSnapshot(), _profile.generation);
+            _contractEvaluator.Contract.won = true;
+            LastResult = "契约破解 · 领先回声 "
+                         + Mathf.Abs(PlayerLead).ToString("0.0") + "m\n"
+                         + "上一代行为：" + _contractEvaluator.Contract.learnedTrait + "\n"
+                         + "本代学习：AI已记录你的反制策略\n"
+                         + "下一代变化：" + nextContract.title + " · "
+                         + nextContract.ruleDescription;
         }
         else
         {
-            LastResult = "影子胜出 · 落后 " + Mathf.Abs(PlayerLead).ToString("0.0")
-                         + "m · 影子失误 " + _ghostMistakes
-                         + " 次 · 第 " + _profile.generation + " 代已进化";
+            EchoContractData nextContract = EchoContractPolicy.Create(
+                StyleTracker.GetSnapshot(), _profile.generation);
+            bool ledButFailedContract = PlayerLead >= 0f && !contractCompleted;
+            string cause = ledButFailedContract
+                ? "距离领先，但未破解回声契约"
+                : "回声在距离竞速中领先 "
+                  + Mathf.Abs(PlayerLead).ToString("0.0") + "m";
+            LastResult = "回声胜出 · " + cause + "\n"
+                         + "上一代行为：" + _contractEvaluator.Contract.learnedTrait + "\n"
+                         + "反制进度 "
+                         + _contractEvaluator.Contract.progress.ToString("0.#")
+                         + "/"
+                         + _contractEvaluator.Contract.targetProgress.ToString("0.#")
+                         + "\n本代学习：旧习惯被回声强化\n"
+                         + "下一代变化：" + nextContract.title + " · "
+                         + nextContract.ruleDescription;
         }
+
+        if (_contractEvaluator != null)
+            EchoRunSaveSystem.SaveLastEchoContract(
+                JsonUtility.ToJson(_contractEvaluator.Contract));
 
         CurrentStatus = LastResult;
         AIRunTelemetry.RecordEvent("shadow_result",
@@ -804,7 +880,7 @@ public class AIShadowRunner : MonoBehaviour
     private string BuildDuelStatus()
     {
         if (_ghostStumbleTimer > 0f)
-            return "AI影子 · 撞击失速 · 你获得追赶机会";
+            return "AI恢复窗口 · 回声撞击失速 · 立即完成反制";
 
         string lead = PlayerLead >= 0f
             ? "领先 " + PlayerLead.ToString("0.0") + "m"
@@ -812,9 +888,18 @@ public class AIShadowRunner : MonoBehaviour
         string sequence = _sequenceInfluence > 0.01f
             ? " · 序列 " + (_sequenceInfluence * 100f).ToString("0") + "%"
             : "";
-        return "AI影子 · 第 " + _profile.generation + " 代 · " + lead
-                + " · 决策置信 " + (_decisionConfidence * 100f).ToString("0")
-                + "%" + sequence + " · 失误 " + _ghostMistakes;
+        string contract = _contractEvaluator != null
+            ? _contractEvaluator.BuildHudText()
+            : "回声契约未载入";
+        return contract + "\n第 " + _profile.generation + " 代 · " + lead
+                + " · AI置信 " + (_decisionConfidence * 100f).ToString("0")
+                + "%" + sequence;
+    }
+
+    public static bool IsContractVictory(float playerLead,
+        bool challengedOpponent, bool contractCompleted)
+    {
+        return challengedOpponent && contractCompleted && playerLead >= 0f;
     }
 
     public static bool CanAvoidObstacle(ObstacleType obstacleType,
