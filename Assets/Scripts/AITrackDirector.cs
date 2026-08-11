@@ -124,7 +124,7 @@ public sealed class AITrackPolicy
     }
 }
 
-public class AITrackDirector : MonoBehaviour
+public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
 {
     public static AITrackDirector Instance { get; private set; }
 
@@ -139,6 +139,8 @@ public class AITrackDirector : MonoBehaviour
     public float LastPolicyMean { get; private set; }
     public float LastPolicyUncertainty { get; private set; }
     public bool LastDecisionSafetyAdjusted { get; private set; }
+    public ShadowAIDirective CurrentShadowDirective { get; private set; }
+        = ShadowAIDirective.Neutral;
     public string CurrentStatus { get; private set; } = "AI导演 · 等待开局";
 
     private static AILinUcbPolicy _sessionPolicy;
@@ -238,6 +240,7 @@ public class AITrackDirector : MonoBehaviour
 
         CurrentPlan = BuildPlan(intent, baseDifficulty, baseObstacleChance,
             baseCoinChance, baseTurnChance, previousSafeLane, canTurn);
+        CurrentShadowDirective = BuildShadowDirective(intent);
         int telemetryDecisionId =
             AIRunTelemetry.RecordDirectorDecision(
                 context, CurrentPlan, proposedAction,
@@ -286,6 +289,7 @@ public class AITrackDirector : MonoBehaviour
         LastPolicyUncertainty = 0f;
         LastDecisionSafetyAdjusted = false;
         CurrentPlan = default;
+        CurrentShadowDirective = ShadowAIDirective.Neutral;
         CurrentStatus = "AI导演 · 训练已重置";
         _pendingDecisions.Clear();
         _decisionCount = 0;
@@ -482,6 +486,35 @@ public class AITrackDirector : MonoBehaviour
                           && AIRunRandom.Value
                           < Mathf.Clamp01(baseTurnChance * turnMultiplier);
         return plan;
+    }
+
+    private static ShadowAIDirective BuildShadowDirective(
+        AIDirectorIntent intent)
+    {
+        ShadowAIDirective directive = ShadowAIDirective.Neutral;
+        switch (intent)
+        {
+            case AIDirectorIntent.Observe:
+                directive.styleInfluence = 0.65f;
+                directive.riskBias = -0.25f;
+                directive.decisionNoise = 0.05f;
+                break;
+            case AIDirectorIntent.Recovery:
+                directive.styleInfluence = 0.8f;
+                directive.riskBias = -0.45f;
+                directive.decisionNoise = 0.04f;
+                break;
+            case AIDirectorIntent.Pressure:
+                directive.riskBias = 0.2f;
+                directive.decisionNoise = 0.1f;
+                break;
+            case AIDirectorIntent.RecordPush:
+                directive.styleInfluence = 0.85f;
+                directive.riskBias = 0.4f;
+                directive.decisionNoise = 0.06f;
+                break;
+        }
+        return directive.Normalized();
     }
 
     private int ChooseSafeLane(AIDirectorIntent intent, int previousSafeLane)

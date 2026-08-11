@@ -133,6 +133,7 @@ public class PlayerController : MonoBehaviour
 
        HandleInput();
        UpdateSlide();
+       StyleTracker.TickLane(CurrentLane, Time.deltaTime);
 
         // Running trail dust
         if (_runTrailTimer > 0.12f)
@@ -489,6 +490,7 @@ public class PlayerController : MonoBehaviour
             }
            AIPlayerSkillEstimator.RecordObstacleOutcome(
                obs.type, false);
+           StyleTracker.RecordMistake();
            AITrackDirector.Instance?.RecordObstacleHit();
            AIShadowRunner.Instance?.RecordObstacleHit();
            AudioManager.Instance?.PlayCollision();

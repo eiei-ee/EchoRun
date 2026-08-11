@@ -10,6 +10,10 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
     private Text _metrics;
     private Text _summary;
     private Text _resetHint;
+    private GameObject _liveDebugPanel;
+    private Text _liveDebugText;
+    private bool _liveDebugEnabled;
+    private float _nextLiveDebugRefresh;
     private float _resetConfirmUntil;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -43,6 +47,19 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         {
             _resetConfirmUntil = 0f;
             _resetHint.text = "重置会清空影子、导演和玩家能力模型。";
+        }
+
+        if (_liveDebugPanel != null)
+        {
+            bool shouldShow = _liveDebugEnabled && _gameManager != null
+                              && _gameManager.State == GameState.Playing;
+            if (_liveDebugPanel.activeSelf != shouldShow)
+                _liveDebugPanel.SetActive(shouldShow);
+            if (shouldShow && Time.unscaledTime >= _nextLiveDebugRefresh)
+            {
+                _nextLiveDebugRefresh = Time.unscaledTime + 0.25f;
+                RefreshLiveDebug();
+            }
         }
     }
 
@@ -111,7 +128,16 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
             compactPortrait ? new Vector2(280f, 100f) : new Vector2(180f, 58f),
             RuntimePanelFactory.Raised, compactPortrait ? 28 : 22);
         close.onClick.AddListener(() => _panel.SetActive(false));
+        Button liveDebug = RuntimePanelFactory.Button("LiveDebug", _panel.transform,
+            "实时诊断", compactPortrait
+                ? new Vector2(0.77f, 0.93f)
+                : new Vector2(0.84f, 0.89f),
+            compactPortrait ? new Vector2(250f, 82f) : new Vector2(210f, 58f),
+            RuntimePanelFactory.Action, compactPortrait ? 25 : 21);
+        liveDebug.onClick.AddListener(ToggleLiveDebug);
         _panel.SetActive(false);
+
+        BuildLiveDebug(parent, compactPortrait);
     }
 
     private void Open()
@@ -132,7 +158,7 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
                 : 0;
             _metrics.text = "当前影子代数  " + generation
                             + "\n导演更新次数  " + EchoRunSaveSystem.DirectorModelUpdateCount
-                            + "\n\n完成一局后显示训练前后差异。";
+                            + "\n\n" + BuildStyleSummary();
             _summary.text = "尚无完整训练局。下一局会记录动作、能力估计和模型变化。";
             return;
         }
@@ -143,7 +169,8 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
                         + (report.skillAfter * 100f).ToString("0") + "%"
                         + "\n影子权重变化   " + report.shadowWeightDelta.ToString("0.000")
                         + "\n导演权重变化   " + report.directorWeightDelta.ToString("0.000")
-                        + "\n本代样本重点   " + report.learnedAction;
+                        + "\n本代样本重点   " + report.learnedAction
+                        + "\n\n" + BuildStyleSummary();
         _summary.text = "本代学会了什么\n" + report.summary;
     }
 
@@ -159,6 +186,7 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
 
         EchoRunSaveSystem.ResetAITraining();
         AIPlayerSkillEstimator.ResetTraining();
+        StyleTracker.ResetTraining();
         AIShadowRunner.Instance?.ResetTraining();
         AITrackDirector.Instance?.ResetTraining();
         _resetConfirmUntil = 0f;
@@ -172,6 +200,106 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         bool menu = state == GameState.Menu;
         if (_launcher != null) _launcher.SetActive(menu);
         if (!menu && _panel != null) _panel.SetActive(false);
+        if (_liveDebugPanel != null)
+            _liveDebugPanel.SetActive(
+                _liveDebugEnabled && state == GameState.Playing);
+    }
+
+    private void BuildLiveDebug(Transform parent, bool compactPortrait)
+    {
+        _liveDebugPanel = RuntimePanelFactory.PanelObject("AI Live Debug", parent,
+            compactPortrait ? new Vector2(0.5f, 0.76f) : new Vector2(0.23f, 0.72f),
+            compactPortrait ? new Vector2(880f, 520f) : new Vector2(650f, 420f),
+            new Color(0.025f, 0.04f, 0.06f, 0.92f));
+        _liveDebugText = RuntimePanelFactory.Text("Content",
+            _liveDebugPanel.transform, "", compactPortrait ? 24 : 19,
+            TextAnchor.UpperLeft, RuntimePanelFactory.TextPrimary);
+        _liveDebugText.lineSpacing = 1.12f;
+        RuntimePanelFactory.Stretch(_liveDebugText.rectTransform,
+            compactPortrait ? 28f : 22f);
+        _liveDebugPanel.SetActive(false);
+    }
+
+    private void ToggleLiveDebug()
+    {
+        _liveDebugEnabled = !_liveDebugEnabled;
+        _nextLiveDebugRefresh = 0f;
+        if (_resetHint != null)
+            _resetHint.text = _liveDebugEnabled
+                ? "实时诊断已开启，进入游戏后显示。"
+                : "实时诊断已关闭。";
+        AudioManager.Instance?.PlayUIConfirm();
+    }
+
+    private void RefreshLiveDebug()
+    {
+        if (_liveDebugText == null) return;
+        PlayerStyleData style = StyleTracker.GetSnapshot();
+        AIShadowRunner shadow = AIShadowRunner.Instance;
+        ShadowDecisionTrace trace = shadow != null
+            ? shadow.LastDecisionTrace : null;
+        ShadowAIDirective directive = trace != null
+            ? trace.directive
+            : (AITrackDirector.Instance != null
+                ? AITrackDirector.Instance.CurrentShadowDirective
+                : ShadowAIDirective.Neutral);
+
+        string decision = trace == null
+            ? "尚无影子决策"
+            : "最终动作 " + trace.selectedAction
+              + (trace.safetyAdjusted ? "  [安全覆盖]" : "")
+              + "\n基础  " + FormatScores(trace.baseScores)
+              + "\n风格  " + FormatScores(trace.styleAdjustedScores)
+              + "\n最终  " + FormatScores(trace.finalScores);
+        _liveDebugText.text = "AI 实时诊断"
+            + "\n激进 " + Percent(style.aggressiveness)
+            + "  跳时 " + SignedPercent(style.jumpTiming)
+            + "  滑铲 " + Percent(style.slideFrequency)
+            + "\n车道 " + SignedPercent(style.lanePreference)
+            + "  节奏 " + Percent(style.rhythmStability)
+            + "  恢复 " + Percent(style.recoveryStyle)
+            + "\n置信 " + Percent(style.Confidence)
+            + "  全局风险 " + SignedPercent(directive.riskBias)
+            + "  风格强度 " + Percent(directive.styleInfluence)
+            + "\n\n" + decision;
+    }
+
+    private static string BuildStyleSummary()
+    {
+        PlayerStyleData style = StyleTracker.GetSnapshot();
+        return "风格置信       " + Percent(style.Confidence)
+            + "\n激进 " + Percent(style.aggressiveness)
+            + "  跳时 " + SignedPercent(style.jumpTiming)
+            + "  滑铲 " + Percent(style.slideFrequency)
+            + "\n车道 " + SignedPercent(style.lanePreference)
+            + "  节奏 " + Percent(style.rhythmStability)
+            + "  恢复 " + Percent(style.recoveryStyle);
+    }
+
+    private static string FormatScores(float[] scores)
+    {
+        if (scores == null || scores.Length < AIShadowPolicy.ActionCount)
+            return "--";
+        string[] labels = { "K", "L", "R", "J", "S" };
+        string result = "";
+        for (int i = 0; i < labels.Length; i++)
+        {
+            if (i > 0) result += "  ";
+            result += labels[i] + ":" + (scores[i] <= -998f
+                ? "X" : scores[i].ToString("0.00"));
+        }
+        return result;
+    }
+
+    private static string Percent(float value)
+    {
+        return (Mathf.Clamp01(value) * 100f).ToString("0") + "%";
+    }
+
+    private static string SignedPercent(float value)
+    {
+        return (Mathf.Clamp(value, -1f, 1f) * 100f).ToString("+0;-0;0")
+               + "%";
     }
 
     void OnDestroy()

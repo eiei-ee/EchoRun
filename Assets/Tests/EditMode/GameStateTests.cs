@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEngine;
 
 public class GameStateTests
@@ -247,6 +248,18 @@ public class GameStateTests
         input.ClearInput();
 
         Assert.AreEqual(SwipeDirection.None, input.GetSwipe());
+    }
+
+    [Test]
+    public void ClearInputSuppressesTheStartButtonRelease()
+    {
+        InputManager input = Create<InputManager>("InputStartReleaseGuard");
+
+        input.ClearInput();
+
+        Assert.IsTrue(GetPrivateField<bool>(
+            input, "_suppressUntilPointersReleased"),
+            "Starting a run must not reinterpret the UI pointer-up as Jump.");
     }
 
     [Test]
@@ -813,8 +826,8 @@ public class GameStateTests
     {
         const string controllerPath =
             "Assets/Animations/HumanMotion/EchoRunHuman.controller";
-        RuntimeAnimatorController controller =
-            AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
+        AnimatorController controller =
+            AssetDatabase.LoadAssetAtPath<AnimatorController>(
                 controllerPath);
         Assert.IsNotNull(controller,
             "The ExoGray model must use an authored Animator Controller.");
@@ -831,6 +844,17 @@ public class GameStateTests
         Assert.IsTrue(run.isHumanMotion);
         Assert.IsTrue(run.isLooping,
             "The authored running clip must loop without procedural resets.");
+
+        AnimatorState runState = null;
+        foreach (ChildAnimatorState child in
+                 controller.layers[0].stateMachine.states)
+        {
+            if (child.state.name == "Run") runState = child.state;
+        }
+        Assert.IsNotNull(runState);
+        Assert.IsFalse(runState.iKOnFeet,
+            "Run Foot IK must stay off because the procedural slide shares " +
+            "the same controller and owns the leg pose while active.");
     }
 
     [Test]
@@ -880,7 +904,7 @@ public class GameStateTests
     }
 
     [Test]
-    public void AuthoredRunKeepsTheRunnerCenteredWithoutSideRoll()
+    public void AuthoredRunKeepsFeetForwardWithoutLockingTheBody()
     {
         GameObject modelAsset = AssetDatabase.LoadAssetAtPath<GameObject>(
             "Assets/Models/Mixamo/ExoGray/ExoGray_TPose.fbx");
@@ -908,11 +932,27 @@ public class GameStateTests
 
         Transform hips = animator.GetBoneTransform(HumanBodyBones.Hips);
         Transform spine = animator.GetBoneTransform(HumanBodyBones.Spine);
+        Transform leftLowerLeg =
+            animator.GetBoneTransform(HumanBodyBones.LeftLowerLeg);
+        Transform rightLowerLeg =
+            animator.GetBoneTransform(HumanBodyBones.RightLowerLeg);
+        Transform leftFoot =
+            animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+        Transform rightFoot =
+            animator.GetBoneTransform(HumanBodyBones.RightFoot);
+        Transform leftToes =
+            animator.GetBoneTransform(HumanBodyBones.LeftToes);
+        Transform rightToes =
+            animator.GetBoneTransform(HumanBodyBones.RightToes);
         float hipsCenterX = hips.localPosition.x;
         float spineCenterX = spine.localPosition.x;
         Quaternion hipsBaseRotation = hips.localRotation;
         Quaternion spineBaseRotation = spine.localRotation;
+        Quaternion leftLowerLegBase = leftLowerLeg.localRotation;
+        Quaternion rightLowerLegBase = rightLowerLeg.localRotation;
         float[] runTimes = { 0.1f, 0.35f, 0.6f, 0.85f };
+        float minimumKneeBend = float.PositiveInfinity;
+        float maximumKneeBend = float.NegativeInfinity;
 
         for (int i = 0; i < runTimes.Length; i++)
         {
@@ -921,17 +961,239 @@ public class GameStateTests
             characterAnimator.ApplyExternalMotion(
                 false, false, Vector3.forward, 10f, 0f);
 
-            Assert.AreEqual(hipsCenterX, hips.localPosition.x, 0.0001f);
-            Assert.AreEqual(spineCenterX, spine.localPosition.x, 0.0001f);
             Quaternion hipsRelative =
                 Quaternion.Inverse(hipsBaseRotation) * hips.localRotation;
             Quaternion spineRelative =
                 Quaternion.Inverse(spineBaseRotation) * spine.localRotation;
-            Assert.Less(Mathf.Abs(Mathf.DeltaAngle(
+            Assert.AreEqual(hipsCenterX, hips.localPosition.x, 0.0001f,
+                "The runner hips must not sway left and right.");
+            Assert.AreEqual(spineCenterX, spine.localPosition.x, 0.0001f,
+                "The runner spine must stay centered over the lane.");
+            Assert.LessOrEqual(Mathf.Abs(Mathf.DeltaAngle(
                 0f, hipsRelative.eulerAngles.z)), 0.1f);
-            Assert.Less(Mathf.Abs(Mathf.DeltaAngle(
+            Assert.LessOrEqual(Mathf.Abs(Mathf.DeltaAngle(
                 0f, spineRelative.eulerAngles.z)), 0.1f);
+            Assert.Greater(Mathf.DeltaAngle(
+                0f, spineRelative.eulerAngles.x), 4f,
+                "The authored run needs a visible forward athletic lean.");
+
+            float leftKneeBend = KneeBend(
+                leftLowerLegBase, leftLowerLeg.localRotation);
+            float rightKneeBend = KneeBend(
+                rightLowerLegBase, rightLowerLeg.localRotation);
+            Assert.GreaterOrEqual(leftKneeBend, 14.9f,
+                "The left leg must not lock straight while running.");
+            Assert.GreaterOrEqual(rightKneeBend, 14.9f,
+                "The right leg must not lock straight while running.");
+            minimumKneeBend = Mathf.Min(
+                minimumKneeBend, leftKneeBend, rightKneeBend);
+            maximumKneeBend = Mathf.Max(
+                maximumKneeBend, leftKneeBend, rightKneeBend);
+
+            AssertFootPointsForward(
+                model.transform, leftFoot, leftToes, 7.1f);
+            AssertFootPointsForward(
+                model.transform, rightFoot, rightToes, 7.1f);
         }
+
+        Assert.Greater(maximumKneeBend - minimumKneeBend, 6f,
+            "Knee flex must vary through the stride instead of holding a " +
+            "single stiff crouch.");
+    }
+
+    [Test]
+    public void AuthoredSlideKeepsTheLegsConnectedAndAboveTheTrack()
+    {
+        GameObject modelAsset = AssetDatabase.LoadAssetAtPath<GameObject>(
+            "Assets/Models/Mixamo/ExoGray/ExoGray_TPose.fbx");
+        RuntimeAnimatorController controller =
+            AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
+                "Assets/Animations/HumanMotion/EchoRunHuman.controller");
+        Assert.IsNotNull(modelAsset);
+        Assert.IsNotNull(controller);
+
+        GameObject model = Object.Instantiate(modelAsset);
+        _objects.Add(model);
+        Animator animator = model.GetComponent<Animator>();
+        animator.runtimeAnimatorController = controller;
+        animator.applyRootMotion = false;
+        animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+        animator.Rebind();
+        animator.Update(0f);
+
+        CharacterAnimator driver = model.AddComponent<CharacterAnimator>();
+        driver.useHumanoidRig = true;
+        SetPrivateField(driver, "_initialized", false);
+        InvokePrivate(driver, "Initialize");
+        driver.SetExternalDriver();
+
+        Transform hips = animator.GetBoneTransform(HumanBodyBones.Hips);
+        Transform leftUpperLeg =
+            animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg);
+        Transform leftLowerLeg =
+            animator.GetBoneTransform(HumanBodyBones.LeftLowerLeg);
+        Transform rightUpperLeg =
+            animator.GetBoneTransform(HumanBodyBones.RightUpperLeg);
+        Transform rightLowerLeg =
+            animator.GetBoneTransform(HumanBodyBones.RightLowerLeg);
+        Transform leftFoot =
+            animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+        Transform rightFoot =
+            animator.GetBoneTransform(HumanBodyBones.RightFoot);
+        Transform rightHand =
+            animator.GetBoneTransform(HumanBodyBones.RightHand);
+        Transform rightMiddleFinger =
+            animator.GetBoneTransform(HumanBodyBones.RightMiddleDistal);
+        Transform leftHand =
+            animator.GetBoneTransform(HumanBodyBones.LeftHand);
+        Transform spine = animator.GetBoneTransform(HumanBodyBones.Spine);
+        Transform chest = animator.GetBoneTransform(HumanBodyBones.Chest);
+        Transform rightShoulder =
+            animator.GetBoneTransform(HumanBodyBones.RightUpperArm);
+        Quaternion spineBaseRotation = spine.localRotation;
+
+        for (int i = 0; i < 4; i++)
+        {
+            animator.Update(1f / 60f);
+            driver.ApplyExternalMotion(
+                false, true, Vector3.forward, 10f, 1f / 60f);
+        }
+        float turnHipY = hips.position.y;
+
+        for (int i = 0; i < 5; i++)
+        {
+            animator.Update(1f / 60f);
+            driver.ApplyExternalMotion(
+                false, true, Vector3.forward, 10f, 1f / 60f);
+        }
+        float dropHipY = hips.position.y;
+        float dropHandY = rightHand.position.y;
+
+        for (int i = 0; i < 5; i++)
+        {
+            animator.Update(1f / 60f);
+            driver.ApplyExternalMotion(
+                false, true, Vector3.forward, 10f, 1f / 60f);
+        }
+        float contactHipY = hips.position.y;
+        float contactHandY = rightHand.position.y;
+
+        for (int i = 0; i < 13; i++)
+        {
+            animator.Update(1f / 60f);
+            driver.ApplyExternalMotion(
+                false, true, Vector3.forward, 10f, 1f / 60f);
+        }
+        float glideHipY = hips.position.y;
+        float glideHandY = rightHand.position.y;
+
+        Assert.Less(dropHipY, turnHipY - 0.3f,
+            "The drop stage must rapidly lower the center of mass.");
+        Assert.Less(contactHipY, dropHipY - 0.05f,
+            "The contact stage must finish lowering the hips.");
+        Assert.Less(contactHandY, dropHandY - 0.12f,
+            "The support hand must reach the track during contact.");
+        Assert.That(glideHipY, Is.EqualTo(contactHipY).Within(0.04f),
+            "The glide stage must hold a stable low center of mass.");
+        Assert.That(glideHandY, Is.EqualTo(contactHandY).Within(0.05f),
+            "The support palm must stay planted through the glide.");
+
+        Assert.That(hips.position.y - model.transform.position.y,
+            Is.InRange(0.15f, 0.25f),
+            "The professional slide must hold the hips 15-25 cm above the track.");
+        Assert.GreaterOrEqual(leftFoot.position.y,
+            model.transform.position.y - 0.03f,
+            "The leading foot must remain above the track.");
+        Assert.GreaterOrEqual(rightFoot.position.y,
+            model.transform.position.y - 0.03f,
+            "The folded foot must remain above the track.");
+        Vector3 footSeparation = Vector3.ProjectOnPlane(
+            leftFoot.position - rightFoot.position, Vector3.up);
+        Assert.Greater(footSeparation.magnitude, 0.45f,
+            "The two feet must form separate silhouettes on the track.");
+        Assert.Greater(Mathf.Abs(Vector3.Dot(
+                footSeparation, model.transform.right)),
+            0.25f,
+            "The side slide needs visible lateral leg separation.");
+        Assert.That(WorldKneeBend(
+                leftUpperLeg, leftLowerLeg, leftFoot),
+            Is.InRange(3f, 12f),
+            "The leading leg must remain nearly straight with a soft knee.");
+        Assert.That(WorldKneeBend(
+                rightUpperLeg, rightLowerLeg, rightFoot),
+            Is.InRange(90f, 120f),
+            "The trailing leg must fold 90-120 degrees beside the hips.");
+        Assert.LessOrEqual(rightHand.position.y,
+            model.transform.position.y + 0.22f,
+            "The support wrist must stay close enough for the palm to reach the track.");
+        if (rightMiddleFinger != null)
+        {
+            Assert.LessOrEqual(rightMiddleFinger.position.y,
+                model.transform.position.y + 0.12f,
+                "The supporting fingertips must reach the track.");
+        }
+        Assert.Greater(leftHand.position.y,
+            rightHand.position.y + 0.12f,
+            "The free hand must be raised above the supporting hand.");
+        Assert.Less(leftHand.position.y,
+            hips.position.y + 0.35f,
+            "The free hand should only lift slightly beside the hips.");
+        Assert.Greater(Quaternion.Angle(
+            spineBaseRotation, spine.localRotation), 14f,
+            "The upper body must visibly recline without tipping into a side slide.");
+        float backAngleToTrack = Mathf.Asin(Mathf.Clamp01(
+            Mathf.Abs(Vector3.Dot(chest.up, model.transform.up))))
+            * Mathf.Rad2Deg;
+        Assert.That(backAngleToTrack, Is.InRange(10f, 20f),
+            "The back must stay almost parallel to the track during the glide.");
+        Assert.Greater(Vector3.Dot(
+                rightHand.position - rightShoulder.position,
+                model.transform.forward),
+            0.03f,
+            "The support wrist must stay in front of the shoulder.");
+        Assert.Greater(Vector3.Distance(
+            leftUpperLeg.position, leftLowerLeg.position), 0.2f);
+        Assert.Greater(Vector3.Distance(
+            rightUpperLeg.position, rightLowerLeg.position), 0.2f);
+
+        for (int i = 0; i < 16; i++)
+        {
+            animator.Update(1f / 60f);
+            driver.ApplyExternalMotion(
+                false, true, Vector3.forward, 10f, 1f / 60f);
+        }
+        Assert.Greater(hips.position.y, glideHipY + 0.3f,
+            "Push-off recovery must raise the hips before the slide ends.");
+        Assert.Greater(rightHand.position.y, glideHandY + 0.3f,
+            "Push-off recovery must lift the support hand from the track.");
+    }
+
+    private static float KneeBend(
+        Quaternion baseRotation, Quaternion currentRotation)
+    {
+        Quaternion relative =
+            Quaternion.Inverse(baseRotation) * currentRotation;
+        return Mathf.Max(0f, -Mathf.DeltaAngle(0f, relative.eulerAngles.x));
+    }
+
+    private static float WorldKneeBend(
+        Transform upperLeg, Transform lowerLeg, Transform foot)
+    {
+        Vector3 kneeToHip = upperLeg.position - lowerLeg.position;
+        Vector3 kneeToFoot = foot.position - lowerLeg.position;
+        return 180f - Vector3.Angle(kneeToHip, kneeToFoot);
+    }
+
+    private static void AssertFootPointsForward(
+        Transform runner, Transform foot, Transform toes, float angleLimit)
+    {
+        Vector3 footForward = Vector3.ProjectOnPlane(
+            toes.position - foot.position, Vector3.up);
+        Vector3 runnerForward = Vector3.ProjectOnPlane(
+            runner.forward, Vector3.up);
+        Assert.LessOrEqual(
+            Vector3.Angle(footForward, runnerForward), angleLimit,
+            "A running foot is pointing across the track.");
     }
 
     [Test]
@@ -1168,14 +1430,18 @@ public class GameStateTests
         Assert.AreEqual(Vector3.one, torso.transform.localScale,
             "The torso must keep its authored proportions during the slide.");
         Assert.Greater(Quaternion.Angle(Quaternion.identity,
-            torso.transform.localRotation), 20f,
-            "The torso must lean into a visible slide pose.");
+            torso.transform.localRotation), 14f,
+            "The torso must visibly recline without tipping into a side slide.");
+        Assert.Less(Quaternion.Angle(Quaternion.identity,
+            upperLeg.transform.localRotation), 1f,
+            "The slide must not twist the upper leg into the track.");
+        Assert.That(Quaternion.Angle(Quaternion.identity,
+                lowerLeg.transform.localRotation),
+            Is.InRange(3f, 12f),
+            "The front knee must remain nearly straight during the slide.");
         Assert.Greater(Quaternion.Angle(Quaternion.identity,
-            upperLeg.transform.localRotation), 50f,
-            "The upper leg must swing into the slide pose.");
-        Assert.Greater(Quaternion.Angle(Quaternion.identity,
-            rearLowerLeg.transform.localRotation), 75f,
-            "The rear knee must bend instead of sinking the whole model.");
+            rearLowerLeg.transform.localRotation), 25f,
+            "The rear knee must bend without sinking the whole model.");
 
         SetPrivateField(runner, "_ghostSlideTimer", 0f);
         InvokePrivate(runner, "ApplyObstacleReaction");

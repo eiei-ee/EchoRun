@@ -1068,7 +1068,7 @@ MonoBehaviour:
           compressDataPackage: 0
           VideoUrl: 
           relativeDST: Builds/WeixinMiniGameV0-Clean
-          DST: "C:\\Users\\zzz\\Desktop\\\u5F52\u6863\\TempleRun\\Builds\\WeixinMiniGameV0-Clean"
+          DST: C:\Users\zzz\Desktop\TempleRun\Builds\WeixinMiniGameV0-Clean
           StreamCDN: 
           bundleHashLength: 32
           bundlePathIdentifier: StreamingAssets;

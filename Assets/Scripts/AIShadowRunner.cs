@@ -37,6 +37,7 @@ public class AIShadowRunner : MonoBehaviour
     public float DuelPressure => HasActiveOpponent
         ? 1f - Mathf.Clamp01(Mathf.Abs(PlayerLead) / 14f)
         : 0f;
+    public ShadowDecisionTrace LastDecisionTrace { get; private set; }
 
     private const int SamplesPerCheckpoint = 4;
 
@@ -60,6 +61,11 @@ public class AIShadowRunner : MonoBehaviour
     private AIShadowPolicy _opponentPolicy;
     private AIShadowSequencePolicy _sequencePolicy;
     private AIShadowSequencePolicy _opponentSequencePolicy;
+    private readonly ShadowDecisionMaker _decisionMaker =
+        new ShadowDecisionMaker();
+    private PlayerStyleData _opponentStyle;
+    private IShadowDirectiveSource _directiveSource;
+    private System.Random _decisionRandom = new System.Random(1337);
     private GameManager _gameManager;
     private PlayerController _player;
     private GameObject _ghost;
@@ -84,6 +90,7 @@ public class AIShadowRunner : MonoBehaviour
     private float _ghostJumpTimer;
     private float _ghostSlideTimer;
     private float _ghostStumbleTimer;
+    private float _ghostRecoveryTimer;
     private float _decisionConfidence;
     private float _sequenceInfluence;
     private int _runCoins;
@@ -92,10 +99,13 @@ public class AIShadowRunner : MonoBehaviour
     private int _samplesSinceCheckpoint;
     private int _lastTrainingAction = -1;
     private int _lastOpponentAction = -1;
+    private ShadowAction _lastStyleDecision = ShadowAction.Keep;
     private bool _runStarted;
     private bool _runFinalized;
     private readonly HashSet<int> _handledGhostObstacles = new HashSet<int>();
     private readonly HashSet<int> _reactedGhostObstacles = new HashSet<int>();
+    private readonly SlideOpportunityTracker _slideOpportunityTracker =
+        new SlideOpportunityTracker();
 
     void Awake()
     {
@@ -117,6 +127,7 @@ public class AIShadowRunner : MonoBehaviour
     {
         _gameManager = GameManager.Instance;
         _player = FindObjectOfType<PlayerController>();
+        _directiveSource = AITrackDirector.Instance;
         if (_gameManager != null)
             _gameManager.OnStateChanged.AddListener(OnGameStateChanged);
     }
@@ -131,6 +142,8 @@ public class AIShadowRunner : MonoBehaviour
 
         if (!_runStarted) BeginRun();
         if (HasActiveOpponent && _ghost == null) CreateGhost();
+
+        TrackPlayerSlideOpportunity();
 
         _runTime += Time.deltaTime;
         _playerProgress = _gameManager.Distance
@@ -151,6 +164,7 @@ public class AIShadowRunner : MonoBehaviour
 
         _laneDecisionCooldown = Mathf.Max(0f, _laneDecisionCooldown - Time.deltaTime);
         _ghostStumbleTimer = Mathf.Max(0f, _ghostStumbleTimer - Time.deltaTime);
+        _ghostRecoveryTimer = Mathf.Max(0f, _ghostRecoveryTimer - Time.deltaTime);
         _ghostJumpTimer = Mathf.Max(0f, _ghostJumpTimer - Time.deltaTime);
         _ghostSlideTimer = Mathf.Max(0f, _ghostSlideTimer - Time.deltaTime);
         float stumbleSpeed = _ghostStumbleTimer > 0f ? 0.25f : 1f;
@@ -195,6 +209,32 @@ public class AIShadowRunner : MonoBehaviour
         AIRunTelemetry.RecordEvent(
             "player_action", (int)action, laneBeforeAction);
         float[] features = BuildFeatures(laneBeforeAction, false);
+        float timingOffset = 0f;
+        float styleProximity = features[3];
+        if (action == ShadowAction.Jump && _gameManager != null
+            && _player != null && TrackManager.Instance != null
+            && TrackManager.Instance.TryGetUpcomingObstacleInLane(
+                _player.transform.position, _player.ForwardDirection,
+                laneBeforeAction, null, out float jumpObstacleDistance,
+                out ObstacleType jumpObstacleType, out _)
+            && jumpObstacleType == ObstacleType.High)
+        {
+            styleProximity = 1f - Mathf.Clamp01(jumpObstacleDistance / 24f);
+            float idealDistance = CalculateReactionDistance(
+                _gameManager.CurrentSpeed,
+                _player != null ? _player.jumpDuration : 0.9f);
+            timingOffset = Mathf.Clamp(
+                (idealDistance - jumpObstacleDistance)
+                / Mathf.Max(1f, idealDistance),
+                -1f, 1f);
+        }
+        if (action == ShadowAction.Slide)
+            _slideOpportunityTracker.MarkSlide(laneBeforeAction);
+        bool airLaneChange = _player != null && _player.IsJumping
+                             && (action == ShadowAction.Left
+                                 || action == ShadowAction.Right);
+        StyleTracker.RecordAction(action, styleProximity, timingOffset,
+            Time.unscaledTime, airLaneChange);
         AIPlayerSkillEstimator.RecordAction(action, features);
         Learn(action, features);
         _keepSampleTimer = 0f;
@@ -216,6 +256,7 @@ public class AIShadowRunner : MonoBehaviour
 
     public void RecordObstacleHit()
     {
+        ResolvePlayerSlideOpportunity();
         if (HasActiveOpponent) PlayerLead -= 2f;
         AIRunTelemetry.RecordEvent("obstacle_hit", 0,
             _player != null ? _player.CurrentLane : -1, PlayerLead);
@@ -239,6 +280,11 @@ public class AIShadowRunner : MonoBehaviour
             : JsonUtility.ToJson(_sequencePolicy.ExportState());
     }
 
+    public void SetDirectiveSource(IShadowDirectiveSource source)
+    {
+        _directiveSource = source;
+    }
+
     public void ResetTraining()
     {
         SetGhostActive(false);
@@ -247,6 +293,8 @@ public class AIShadowRunner : MonoBehaviour
         _sequencePolicy = new AIShadowSequencePolicy();
         _opponentPolicy = null;
         _opponentSequencePolicy = null;
+        _opponentStyle = null;
+        LastDecisionTrace = null;
         _runStarted = false;
         _runFinalized = false;
         _samplesSinceCheckpoint = 0;
@@ -287,10 +335,19 @@ public class AIShadowRunner : MonoBehaviour
         _ghostJumpTimer = 0f;
         _ghostSlideTimer = 0f;
         _ghostStumbleTimer = 0f;
+        _ghostRecoveryTimer = 0f;
         _sequenceInfluence = 0f;
         _ghostMistakes = 0;
         _lastTrainingAction = -1;
         _lastOpponentAction = -1;
+        _lastStyleDecision = ShadowAction.Keep;
+        LastDecisionTrace = null;
+        _slideOpportunityTracker.Reset();
+        _opponentStyle = StyleTracker.GetSnapshot();
+        int decisionSeed = _gameManager != null
+            ? _gameManager.RunSeed ^ unchecked((int)0x51ED270B)
+            : 1337;
+        _decisionRandom = new System.Random(decisionSeed);
         _handledGhostObstacles.Clear();
         _reactedGhostObstacles.Clear();
         HasActiveOpponent = HasTrainedProfile();
@@ -455,14 +512,24 @@ public class AIShadowRunner : MonoBehaviour
     {
         if (_opponentPolicy == null) return;
         float[] features = BuildFeatures(_ghostLane, true);
+        float[] baseScores = _opponentPolicy.GetProbabilities(features);
         ShadowAction baseAction = (ShadowAction)_opponentPolicy.Predict(features);
-        ShadowAction action = PredictOpponentAction(features, out float baseConfidence,
+        ShadowAction sequenceAction = PredictOpponentAction(features,
+            out float baseConfidence,
             out float sequenceConfidence, out float sequenceInfluence);
+        baseScores[(int)sequenceAction] += sequenceInfluence * 0.25f;
+        ShadowDecisionContext context = BuildDecisionContext(features);
+        ShadowAIDirective directive = GetShadowDirective();
+        ShadowAction action = _decisionMaker.Select(baseScores,
+            _opponentStyle, context, directive,
+            (float)_decisionRandom.NextDouble(), out ShadowDecisionTrace trace);
+        LastDecisionTrace = trace;
+        _lastStyleDecision = action;
         _decisionConfidence = Mathf.Max(baseConfidence, sequenceConfidence);
         _sequenceInfluence = sequenceInfluence;
         AIRunTelemetry.RecordShadowSample(
             action, _ghostLane, features, true, _decisionConfidence, (int)baseAction,
-            sequenceConfidence, sequenceInfluence);
+            sequenceConfidence, sequenceInfluence, trace, _opponentStyle);
 
         switch (action)
         {
@@ -520,7 +587,10 @@ public class AIShadowRunner : MonoBehaviour
             ? GetGhostJumpDuration()
             : GetGhostSlideDuration();
         float speed = _gameManager != null ? _gameManager.CurrentSpeed : 10f;
-        if (threatDistance > CalculateReactionDistance(speed, duration)) return;
+        float reactionDistance = CalculateReactionDistance(speed, duration)
+                                 * ShadowDecisionMaker.ReactionDistanceMultiplier(
+                                     _opponentStyle, GetShadowDirective());
+        if (threatDistance > reactionDistance) return;
 
         // A trained clone gets the full reaction window when it predicts the
         // learned move. The close-range reflex is the physical safety layer:
@@ -528,10 +598,9 @@ public class AIShadowRunner : MonoBehaviour
         // reaction timing learned from the player.
         if (_opponentPolicy != null)
         {
-            ShadowAction predicted = PredictOpponentAction(
-                BuildFeatures(_ghostLane, true), out _, out _, out _);
             float emergencyDistance = Mathf.Clamp(speed * 0.2f, 2f, 4.5f);
-            if (predicted != requiredAction && threatDistance > emergencyDistance)
+            if (_lastStyleDecision != requiredAction
+                && threatDistance > emergencyDistance)
                 return;
         }
 
@@ -676,7 +745,60 @@ public class AIShadowRunner : MonoBehaviour
         _ghostMistakes++;
         _ghostProgress = Mathf.Max(0f, _ghostProgress - 6f);
         _ghostStumbleTimer = 0.85f;
+        _ghostRecoveryTimer = 10f;
         PlayerLead = _playerProgress - _ghostProgress;
+    }
+
+    private ShadowDecisionContext BuildDecisionContext(float[] features)
+    {
+        int obstacleType = Mathf.Clamp(
+            Mathf.RoundToInt(features[5] * 3f) - 1, 0, 2);
+        return new ShadowDecisionContext
+        {
+            lane = _ghostLane,
+            threatProximity = Mathf.Clamp01(features[3]),
+            relativeThreatLane = Mathf.RoundToInt(features[4] * 2f),
+            threatType = (ObstacleType)obstacleType,
+            hasThreat = features[3] > 0f,
+            isJumping = _ghostJumpTimer > 0f,
+            isSliding = _ghostSlideTimer > 0f,
+            isStumbling = _ghostStumbleTimer > 0f,
+            isRecovering = _ghostRecoveryTimer > 0f
+        };
+    }
+
+    private ShadowAIDirective GetShadowDirective()
+    {
+        if (_directiveSource == null)
+            _directiveSource = AITrackDirector.Instance;
+        return _directiveSource != null
+            ? _directiveSource.CurrentShadowDirective.Normalized()
+            : ShadowAIDirective.Neutral;
+    }
+
+    private void TrackPlayerSlideOpportunity()
+    {
+        if (_player == null || _gameManager == null
+            || TrackManager.Instance == null)
+            return;
+
+        bool found = TrackManager.Instance.TryGetUpcomingObstacleInLane(
+            _player.transform.position, _player.ForwardDirection,
+            _player.CurrentLane, _slideOpportunityTracker.ResolvedIds,
+            out float distance, out ObstacleType type, out int obstacleId);
+        float detectionDistance = CalculateReactionDistance(
+            _gameManager.CurrentSpeed,
+            Mathf.Max(0.2f, _player.slideDuration)) * 1.25f;
+        if (_slideOpportunityTracker.Update(
+                _player.CurrentLane, _player.IsSliding, found, distance,
+                type, obstacleId, detectionDistance, out bool usedSlide))
+            StyleTracker.RecordObstacleOpportunity(ObstacleType.Low, usedSlide);
+    }
+
+    private void ResolvePlayerSlideOpportunity()
+    {
+        if (_slideOpportunityTracker.Resolve(out bool usedSlide))
+            StyleTracker.RecordObstacleOpportunity(ObstacleType.Low, usedSlide);
     }
 
     private string BuildDuelStatus()

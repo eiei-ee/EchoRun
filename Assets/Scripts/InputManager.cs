@@ -21,6 +21,7 @@ public class InputManager : MonoBehaviour
     private Vector2 _touchStart;
     private bool _swipeDetected;
     private bool _ignoreTouch;
+    private bool _suppressUntilPointersReleased;
     private Queue<SwipeDirection> _swipeQueue = new Queue<SwipeDirection>();
 
     public event Action<SwipeDirection, bool> SwipeResolved;
@@ -52,6 +53,18 @@ public class InputManager : MonoBehaviour
         if (gameManager.State != GameState.Playing)
         {
             ClearInput();
+            return;
+        }
+
+        // The pointer-up that activates the Start button can arrive after the
+        // game enters Playing. Do not reinterpret that UI gesture as a swipe.
+        if (_suppressUntilPointersReleased)
+        {
+            bool pointersReleased = Input.touchCount == 0
+                && !Input.GetMouseButton(0)
+                && !Input.GetMouseButtonUp(0);
+            if (pointersReleased)
+                _suppressUntilPointersReleased = false;
             return;
         }
 
@@ -148,6 +161,7 @@ public class InputManager : MonoBehaviour
         _swipeQueue.Clear();
         _swipeDetected = false;
         _ignoreTouch = false;
+        _suppressUntilPointersReleased = true;
     }
 
     public static float ResolveSwipeThreshold(

@@ -366,15 +366,20 @@ MonoBehaviour:
   elbowBendVariation: 12
   legSwingAngle: 34
   kneeFlexAngle: 72
-  runSpineLean: 8
+  runSpineLean: 14
   bobAmplitude: 0.045
   jumpArmRaiseAngle: 52
   jumpLegTuckAngle: 58
   jumpElbowBendAngle: 72
   jumpKneeBendAngle: 88
   jumpSpineLean: 14
-  slideHipDrop: 0.52
-  slideSpineLean: 42
+  slideHipDrop: 0.78
+  slideSpineLean: 50
+  slideChestLean: 78
+  slideUpperChestLean: 86
+  slideYawAngle: -28
+  slideBodyRoll: 14
+  slideHeadLean: 58
   slideFrontLegAngle: 72
   slideRearLegAngle: 24
   slideRearKneeBend: 105
@@ -396,6 +401,7 @@ MonoBehaviour:
   bodyTransform: {fileID: 0}
   useHumanoidRig: 1
   useAuthoredAnimations: 1
+  stabilizeAuthoredRun: 1
 --- !u!1 &558227861
 GameObject:
   m_ObjectHideFlags: 0

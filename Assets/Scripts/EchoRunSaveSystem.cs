@@ -4,7 +4,7 @@ using UnityEngine;
 [Serializable]
 public sealed class EchoRunSaveData
 {
-    public int version = 5;
+    public int version = 6;
     public int highScore;
     public int totalCoins;
     public int targetFrameRate = 60;
@@ -18,6 +18,7 @@ public sealed class EchoRunSaveData
     public int runSequence;
     public string lastRunTelemetryJson = "";
     public string skillProfileJson = "";
+    public string playerStyleJson = "";
     public int[] powerUpInventory = new int[4];
     public int selectedPowerUp = -1;
     public long savedAtUtcTicks;
@@ -26,7 +27,7 @@ public sealed class EchoRunSaveData
 public static class EchoRunSaveSystem
 {
     public const string SaveKey = "EchoRunSaveV1";
-    public const int CurrentVersion = 5;
+    public const int CurrentVersion = 6;
 
     private const string ShadowProfileKey = "AIShadowProfileV1";
 
@@ -170,6 +171,19 @@ public static class EchoRunSaveSystem
         WriteArchive(true);
     }
 
+    public static string GetPlayerStyleJson()
+    {
+        EnsureInitialized();
+        return _data.playerStyleJson ?? "";
+    }
+
+    public static void SavePlayerStyle(string profileJson)
+    {
+        EnsureInitialized();
+        _data.playerStyleJson = profileJson ?? "";
+        WriteArchive(true);
+    }
+
     public static int[] GetPowerUpInventory()
     {
         EnsureInitialized();
@@ -243,6 +257,7 @@ public static class EchoRunSaveSystem
         _data.directorPolicyJson = "";
         _data.lastRunTelemetryJson = "";
         _data.skillProfileJson = "";
+        _data.playerStyleJson = "";
         PlayerPrefs.DeleteKey(ShadowProfileKey);
         WriteArchive(true);
     }
@@ -309,6 +324,7 @@ public static class EchoRunSaveSystem
         _data.runSequence = Mathf.Max(0, _data.runSequence);
         _data.lastRunTelemetryJson = _data.lastRunTelemetryJson ?? "";
         _data.skillProfileJson = _data.skillProfileJson ?? "";
+        _data.playerStyleJson = _data.playerStyleJson ?? "";
         _data.powerUpInventory = CloneInventory(_data.powerUpInventory);
         _data.selectedPowerUp = _data.selectedPowerUp >= 0
                                 && _data.selectedPowerUp < _data.powerUpInventory.Length

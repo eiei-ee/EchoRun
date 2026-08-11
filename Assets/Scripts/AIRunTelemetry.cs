@@ -65,6 +65,13 @@ public sealed class AIShadowTrainingSample
     public int baseAction;
     public float sequenceConfidence;
     public float sequenceInfluence;
+    public float[] baseScores;
+    public float[] styleAdjustedScores;
+    public float[] finalScores;
+    public bool[] feasibleActions;
+    public bool safetyAdjusted;
+    public ShadowAIDirective directive;
+    public PlayerStyleData playerStyle;
 }
 
 [Serializable]
@@ -84,6 +91,7 @@ public sealed class AIRunTelemetryData
     public int directorUpdatesAtStart;
     public float playerSkillAtStart;
     public float skillConfidenceAtStart;
+    public PlayerStyleData playerStyleAtStart;
     public float[] shadowWeightsAtStart;
     public string shadowSequenceStateAtStart;
     public float[] directorWeightsAtStart;
@@ -96,6 +104,7 @@ public sealed class AIRunTelemetryData
     public int directorUpdatesAtEnd;
     public float playerSkillAtEnd;
     public float skillConfidenceAtEnd;
+    public PlayerStyleData playerStyleAtEnd;
     public float[] shadowWeightsAtEnd;
     public string shadowSequenceStateAtEnd;
     public float[] directorWeightsAtEnd;
@@ -110,7 +119,7 @@ public sealed class AIRunTelemetryData
 
 public static class AIRunTelemetry
 {
-    public const int SchemaVersion = 3;
+    public const int SchemaVersion = 4;
     public const float StateSampleInterval = 0.25f;
     public const string CompletedTrainingReason = "game_over";
 
@@ -156,6 +165,7 @@ public static class AIRunTelemetry
             directorUpdatesAtStart = Mathf.Max(0, directorUpdates),
             playerSkillAtStart = AIPlayerSkillEstimator.Skill,
             skillConfidenceAtStart = AIPlayerSkillEstimator.Confidence,
+            playerStyleAtStart = StyleTracker.GetSnapshot(),
             shadowWeightsAtStart = Clone(shadowWeights),
             shadowSequenceStateAtStart = shadowSequenceState ?? "",
             directorWeightsAtStart = Clone(directorWeights),
@@ -270,7 +280,9 @@ public static class AIRunTelemetry
 
     public static void RecordShadowSample(ShadowAction action, int lane,
         float[] features, bool opponentDecision, float confidence, int baseAction,
-        float sequenceConfidence, float sequenceInfluence)
+        float sequenceConfidence, float sequenceInfluence,
+        ShadowDecisionTrace decisionTrace = null,
+        PlayerStyleData playerStyle = null)
     {
         if (!IsRecording || _active.shadowSamples.Count >= MaxShadowSamples) return;
         _active.shadowSamples.Add(new AIShadowTrainingSample
@@ -284,7 +296,20 @@ public static class AIRunTelemetry
             features = Clone(features),
             baseAction = Mathf.Clamp(baseAction, 0, AIShadowPolicy.ActionCount - 1),
             sequenceConfidence = Mathf.Clamp01(sequenceConfidence),
-            sequenceInfluence = Mathf.Clamp01(sequenceInfluence)
+            sequenceInfluence = Mathf.Clamp01(sequenceInfluence),
+            baseScores = decisionTrace != null
+                ? Clone(decisionTrace.baseScores) : null,
+            styleAdjustedScores = decisionTrace != null
+                ? Clone(decisionTrace.styleAdjustedScores) : null,
+            finalScores = decisionTrace != null
+                ? Clone(decisionTrace.finalScores) : null,
+            feasibleActions = decisionTrace != null
+                ? Clone(decisionTrace.feasibleActions) : null,
+            safetyAdjusted = decisionTrace != null
+                             && decisionTrace.safetyAdjusted,
+            directive = decisionTrace != null
+                ? decisionTrace.directive : ShadowAIDirective.Neutral,
+            playerStyle = playerStyle != null ? playerStyle.Clone() : null
         });
     }
 
@@ -309,6 +334,7 @@ public static class AIRunTelemetry
         _active.directorUpdatesAtEnd = Mathf.Max(0, directorUpdates);
         _active.playerSkillAtEnd = AIPlayerSkillEstimator.Skill;
         _active.skillConfidenceAtEnd = AIPlayerSkillEstimator.Confidence;
+        _active.playerStyleAtEnd = StyleTracker.GetSnapshot();
         _active.shadowWeightsAtEnd = Clone(shadowWeights);
         _active.shadowSequenceStateAtEnd = shadowSequenceState ?? "";
         _active.directorWeightsAtEnd = Clone(directorWeights);
@@ -374,5 +400,10 @@ public static class AIRunTelemetry
     private static float[] Clone(float[] values)
     {
         return values == null ? null : (float[])values.Clone();
+    }
+
+    private static bool[] Clone(bool[] values)
+    {
+        return values == null ? null : (bool[])values.Clone();
     }
 }

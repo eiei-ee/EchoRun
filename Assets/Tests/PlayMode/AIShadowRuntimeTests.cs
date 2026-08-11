@@ -8,6 +8,29 @@ using UnityEngine.TestTools;
 public sealed class AIShadowRuntimeTests
 {
     [UnityTest]
+    public IEnumerator TrainingDashboardBuildsOptionalLiveDebugPanel()
+    {
+        SceneManager.LoadScene("SampleScene");
+        AITrainingDashboardUI dashboard = null;
+        for (int frame = 0; frame < 180 && dashboard == null; frame++)
+        {
+            dashboard = Object.FindObjectOfType<AITrainingDashboardUI>();
+            yield return null;
+        }
+
+        Assert.IsNotNull(dashboard);
+        for (int frame = 0; frame < 180
+             && GetField(dashboard, "_liveDebugPanel") == null; frame++)
+            yield return null;
+        GameObject liveDebug = (GameObject)GetField(
+            dashboard, "_liveDebugPanel");
+        Assert.IsNotNull(liveDebug);
+        Assert.IsNotNull(liveDebug.transform.Find("Content"));
+        Assert.IsFalse(liveDebug.activeSelf,
+            "Live diagnostics must be opt-in during normal play.");
+    }
+
+    [UnityTest]
     public IEnumerator GhostVisualStaysAboveTrackAndUsesDedicatedShader()
     {
         SceneManager.LoadScene("SampleScene");
