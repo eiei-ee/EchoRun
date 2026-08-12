@@ -21,15 +21,12 @@ public class CharacterAnimator : MonoBehaviour
     public float jumpSpineLean = 14f;
 
     [Header("Slide Pose")]
-    public float slideHipDrop = 0.78f;
-    public float slideSpineLean = 50f;
-    public float slideChestLean = 78f;
-    public float slideUpperChestLean = 86f;
-    public float slideYawAngle = -28f;
-    public float slideBodyRoll = 14f;
-    public float slideHeadLean = 58f;
-    public float slideFrontLegAngle = 72f;
-    public float slideRearLegAngle = 24f;
+    public float slideHipDrop = 0.86f;
+    public float slideSpineLean = -40f;
+    public float slideYawAngle = 28f;
+    public float slideBodyRoll = -28f;
+    public float slideFrontLegAngle = 82f;
+    public float slideRearLegAngle = -28f;
     public float slideRearKneeBend = 105f;
     public float slideArmSweep = 48f;
 
@@ -49,11 +46,9 @@ public class CharacterAnimator : MonoBehaviour
     public Transform rightFoot;
     public Transform leftHand;
     public Transform rightHand;
-    public Transform headTransform;
     public Transform hipsTransform;
     public Transform bodyTransform;
     public Transform chestTransform;
-    public Transform upperChestTransform;
 
     [Header("Humanoid")]
     public bool useHumanoidRig;
@@ -65,6 +60,7 @@ public class CharacterAnimator : MonoBehaviour
     private Animator _animator;
     private bool _initialized;
     private bool _externalDriver;
+    private bool _slideAnimatorFrozen;
     private float _runPhase;
     private float _slideTime;
     private int _activeAuthoredState;
@@ -73,19 +69,10 @@ public class CharacterAnimator : MonoBehaviour
     private Vector3 _bodyBasePos;
     private Quaternion _hipsBaseRot;
     private Quaternion _bodyBaseRot;
-    private Quaternion _hipsBaseRootRot;
-    private Quaternion _bodyBaseRootRot;
-    private Quaternion _chestBaseRootRot;
-    private Quaternion _upperChestBaseRootRot;
-    private Quaternion _headBaseRootRot;
     private Quaternion _leftFootBaseRot;
     private Quaternion _rightFootBaseRot;
     private Quaternion _leftFootBaseRootRot;
     private Quaternion _rightFootBaseRootRot;
-    private Quaternion _leftHandBaseRootRot;
-    private Quaternion _rightHandBaseRootRot;
-    private Vector3 _leftFootBaseRootPos;
-    private Vector3 _rightFootBaseRootPos;
     private Vector3 _hipsBaseRootPos;
     private Quaternion _leftUpperArmBaseRot;
     private Quaternion _rightUpperArmBaseRot;
@@ -153,12 +140,9 @@ public class CharacterAnimator : MonoBehaviour
         _rightToes = FindBone(_rightToes, "RightToes", "RightToeBase", "Toes_R");
         leftHand = FindBone(leftHand, "LeftHand", "Hand_L");
         rightHand = FindBone(rightHand, "RightHand", "Hand_R");
-        headTransform = FindBone(headTransform, "Head");
         hipsTransform = FindBone(hipsTransform, "Hips", "Pelvis");
         bodyTransform = FindBone(bodyTransform, "Spine", "Torso");
         chestTransform = FindBone(chestTransform, "Chest", "Spine1");
-        upperChestTransform = FindBone(
-            upperChestTransform, "UpperChest", "Spine2");
 
         _hipsBasePos = hipsTransform != null ? hipsTransform.localPosition : Vector3.zero;
         _bodyBasePos = bodyTransform != null ? bodyTransform.localPosition : Vector3.zero;
@@ -182,17 +166,7 @@ public class CharacterAnimator : MonoBehaviour
         _rightLowerArmBaseRootRot = RootRotation(rightLowerArm, inverseRootRotation);
         _leftFootBaseRootRot = RootRotation(leftFoot, inverseRootRotation);
         _rightFootBaseRootRot = RootRotation(rightFoot, inverseRootRotation);
-        _leftHandBaseRootRot = RootRotation(leftHand, inverseRootRotation);
-        _rightHandBaseRootRot = RootRotation(rightHand, inverseRootRotation);
-        _leftFootBaseRootPos = RootPosition(leftFoot);
-        _rightFootBaseRootPos = RootPosition(rightFoot);
         _hipsBaseRootPos = RootPosition(hipsTransform);
-        _hipsBaseRootRot = RootRotation(hipsTransform, inverseRootRotation);
-        _bodyBaseRootRot = RootRotation(bodyTransform, inverseRootRotation);
-        _chestBaseRootRot = RootRotation(chestTransform, inverseRootRotation);
-        _upperChestBaseRootRot = RootRotation(
-            upperChestTransform, inverseRootRotation);
-        _headBaseRootRot = RootRotation(headTransform, inverseRootRotation);
         _initialized = true;
     }
 
@@ -212,12 +186,9 @@ public class CharacterAnimator : MonoBehaviour
         _rightToes = _animator.GetBoneTransform(HumanBodyBones.RightToes);
         leftHand = _animator.GetBoneTransform(HumanBodyBones.LeftHand);
         rightHand = _animator.GetBoneTransform(HumanBodyBones.RightHand);
-        headTransform = _animator.GetBoneTransform(HumanBodyBones.Head);
         hipsTransform = _animator.GetBoneTransform(HumanBodyBones.Hips);
         bodyTransform = _animator.GetBoneTransform(HumanBodyBones.Spine);
         chestTransform = _animator.GetBoneTransform(HumanBodyBones.Chest);
-        upperChestTransform =
-            _animator.GetBoneTransform(HumanBodyBones.UpperChest);
     }
 
     private void LateUpdate()
@@ -230,7 +201,10 @@ public class CharacterAnimator : MonoBehaviour
         if (_gm == null || _gm.State != GameState.Playing)
         {
             if (CanUseAuthoredAnimations())
+            {
+                ResumeAuthoredMotion();
                 ApplyAuthoredMotion(false, 0f, true);
+            }
             else
                 ApplyIdlePose(Time.deltaTime);
             return;
@@ -278,11 +252,22 @@ public class CharacterAnimator : MonoBehaviour
 
         if (CanUseAuthoredAnimations())
         {
-            ApplyAuthoredMotion(isJumping, speed, false);
             if (isSliding)
+            {
+                FreezeAuthoredSlideBase();
                 ApplySlidePose(slidePhase);
+            }
             else if (!isJumping)
+            {
+                ResumeAuthoredMotion();
+                ApplyAuthoredMotion(false, speed, false);
                 StabilizeAuthoredRunPose();
+            }
+            else
+            {
+                ResumeAuthoredMotion();
+                ApplyAuthoredMotion(true, speed, false);
+            }
             return;
         }
 
@@ -296,6 +281,27 @@ public class CharacterAnimator : MonoBehaviour
         return useAuthoredAnimations
             && _animator != null
             && _animator.runtimeAnimatorController != null;
+    }
+
+    private void FreezeAuthoredSlideBase()
+    {
+        if (_animator == null) return;
+        if (!_slideAnimatorFrozen)
+        {
+            _animator.Play(IdleState, 0, 0f);
+            _animator.Update(0f);
+            _activeAuthoredState = IdleState;
+            _slideAnimatorFrozen = true;
+        }
+        _animator.speed = 0f;
+    }
+
+    private void ResumeAuthoredMotion()
+    {
+        if (!_slideAnimatorFrozen || _animator == null) return;
+        _animator.speed = 1f;
+        _activeAuthoredState = 0;
+        _slideAnimatorFrozen = false;
     }
 
     private void ApplyAuthoredMotion(bool isJumping, float speed, bool idle)
@@ -522,120 +528,139 @@ public class CharacterAnimator : MonoBehaviour
 
     private void ApplySlidePose(float phase)
     {
-        // Five-stage slide: turn, drop, hand contact, glide, and push-off.
-        // Each chain comes in at a different time so the pose reads as forward
-        // momentum instead of a single static seated target.
+        // Keep the authored skeleton intact: lower and recline the core, shape
+        // both legs in local space, and use limited IK only for the support arm.
         float recovery = SmoothRange(phase, 0.76f, 1f);
         float hold = 1f - recovery;
-        float turnWeight = SmoothRange(phase, 0f, 0.1f) * hold;
-        float dropWeight = SmoothRange(phase, 0.05f, 0.22f) * hold;
-        float contactWeight = SmoothRange(phase, 0.12f, 0.24f) * hold;
-        float glideWeight = SmoothRange(phase, 0.2f, 0.3f) * hold;
-        float impactPulse = SmoothRange(phase, 0.12f, 0.2f)
-            * (1f - SmoothRange(phase, 0.2f, 0.32f)) * hold;
+        float poseWeight = SmoothRange(phase, 0.05f, 0.24f) * hold;
+        float supportWeight = SmoothRange(phase, 0.14f, 0.28f) * hold;
 
         const float groundY = 0f;
         Vector3 groundUnderHips = new Vector3(
             _hipsBaseRootPos.x, groundY, _hipsBaseRootPos.z);
         float hipClearance = Mathf.Clamp(
-            _hipsBaseRootPos.y - slideHipDrop, 0.15f, 0.25f);
+            _hipsBaseRootPos.y - slideHipDrop, 0.08f, 0.16f);
         Vector3 lowHipsRoot = groundUnderHips
-            + Vector3.up * (hipClearance - 0.025f * impactPulse)
-            + Vector3.forward * (0.05f * glideWeight);
+            + Vector3.up * hipClearance;
+        Quaternion slideYawRotation = Quaternion.Euler(
+            0f, slideYawAngle, 0f);
+        Vector3 slideForwardRoot = slideYawRotation * Vector3.forward;
+        Vector3 slideRightRoot = slideYawRotation * Vector3.right;
+        Vector3 slideForwardWorld = transform.TransformDirection(
+            slideForwardRoot);
+        Vector3 slideRightWorld = transform.TransformDirection(
+            slideRightRoot);
 
         if (hipsTransform != null)
         {
             hipsTransform.position = Vector3.Lerp(
                 hipsTransform.position,
-                transform.TransformPoint(lowHipsRoot), dropWeight);
+                transform.TransformPoint(lowHipsRoot), poseWeight);
         }
         if (bodyTransform != null)
             bodyTransform.localPosition = Vector3.Lerp(
-                bodyTransform.localPosition, _bodyBasePos, dropWeight);
+                bodyTransform.localPosition, _bodyBasePos, poseWeight);
 
-        BlendRootRotation(hipsTransform, _hipsBaseRootRot,
-            Quaternion.Euler(12f, slideYawAngle, slideBodyRoll),
-            turnWeight);
-        BlendRootRotation(bodyTransform, _bodyBaseRootRot,
-            Quaternion.Euler(
-                slideSpineLean, slideYawAngle * 0.9f, slideBodyRoll),
-            dropWeight);
-        BlendRootRotation(chestTransform, _chestBaseRootRot,
-            Quaternion.Euler(
-                slideChestLean + impactPulse * 4f,
-                slideYawAngle, slideBodyRoll * 1.15f),
-            contactWeight);
-        BlendRootRotation(upperChestTransform, _upperChestBaseRootRot,
-            Quaternion.Euler(
-                slideUpperChestLean + impactPulse * 5f,
-                slideYawAngle, slideBodyRoll * 1.15f),
-            contactWeight);
-        BlendRootRotation(headTransform, _headBaseRootRot,
-            Quaternion.Euler(
-                slideHeadLean, slideYawAngle * 0.55f,
-                slideBodyRoll * 0.25f),
-            contactWeight);
+        BlendLocalRotationByWeight(hipsTransform,
+            _hipsBaseRot * Quaternion.Euler(
+                0f, slideYawAngle, slideBodyRoll * 0.35f),
+            poseWeight);
+        if (bodyTransform != null && chestTransform != null)
+        {
+            float recline = Mathf.Abs(slideSpineLean) * Mathf.Deg2Rad;
+            Vector3 desiredChestUp =
+                transform.up * Mathf.Cos(recline)
+                - slideForwardWorld * Mathf.Sin(recline)
+                + slideRightWorld * Mathf.Sin(
+                    Mathf.Abs(slideBodyRoll) * Mathf.Deg2Rad);
+            Quaternion targetBodyRotation = Quaternion.FromToRotation(
+                chestTransform.up, desiredChestUp.normalized)
+                * bodyTransform.rotation;
+            bodyTransform.rotation = Quaternion.Slerp(
+                bodyTransform.rotation, targetBodyRotation, poseWeight);
+        }
+        else
+        {
+            BlendLocalRotationByWeight(bodyTransform,
+                _bodyBaseRot * Quaternion.Euler(
+                    slideSpineLean, slideYawAngle, slideBodyRoll),
+                poseWeight);
+        }
 
-        float leftLength = LegLength(
+        float leftLegLength = LimbLength(
             leftUpperLeg, leftLowerLeg, leftFoot);
-        float rightLength = LegLength(
+        float rightLegLength = LimbLength(
             rightUpperLeg, rightLowerLeg, rightFoot);
-        if (leftLength > 0f)
+        if (leftLegLength > 0f)
         {
+            Vector3 leadingFoot = groundUnderHips
+                + slideForwardRoot * (leftLegLength * 0.975f)
+                - slideRightRoot * (leftLegLength * 0.06f)
+                + Vector3.up * 0.12f;
             SolveTwoBoneLimb(leftUpperLeg, leftLowerLeg, leftFoot,
-                groundUnderHips
-                    + Vector3.forward * (leftLength * 0.75f)
-                    + Vector3.left * (leftLength * 0.85f)
-                    + Vector3.up * 0.08f,
-                _leftFootBaseRootRot, leftLength,
-                new Vector3(-0.15f, 1f, 0.6f), dropWeight);
+                leadingFoot, _leftFootBaseRootRot, leftLegLength,
+                slideYawRotation * new Vector3(-0.08f, 1f, 0.42f),
+                poseWeight);
+            AimSlideFoot(leftFoot, _leftToes,
+                slideForwardWorld, 6f, poseWeight);
         }
         else
         {
-            BlendSlideKneeFlex(
-                leftLowerLeg, _leftLowerLegBaseRot, 8f, dropWeight);
+            BlendLocalRotationByWeight(leftUpperLeg,
+                _leftUpperLegBaseRot * Quaternion.Euler(
+                    slideFrontLegAngle, 0f, 0f), poseWeight);
+            BlendLocalRotationByWeight(leftLowerLeg,
+                _leftLowerLegBaseRot * Quaternion.Euler(8f, 0f, 0f),
+                poseWeight);
         }
 
-        if (rightLength > 0f)
+        if (rightLegLength > 0f)
         {
+            Vector3 foldedFoot = groundUnderHips
+                + slideForwardRoot * (rightLegLength * 0.62f)
+                - slideRightRoot * (rightLegLength * 0.02f)
+                + Vector3.up * 0.11f;
             SolveTwoBoneLimb(rightUpperLeg, rightLowerLeg, rightFoot,
-                groundUnderHips
-                    - Vector3.forward * (rightLength * 0.2f)
-                    + Vector3.right * (rightLength * 0.55f)
-                    + Vector3.up * 0.13f,
-                _rightFootBaseRootRot, rightLength,
-                new Vector3(0.8f, 0.1f, -0.4f), contactWeight);
+                foldedFoot, _rightFootBaseRootRot, rightLegLength,
+                slideYawRotation * new Vector3(1f, 0.22f, 0.18f),
+                poseWeight);
+            Vector3 foldedFootDirection =
+                -slideRightWorld * 0.96f + slideForwardWorld * 0.28f;
+            AimSlideFoot(rightFoot, _rightToes,
+                foldedFootDirection, 4f, poseWeight);
         }
         else
         {
-            BlendSlideKneeFlex(
-                rightLowerLeg, _rightLowerLegBaseRot,
-                slideRearKneeBend, contactWeight);
+            BlendLocalRotationByWeight(rightUpperLeg,
+                _rightUpperLegBaseRot * Quaternion.Euler(
+                    slideRearLegAngle, 0f, 0f), poseWeight);
+            BlendLocalRotationByWeight(rightLowerLeg,
+                _rightLowerLegBaseRot * Quaternion.Euler(
+                    -slideRearKneeBend, 0f, 0f), poseWeight);
         }
 
-        float leftArmLength = LimbLength(
-            leftUpperArm, leftLowerArm, leftHand);
-        float rightArmLength = LimbLength(
-            rightUpperArm, rightLowerArm, rightHand);
-        if (leftArmLength > 0f)
+        // The free left arm keeps the frozen authored pose. It only follows the
+        // torso as a child bone and must not perform a second slide gesture.
+        float rightUpperArmLength = SegmentLength(
+            rightUpperArm, rightLowerArm);
+        float rightForearmLength = SegmentLength(
+            rightLowerArm, rightHand);
+        if (rightUpperArmLength > 0f && rightForearmLength > 0f)
         {
-            Vector3 balanceHand = lowHipsRoot
-                + Vector3.left * (leftArmLength * 0.08f)
-                + Vector3.up * (leftArmLength * 0.28f)
-                + Vector3.forward * (leftArmLength * 0.16f);
-            SolveTwoBoneLimb(leftUpperArm, leftLowerArm, leftHand,
-                balanceHand, _leftHandBaseRootRot, leftArmLength,
-                new Vector3(-0.2f, 0.35f, 1f), contactWeight);
-        }
-        if (rightArmLength > 0f)
-        {
-            Vector3 plantedHand = groundUnderHips
-                + Vector3.right * (rightArmLength * 0.55f)
-                + Vector3.forward * (rightArmLength * 0.95f)
-                + Vector3.up * 0.025f;
-            SolveTwoBoneLimb(rightUpperArm, rightLowerArm, rightHand,
-                plantedHand, _rightHandBaseRootRot, rightArmLength,
-                new Vector3(0.8f, 0.1f, 0.4f), contactWeight);
+            Vector3 plantedElbow = groundUnderHips
+                + slideRightRoot * (rightUpperArmLength * 0.90f)
+                - slideForwardRoot * (rightUpperArmLength * 0.24f)
+                - Vector3.up * 0.05f;
+            AimSegmentAt(rightUpperArm, rightLowerArm,
+                transform.TransformPoint(plantedElbow), supportWeight);
+
+            Vector3 raisedForearmDirection = transform.TransformDirection(
+                slideYawRotation
+                * new Vector3(0.40f, 0.28f, 0.88f).normalized);
+            Vector3 raisedHandTarget = rightLowerArm.position
+                + raisedForearmDirection * rightForearmLength;
+            AimSegmentAt(rightLowerArm, rightHand,
+                raisedHandTarget, supportWeight);
         }
     }
 
@@ -645,13 +670,12 @@ public class CharacterAnimator : MonoBehaviour
             Mathf.InverseLerp(start, end, value));
     }
 
-    private void BlendRootRotation(
-        Transform bone, Quaternion baseRootRotation,
-        Quaternion offset, float weight)
+    private static void BlendLocalRotationByWeight(
+        Transform bone, Quaternion target, float weight)
     {
         if (bone == null) return;
-        Quaternion target = transform.rotation * offset * baseRootRotation;
-        bone.rotation = Quaternion.Slerp(bone.rotation, target, weight);
+        bone.localRotation = Quaternion.Slerp(
+            bone.localRotation, target, Mathf.Clamp01(weight));
     }
 
     private static float LimbLength(
@@ -662,25 +686,49 @@ public class CharacterAnimator : MonoBehaviour
             + Vector3.Distance(lower.position, end.position);
     }
 
-    private static float LegLength(
-        Transform upperLeg, Transform lowerLeg, Transform foot)
+    private static float SegmentLength(Transform start, Transform end)
     {
-        return LimbLength(upperLeg, lowerLeg, foot);
+        return start != null && end != null
+            ? Vector3.Distance(start.position, end.position)
+            : 0f;
     }
 
-    private static void BlendSlideKneeFlex(
-        Transform lowerLeg, Quaternion baseRotation,
-        float minimumBend, float weight)
+    private static void AimSegmentAt(
+        Transform start, Transform end, Vector3 target, float weight)
     {
-        if (lowerLeg == null) return;
-        Vector3 relativeEuler = SignedEuler(
-            Quaternion.Inverse(baseRotation) * lowerLeg.localRotation);
-        float authoredBend = Mathf.Max(0f, -relativeEuler.x);
-        relativeEuler.x = Mathf.Lerp(relativeEuler.x,
-            -Mathf.Max(authoredBend, minimumBend), weight);
-        lowerLeg.localRotation =
-            baseRotation * Quaternion.Euler(relativeEuler);
+        if (start == null || end == null) return;
+        Vector3 currentDirection = end.position - start.position;
+        Vector3 desiredDirection = target - start.position;
+        if (currentDirection.sqrMagnitude < 0.000001f
+            || desiredDirection.sqrMagnitude < 0.000001f)
+        {
+            return;
+        }
+
+        Quaternion targetRotation = Quaternion.FromToRotation(
+            currentDirection, desiredDirection) * start.rotation;
+        start.rotation = Quaternion.Slerp(
+            start.rotation, targetRotation, Mathf.Clamp01(weight));
     }
+
+    private void AimSlideFoot(
+        Transform foot, Transform toes, Vector3 slideForward,
+        float toeLiftAngle, float weight)
+    {
+        if (foot == null || toes == null) return;
+        Vector3 currentDirection = toes.position - foot.position;
+        if (currentDirection.sqrMagnitude < 0.000001f) return;
+
+        float liftRadians = toeLiftAngle * Mathf.Deg2Rad;
+        Vector3 desiredDirection =
+            slideForward.normalized * Mathf.Cos(liftRadians)
+            + transform.up * Mathf.Sin(liftRadians);
+        Quaternion targetRotation = Quaternion.FromToRotation(
+            currentDirection, desiredDirection) * foot.rotation;
+        foot.rotation = Quaternion.Slerp(
+            foot.rotation, targetRotation, Mathf.Clamp01(weight));
+    }
+
 
     private void SolveTwoBoneLimb(
         Transform upper, Transform lower, Transform end,

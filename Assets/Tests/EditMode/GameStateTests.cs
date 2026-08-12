@@ -1002,7 +1002,7 @@ public class GameStateTests
     }
 
     [Test]
-    public void AuthoredSlideKeepsTheLegsConnectedAndAboveTheTrack()
+    public void AuthoredSlideUsesRearHandSupportAndAForwardLeadingLeg()
     {
         GameObject modelAsset = AssetDatabase.LoadAssetAtPath<GameObject>(
             "Assets/Models/Mixamo/ExoGray/ExoGray_TPose.fbx");
@@ -1040,23 +1040,42 @@ public class GameStateTests
             animator.GetBoneTransform(HumanBodyBones.LeftFoot);
         Transform rightFoot =
             animator.GetBoneTransform(HumanBodyBones.RightFoot);
+        Transform leftToes =
+            animator.GetBoneTransform(HumanBodyBones.LeftToes);
+        Transform rightToes =
+            animator.GetBoneTransform(HumanBodyBones.RightToes);
         Transform rightHand =
             animator.GetBoneTransform(HumanBodyBones.RightHand);
+        Transform rightUpperArm =
+            animator.GetBoneTransform(HumanBodyBones.RightUpperArm);
+        Transform rightLowerArm =
+            animator.GetBoneTransform(HumanBodyBones.RightLowerArm);
+        Transform leftUpperArm =
+            animator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
+        Transform leftLowerArm =
+            animator.GetBoneTransform(HumanBodyBones.LeftLowerArm);
         Transform rightMiddleFinger =
             animator.GetBoneTransform(HumanBodyBones.RightMiddleDistal);
+        Transform leftMiddleFinger =
+            animator.GetBoneTransform(HumanBodyBones.LeftMiddleDistal);
         Transform leftHand =
             animator.GetBoneTransform(HumanBodyBones.LeftHand);
         Transform spine = animator.GetBoneTransform(HumanBodyBones.Spine);
         Transform chest = animator.GetBoneTransform(HumanBodyBones.Chest);
-        Transform rightShoulder =
-            animator.GetBoneTransform(HumanBodyBones.RightUpperArm);
         Quaternion spineBaseRotation = spine.localRotation;
+        Quaternion frozenLeftUpperArmRotation = Quaternion.identity;
+        Quaternion frozenLeftLowerArmRotation = Quaternion.identity;
 
         for (int i = 0; i < 4; i++)
         {
             animator.Update(1f / 60f);
             driver.ApplyExternalMotion(
                 false, true, Vector3.forward, 10f, 1f / 60f);
+            if (i == 0)
+            {
+                frozenLeftUpperArmRotation = leftUpperArm.localRotation;
+                frozenLeftLowerArmRotation = leftLowerArm.localRotation;
+            }
         }
         float turnHipY = hips.position.y;
 
@@ -1068,6 +1087,7 @@ public class GameStateTests
         }
         float dropHipY = hips.position.y;
         float dropHandY = rightHand.position.y;
+        float dropElbowY = rightLowerArm.position.y;
 
         for (int i = 0; i < 5; i++)
         {
@@ -1077,6 +1097,7 @@ public class GameStateTests
         }
         float contactHipY = hips.position.y;
         float contactHandY = rightHand.position.y;
+        float contactElbowY = rightLowerArm.position.y;
 
         for (int i = 0; i < 13; i++)
         {
@@ -1086,71 +1107,211 @@ public class GameStateTests
         }
         float glideHipY = hips.position.y;
         float glideHandY = rightHand.position.y;
+        float glideElbowY = rightLowerArm.position.y;
 
         Assert.Less(dropHipY, turnHipY - 0.3f,
             "The drop stage must rapidly lower the center of mass.");
         Assert.Less(contactHipY, dropHipY - 0.05f,
             "The contact stage must finish lowering the hips.");
-        Assert.Less(contactHandY, dropHandY - 0.12f,
-            "The support hand must reach the track during contact.");
+        Assert.Less(contactElbowY, dropElbowY - 0.02f,
+            "The support elbow must reach the track during contact.");
         Assert.That(glideHipY, Is.EqualTo(contactHipY).Within(0.04f),
             "The glide stage must hold a stable low center of mass.");
-        Assert.That(glideHandY, Is.EqualTo(contactHandY).Within(0.05f),
-            "The support palm must stay planted through the glide.");
+        Assert.That(glideElbowY, Is.EqualTo(contactElbowY).Within(0.05f),
+            "The support elbow must stay planted through the glide.");
 
         Assert.That(hips.position.y - model.transform.position.y,
-            Is.InRange(0.15f, 0.25f),
-            "The professional slide must hold the hips 15-25 cm above the track.");
+            Is.InRange(0.08f, 0.16f),
+            "The elbow-supported slide must hold the hips 8-16 cm above the track.");
         Assert.GreaterOrEqual(leftFoot.position.y,
             model.transform.position.y - 0.03f,
             "The leading foot must remain above the track.");
         Assert.GreaterOrEqual(rightFoot.position.y,
             model.transform.position.y - 0.03f,
             "The folded foot must remain above the track.");
+        Vector3 leadingLeg = Vector3.ProjectOnPlane(
+            leftFoot.position - hips.position, Vector3.up);
         Vector3 footSeparation = Vector3.ProjectOnPlane(
             leftFoot.position - rightFoot.position, Vector3.up);
-        Assert.Greater(footSeparation.magnitude, 0.45f,
-            "The two feet must form separate silhouettes on the track.");
-        Assert.Greater(Mathf.Abs(Vector3.Dot(
-                footSeparation, model.transform.right)),
-            0.25f,
-            "The side slide needs visible lateral leg separation.");
-        Assert.That(WorldKneeBend(
+        Vector3 slideForward = Quaternion.AngleAxis(
+            driver.slideYawAngle, model.transform.up)
+            * model.transform.forward;
+        Vector3 slideRight = Quaternion.AngleAxis(
+            driver.slideYawAngle, model.transform.up)
+            * model.transform.right;
+        Assert.Greater(Vector3.Dot(
+                leadingLeg, slideForward),
+            0.55f,
+            "The leading left leg must extend along the travel direction.");
+        Assert.Less(Mathf.Abs(Vector3.Dot(
+                leadingLeg, slideRight)),
+            0.28f,
+            "The leading left leg must not flare into a sideways split.");
+        Assert.Greater(Vector3.Dot(
+                footSeparation, slideForward),
+            0.28f,
+            "The left foot must lead the folded right foot.");
+        Assert.That(WorldJointBend(
                 leftUpperLeg, leftLowerLeg, leftFoot),
-            Is.InRange(3f, 12f),
-            "The leading leg must remain nearly straight with a soft knee.");
-        Assert.That(WorldKneeBend(
+            Is.InRange(16f, 34f),
+            "The leading leg must keep a soft bend instead of locking straight.");
+        Assert.That(WorldJointBend(
                 rightUpperLeg, rightLowerLeg, rightFoot),
             Is.InRange(90f, 120f),
             "The trailing leg must fold 90-120 degrees beside the hips.");
-        Assert.LessOrEqual(rightHand.position.y,
-            model.transform.position.y + 0.22f,
-            "The support wrist must stay close enough for the palm to reach the track.");
+        Assert.Greater(leftFoot.position.y,
+            model.transform.position.y + 0.07f,
+            "The leading heel must stay off the track instead of braking the slide.");
+        if (leftToes != null)
+        {
+            Assert.Greater(leftToes.position.y,
+                model.transform.position.y + 0.04f,
+                "The leading toes must lift clear of the track.");
+            Vector3 leadingFootDirection =
+                (leftToes.position - leftFoot.position).normalized;
+            Assert.Greater(Vector3.Dot(
+                    leadingFootDirection, slideForward),
+                0.9f,
+                "The leading boot must lie along the slide instead of planting its sole.");
+        }
+        Assert.Greater(Vector3.Dot(
+                rightLowerLeg.position - hips.position,
+                slideRight),
+            0.16f,
+            "The tucked knee must open to the right in a figure-four slide.");
+        Assert.Less(Mathf.Abs(Vector3.Dot(
+                rightFoot.position - leftLowerLeg.position,
+                slideRight)),
+            0.42f,
+            "The tucked foot must stay near the leading knee instead of planting ahead.");
+        Assert.Greater(rightFoot.position.y,
+            model.transform.position.y + 0.07f,
+            "The tucked boot must stay clear of the track.");
+        if (rightToes != null)
+        {
+            Assert.Greater(rightToes.position.y,
+                model.transform.position.y + 0.04f,
+                "The tucked toes must stay clear of the track.");
+            Vector3 tuckedFootDirection =
+                (rightToes.position - rightFoot.position).normalized;
+            Assert.Greater(Vector3.Dot(
+                    tuckedFootDirection, -slideRight),
+                0.8f,
+                "The tucked boot must lie across the body to complete the figure four.");
+        }
+        Assert.LessOrEqual(rightLowerArm.position.y,
+            model.transform.position.y + 0.145f,
+            "The support elbow bone must stay within the grounded elbow armour.");
+        Assert.Greater(rightHand.position.y,
+            rightLowerArm.position.y + 0.05f,
+            "The support forearm must lift the right palm slightly above the elbow.");
+        Assert.Less(rightHand.position.y,
+            rightLowerArm.position.y + 0.13f,
+            "The support forearm must stay low instead of pointing steeply upward.");
         if (rightMiddleFinger != null)
         {
-            Assert.LessOrEqual(rightMiddleFinger.position.y,
-                model.transform.position.y + 0.12f,
-                "The supporting fingertips must reach the track.");
+            Assert.Greater(rightMiddleFinger.position.y,
+                rightLowerArm.position.y + 0.025f,
+                "The supporting fingertips must not touch the track.");
         }
         Assert.Greater(leftHand.position.y,
-            rightHand.position.y + 0.12f,
-            "The free hand must be raised above the supporting hand.");
-        Assert.Less(leftHand.position.y,
-            hips.position.y + 0.35f,
-            "The free hand should only lift slightly beside the hips.");
+            model.transform.position.y + 0.18f,
+            "The free left palm must remain naturally above the track.");
+        Assert.Less(Quaternion.Angle(
+                frozenLeftUpperArmRotation, leftUpperArm.localRotation),
+            0.5f,
+            "The free left upper arm must keep its authored frozen pose.");
+        Assert.Less(Quaternion.Angle(
+                frozenLeftLowerArmRotation, leftLowerArm.localRotation),
+            0.5f,
+            "The free left forearm must not perform a slide gesture.");
+        Assert.Greater(driver.slideYawAngle, 0f,
+            "The torso front must turn slightly toward the runner's right.");
         Assert.Greater(Quaternion.Angle(
-            spineBaseRotation, spine.localRotation), 14f,
-            "The upper body must visibly recline without tipping into a side slide.");
+            spineBaseRotation, spine.localRotation), 18f,
+            "The upper body must visibly recline instead of folding forward.");
+        Assert.Less(Vector3.Dot(
+                chest.up, model.transform.forward),
+            -0.25f,
+            "The chest must lean behind the hips, not dive toward the track ahead.");
         float backAngleToTrack = Mathf.Asin(Mathf.Clamp01(
             Mathf.Abs(Vector3.Dot(chest.up, model.transform.up))))
             * Mathf.Rad2Deg;
-        Assert.That(backAngleToTrack, Is.InRange(10f, 20f),
-            "The back must stay almost parallel to the track during the glide.");
+        Assert.That(backAngleToTrack, Is.InRange(30f, 60f),
+            "The elbow-supported torso must recline without collapsing flat.");
+        Vector3 supportFromHips = rightLowerArm.position - hips.position;
+        Assert.Less(Vector3.Dot(
+                supportFromHips, slideForward),
+            -0.02f,
+            "The support elbow must plant behind the hips.");
         Assert.Greater(Vector3.Dot(
-                rightHand.position - rightShoulder.position,
-                model.transform.forward),
-            0.03f,
-            "The support wrist must stay in front of the shoulder.");
+                supportFromHips, slideRight),
+            0.22f,
+            "The right support elbow must brace beside the body.");
+        Assert.That(WorldJointBend(
+                rightUpperArm, rightLowerArm, rightHand),
+            Is.InRange(25f, 145f),
+            "The support elbow must stay in a human bend range.");
+        Assert.Greater(Vector3.Dot(
+                rightLowerArm.position - hips.position,
+                model.transform.right),
+            0.05f,
+            "The support elbow must not fold through the torso.");
+        Assert.Greater(Vector3.Dot(
+                rightHand.position - hips.position,
+                model.transform.right),
+            0.28f,
+            "The complete right hand must clear the torso silhouette.");
+
+        Vector3 stableElbow = rightLowerArm.position;
+        Vector3 stableHand = rightHand.position;
+        Vector3 stableLeftHand = leftHand.position;
+        Vector3 stableHips = hips.position;
+        Vector3 stableChest = chest.position;
+        Vector3 stableRightFinger = rightMiddleFinger != null
+            ? rightMiddleFinger.position : Vector3.zero;
+        Vector3 stableLeftFinger = leftMiddleFinger != null
+            ? leftMiddleFinger.position : Vector3.zero;
+        float maximumElbowDrift = 0f;
+        float maximumHandDrift = 0f;
+        float maximumLeftHandDrift = 0f;
+        float maximumBodyDrift = 0f;
+        float maximumFingerDrift = 0f;
+        Assert.AreEqual(0f, animator.speed,
+            "The authored Animator must freeze during the procedural slide.");
+        for (int i = 0; i < 8; i++)
+        {
+            animator.Update(1f / 60f);
+            driver.ApplyExternalMotion(
+                false, true, Vector3.forward, 10f, 1f / 60f);
+            maximumElbowDrift = Mathf.Max(maximumElbowDrift,
+                Vector3.Distance(stableElbow, rightLowerArm.position));
+            maximumHandDrift = Mathf.Max(maximumHandDrift,
+                Vector3.Distance(stableHand, rightHand.position));
+            maximumLeftHandDrift = Mathf.Max(maximumLeftHandDrift,
+                Vector3.Distance(stableLeftHand, leftHand.position));
+            maximumBodyDrift = Mathf.Max(maximumBodyDrift,
+                Vector3.Distance(stableHips, hips.position),
+                Vector3.Distance(stableChest, chest.position));
+            if (rightMiddleFinger != null)
+                maximumFingerDrift = Mathf.Max(maximumFingerDrift,
+                    Vector3.Distance(stableRightFinger,
+                        rightMiddleFinger.position));
+            if (leftMiddleFinger != null)
+                maximumFingerDrift = Mathf.Max(maximumFingerDrift,
+                    Vector3.Distance(stableLeftFinger,
+                        leftMiddleFinger.position));
+        }
+        Assert.Less(maximumElbowDrift, 0.015f,
+            "The planted elbow must not jitter during the stable glide.");
+        Assert.Less(maximumHandDrift, 0.02f,
+            "The raised right hand must not jitter during the stable glide.");
+        Assert.Less(maximumLeftHandDrift, 0.02f,
+            "The free left hand must not jitter during the stable glide.");
+        Assert.Less(maximumBodyDrift, 0.015f,
+            "The body must not jitter during the stable glide.");
+        Assert.Less(maximumFingerDrift, 0.02f,
+            "Neither complete hand shape may jitter during the stable glide.");
         Assert.Greater(Vector3.Distance(
             leftUpperLeg.position, leftLowerLeg.position), 0.2f);
         Assert.Greater(Vector3.Distance(
@@ -1164,8 +1325,12 @@ public class GameStateTests
         }
         Assert.Greater(hips.position.y, glideHipY + 0.3f,
             "Push-off recovery must raise the hips before the slide ends.");
-        Assert.Greater(rightHand.position.y, glideHandY + 0.3f,
-            "Push-off recovery must lift the support hand from the track.");
+        Assert.Greater(rightLowerArm.position.y, glideElbowY + 0.3f,
+            "Push-off recovery must lift the support elbow from the track.");
+        driver.ApplyExternalMotion(
+            false, false, Vector3.forward, 10f, 1f / 60f);
+        Assert.Greater(animator.speed, 0f,
+            "The authored Animator must resume after the slide ends.");
     }
 
     private static float KneeBend(
@@ -1176,12 +1341,12 @@ public class GameStateTests
         return Mathf.Max(0f, -Mathf.DeltaAngle(0f, relative.eulerAngles.x));
     }
 
-    private static float WorldKneeBend(
-        Transform upperLeg, Transform lowerLeg, Transform foot)
+    private static float WorldJointBend(
+        Transform upper, Transform joint, Transform end)
     {
-        Vector3 kneeToHip = upperLeg.position - lowerLeg.position;
-        Vector3 kneeToFoot = foot.position - lowerLeg.position;
-        return 180f - Vector3.Angle(kneeToHip, kneeToFoot);
+        Vector3 jointToUpper = upper.position - joint.position;
+        Vector3 jointToEnd = end.position - joint.position;
+        return 180f - Vector3.Angle(jointToUpper, jointToEnd);
     }
 
     private static void AssertFootPointsForward(
@@ -1361,6 +1526,81 @@ public class GameStateTests
     }
 
     [Test]
+    public void SignalArchLeavesAnOpenThreeLaneSkyline()
+    {
+        GameObject stylerObject = new GameObject("WorldStylerTest");
+        _objects.Add(stylerObject);
+        WorldStyler styler = stylerObject.AddComponent<WorldStyler>();
+        GameObject parent = new GameObject("ArchParent");
+        _objects.Add(parent);
+
+        InvokePrivate(styler, "BuildSignalArch", parent.transform, 6.5f);
+
+        Transform arch = parent.transform.Find("TransitArch");
+        Assert.IsNotNull(arch);
+        Assert.IsNull(parent.transform.Find("ArchSignal"),
+            "The old hanging center signal must not return.");
+        Assert.IsNotNull(parent.transform.Find("ArchSignalLeft"));
+        Assert.IsNotNull(parent.transform.Find("ArchSignalRight"));
+
+        int jointCount = 0;
+        int nodeCount = 0;
+        foreach (Transform part in arch)
+        {
+            if (part.name == "ArcJoint")
+            {
+                jointCount++;
+                Assert.LessOrEqual(part.localScale.x, 0.231f,
+                    "The open wing frame must stay visually lightweight.");
+            }
+            else if (part.name == "ArcNode")
+            {
+                nodeCount++;
+                Assert.GreaterOrEqual(Mathf.Abs(part.localPosition.x), 3.4f,
+                    "No detached arch node may float inside the open skyline.");
+            }
+        }
+        Assert.AreEqual(4, jointCount,
+            "Only two outer frame segments per wing should remain.");
+        Assert.AreEqual(6, nodeCount,
+            "Each open wing should retain its three structural nodes.");
+
+        float[] laneCenters = { -3f, 0f, 3f };
+        const float cameraHeight = 4.6f;
+        const float minimumCameraClearance = 2.2f;
+        foreach (Transform part in arch)
+        {
+            if (part.name != "ArcJoint") continue;
+            float halfLength = part.lossyScale.y;
+            Vector3 start = part.position - part.up * halfLength;
+            Vector3 end = part.position + part.up * halfLength;
+            float minY = Mathf.Min(start.y, end.y);
+            float maxY = Mathf.Max(start.y, end.y);
+            if (cameraHeight < minY || cameraHeight > maxY) continue;
+
+            float t = Mathf.InverseLerp(start.y, end.y, cameraHeight);
+            float crossingX = Mathf.Lerp(start.x, end.x, t);
+            foreach (float laneCenter in laneCenters)
+            {
+                Assert.Greater(Mathf.Abs(crossingX - laneCenter),
+                    minimumCameraClearance,
+                    part.name + " must stay outside every normal-running " +
+                    "lane camera path.");
+            }
+        }
+
+        const float openSkylineHalfWidth = 3.25f;
+        foreach (Renderer renderer in parent.GetComponentsInChildren<Renderer>())
+        {
+            Bounds bounds = renderer.bounds;
+            bool entersOpenSkyline = bounds.min.x < openSkylineHalfWidth
+                && bounds.max.x > -openSkylineHalfWidth && bounds.max.y > 4.4f;
+            Assert.IsFalse(entersOpenSkyline,
+                renderer.name + " must not close the three-lane skyline.");
+        }
+    }
+
+    [Test]
     public void ShadowSlidesOnceForAnApproachingLowObstacle()
     {
         TrackManager manager = Create<TrackManager>("TrackManager");
@@ -1432,9 +1672,10 @@ public class GameStateTests
         Assert.Greater(Quaternion.Angle(Quaternion.identity,
             torso.transform.localRotation), 14f,
             "The torso must visibly recline without tipping into a side slide.");
-        Assert.Less(Quaternion.Angle(Quaternion.identity,
-            upperLeg.transform.localRotation), 1f,
-            "The slide must not twist the upper leg into the track.");
+        Assert.That(Quaternion.Angle(Quaternion.identity,
+                upperLeg.transform.localRotation),
+            Is.InRange(70f, 90f),
+            "The leading thigh must swing forward into the authored slide pose.");
         Assert.That(Quaternion.Angle(Quaternion.identity,
                 lowerLeg.transform.localRotation),
             Is.InRange(3f, 12f),

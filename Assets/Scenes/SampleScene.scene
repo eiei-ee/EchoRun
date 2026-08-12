@@ -373,15 +373,12 @@ MonoBehaviour:
   jumpElbowBendAngle: 72
   jumpKneeBendAngle: 88
   jumpSpineLean: 14
-  slideHipDrop: 0.78
-  slideSpineLean: 50
-  slideChestLean: 78
-  slideUpperChestLean: 86
-  slideYawAngle: -28
-  slideBodyRoll: 14
-  slideHeadLean: 58
-  slideFrontLegAngle: 72
-  slideRearLegAngle: 24
+  slideHipDrop: 0.86
+  slideSpineLean: -40
+  slideYawAngle: 28
+  slideBodyRoll: -28
+  slideFrontLegAngle: 82
+  slideRearLegAngle: -28
   slideRearKneeBend: 105
   slideArmSweep: 48
   lookRotationSpeed: 15

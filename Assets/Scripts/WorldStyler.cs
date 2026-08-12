@@ -225,10 +225,24 @@ public class WorldStyler : MonoBehaviour
 
     private void BuildSignalArch(Transform parent, float z)
     {
-        BuildSegmentedArch("TransitArch", parent, z, 6.35f, 6.2f, 7,
-            _structureMaterial, _cyanMaterial, 0.31f);
-        CreateCapsule("ArchSignal", parent, new Vector3(0f, 6.05f, z - 0.28f),
-            new Vector3(1.15f, 0.12f, 0.1f), _coralMaterial,
+        const float halfWidth = 8.4f;
+        const float height = 6.2f;
+        const int segments = 7;
+        const float openingHalfWidth = 3.4f;
+        BuildSegmentedArch("TransitArch", parent, z, halfWidth, height, segments,
+            openingHalfWidth, _structureMaterial, _cyanMaterial, 0.23f);
+
+        float wingTipX = halfWidth - halfWidth * 2f / segments * 2f;
+        float normalizedTipX = wingTipX / halfWidth;
+        float wingTipY = height * Mathf.Sqrt(
+            Mathf.Max(0f, 1f - normalizedTipX * normalizedTipX));
+        CreateCapsule("ArchSignalLeft", parent,
+            new Vector3(-wingTipX, wingTipY - 0.12f, z - 0.28f),
+            new Vector3(0.42f, 0.08f, 0.07f), _coralMaterial,
+            new Vector3(0f, 0f, 90f));
+        CreateCapsule("ArchSignalRight", parent,
+            new Vector3(wingTipX, wingTipY - 0.12f, z - 0.28f),
+            new Vector3(0.42f, 0.08f, 0.07f), _coralMaterial,
             new Vector3(0f, 0f, 90f));
     }
 
@@ -426,12 +440,17 @@ public class WorldStyler : MonoBehaviour
     }
 
     private static void BuildSegmentedArch(string name, Transform parent, float z,
-        float halfWidth, float height, int segments, Material body, Material accent,
-        float radius)
+        float halfWidth, float height, int segments, float openingHalfWidth,
+        Material body, Material accent, float radius)
     {
         GameObject arch = new GameObject(name);
         arch.transform.SetParent(parent, false);
         Vector3 previous = new Vector3(-halfWidth, 0f, z);
+        if (Mathf.Abs(previous.x) >= openingHalfWidth)
+        {
+            CreateSphere("ArcNode", arch.transform, previous,
+                Vector3.one * radius * 1.22f, body);
+        }
         for (int i = 1; i <= segments; i++)
         {
             float t = i / (float)segments;
@@ -439,10 +458,20 @@ public class WorldStyler : MonoBehaviour
             float normalized = x / halfWidth;
             float y = height * Mathf.Sqrt(Mathf.Max(0f, 1f - normalized * normalized));
             Vector3 current = new Vector3(x, y, z);
-            CreateBeam("ArcJoint", arch.transform, previous, current, radius,
-                (i == 2 || i == segments - 1) ? accent : body);
-            CreateSphere("ArcNode", arch.transform, current,
-                Vector3.one * radius * 1.22f, body);
+            bool segmentOutsideOpening = previous.x <= -openingHalfWidth
+                && current.x <= -openingHalfWidth
+                || previous.x >= openingHalfWidth
+                && current.x >= openingHalfWidth;
+            if (segmentOutsideOpening)
+            {
+                CreateBeam("ArcJoint", arch.transform, previous, current, radius,
+                    (i == 2 || i == segments - 1) ? accent : body);
+            }
+            if (Mathf.Abs(current.x) >= openingHalfWidth)
+            {
+                CreateSphere("ArcNode", arch.transform, current,
+                    Vector3.one * radius * 1.22f, body);
+            }
             previous = current;
         }
     }
@@ -492,7 +521,11 @@ public class WorldStyler : MonoBehaviour
         primitive.transform.localEulerAngles = euler;
         primitive.transform.localScale = scale;
         Collider collider = primitive.GetComponent<Collider>();
-        if (collider != null) Destroy(collider);
+        if (collider != null)
+        {
+            if (Application.isPlaying) Destroy(collider);
+            else DestroyImmediate(collider);
+        }
         Renderer renderer = primitive.GetComponent<Renderer>();
         if (renderer != null) renderer.sharedMaterial = material;
         return primitive;
