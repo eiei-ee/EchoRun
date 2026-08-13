@@ -112,7 +112,6 @@ public class BuildConfig
         }
     }
 
-    [MenuItem("Tools/Build WeChat MiniGame v0")]
     public static void BuildWeixinMiniGameV0()
     {
         EnsureOfficialWeixinSdkInstalled();
@@ -229,14 +228,29 @@ public class BuildConfig
     {
         string projectRoot = System.IO.Path.GetFullPath(
             System.IO.Path.Combine(Application.dataPath, "../"));
+        string requiredPrefix = projectRoot.TrimEnd(
+            System.IO.Path.DirectorySeparatorChar,
+            System.IO.Path.AltDirectorySeparatorChar)
+            + System.IO.Path.DirectorySeparatorChar;
         string profileFullPath = System.IO.Path.GetFullPath(
             System.IO.Path.Combine(projectRoot, profileAssetPath));
+        if (!profileFullPath.StartsWith(
+                requiredPrefix, System.StringComparison.OrdinalIgnoreCase))
+        {
+            throw new BuildFailedException(
+                $"Refusing to restore a profile outside the project: "
+                + profileFullPath);
+        }
+
         string profileText = System.IO.File.ReadAllText(profileFullPath);
         string[] profileLines = profileText.Split(new[] { "\r\n", "\n" },
             System.StringSplitOptions.None);
         bool appIdRestored = false;
         bool relativeDstRestored = false;
         bool dstRestored = false;
+        int appIdMatches = 0;
+        int relativeDstMatches = 0;
+        int dstMatches = 0;
         for (int i = 0; i < profileLines.Length; i++)
         {
             string trimmed = profileLines[i].TrimStart();
@@ -247,6 +261,7 @@ public class BuildConfig
             {
                 profileLines[i] = $"{indentation}Appid:";
                 appIdRestored = true;
+                appIdMatches++;
             }
             else if (trimmed.StartsWith("relativeDST:",
                          System.StringComparison.Ordinal))
@@ -254,16 +269,20 @@ public class BuildConfig
                 profileLines[i] =
                     $"{indentation}relativeDST: {relativeOutputDir}";
                 relativeDstRestored = true;
+                relativeDstMatches++;
             }
             else if (trimmed.StartsWith("DST:",
                          System.StringComparison.Ordinal))
             {
                 profileLines[i] = $"{indentation}DST: {relativeOutputDir}";
                 dstRestored = true;
+                dstMatches++;
             }
         }
 
-        if (!appIdRestored || !relativeDstRestored || !dstRestored)
+        if (!appIdRestored || !relativeDstRestored || !dstRestored
+            || appIdMatches != 1 || relativeDstMatches != 1
+            || dstMatches != 1)
             throw new BuildFailedException(
                 "Unable to restore serialized WeChat profile fields.");
 
@@ -274,10 +293,19 @@ public class BuildConfig
             "ProjectSettings/ProjectSettings.asset";
         string fullPath = System.IO.Path.GetFullPath(
             System.IO.Path.Combine(projectRoot, projectSettingsPath));
+        if (!fullPath.StartsWith(
+                requiredPrefix, System.StringComparison.OrdinalIgnoreCase))
+        {
+            throw new BuildFailedException(
+                $"Refusing to restore settings outside the project: "
+                + fullPath);
+        }
+
         string text = System.IO.File.ReadAllText(fullPath);
         string[] lines = text.Split(new[] { "\r\n", "\n" },
             System.StringSplitOptions.None);
         bool replaced = false;
+        int activeSubplatformMatches = 0;
         for (int i = 0; i < lines.Length; i++)
         {
             if (!lines[i].TrimStart().StartsWith(
@@ -290,10 +318,10 @@ public class BuildConfig
             lines[i] =
                 $"{indentation}activeSubplatform: {activeSubplatform}";
             replaced = true;
-            break;
+            activeSubplatformMatches++;
         }
 
-        if (!replaced)
+        if (!replaced || activeSubplatformMatches != 1)
             throw new BuildFailedException(
                 "Unable to restore the serialized MiniGame subplatform.");
 
