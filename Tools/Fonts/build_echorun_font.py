@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
+import tempfile
 from pathlib import Path
 
 from fontTools import __version__ as fonttools_version
@@ -139,8 +141,18 @@ def main() -> None:
     rename_font(font)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    font.save(args.output, reorderTables=False)
-    verify(args.output, requested)
+    handle, temp_name = tempfile.mkstemp(
+        prefix=f".{args.output.name}.", suffix=".tmp", dir=args.output.parent
+    )
+    os.close(handle)
+    temp_output = Path(temp_name)
+    try:
+        font.save(temp_output, reorderTables=False)
+        verify(temp_output, requested)
+        temp_output.replace(args.output)
+    finally:
+        temp_output.unlink(missing_ok=True)
+
     print(f"Wrote {args.output}")
     print(f"SHA256 {sha256(args.output)}")
     print(f"Characters {len(requested)}")

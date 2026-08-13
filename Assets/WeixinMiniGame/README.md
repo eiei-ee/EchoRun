@@ -23,7 +23,7 @@ GitHub repository. The build also accepts the legacy SDK layout under
   -executeMethod BuildConfig.BuildWeixinMiniGameV0
 ```
 
-The converted output path is `Builds/WeixinMiniGameV0-Profile`.
+The converted output path is `Builds/WeixinMiniGameV0-Clean`.
 
 Set a valid Mini Game AppID only for the build process when IDE validation is
 required:
