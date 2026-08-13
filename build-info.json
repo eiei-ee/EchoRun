@@ -1,10 +1,40 @@
 {
-  "sourceCommit": "ee04b4cb8932b95d9f2dd7aeeb7c381981005998",
+  "version": "2026-08-13-echo-experience",
   "sourceBranch": "wechat/minigame",
-  "builtAt": "2026-08-09T15:07:36+08:00",
-  "version": "2026-08-09-character-motion-wechat",
+  "sourceCommit": "cc261b35aee19e7fcd4905a93c477ccdacdda9c9",
+  "builtAt": "2026-08-13T06:40:00Z",
+  "engine": "Tuanjie 2022.3.62t8",
   "validation": {
-    "editMode": "83/83 passed",
-    "playMode": "11/11 passed"
-  }
+    "editMode": "128/128 passed",
+    "playMode": "15/15 passed",
+    "webGLBuild": "passed",
+    "localBrowserSmoke": "canvas rendered; no console warnings/errors; entered a live run"
+  },
+  "artifacts": [
+    {
+      "file": "index.html",
+      "bytes": 7024,
+      "sha256": "79F136C10F67F9808BEA65402BA17A9268A52241A5576DEE3E58F6D658489827"
+    },
+    {
+      "file": "Build/42b416b80826888fa65d0f8df90ac629.data.unityweb",
+      "bytes": 5911727,
+      "sha256": "031180654728CDB22ECF1F8C213B402260DFEB16823CA5434FE7E4C0BF3BBD68"
+    },
+    {
+      "file": "Build/862934e7c39b91982d5cd812c9b47482.wasm.unityweb",
+      "bytes": 6388862,
+      "sha256": "D656593308F9E7361B61BB37A63F227C60B18D6E08FCAB4755D4831D6389AD29"
+    },
+    {
+      "file": "Build/d88030906d03a56fce720cdde88dd1d5.loader.js",
+      "bytes": 44358,
+      "sha256": "2931859C57C92D36566076BBA415689450DB2392BCEE81F93ED1649BBBFF0904"
+    },
+    {
+      "file": "Build/ed626b3dff5c3882bd20e5b01e3c4333.framework.js.unityweb",
+      "bytes": 79362,
+      "sha256": "A3183FD7D6D8027053096E5211B6682B2A4490494697A95D08C1D8D0763F652F"
+    }
+  ]
 }
