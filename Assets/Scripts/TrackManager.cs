@@ -859,6 +859,9 @@ public class TrackManager : MonoBehaviour
    void ReturnDynamicToPool(DynamicEntry entry)
    {
        if (entry.instance == null || entry.prefab == null) return;
+       if (_player != null)
+           _player.GetComponent<PlayerController>()
+               ?.ForgetResolvedObstacle(entry.instance);
        entry.instance.SetActive(false);
        entry.instance.transform.SetParent(transform, false);
 
@@ -1031,8 +1034,6 @@ public class TrackManager : MonoBehaviour
     GameObject[] CreateProcObstacles()
     {
         ObstacleType[] types = { ObstacleType.Low, ObstacleType.High, ObstacleType.Barrier };
-        Vector3[] sizes  = { new Vector3(3.1f, 0.82f, 1.2f), new Vector3(3.2f, 0.9f, 0.7f), new Vector3(3.4f, 2.7f, 0.9f) };
-        Vector3[] centers = { new Vector3(0f, 0.95f, 0f), new Vector3(0f, -0.45f, 0f), new Vector3(0f, 0.25f, 0f) };
         Color[] colors    = { new Color(1f, 0.45f, 0.1f), new Color(0.85f, 0.15f, 0.05f), new Color(0.9f, 0.25f, 0.15f) };
         Shader sh = Shader.Find("Standard");
         if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
@@ -1046,8 +1047,8 @@ public class TrackManager : MonoBehaviour
             BoxCollider bc = obs[i].GetComponent<BoxCollider>();
             if (bc == null) bc = obs[i].AddComponent<BoxCollider>();
             bc.isTrigger = true;
-            bc.size = sizes[i];
-            bc.center = centers[i];
+            bc.size = ObstacleGeometryRules.ColliderSize(types[i]);
+            bc.center = ObstacleGeometryRules.ColliderCenter(types[i]);
             Obstacle o = obs[i].AddComponent<Obstacle>();
             o.type = types[i];
             obs[i].SetActive(false); obs[i].transform.SetParent(transform);

@@ -134,10 +134,13 @@ public sealed class AILinUcbPolicy
 
     private void InitializePrior(float[] priorWeights)
     {
-        float[] weights = priorWeights;
-        if (weights == null
-            || weights.Length != ActionCount * FeatureCount)
+        float[] weights;
+        if (!AIModelWeightRules.TrySanitize(priorWeights,
+                ActionCount * FeatureCount, -3f, 3f, out weights))
         {
+            if (priorWeights != null)
+                Debug.LogWarning(
+                    "AI director prior weights were invalid and were reset to defaults.");
             weights = new AITrackPolicy(1337).ExportWeights();
         }
 

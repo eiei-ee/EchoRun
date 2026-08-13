@@ -45,6 +45,7 @@ public struct ShadowDecisionContext
 [Serializable]
 public sealed class ShadowDecisionTrace
 {
+    public ShadowAction originalPrediction;
     public ShadowAction selectedAction;
     public float[] baseScores;
     public float[] styleAdjustedScores;
@@ -90,6 +91,7 @@ public sealed class ShadowDecisionMaker
             directive.decisionNoise, random01);
         trace = new ShadowDecisionTrace
         {
+            originalPrediction = (ShadowAction)FindBest(baseProbabilities),
             selectedAction = selected,
             baseScores = (float[])baseProbabilities.Clone(),
             styleAdjustedScores = styleAdjustedScores,

@@ -63,6 +63,7 @@ public sealed class AIShadowTrainingSample
     public float confidence;
     public float[] features;
     public int baseAction;
+    public int originalPrediction;
     public float sequenceConfidence;
     public float sequenceInfluence;
     public float[] baseScores;
@@ -72,6 +73,24 @@ public sealed class AIShadowTrainingSample
     public bool safetyAdjusted;
     public ShadowAIDirective directive;
     public PlayerStyleData playerStyle;
+}
+
+[Serializable]
+public sealed class AIObstacleContactSample
+{
+    public float time;
+    public float distance;
+    public int source;
+    public int obstacleId;
+    public int obstacleType;
+    public int seed;
+    public float speed;
+    public int lane;
+    public bool jumping;
+    public bool sliding;
+    public float verticalClearance;
+    public int outcome;
+    public int reason;
 }
 
 [Serializable]
@@ -115,17 +134,20 @@ public sealed class AIRunTelemetryData
         new List<AIDirectorDecisionSample>();
     public List<AIShadowTrainingSample> shadowSamples =
         new List<AIShadowTrainingSample>();
+    public List<AIObstacleContactSample> obstacleContacts =
+        new List<AIObstacleContactSample>();
 }
 
 public static class AIRunTelemetry
 {
-    public const int SchemaVersion = 4;
+    public const int SchemaVersion = 5;
     public const float StateSampleInterval = 0.25f;
     public const string CompletedTrainingReason = "game_over";
 
     private const int MaxStateSamples = 7200;
     private const int MaxEventSamples = 4096;
     private const int MaxShadowSamples = 8192;
+    private const int MaxObstacleContactSamples = 2048;
 
     private static AIRunTelemetryData _active;
     private static float _nextStateSampleTime;
@@ -278,6 +300,29 @@ public static class AIRunTelemetry
             (int)action, 0f, 0f);
     }
 
+    public static void RecordObstacleContact(ObstacleContactDiagnostic contact)
+    {
+        if (!IsRecording || contact == null
+            || _active.obstacleContacts.Count >= MaxObstacleContactSamples)
+            return;
+        _active.obstacleContacts.Add(new AIObstacleContactSample
+        {
+            time = ElapsedTime(),
+            distance = CurrentDistance(),
+            source = (int)contact.source,
+            obstacleId = contact.obstacleId,
+            obstacleType = (int)contact.type,
+            seed = contact.seed,
+            speed = contact.speed,
+            lane = contact.lane,
+            jumping = contact.jumping,
+            sliding = contact.sliding,
+            verticalClearance = contact.verticalClearance,
+            outcome = (int)contact.outcome,
+            reason = (int)contact.reason
+        });
+    }
+
     public static void RecordShadowSample(ShadowAction action, int lane,
         float[] features, bool opponentDecision, float confidence, int baseAction,
         float sequenceConfidence, float sequenceInfluence,
@@ -295,6 +340,9 @@ public static class AIRunTelemetry
             confidence = Mathf.Clamp01(confidence),
             features = Clone(features),
             baseAction = Mathf.Clamp(baseAction, 0, AIShadowPolicy.ActionCount - 1),
+            originalPrediction = decisionTrace != null
+                ? (int)decisionTrace.originalPrediction
+                : Mathf.Clamp(baseAction, 0, AIShadowPolicy.ActionCount - 1),
             sequenceConfidence = Mathf.Clamp01(sequenceConfidence),
             sequenceInfluence = Mathf.Clamp01(sequenceInfluence),
             baseScores = decisionTrace != null
@@ -355,13 +403,25 @@ public static class AIRunTelemetry
     public static AIRunTelemetryData FromJson(string json)
     {
         if (string.IsNullOrEmpty(json)) return null;
-        AIRunTelemetryData data = JsonUtility.FromJson<AIRunTelemetryData>(json);
+        AIRunTelemetryData data;
+        try
+        {
+            data = JsonUtility.FromJson<AIRunTelemetryData>(json);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning(
+                "AI run telemetry could not be loaded: " + exception.Message);
+            return null;
+        }
         if (data == null || data.schemaVersion <= 0) return null;
         data.states = data.states ?? new List<AIRunStateSample>();
         data.events = data.events ?? new List<AIRunEventSample>();
         data.directorDecisions = data.directorDecisions
                                  ?? new List<AIDirectorDecisionSample>();
         data.shadowSamples = data.shadowSamples ?? new List<AIShadowTrainingSample>();
+        data.obstacleContacts = data.obstacleContacts
+                                ?? new List<AIObstacleContactSample>();
         return data;
     }
 

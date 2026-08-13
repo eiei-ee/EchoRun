@@ -45,6 +45,8 @@ public sealed class AIBalance
     public float shadowLearningRate = 0.08f;
     public int minimumTrainingSamples = 24;
     public int minimumActiveSamples = 6;
+    public int minimumJumpSamples = 2;
+    public int minimumSlideSamples = 2;
     public float directorExploration = 0.35f;
 }
 
@@ -212,6 +214,12 @@ public static class GameBalanceConfig
         ai.minimumActiveSamples = Mathf.Clamp(
             ai.minimumActiveSamples > 0 ? ai.minimumActiveSamples : 6,
             1, ai.minimumTrainingSamples);
+        ai.minimumJumpSamples = Mathf.Clamp(
+            ai.minimumJumpSamples > 0 ? ai.minimumJumpSamples : 2,
+            1, ai.minimumActiveSamples);
+        ai.minimumSlideSamples = Mathf.Clamp(
+            ai.minimumSlideSamples > 0 ? ai.minimumSlideSamples : 2,
+            1, ai.minimumActiveSamples);
         ai.directorExploration = ProbabilityOrDefault(
             ai.directorExploration, 0.35f);
     }

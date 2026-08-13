@@ -25,10 +25,18 @@ public class CameraFollow : MonoBehaviour
     {
         if (target == null) return;
 
-        // Death camera shake
-        if (GameManager.Instance != null && GameManager.Instance.IsDeathSequence && _shakeTimer <= 0f)
+        // Death camera shake can be disabled from the accessibility settings.
+        if (EchoRunAccessibility.ReducedMotion)
+        {
+            _shakeTimer = 0f;
+            _shakeOffset = Vector3.zero;
+        }
+        else if (GameManager.Instance != null && GameManager.Instance.IsDeathSequence
+                 && _shakeTimer <= 0f)
+        {
             _shakeTimer = 0.8f;
-        if (_shakeTimer > 0f)
+        }
+        if (!EchoRunAccessibility.ReducedMotion && _shakeTimer > 0f)
         {
             _shakeOffset = Random.insideUnitSphere * 0.4f * (_shakeTimer / 0.8f);
             _shakeTimer -= Time.unscaledDeltaTime;

@@ -47,13 +47,19 @@ public sealed class AITrackPolicy
     public AITrackPolicy(int seed = 1337, float[] savedWeights = null)
     {
         _random = new System.Random(seed);
-        if (savedWeights == null || savedWeights.Length != ActionCount * FeatureCount)
+        if (savedWeights == null) return;
+        if (!AIModelWeightRules.TrySanitize(savedWeights,
+                ActionCount * FeatureCount, -3f, 3f, out float[] sanitized))
+        {
+            Debug.LogWarning(
+                "AI director weights were invalid and were reset to defaults.");
             return;
+        }
 
         int index = 0;
         for (int action = 0; action < ActionCount; action++)
             for (int feature = 0; feature < FeatureCount; feature++)
-                _weights[action, feature] = savedWeights[index++];
+                _weights[action, feature] = sanitized[index++];
     }
 
     public int Select(float[] context, bool explore, float explorationRate)

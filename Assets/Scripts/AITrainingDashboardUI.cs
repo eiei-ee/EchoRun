@@ -5,16 +5,30 @@ using UnityEngine.UI;
 public sealed class AITrainingDashboardUI : MonoBehaviour
 {
     private GameManager _gameManager;
+    private PlayerController _player;
+    private MenuScreenRouter _router;
     private GameObject _launcher;
     private GameObject _panel;
+    private RectTransform _panelRect;
+    private RectTransform _titleRect;
+    private RectTransform _metricsRect;
+    private RectTransform _insightRect;
+    private RectTransform _summaryRect;
+    private RectTransform _resetHintRect;
     private Text _metrics;
     private Text _summary;
     private Text _resetHint;
     private GameObject _liveDebugPanel;
     private Text _liveDebugText;
+    private RectTransform _liveDebugRect;
+    private Button _emergencyReflexButton;
+    private Button _liveDebugButton;
+    private Button _resetButton;
+    private Button _closeButton;
     private bool _liveDebugEnabled;
     private float _nextLiveDebugRefresh;
     private float _resetConfirmUntil;
+    private Vector2Int _lastScreenSize;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeInstance()
@@ -27,26 +41,35 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
     IEnumerator Start()
     {
         _gameManager = GameManager.Instance;
+        _player = FindObjectOfType<PlayerController>();
         Canvas canvas = null;
-        for (int i = 0; i < 60 && canvas == null; i++)
+        for (int i = 0; i < 60
+             && (canvas == null || _router == null); i++)
         {
             canvas = FindObjectOfType<Canvas>();
-            if (canvas == null) yield return null;
+            _router = FindObjectOfType<MenuScreenRouter>();
+            if (canvas == null || _router == null) yield return null;
         }
         if (canvas == null || _gameManager == null) yield break;
         Transform parent = canvas.transform.Find("SafeArea") ?? canvas.transform;
         Build(parent);
+        if (_router != null)
+        {
+            _router.Register(MenuScreen.EchoReport, _panel, _closeButton);
+            _router.RegisterHomeNavigation(_launcher);
+        }
         _gameManager.OnStateChanged.AddListener(OnStateChanged);
         OnStateChanged(_gameManager.State);
     }
 
     void Update()
     {
+        ApplyLayout(false);
         if (_resetHint != null && _resetConfirmUntil > 0f
             && Time.unscaledTime > _resetConfirmUntil)
         {
             _resetConfirmUntil = 0f;
-            _resetHint.text = "重置会清空影子、导演和玩家能力模型。";
+            _resetHint.text = "重置会让回声忘记所有已学习的跑者习惯。";
         }
 
         if (_liveDebugPanel != null)
@@ -68,13 +91,13 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         bool compactPortrait = UILayoutRules.IsCompactPortrait(
             Screen.width, Screen.height);
         Vector2 launcherAnchor = compactPortrait
-            ? new Vector2(0.82f, 0.07f)
-            : new Vector2(0.90f, 0.09f);
+            ? new Vector2(0.78f, 0.94f)
+            : new Vector2(0.90f, 0.91f);
         Vector2 launcherSize = compactPortrait
             ? new Vector2(260f, 96f)
-            : new Vector2(220f, 68f);
+            : new Vector2(220f, 58f);
         Button launcher = RuntimePanelFactory.Button("AITrainingLauncher", parent,
-            "AI 训练", launcherAnchor, launcherSize,
+            "回声报告", launcherAnchor, launcherSize,
             RuntimePanelFactory.Raised, compactPortrait ? 30 : 26);
         launcher.onClick.AddListener(Open);
         _launcher = launcher.gameObject;
@@ -84,18 +107,21 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
                 ? new Vector2(930f, 1500f)
                 : new Vector2(1050f, 700f),
             RuntimePanelFactory.Panel);
+        _panelRect = _panel.GetComponent<RectTransform>();
         Text title = RuntimePanelFactory.Text("Title", _panel.transform,
-            "AI 训练档案", compactPortrait ? 44 : 40, TextAnchor.MiddleLeft,
+            "回声报告", compactPortrait ? 44 : 40, TextAnchor.MiddleLeft,
             RuntimePanelFactory.TextPrimary);
+        _titleRect = title.rectTransform;
         title.rectTransform.pivot = new Vector2(0f, 0.5f);
         RuntimePanelFactory.Place(title.rectTransform,
             compactPortrait ? new Vector2(0.08f, 0.93f) : new Vector2(0.08f, 0.89f),
-            compactPortrait ? new Vector2(760f, 90f) : new Vector2(650f, 70f),
+            compactPortrait ? new Vector2(360f, 90f) : new Vector2(430f, 70f),
             Vector2.zero);
 
         _metrics = RuntimePanelFactory.Text("Metrics", _panel.transform, "",
             compactPortrait ? 30 : 26, TextAnchor.UpperLeft,
             RuntimePanelFactory.TextPrimary);
+        _metricsRect = _metrics.rectTransform;
         _metrics.lineSpacing = 1.25f;
         RuntimePanelFactory.Place(_metrics.rectTransform,
             compactPortrait ? new Vector2(0.5f, 0.68f) : new Vector2(0.34f, 0.59f),
@@ -105,45 +131,70 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         GameObject insight = RuntimePanelFactory.PanelObject("Insight", _panel.transform,
             compactPortrait ? new Vector2(0.5f, 0.38f) : new Vector2(0.5f, 0.29f),
             compactPortrait ? new Vector2(780f, 280f) : new Vector2(900f, 150f),
-            new Color(0.10f, 0.16f, 0.22f, 1f));
+            EchoRunUITheme.Surface);
+        _insightRect = insight.GetComponent<RectTransform>();
         _summary = RuntimePanelFactory.Text("Summary", insight.transform, "",
             compactPortrait ? 29 : 25, TextAnchor.MiddleLeft,
             RuntimePanelFactory.TextPrimary);
+        _summaryRect = _summary.rectTransform;
         RuntimePanelFactory.Stretch(_summary.rectTransform, 28f);
 
         _resetHint = RuntimePanelFactory.Text("ResetHint", _panel.transform,
-            "重置会清空影子、导演和玩家能力模型。", 19,
+            "重置会让回声忘记所有已学习的跑者习惯。", 19,
             TextAnchor.MiddleLeft, RuntimePanelFactory.TextMuted);
+        _resetHintRect = _resetHint.rectTransform;
         RuntimePanelFactory.Place(_resetHint.rectTransform,
             compactPortrait ? new Vector2(0.5f, 0.17f) : new Vector2(0.26f, 0.09f),
             compactPortrait ? new Vector2(760f, 90f) : new Vector2(520f, 50f),
             Vector2.zero);
-        Button reset = RuntimePanelFactory.Button("Reset", _panel.transform, "重置训练",
+        _resetButton = RuntimePanelFactory.Button("Reset", _panel.transform, "重置学习数据",
             compactPortrait ? new Vector2(0.30f, 0.07f) : new Vector2(0.64f, 0.09f),
             compactPortrait ? new Vector2(320f, 100f) : new Vector2(210f, 58f),
-            new Color(0.55f, 0.22f, 0.22f), compactPortrait ? 28 : 22);
-        reset.onClick.AddListener(ConfirmReset);
-        Button close = RuntimePanelFactory.Button("Close", _panel.transform, "返回",
+            EchoRunUITheme.WithAlpha(EchoRunUITheme.Danger, 0.62f),
+            compactPortrait ? 28 : 22);
+        _resetButton.onClick.AddListener(ConfirmReset);
+        _closeButton = RuntimePanelFactory.Button("Close", _panel.transform, "返回",
             compactPortrait ? new Vector2(0.72f, 0.07f) : new Vector2(0.87f, 0.09f),
             compactPortrait ? new Vector2(280f, 100f) : new Vector2(180f, 58f),
             RuntimePanelFactory.Raised, compactPortrait ? 28 : 22);
-        close.onClick.AddListener(() => _panel.SetActive(false));
-        Button liveDebug = RuntimePanelFactory.Button("LiveDebug", _panel.transform,
+        _closeButton.onClick.AddListener(Close);
+        _liveDebugButton = RuntimePanelFactory.Button("LiveDebug", _panel.transform,
             "实时诊断", compactPortrait
-                ? new Vector2(0.77f, 0.93f)
+                ? new Vector2(0.86f, 0.93f)
                 : new Vector2(0.84f, 0.89f),
-            compactPortrait ? new Vector2(250f, 82f) : new Vector2(210f, 58f),
+            compactPortrait ? new Vector2(210f, 82f) : new Vector2(210f, 58f),
             RuntimePanelFactory.Action, compactPortrait ? 25 : 21);
-        liveDebug.onClick.AddListener(ToggleLiveDebug);
+        _liveDebugButton.onClick.AddListener(ToggleLiveDebug);
+        _emergencyReflexButton = RuntimePanelFactory.Button(
+            "EmergencyReflex", _panel.transform, "救场：开",
+            compactPortrait ? new Vector2(0.61f, 0.93f) : new Vector2(0.61f, 0.89f),
+            compactPortrait ? new Vector2(210f, 82f) : new Vector2(210f, 58f),
+            RuntimePanelFactory.Raised, compactPortrait ? 25 : 21);
+        _emergencyReflexButton.onClick.AddListener(ToggleEmergencyReflex);
+        RefreshEmergencyReflexButton();
+        bool developerControls = Debug.isDebugBuild && PlayerPrefs.GetInt(
+            "EchoRunDeveloperDiagnostics", 0) == 1;
+        _liveDebugButton.gameObject.SetActive(developerControls);
+        _emergencyReflexButton.gameObject.SetActive(developerControls);
         _panel.SetActive(false);
 
         BuildLiveDebug(parent, compactPortrait);
+        ApplyLayout(true);
     }
 
     private void Open()
     {
         Refresh();
-        _panel.SetActive(true);
+        RefreshEmergencyReflexButton();
+        if (_router != null) _router.Show(MenuScreen.EchoReport);
+        else _panel.SetActive(true);
+        RuntimePanelFactory.RefreshText(_panel.transform);
+    }
+
+    private void Close()
+    {
+        if (_router != null) _router.BackToHome();
+        else _panel.SetActive(false);
     }
 
     private void Refresh()
@@ -156,22 +207,31 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
             int generation = AIShadowRunner.Instance != null
                 ? AIShadowRunner.Instance.Generation
                 : 0;
-            _metrics.text = "当前影子代数  " + generation
-                            + "\n导演更新次数  " + EchoRunSaveSystem.DirectorModelUpdateCount
-                            + "\n\n" + BuildStyleSummary();
-            _summary.text = "尚无完整训练局。下一局会记录动作、能力估计和模型变化。";
+            _metrics.text = generation > 0
+                ? "当前回声\n第 " + generation + " 代\n\n等待新的完整跑局"
+                : "尚未生成回声\n\n先完成一次校准跑局";
+            _summary.text = "下一步\n跑一局，让回声学习你的路线、动作与节奏。";
             return;
         }
 
-        _metrics.text = "影子代数       " + report.generationBefore + "  →  " + report.generationAfter
-                        + "\n导演更新       " + report.directorUpdatesBefore + "  →  " + report.directorUpdatesAfter
-                        + "\n玩家能力       " + (report.skillBefore * 100f).ToString("0") + "%  →  "
-                        + (report.skillAfter * 100f).ToString("0") + "%"
-                        + "\n影子权重变化   " + report.shadowWeightDelta.ToString("0.000")
-                        + "\n导演权重变化   " + report.directorWeightDelta.ToString("0.000")
-                        + "\n本代样本重点   " + report.learnedAction
-                        + "\n\n" + BuildStyleSummary();
-        _summary.text = "本代学会了什么\n" + report.summary;
+        int currentGeneration = AIShadowRunner.Instance != null
+            ? AIShadowRunner.Instance.Generation
+            : report.generationAfter;
+        AIShadowRunner shadow = AIShadowRunner.Instance;
+        AIBalance ai = GameBalanceConfig.Current.ai;
+        int minimumJumps = shadow != null
+            ? shadow.minimumJumpSamples : ai.minimumJumpSamples;
+        int minimumSlides = shadow != null
+            ? shadow.minimumSlideSamples : ai.minimumSlideSamples;
+        EchoMenuViewData next = EchoRunPresentation.BuildMenu(
+            currentGeneration, StyleTracker.GetSnapshot(),
+            minimumJumps, minimumSlides);
+        _metrics.text = "回声进化\n第 " + report.generationBefore
+                        + " 代  →  第 " + report.generationAfter + " 代"
+                        + "\n\n它重点观察了\n" + report.learnedAction;
+        _summary.text = "它学会了什么\n" + report.summary
+                        + "\n\n本轮规则\n" + next.rule
+                        + "\n\n下一局目标\n" + next.objective;
     }
 
     private void ConfirmReset()
@@ -179,7 +239,7 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         if (_resetConfirmUntil <= Time.unscaledTime)
         {
             _resetConfirmUntil = Time.unscaledTime + 4f;
-            _resetHint.text = "再次点击“重置训练”确认清空。";
+            _resetHint.text = "再次点击“重置学习数据”确认；此操作无法撤销。";
             AudioManager.Instance?.PlayUIError();
             return;
         }
@@ -190,7 +250,7 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         AIShadowRunner.Instance?.ResetTraining();
         AITrackDirector.Instance?.ResetTraining();
         _resetConfirmUntil = 0f;
-        _resetHint.text = "训练已重置，下一局将重新校准。";
+        _resetHint.text = "学习数据已重置；下一局将重新校准。";
         AudioManager.Instance?.PlayUIConfirm();
         Refresh();
     }
@@ -198,11 +258,15 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
     private void OnStateChanged(GameState state)
     {
         bool menu = state == GameState.Menu;
-        if (_launcher != null) _launcher.SetActive(menu);
+        if (_router == null && _launcher != null) _launcher.SetActive(menu);
         if (!menu && _panel != null) _panel.SetActive(false);
         if (_liveDebugPanel != null)
+        {
             _liveDebugPanel.SetActive(
                 _liveDebugEnabled && state == GameState.Playing);
+            if (_liveDebugPanel.activeSelf)
+                _liveDebugPanel.transform.SetAsLastSibling();
+        }
     }
 
     private void BuildLiveDebug(Transform parent, bool compactPortrait)
@@ -211,6 +275,7 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
             compactPortrait ? new Vector2(0.5f, 0.76f) : new Vector2(0.23f, 0.72f),
             compactPortrait ? new Vector2(880f, 520f) : new Vector2(650f, 420f),
             new Color(0.025f, 0.04f, 0.06f, 0.92f));
+        _liveDebugRect = _liveDebugPanel.GetComponent<RectTransform>();
         _liveDebugText = RuntimePanelFactory.Text("Content",
             _liveDebugPanel.transform, "", compactPortrait ? 24 : 19,
             TextAnchor.UpperLeft, RuntimePanelFactory.TextPrimary);
@@ -218,6 +283,70 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         RuntimePanelFactory.Stretch(_liveDebugText.rectTransform,
             compactPortrait ? 28f : 22f);
         _liveDebugPanel.SetActive(false);
+    }
+
+    private void ApplyLayout(bool force)
+    {
+        Vector2Int screen = new Vector2Int(Screen.width, Screen.height);
+        if (!force && screen == _lastScreenSize) return;
+        _lastScreenSize = screen;
+        if (_panelRect == null) return;
+
+        bool portrait = UILayoutRules.IsCompactPortrait(Screen.width, Screen.height);
+        EchoRunAccessibility.SetBaseFontSize(
+            _titleRect.GetComponent<Text>(), portrait ? 44 : 40);
+        EchoRunAccessibility.SetBaseFontSize(_metrics, portrait ? 30 : 26);
+        EchoRunAccessibility.SetBaseFontSize(_summary, portrait ? 29 : 25);
+        EchoRunAccessibility.SetBaseFontSize(_resetHint, portrait ? 22 : 19);
+        SetButtonBaseFont(_resetButton, portrait ? 28 : 22);
+        SetButtonBaseFont(_closeButton, portrait ? 28 : 22);
+        Vector2 launcherSize = RuntimePanelFactory.TouchButtonSize(
+            portrait ? new Vector2(260f, 96f) : new Vector2(220f, 58f),
+            portrait);
+        if (_launcher != null)
+        {
+            RuntimePanelFactory.Place(_launcher.GetComponent<RectTransform>(),
+                portrait ? new Vector2(0.78f, 0.94f) : new Vector2(0.90f, 0.91f),
+                launcherSize, Vector2.zero);
+            Text launcherLabel = _launcher.GetComponentInChildren<Text>();
+            if (launcherLabel != null) launcherLabel.fontSize = portrait ? 30 : 26;
+            SetButtonBaseFont(_launcher.GetComponent<Button>(), portrait ? 30 : 26);
+        }
+        _panelRect.sizeDelta = portrait
+            ? new Vector2(900f, 1500f)
+            : new Vector2(1050f, 720f);
+        RuntimePanelFactory.Place(_titleRect,
+            portrait ? new Vector2(0.08f, 0.93f) : new Vector2(0.08f, 0.90f),
+            portrait ? new Vector2(500f, 90f) : new Vector2(430f, 70f),
+            Vector2.zero);
+        RuntimePanelFactory.Place(_metricsRect,
+            portrait ? new Vector2(0.5f, 0.70f) : new Vector2(0.26f, 0.60f),
+            portrait ? new Vector2(760f, 430f) : new Vector2(400f, 310f),
+            Vector2.zero);
+        RuntimePanelFactory.Place(_insightRect,
+            portrait ? new Vector2(0.5f, 0.36f) : new Vector2(0.69f, 0.54f),
+            portrait ? new Vector2(780f, 440f) : new Vector2(500f, 360f),
+            Vector2.zero);
+        RuntimePanelFactory.Stretch(_summaryRect, portrait ? 30f : 26f);
+        RuntimePanelFactory.Place(_resetHintRect,
+            portrait ? new Vector2(0.5f, 0.16f) : new Vector2(0.27f, 0.09f),
+            portrait ? new Vector2(760f, 88f) : new Vector2(540f, 50f),
+            Vector2.zero);
+        RuntimePanelFactory.Place(_resetButton.GetComponent<RectTransform>(),
+            portrait ? new Vector2(0.30f, 0.07f) : new Vector2(0.67f, 0.09f),
+            RuntimePanelFactory.TouchButtonSize(portrait
+                ? new Vector2(330f, 104f) : new Vector2(230f, 58f), portrait),
+            Vector2.zero);
+        RuntimePanelFactory.Place(_closeButton.GetComponent<RectTransform>(),
+            portrait ? new Vector2(0.72f, 0.07f) : new Vector2(0.88f, 0.09f),
+            RuntimePanelFactory.TouchButtonSize(portrait
+                ? new Vector2(280f, 104f) : new Vector2(180f, 58f), portrait),
+            Vector2.zero);
+        if (_liveDebugRect != null)
+            RuntimePanelFactory.Place(_liveDebugRect,
+                portrait ? new Vector2(0.5f, 0.75f) : new Vector2(0.23f, 0.72f),
+                portrait ? new Vector2(880f, 520f) : new Vector2(650f, 420f),
+                Vector2.zero);
     }
 
     private void ToggleLiveDebug()
@@ -229,6 +358,37 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
                 ? "实时诊断已开启，进入游戏后显示。"
                 : "实时诊断已关闭。";
         AudioManager.Instance?.PlayUIConfirm();
+    }
+
+    private static void SetButtonBaseFont(Button button, int size)
+    {
+        if (button == null) return;
+        EchoRunAccessibility.SetBaseFontSize(
+            button.GetComponentInChildren<Text>(true), size);
+    }
+
+    private void ToggleEmergencyReflex()
+    {
+        AIShadowRunner shadow = AIShadowRunner.Instance;
+        if (shadow == null) return;
+        shadow.SetEmergencyReflexEnabled(!shadow.EmergencyReflexEnabled);
+        RefreshEmergencyReflexButton();
+        if (_resetHint != null)
+            _resetHint.text = shadow.EmergencyReflexEnabled
+                ? "紧急救场已开启（正常游玩模式）。"
+                : "紧急救场已关闭（仅用于策略对照）。";
+        AudioManager.Instance?.PlayUIConfirm();
+    }
+
+    private void RefreshEmergencyReflexButton()
+    {
+        if (_emergencyReflexButton == null) return;
+        AIShadowRunner shadow = AIShadowRunner.Instance;
+        Text label = _emergencyReflexButton.GetComponentInChildren<Text>();
+        if (label != null)
+            label.text = shadow == null || shadow.EmergencyReflexEnabled
+                ? "救场：开"
+                : "救场：关";
     }
 
     private void RefreshLiveDebug()
@@ -246,7 +406,8 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
 
         string decision = trace == null
             ? "尚无影子决策"
-            : "最终动作 " + trace.selectedAction
+            : "原始动作 " + trace.originalPrediction
+              + "  最终动作 " + trace.selectedAction
               + (trace.safetyAdjusted ? "  [安全覆盖]" : "")
               + "\n基础  " + FormatScores(trace.baseScores)
               + "\n风格  " + FormatScores(trace.styleAdjustedScores)
@@ -261,7 +422,21 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
             + "\n置信 " + Percent(style.Confidence)
             + "  全局风险 " + SignedPercent(directive.riskBias)
             + "  风格强度 " + Percent(directive.styleInfluence)
+            + (shadow != null
+                ? "\n策略正确 " + shadow.PolicyCorrectDecisionCount
+                  + "  安全改写 " + shadow.SafetyOverrideDecisionCount
+                  + "  紧急救场 " + shadow.EmergencyReflexSaveCount
+                  + (shadow.EmergencyReflexEnabled ? " [开]" : " [观察模式]")
+                : "")
+            + BuildObstacleContactLine()
             + "\n\n" + decision;
+    }
+
+    private string BuildObstacleContactLine()
+    {
+        return _player != null && _player.LastObstacleContact != null
+            ? "\n接触 " + _player.LastObstacleContact.ToDisplayString()
+            : "";
     }
 
     private static string BuildStyleSummary()

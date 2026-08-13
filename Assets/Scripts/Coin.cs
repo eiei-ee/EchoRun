@@ -28,7 +28,8 @@ public class Coin : MonoBehaviour
 
     void Update()
     {
-        transform.Rotate(Vector3.up, rotateSpeed * Time.deltaTime, Space.World);
+        if (!EchoRunAccessibility.ReducedMotion)
+            transform.Rotate(Vector3.up, rotateSpeed * Time.deltaTime, Space.World);
 
         PowerUpController powerUps = PowerUpController.Instance;
         if (powerUps != null && powerUps.HasMagnet && ResolvePlayer() != null)
@@ -45,7 +46,9 @@ public class Coin : MonoBehaviour
             }
         }
 
-        float bob = Mathf.Sin((Time.time + _phaseOffset) * bobSpeed) * bobHeight;
+        float bob = EchoRunAccessibility.ReducedMotion
+            ? 0f
+            : Mathf.Sin((Time.time + _phaseOffset) * bobSpeed) * bobHeight;
         Vector3 pos = transform.position;
         pos.y = _baseY + bob;
         transform.position = pos;

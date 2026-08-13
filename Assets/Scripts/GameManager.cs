@@ -187,6 +187,8 @@ public class GameManager : MonoBehaviour
 
     public void StartGame()
     {
+        if (State != GameState.Menu) return;
+
         int runSequence = EchoRunSaveSystem.ReserveRunSequence();
         RunSeed = _nextRunSeed ?? CreateRunSeed(runSequence);
         _nextRunSeed = null;
@@ -277,8 +279,9 @@ public class GameManager : MonoBehaviour
 
     System.Collections.IEnumerator DeathSequenceCoroutine()
     {
-        Time.timeScale = 0.3f;
-        yield return new WaitForSecondsRealtime(1.2f);
+        bool reducedMotion = EchoRunAccessibility.ReducedMotion;
+        Time.timeScale = reducedMotion ? 1f : 0.3f;
+        yield return new WaitForSecondsRealtime(reducedMotion ? 0.35f : 1.2f);
         Time.timeScale = 1f;
         State = GameState.GameOver;
         SaveHighScore();

@@ -37,8 +37,10 @@ For WeChat DevTools, pass the token at runtime through
 
 ## Package notes
 
-- The bundled OFL-licensed Noto Sans CJK font is subset to the characters used
-  by the project; `OFL.txt` remains beside it.
+- The bundled OFL-licensed EchoRun Sans SC font is a project-named subset of
+  Noto Sans CJK SC 2.004. `OFL.txt` remains beside it; the pinned source hash,
+  Unicode set and reproducible build script are recorded in
+  `THIRD_PARTY_NOTICES.md` and `Tools/Fonts/`.
 - The converted main package is 982,708 bytes (0.937 MiB), below the 4 MiB
   target. `wasmcode` is a separate 5,340,536-byte subpackage; 6,658,702 bytes
   of debug symbols are excluded by `project.config.json`.

@@ -17,20 +17,28 @@ public sealed class AIShadowPolicy
     public const int FeatureCount = 8;
     public const int ActionCount = 5;
 
+    private const float MinimumWeight = -4f;
+    private const float MaximumWeight = 4f;
+
     private readonly float[,] _weights = new float[ActionCount, FeatureCount];
 
     public AIShadowPolicy(float[] savedWeights = null)
     {
-        if (savedWeights != null && savedWeights.Length == ActionCount * FeatureCount)
+        if (AIModelWeightRules.TrySanitize(savedWeights,
+                ActionCount * FeatureCount, MinimumWeight, MaximumWeight,
+                out float[] sanitized))
         {
             int index = 0;
             for (int action = 0; action < ActionCount; action++)
                 for (int feature = 0; feature < FeatureCount; feature++)
-                    _weights[action, feature] = savedWeights[index++];
+                    _weights[action, feature] = sanitized[index++];
         }
         else
         {
             _weights[(int)ShadowAction.Keep, 0] = 0.25f;
+            if (savedWeights != null)
+                Debug.LogWarning(
+                    "AI shadow weights were invalid and were reset to defaults.");
         }
     }
 
@@ -76,7 +84,8 @@ public sealed class AIShadowPolicy
             {
                 float updated = _weights[action, feature]
                                 + rate * error * features[feature];
-                _weights[action, feature] = Mathf.Clamp(updated, -4f, 4f);
+                _weights[action, feature] = Mathf.Clamp(
+                    updated, MinimumWeight, MaximumWeight);
             }
         }
     }

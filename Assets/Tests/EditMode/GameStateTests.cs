@@ -4,6 +4,7 @@ using NUnit.Framework;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
+using UnityEngine.TestTools;
 
 public class GameStateTests
 {
@@ -46,6 +47,24 @@ public class GameStateTests
         Assert.AreEqual(1f, Time.timeScale);
         Assert.AreEqual(424242, manager.RunSeed);
         Assert.IsTrue(AIRunTelemetry.IsRecording);
+    }
+
+    [Test]
+    public void StartGameIgnoresDuplicateSubmitAfterRunBegins()
+    {
+        GameManager manager = Create<GameManager>("GameManager");
+        GameManager.SetNextRunSeed(424242);
+
+        manager.StartGame();
+        manager.AddCoins(3);
+        int firstRunSeed = manager.RunSeed;
+
+        manager.StartGame();
+
+        Assert.AreEqual(GameState.Playing, manager.State);
+        Assert.AreEqual(firstRunSeed, manager.RunSeed);
+        Assert.AreEqual(3, manager.Coins,
+            "A duplicate UI submit must not reset an active run.");
     }
 
     [Test]
@@ -343,9 +362,9 @@ public class GameStateTests
     }
 
     [Test]
-    public void TouchLayoutRequestsLandscapeOnlyWhenPortrait()
+    public void TouchLayoutSupportsPortraitWithoutBlockingTheGame()
     {
-        Assert.IsTrue(UIManager.ShouldShowLandscapeGuard(720, 1280, true));
+        Assert.IsFalse(UIManager.ShouldShowLandscapeGuard(720, 1280, true));
         Assert.IsFalse(UIManager.ShouldShowLandscapeGuard(1280, 720, true));
         Assert.IsFalse(UIManager.ShouldShowLandscapeGuard(720, 1280, false));
     }
@@ -357,6 +376,10 @@ public class GameStateTests
             720, 1280, true, true));
         Assert.IsTrue(UILayoutRules.IsCompactPortrait(720, 1280));
         Assert.IsFalse(UILayoutRules.IsCompactPortrait(1280, 720));
+        Assert.AreEqual(new Vector2(1080f, 1920f),
+            UILayoutRules.GetReferenceResolution(720, 1280));
+        Assert.AreEqual(new Vector2(1920f, 1080f),
+            UILayoutRules.GetReferenceResolution(1280, 720));
     }
 
     [Test]
@@ -415,9 +438,23 @@ public class GameStateTests
     }
 
     [Test]
+    public void ShadowCalibrationRequiresMinimumJumpAndSlideEvidence()
+    {
+        int[] missingSlide = { 18, 2, 0, 4, 0 };
+        int[] balanced = { 18, 1, 1, 2, 2 };
+
+        Assert.IsFalse(AIShadowRunner.HasCalibrationSamples(
+            24, 6, missingSlide, 24, 6, 2, 2, 2));
+        Assert.IsTrue(AIShadowRunner.HasCalibrationSamples(
+            24, 6, balanced, 24, 6, 2, 2, 2));
+        Assert.AreEqual(0f, AIShadowRunner.CalculateCalibrationProgress(
+            24, 6, missingSlide, 24, 6, 2, 2, 2));
+    }
+
+    [Test]
     public void UiFontIsBundledForRuntime()
     {
-        Font font = Resources.Load<Font>("Fonts/NotoSansCJKsc-Regular");
+        Font font = Resources.Load<Font>("Fonts/EchoRunSansSC-Regular");
 
         Assert.IsNotNull(font, "The bundled Noto Sans CJK font must be included in runtime builds.");
 
@@ -468,6 +505,25 @@ public class GameStateTests
     }
 
     [Test]
+    public void AITrackPolicyRejectsNonFiniteWeightsAndClampsFiniteWeights()
+    {
+        float[] invalid = new float[AITrackPolicy.ActionCount
+                                    * AITrackPolicy.FeatureCount];
+        invalid[3] = float.NaN;
+        LogAssert.Expect(LogType.Warning,
+            "AI director weights were invalid and were reset to defaults.");
+        AITrackPolicy reset = new AITrackPolicy(1, invalid);
+        Assert.IsFalse(float.IsNaN(reset.Score(0,
+            new[] { 1f, 0f, 0f, 0f, 0f })));
+
+        float[] oversized = new float[invalid.Length];
+        for (int i = 0; i < oversized.Length; i++) oversized[i] = 99f;
+        AITrackPolicy clamped = new AITrackPolicy(1, oversized);
+        foreach (float weight in clamped.ExportWeights())
+            Assert.AreEqual(3f, weight);
+    }
+
+    [Test]
     public void LinUcbStartsFromLegacyFlowPrior()
     {
         var policy = new AILinUcbPolicy(
@@ -512,6 +568,21 @@ public class GameStateTests
             restored.Uncertainty(1, context), 0.0001f);
         CollectionAssert.AreEqual(
             trained.ExportWeights(), restored.ExportWeights());
+    }
+
+    [Test]
+    public void LinUcbMalformedJsonFallsBackToFiniteDefaults()
+    {
+        LogAssert.Expect(LogType.Warning,
+            new System.Text.RegularExpressions.Regex(
+                "LinUCB director state could not be loaded:"));
+        var restored = new AILinUcbPolicy(null, "{not-json");
+        float[] weights = restored.ExportWeights();
+
+        Assert.AreEqual(AILinUcbPolicy.ActionCount
+                        * AILinUcbPolicy.FeatureCount, weights.Length);
+        foreach (float weight in weights)
+            Assert.IsFalse(float.IsNaN(weight) || float.IsInfinity(weight));
     }
 
     [Test]
@@ -588,6 +659,36 @@ public class GameStateTests
         Assert.AreEqual(trained.Predict(context), restored.Predict(context));
         Assert.AreEqual(trained.Score((int)ShadowAction.Right, context),
             restored.Score((int)ShadowAction.Right, context), 0.0001f);
+    }
+
+    [Test]
+    public void AIShadowPolicyRejectsInvalidWeightsAndClampsFiniteWeights()
+    {
+        int count = AIShadowPolicy.ActionCount * AIShadowPolicy.FeatureCount;
+        float[] wrongLength = new float[count - 1];
+        float[] nan = new float[count];
+        nan[5] = float.NaN;
+        float[] infinity = new float[count];
+        infinity[7] = float.PositiveInfinity;
+
+        LogAssert.Expect(LogType.Warning,
+            "AI shadow weights were invalid and were reset to defaults.");
+        CollectionAssert.AreEqual(new AIShadowPolicy().ExportWeights(),
+            new AIShadowPolicy(wrongLength).ExportWeights());
+        LogAssert.Expect(LogType.Warning,
+            "AI shadow weights were invalid and were reset to defaults.");
+        CollectionAssert.AreEqual(new AIShadowPolicy().ExportWeights(),
+            new AIShadowPolicy(nan).ExportWeights());
+        LogAssert.Expect(LogType.Warning,
+            "AI shadow weights were invalid and were reset to defaults.");
+        CollectionAssert.AreEqual(new AIShadowPolicy().ExportWeights(),
+            new AIShadowPolicy(infinity).ExportWeights());
+
+        float[] oversized = new float[count];
+        for (int i = 0; i < oversized.Length; i++)
+            oversized[i] = i % 2 == 0 ? 10f : -10f;
+        foreach (float weight in new AIShadowPolicy(oversized).ExportWeights())
+            Assert.That(weight, Is.InRange(-4f, 4f));
     }
 
     [Test]
@@ -709,6 +810,91 @@ public class GameStateTests
         Assert.AreEqual(originalBottom,
             capsule.center.y - capsule.height * 0.5f, 0.0001f,
             "Sliding must not lift the player capsule away from the track.");
+    }
+
+    [Test]
+    public void LowObstacleUsesGeometryAndReportsStateMismatch()
+    {
+        Bounds obstacle = new Bounds(new Vector3(0f, 1.95f, 0f),
+            new Vector3(3.1f, 0.82f, 1.2f));
+        Bounds slidingPlayer = new Bounds(new Vector3(0f, 0.4f, 0f),
+            new Vector3(0.8f, 1f, 0.8f));
+
+        ObstacleContactEvaluation result = ObstacleContactRules.Evaluate(
+            ObstacleType.Low, slidingPlayer, obstacle, false, false,
+            Vector3.forward);
+
+        Assert.AreEqual(ObstacleContactOutcome.Pass, result.outcome);
+        Assert.AreEqual(ObstacleContactReason.LowClearanceWithoutSlideState,
+            result.reason);
+    }
+
+    [Test]
+    public void HighObstaclePassesOnClearanceOrJumpingPastFrontOnly()
+    {
+        Bounds obstacle = new Bounds(new Vector3(0f, 0.55f, 5f),
+            new Vector3(3.2f, 0.9f, 0.7f));
+        Bounds clearPlayer = new Bounds(new Vector3(0f, 1.8f, 4.4f),
+            new Vector3(0.8f, 1.4f, 0.8f));
+        Bounds lowPastFront = new Bounds(new Vector3(0f, 0.9f, 4.8f),
+            new Vector3(0.8f, 2f, 0.8f));
+
+        Assert.AreEqual(ObstacleContactReason.HighClearance,
+            ObstacleContactRules.Evaluate(ObstacleType.High, clearPlayer,
+                obstacle, true, false, Vector3.forward).reason);
+        Assert.AreEqual(ObstacleContactReason.HighPastFrontDuringJump,
+            ObstacleContactRules.Evaluate(ObstacleType.High, lowPastFront,
+                obstacle, true, false, Vector3.forward).reason);
+        Assert.AreEqual(ObstacleContactOutcome.Hit,
+            ObstacleContactRules.Evaluate(ObstacleType.High, lowPastFront,
+                obstacle, false, false, Vector3.forward).outcome,
+            "Passing the front plane without an active jump must still hit.");
+    }
+
+    [Test]
+    public void ObstacleContactSettlesOnceUntilThePooledObjectIsReleased()
+    {
+        GameManager manager = Create<GameManager>("GameManager");
+        manager.StartGame();
+
+        GameObject playerObject = new GameObject("player");
+        _objects.Add(playerObject);
+        Rigidbody body = playerObject.AddComponent<Rigidbody>();
+        CapsuleCollider capsule = playerObject.AddComponent<CapsuleCollider>();
+        capsule.center = new Vector3(0f, 0.5f, 0f);
+        capsule.height = 1f;
+        capsule.radius = 0.4f;
+        PlayerController player = playerObject.AddComponent<PlayerController>();
+        SetPrivateField(player, "_gm", manager);
+        SetPrivateField(player, "_rb", body);
+        SetPrivateField(player, "_capsuleCollider", capsule);
+
+        GameObject obstacleObject = new GameObject("LowObstacle");
+        _objects.Add(obstacleObject);
+        Obstacle obstacle = obstacleObject.AddComponent<Obstacle>();
+        obstacle.type = ObstacleType.Low;
+        BoxCollider trigger = obstacleObject.AddComponent<BoxCollider>();
+        trigger.center = new Vector3(0f, 1.95f, 0f);
+        trigger.size = new Vector3(3.1f, 0.82f, 1.2f);
+
+        InvokePrivate(player, "HandleObstacleContact", trigger, obstacle,
+            ObstacleContactSource.Trigger);
+        Assert.AreEqual(ObstacleContactOutcome.Pass,
+            player.LastObstacleContact.outcome);
+        Assert.AreEqual(1, player.ResolvedObstacleCount);
+
+        InvokePrivate(player, "HandleObstacleContact", trigger, obstacle,
+            ObstacleContactSource.Overlap);
+        Assert.AreEqual(ObstacleContactOutcome.Pass,
+            player.LastObstacleContact.outcome);
+        Assert.AreEqual(1, player.DuplicateObstacleContactCount,
+            "Repeated physics sources must be counted without overwriting " +
+            "the first-contact snapshot.");
+        Assert.AreEqual(1, player.ResolvedObstacleCount);
+
+        player.ForgetResolvedObstacle(obstacleObject);
+        Assert.AreEqual(0, player.ResolvedObstacleCount,
+            "Pool recycle must clear the stable instance id before reuse.");
     }
 
     [Test]
@@ -1790,6 +1976,63 @@ public class GameStateTests
         Assert.IsTrue(TrackSpawnRules.CanSpawnObstacleRow(48f, 0f, spacing));
     }
 
+    [TestCase(10f)]
+    [TestCase(25f)]
+    [TestCase(40f)]
+    public void ObstacleRowsLeaveActionRecoveryAtEachAcceptanceSpeed(float speed)
+    {
+        float spacing = TrackSpawnRules.MinimumObstacleRowSpacing(
+            speed, 0.9f, 20f);
+
+        Assert.GreaterOrEqual(spacing + 0.001f, speed * 1.2f,
+            "A row must leave at least the jump plus recovery window.");
+        Assert.IsTrue(TrackSpawnRules.CanSpawnObstacleRow(
+            spacing, 0f, spacing));
+        Assert.IsFalse(TrackSpawnRules.CanSpawnObstacleRow(
+            spacing - 0.01f, 0f, spacing));
+    }
+
+    [TestCase(9137)]
+    [TestCase(4815)]
+    [TestCase(424242)]
+    public void FixedSeedObstacleRowsRepeatBlockedLaneBitmap(int seed)
+    {
+        string first = BuildBlockedLaneBitmap(seed);
+        string second = BuildBlockedLaneBitmap(seed);
+
+        Assert.AreEqual(first, second);
+        StringAssert.DoesNotContain("111", first,
+            "No deterministic obstacle row may block all three lanes.");
+    }
+
+    [Test]
+    public void SafeLaneCapsuleDoesNotIntersectAdjacentLaneObstacleGeometry()
+    {
+        const float laneDistance = 3f;
+        Vector3 playerSize = new Vector3(0.8f, 2.2f, 0.8f);
+        for (int safeLane = 0; safeLane < 3; safeLane++)
+        {
+            int[] blocked = TrackSpawnRules.SelectBlockedLanes(
+                safeLane, 2, new[] { 0, 0, 0 });
+            foreach (int blockedLane in blocked)
+            {
+                foreach (ObstacleType type in new[]
+                         { ObstacleType.Low, ObstacleType.High, ObstacleType.Barrier })
+                {
+                    Bounds player = new Bounds(
+                        new Vector3((safeLane - 1) * laneDistance, 1f, 0f),
+                        playerSize);
+                    Bounds obstacle = new Bounds(
+                        new Vector3((blockedLane - 1) * laneDistance, 1f, 0f)
+                        + ObstacleGeometryRules.ColliderCenter(type),
+                        ObstacleGeometryRules.ColliderSize(type));
+                    Assert.IsFalse(player.Intersects(obstacle),
+                        "Safe lane intersects " + type + " in lane " + blockedLane);
+                }
+            }
+        }
+    }
+
     [Test]
     public void GeneratedObstacleTypesExcludeAmbiguousFullHeightBarrier()
     {
@@ -2088,6 +2331,48 @@ public class GameStateTests
         BoxCollider lowCollider = obstacles[0].GetComponent<BoxCollider>();
         Assert.AreEqual(new Vector3(3.1f, 0.82f, 1.2f), lowCollider.size);
         Assert.AreEqual(new Vector3(0f, 0.95f, 0f), lowCollider.center);
+    }
+
+    [Test]
+    public void AuthoredObstaclePrefabsMatchSharedColliderGeometry()
+    {
+        AssertObstacleGeometry("Assets/Prefabs/Obstacle_Low.prefab",
+            ObstacleType.Low);
+        AssertObstacleGeometry("Assets/Prefabs/Obstacle_High.prefab",
+            ObstacleType.High);
+        AssertObstacleGeometry("Assets/Prefabs/Obstacle_Barrier.prefab",
+            ObstacleType.Barrier);
+    }
+
+    private static string BuildBlockedLaneBitmap(int seed)
+    {
+        AIRunRandom.BeginRun(seed);
+        int previousSafeLane = 1;
+        int[] drought = { 0, 0, 0 };
+        string bitmap = "";
+        for (int row = 0; row < 24; row++)
+        {
+            int proposed = AIRunRandom.Range(0, 3);
+            int safe = TrackSpawnRules.ChooseFairSafeLane(
+                proposed, previousSafeLane, drought);
+            int[] blocked = TrackSpawnRules.SelectBlockedLanes(
+                safe, AIRunRandom.Value > 0.5f ? 2 : 1, drought);
+            bitmap += "|";
+            for (int lane = 0; lane < 3; lane++)
+                bitmap += System.Array.IndexOf(blocked, lane) >= 0 ? "1" : "0";
+            previousSafeLane = safe;
+        }
+        return bitmap;
+    }
+
+    private static void AssertObstacleGeometry(string path, ObstacleType type)
+    {
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+        Assert.IsNotNull(prefab, path);
+        BoxCollider collider = prefab.GetComponent<BoxCollider>();
+        Assert.IsNotNull(collider, path);
+        Assert.AreEqual(ObstacleGeometryRules.ColliderSize(type), collider.size);
+        Assert.AreEqual(ObstacleGeometryRules.ColliderCenter(type), collider.center);
     }
 
     private T Create<T>(string name) where T : Component

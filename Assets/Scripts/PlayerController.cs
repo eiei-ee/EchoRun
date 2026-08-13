@@ -27,6 +27,9 @@ public class PlayerController : MonoBehaviour
     public bool IsJumping { get; private set; }
     public bool IsSliding { get; private set; }
     public Vector3 ForwardDirection { get; private set; } = Vector3.forward;
+    public ObstacleContactDiagnostic LastObstacleContact { get; private set; }
+    public int ResolvedObstacleCount => _resolvedObstacles.Count;
+    public int DuplicateObstacleContactCount { get; private set; }
 
     private float _jumpTimer;
    private float _slideTimer;
@@ -45,7 +48,12 @@ public class PlayerController : MonoBehaviour
     private TrackManager _trackMgr;
     private readonly RaycastHit[] _obstacleSweepHits = new RaycastHit[8];
     private readonly Collider[] _obstacleOverlapHits = new Collider[8];
-    private Collider _lastSweptObstacle;
+    private readonly System.Collections.Generic.Dictionary<int, Collider>
+        _resolvedObstacles =
+            new System.Collections.Generic.Dictionary<int, Collider>();
+    private readonly System.Collections.Generic.List<int>
+        _resolvedObstacleCleanup =
+            new System.Collections.Generic.List<int>();
 
     private const float GROUND_RAY_DIST = 0.3f;
 
@@ -372,20 +380,15 @@ public class PlayerController : MonoBehaviour
         }
 
         Obstacle obs = other.GetComponentInParent<Obstacle>();
-        if (obs != null && other != _lastSweptObstacle)
-            HandleObstacleContact(other, obs);
+        if (obs != null)
+            HandleObstacleContact(other, obs, ObstacleContactSource.Trigger);
    }
 
    void SweepForObstacleContact(Vector3 movement)
    {
        if (_capsuleCollider == null || movement.sqrMagnitude < 0.0001f) return;
 
-       if (_lastSweptObstacle != null)
-       {
-           Vector3 offset = _lastSweptObstacle.bounds.center - _rb.position;
-           if (Vector3.Dot(offset, ForwardDirection) <= 0f)
-               _lastSweptObstacle = null;
-       }
+       CleanupResolvedObstacles();
 
        GetCapsuleSweepShape(out Vector3 pointA, out Vector3 pointB,
            out float radius);
@@ -396,13 +399,13 @@ public class PlayerController : MonoBehaviour
        int overlapCount = Physics.OverlapCapsuleNonAlloc(pointA, pointB,
            radius, _obstacleOverlapHits, Physics.AllLayers,
            QueryTriggerInteraction.Collide);
-       Collider overlappingObstacle = FindObstacleCollider(
-           _obstacleOverlapHits, overlapCount, _lastSweptObstacle);
+       Collider overlappingObstacle = FindUnresolvedObstacleCollider(
+           _obstacleOverlapHits, overlapCount);
        if (overlappingObstacle != null)
        {
-           _lastSweptObstacle = overlappingObstacle;
            HandleObstacleContact(overlappingObstacle,
-               overlappingObstacle.GetComponentInParent<Obstacle>());
+               overlappingObstacle.GetComponentInParent<Obstacle>(),
+               ObstacleContactSource.Overlap);
            return;
        }
 
@@ -416,7 +419,7 @@ public class PlayerController : MonoBehaviour
        for (int i = 0; i < hitCount; i++)
        {
            Collider candidate = _obstacleSweepHits[i].collider;
-           if (candidate == null || candidate == _lastSweptObstacle) continue;
+           if (candidate == null || IsResolved(candidate)) continue;
            if (candidate.GetComponentInParent<Obstacle>() == null) continue;
            if (_obstacleSweepHits[i].distance < closestDistance)
            {
@@ -427,9 +430,24 @@ public class PlayerController : MonoBehaviour
 
        if (closestObstacle == null) return;
 
-       _lastSweptObstacle = closestObstacle;
        HandleObstacleContact(closestObstacle,
-           closestObstacle.GetComponentInParent<Obstacle>());
+           closestObstacle.GetComponentInParent<Obstacle>(),
+           ObstacleContactSource.Sweep);
+   }
+
+   private Collider FindUnresolvedObstacleCollider(Collider[] candidates,
+       int count)
+   {
+       if (candidates == null) return null;
+       int limit = Mathf.Min(Mathf.Max(0, count), candidates.Length);
+       for (int i = 0; i < limit; i++)
+       {
+           Collider candidate = candidates[i];
+           if (candidate == null || IsResolved(candidate)) continue;
+           if (candidate.GetComponentInParent<Obstacle>() != null)
+               return candidate;
+       }
+       return null;
    }
 
    public static Collider FindObstacleCollider(Collider[] candidates, int count,
@@ -464,30 +482,41 @@ public class PlayerController : MonoBehaviour
        pointB = center - axis * pointOffset;
    }
 
-   void HandleObstacleContact(Collider other, Obstacle obs)
+   void HandleObstacleContact(Collider other, Obstacle obs,
+       ObstacleContactSource source)
    {
        if (obs == null || _gm == null || _gm.State != GameState.Playing
            || _gm.IsDeathSequence) return;
 
-       if (obs.type == ObstacleType.Low && IsSliding)
-            {
-                AIPlayerSkillEstimator.RecordObstacleOutcome(
-                    obs.type, true);
-                AITrackDirector.Instance?.RecordDodge();
-                AIShadowRunner.Instance?.RecordDodge(obs.type);
-                AudioManager.Instance?.PlayDodgeObstacle();
-               return;
-           }
-           if (obs.type == ObstacleType.High && IsJumping &&
-               GetColliderBottomY() > other.bounds.max.y - 0.3f)
-            {
-                AIPlayerSkillEstimator.RecordObstacleOutcome(
-                    obs.type, true);
-                AITrackDirector.Instance?.RecordDodge();
-                AIShadowRunner.Instance?.RecordDodge(obs.type);
-                AudioManager.Instance?.PlayDodgeObstacle();
-                return;
-            }
+       int obstacleId = GetObstacleId(obs);
+        if (_resolvedObstacles.ContainsKey(obstacleId))
+        {
+            DuplicateObstacleContactCount++;
+            RecordObstacleDiagnostic(source, obstacleId, obs.type,
+               new ObstacleContactEvaluation(
+                   ObstacleContactOutcome.AlreadyResolved,
+                   ObstacleContactReason.PreviouslyResolved, 0f), false);
+           return;
+       }
+
+       Bounds playerBounds = _capsuleCollider != null
+           ? _capsuleCollider.bounds
+           : new Bounds(_rb.position, Vector3.zero);
+       ObstacleContactEvaluation evaluation = ObstacleContactRules.Evaluate(
+           obs.type, playerBounds, other.bounds, IsJumping, IsSliding,
+           ForwardDirection);
+       _resolvedObstacles[obstacleId] = other;
+       RecordObstacleDiagnostic(source, obstacleId, obs.type, evaluation);
+
+       if (evaluation.Passed)
+       {
+           AIPlayerSkillEstimator.RecordObstacleOutcome(obs.type, true);
+           AITrackDirector.Instance?.RecordDodge();
+           AIShadowRunner.Instance?.RecordDodge(obs.type);
+           AudioManager.Instance?.PlayDodgeObstacle();
+           return;
+       }
+
            AIPlayerSkillEstimator.RecordObstacleOutcome(
                obs.type, false);
            StyleTracker.RecordMistake();
@@ -505,6 +534,90 @@ public class PlayerController : MonoBehaviour
            }
            StopBeforeObstacle(other);
            _gm.GameOver();
+   }
+
+   private bool IsResolved(Collider collider)
+   {
+       Obstacle obstacle = collider != null
+           ? collider.GetComponentInParent<Obstacle>()
+           : null;
+       return obstacle != null
+              && _resolvedObstacles.ContainsKey(GetObstacleId(obstacle));
+   }
+
+   private static int GetObstacleId(Obstacle obstacle)
+   {
+       return obstacle != null ? obstacle.gameObject.GetInstanceID() : 0;
+   }
+
+   public void ForgetResolvedObstacle(GameObject obstacleInstance)
+   {
+       Obstacle obstacle = obstacleInstance != null
+           ? obstacleInstance.GetComponentInParent<Obstacle>()
+           : null;
+       if (obstacle != null)
+           _resolvedObstacles.Remove(GetObstacleId(obstacle));
+   }
+
+   private void CleanupResolvedObstacles()
+   {
+       _resolvedObstacleCleanup.Clear();
+       foreach (System.Collections.Generic.KeyValuePair<int, Collider> pair
+                in _resolvedObstacles)
+       {
+           Collider collider = pair.Value;
+           if (collider == null || !collider.gameObject.activeInHierarchy
+               || IsFullyBehindPlayer(collider.bounds))
+               _resolvedObstacleCleanup.Add(pair.Key);
+       }
+
+       for (int i = 0; i < _resolvedObstacleCleanup.Count; i++)
+           _resolvedObstacles.Remove(_resolvedObstacleCleanup[i]);
+   }
+
+   private bool IsFullyBehindPlayer(Bounds obstacleBounds)
+   {
+       Vector3 direction = ForwardDirection.sqrMagnitude > 0.0001f
+           ? ForwardDirection.normalized
+           : Vector3.forward;
+       Bounds playerBounds = _capsuleCollider != null
+           ? _capsuleCollider.bounds
+           : new Bounds(_rb.position, Vector3.zero);
+       float obstacleRear = Vector3.Dot(obstacleBounds.center, direction)
+                            + ProjectedHalfExtent(obstacleBounds.extents,
+                                direction);
+       float playerRear = Vector3.Dot(playerBounds.center, direction)
+                          - ProjectedHalfExtent(playerBounds.extents, direction);
+       return obstacleRear < playerRear;
+   }
+
+   private static float ProjectedHalfExtent(Vector3 extents, Vector3 direction)
+   {
+       return Mathf.Abs(direction.x) * extents.x
+              + Mathf.Abs(direction.y) * extents.y
+              + Mathf.Abs(direction.z) * extents.z;
+   }
+
+   private void RecordObstacleDiagnostic(ObstacleContactSource source,
+       int obstacleId, ObstacleType type,
+       ObstacleContactEvaluation evaluation, bool updateDisplay = true)
+   {
+       var diagnostic = new ObstacleContactDiagnostic
+       {
+           source = source,
+           obstacleId = obstacleId,
+           type = type,
+           seed = _gm != null ? _gm.RunSeed : 0,
+           speed = _gm != null ? _gm.CurrentSpeed : 0f,
+           lane = CurrentLane,
+           jumping = IsJumping,
+           sliding = IsSliding,
+           verticalClearance = evaluation.verticalClearance,
+           outcome = evaluation.outcome,
+           reason = evaluation.reason
+       };
+       if (updateDisplay) LastObstacleContact = diagnostic;
+       AIRunTelemetry.RecordObstacleContact(diagnostic);
    }
 
    public static float EvaluateJumpArc(float progress)
@@ -555,10 +668,4 @@ public class PlayerController : MonoBehaviour
        _rb.velocity = Vector3.zero;
    }
 
-   float GetColliderBottomY()
-   {
-       if (_capsuleCollider == null) return _rb.position.y;
-       return _rb.position.y + _capsuleCollider.center.y
-              - _capsuleCollider.height * 0.5f;
-   }
 }

@@ -48,17 +48,23 @@ public static class AIShadowRules
 
     public static bool HasCalibrationSamples(int totalSamples, int activeSamples,
         int[] actionCounts, int minimumTotal, int minimumActive,
-        int minimumCategories)
+        int minimumCategories, int minimumJumpSamples = 0,
+        int minimumSlideSamples = 0)
     {
         return totalSamples >= Mathf.Max(1, minimumTotal)
                && activeSamples >= Mathf.Max(1, minimumActive)
                && CountTrainedActionCategories(actionCounts)
-               >= Mathf.Max(1, minimumCategories);
+               >= Mathf.Max(1, minimumCategories)
+               && GetActionCount(actionCounts, ShadowAction.Jump)
+               >= Mathf.Max(0, minimumJumpSamples)
+               && GetActionCount(actionCounts, ShadowAction.Slide)
+               >= Mathf.Max(0, minimumSlideSamples);
     }
 
     public static float CalculateCalibrationProgress(int totalSamples,
         int activeSamples, int[] actionCounts, int minimumTotal,
-        int minimumActive, int minimumCategories)
+        int minimumActive, int minimumCategories, int minimumJumpSamples = 0,
+        int minimumSlideSamples = 0)
     {
         float totalProgress = Mathf.Clamp01(
             (float)Mathf.Max(0, totalSamples) / Mathf.Max(1, minimumTotal));
@@ -67,7 +73,16 @@ public static class AIShadowRules
         float categoryProgress = Mathf.Clamp01(
             (float)CountTrainedActionCategories(actionCounts)
             / Mathf.Max(1, minimumCategories));
-        return Mathf.Min(totalProgress, activeProgress, categoryProgress);
+        float jumpProgress = minimumJumpSamples > 0
+            ? Mathf.Clamp01((float)GetActionCount(
+                actionCounts, ShadowAction.Jump) / minimumJumpSamples)
+            : 1f;
+        float slideProgress = minimumSlideSamples > 0
+            ? Mathf.Clamp01((float)GetActionCount(
+                actionCounts, ShadowAction.Slide) / minimumSlideSamples)
+            : 1f;
+        return Mathf.Min(totalProgress, activeProgress, categoryProgress,
+            jumpProgress, slideProgress);
     }
 
     public static int CountTrainedActionCategories(int[] actionCounts)
@@ -78,5 +93,13 @@ public static class AIShadowRules
         if (actionCounts[(int)ShadowAction.Jump] > 0) categories++;
         if (actionCounts[(int)ShadowAction.Slide] > 0) categories++;
         return categories;
+    }
+
+    private static int GetActionCount(int[] actionCounts, ShadowAction action)
+    {
+        int index = (int)action;
+        return actionCounts != null && index >= 0 && index < actionCounts.Length
+            ? Mathf.Max(0, actionCounts[index])
+            : 0;
     }
 }

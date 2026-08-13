@@ -84,26 +84,38 @@ public class BuildConfig
     [MenuItem("Tools/Build WebGL")]
     public static void BuildWebGL()
     {
-        OpenPrimaryScene();
-        EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.WebGL, BuildTarget.WebGL);
+        int previousQualityLevel = QualitySettings.GetQualityLevel();
+        int previousVSyncCount = QualitySettings.vSyncCount;
 
-        ConfigureBaseSettings();
-        ConfigureWebGL();
-        EnsureSceneInBuild();
+        try
+        {
+            OpenPrimaryScene();
+            EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.WebGL, BuildTarget.WebGL);
 
-        string outputDir = "Builds/WebGL";
-        EnsureDirectory(outputDir);
+            ConfigureBaseSettings();
+            ConfigureWebGL();
+            EnsureSceneInBuild();
 
-        BuildReport report = BuildPipeline.BuildPlayer(
-            GetScenePaths(), outputDir, BuildTarget.WebGL, BuildOptions.None);
-        EnsureBuildSucceeded(report, "WebGL");
-        OptimizeWebGLShell(outputDir);
-        Debug.Log($"WebGL build complete: {outputDir}");
+            const string outputDir = "Builds/WebGL";
+            RecreateBuildDirectory(outputDir);
+
+            BuildReport report = BuildPipeline.BuildPlayer(
+                GetScenePaths(), outputDir, BuildTarget.WebGL, BuildOptions.None);
+            EnsureBuildSucceeded(report, "WebGL");
+            OptimizeWebGLShell(outputDir);
+            Debug.Log($"WebGL build complete: {outputDir}");
+        }
+        finally
+        {
+            QualitySettings.SetQualityLevel(previousQualityLevel, true);
+            QualitySettings.vSyncCount = previousVSyncCount;
+        }
     }
 
     [MenuItem("Tools/Build WeChat MiniGame v0")]
     public static void BuildWeixinMiniGameV0()
     {
+        EnsureOfficialWeixinSdkInstalled();
         OpenPrimaryScene();
         EditorUserBuildSettings.SwitchActiveBuildTarget(
             BuildTargetGroup.WeixinMiniGame, BuildTarget.WeixinMiniGame);
@@ -123,21 +135,6 @@ public class BuildConfig
             ConfigureBaseSettings();
             ConfigureWeixinMiniGame();
             EnsureSceneInBuild();
-
-            const string legacySdkConfigPath =
-                "Assets/WX-WASM-SDK-V2/Editor/MiniGameConfig.asset";
-            const string packageSdkConfigPath =
-                "Packages/com.qq.weixin.minigame/Editor/MiniGameConfig.asset";
-            bool hasOfficialSdk =
-                AssetDatabase.LoadAssetAtPath<Object>(packageSdkConfigPath) != null
-                || AssetDatabase.LoadAssetAtPath<Object>(legacySdkConfigPath) != null;
-            if (!hasOfficialSdk)
-            {
-                throw new BuildFailedException(
-                    "Missing official WeChat Mini Game SDK package "
-                    + "'com.qq.weixin.minigame' (WX-WASM-SDK-V2). "
-                    + "Install it from the WeChat Build Profile before building.");
-            }
 
             const string outputDir = "Builds/WeixinMiniGameV0-Clean";
             EnsureDirectory(outputDir);
@@ -196,6 +193,28 @@ public class BuildConfig
             QualitySettings.SetQualityLevel(previousQualityLevel, true);
             AssetDatabase.SaveAssets();
         }
+    }
+
+    static void EnsureOfficialWeixinSdkInstalled()
+    {
+        const string packageName = "com.qq.weixin.minigame";
+        UnityEditor.PackageManager.PackageInfo[] packages =
+            UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages();
+        for (int i = 0; i < packages.Length; i++)
+        {
+            if (packages[i] != null && packages[i].name == packageName)
+                return;
+        }
+
+        const string legacySdkConfigPath =
+            "Assets/WX-WASM-SDK-V2/Editor/MiniGameConfig.asset";
+        if (AssetDatabase.LoadAssetAtPath<Object>(legacySdkConfigPath) != null)
+            return;
+
+        throw new BuildFailedException(
+            "Missing official WeChat Mini Game SDK package "
+            + "'com.qq.weixin.minigame' (WX-WASM-SDK-V2). "
+            + "Install it from the WeChat Build Profile before building.");
     }
 
     [MenuItem("Tools/Build Windows 64-bit")]
@@ -677,5 +696,29 @@ public class BuildConfig
         string fullPath = System.IO.Path.Combine(Application.dataPath, "../", path);
         if (!System.IO.Directory.Exists(fullPath))
             System.IO.Directory.CreateDirectory(fullPath);
+    }
+
+    static void RecreateBuildDirectory(string path)
+    {
+        string projectRoot = System.IO.Path.GetFullPath(
+            System.IO.Path.Combine(Application.dataPath, "../"));
+        string fullPath = System.IO.Path.GetFullPath(
+            System.IO.Path.Combine(projectRoot, path));
+        string requiredPrefix = projectRoot.TrimEnd(
+            System.IO.Path.DirectorySeparatorChar,
+            System.IO.Path.AltDirectorySeparatorChar)
+            + System.IO.Path.DirectorySeparatorChar;
+
+        if (!fullPath.StartsWith(requiredPrefix,
+                System.StringComparison.OrdinalIgnoreCase))
+        {
+            throw new BuildFailedException(
+                $"Refusing to clean a build directory outside the project: {fullPath}");
+        }
+
+        if (System.IO.Directory.Exists(fullPath))
+            System.IO.Directory.Delete(fullPath, true);
+
+        System.IO.Directory.CreateDirectory(fullPath);
     }
 }

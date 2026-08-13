@@ -207,6 +207,24 @@ public sealed class RuntimeSmokeTests
     }
 
     [UnityTest]
+    public IEnumerator MenuReportLauncherStaysClickableAboveHomeSurface()
+    {
+        yield return null;
+        yield return null;
+
+        AITrainingDashboardUI training =
+            Object.FindObjectOfType<AITrainingDashboardUI>();
+        Assert.IsNotNull(training);
+        GameObject launcher = GetPrivateObject(training, "_launcher");
+        Assert.IsNotNull(launcher);
+        Assert.IsTrue(launcher.activeInHierarchy);
+        Transform home = launcher.transform.parent.Find("MenuPanel");
+        Assert.IsNotNull(home);
+        Assert.Greater(launcher.transform.GetSiblingIndex(), home.GetSiblingIndex(),
+            "The report launcher must remain clickable above the home surface.");
+    }
+
+    [UnityTest]
     public IEnumerator MenuPanelTextStaysInsideItsPanel()
     {
         yield return null;
@@ -239,6 +257,83 @@ public sealed class RuntimeSmokeTests
         Assert.IsNotNull(trainingPanel);
         AssertContainedHorizontally(
             trainingPanel.transform.Find("Title") as RectTransform);
+    }
+
+    [UnityTest]
+    public IEnumerator SupplyBuyAndEquipRemainIndependentActions()
+    {
+        yield return null;
+        yield return null;
+
+        string archiveBefore = PlayerPrefs.GetString(
+            EchoRunSaveSystem.SaveKey, "");
+        bool hadArchive = PlayerPrefs.HasKey(EchoRunSaveSystem.SaveKey);
+        int coinsBefore = PlayerPrefs.GetInt("TotalCoins", 0);
+        bool hadCoins = PlayerPrefs.HasKey("TotalCoins");
+        int managerCoinsBefore = GameManager.Instance != null
+            ? GameManager.Instance.TotalCoins : 0;
+        try
+        {
+            var isolated = new EchoRunSaveData
+            {
+                totalCoins = 500,
+                powerUpInventory = new[] { 1, 1, 0, 0 },
+                selectedPowerUp = (int)PowerUpId.Magnet
+            };
+            PlayerPrefs.SetString(EchoRunSaveSystem.SaveKey,
+                JsonUtility.ToJson(isolated));
+            PlayerPrefs.SetInt("TotalCoins", isolated.totalCoins);
+            ResetSaveSystemCache();
+
+            PowerUpShopUI shop = Object.FindObjectOfType<PowerUpShopUI>();
+            Assert.IsNotNull(shop);
+            typeof(PowerUpShopUI).GetMethod("Refresh",
+                BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(
+                    shop, null);
+            GameObject panel = GetPrivatePanel(shop);
+            Transform shield = panel.transform.Find("Item_Shield");
+            Assert.IsNotNull(shield);
+            UnityEngine.UI.Button buy = shield.Find("Buy")
+                .GetComponent<UnityEngine.UI.Button>();
+            UnityEngine.UI.Button equip = shield.Find("Equip")
+                .GetComponent<UnityEngine.UI.Button>();
+            PowerUpBalance definition = GameBalanceConfig.GetPowerUp(
+                PowerUpId.Shield);
+
+            Assert.IsTrue(buy.interactable);
+            Assert.IsTrue(equip.interactable);
+            Transform scoreBoost = panel.transform.Find("Item_ScoreBoost");
+            Assert.IsFalse(scoreBoost.Find("Equip")
+                .GetComponent<UnityEngine.UI.Button>().interactable);
+            buy.onClick.Invoke();
+            Assert.AreEqual(2, EchoRunSaveSystem.GetPowerUpCount(
+                PowerUpId.Shield));
+            Assert.AreEqual(PowerUpId.Magnet,
+                EchoRunSaveSystem.GetSelectedPowerUp());
+            Assert.AreEqual(500 - definition.cost,
+                EchoRunSaveSystem.TotalCoins);
+
+            equip.onClick.Invoke();
+            Assert.AreEqual(PowerUpId.Shield,
+                EchoRunSaveSystem.GetSelectedPowerUp());
+            Assert.AreEqual(500 - definition.cost,
+                EchoRunSaveSystem.TotalCoins);
+        }
+        finally
+        {
+            if (hadArchive)
+                PlayerPrefs.SetString(EchoRunSaveSystem.SaveKey, archiveBefore);
+            else
+                PlayerPrefs.DeleteKey(EchoRunSaveSystem.SaveKey);
+            if (hadCoins) PlayerPrefs.SetInt("TotalCoins", coinsBefore);
+            else PlayerPrefs.DeleteKey("TotalCoins");
+            PlayerPrefs.Save();
+            ResetSaveSystemCache();
+            if (GameManager.Instance != null)
+                typeof(GameManager).GetField("<TotalCoins>k__BackingField",
+                    BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(
+                        GameManager.Instance, managerCoinsBefore);
+        }
     }
 
     [TestCase(PowerUpId.Shield)]
@@ -319,7 +414,12 @@ public sealed class RuntimeSmokeTests
 
     private static GameObject GetPrivatePanel(object component)
     {
-        return (GameObject)component.GetType().GetField("_panel",
+        return GetPrivateObject(component, "_panel");
+    }
+
+    private static GameObject GetPrivateObject(object component, string field)
+    {
+        return (GameObject)component.GetType().GetField(field,
             BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(component);
     }
 

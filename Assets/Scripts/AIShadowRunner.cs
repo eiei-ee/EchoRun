@@ -12,6 +12,8 @@ public class AIShadowRunner : MonoBehaviour
     public int minimumTrainingSamples = 24;
     public int minimumActiveTrainingSamples = 6;
     public int minimumActionCategories = 2;
+    public int minimumJumpSamples = 2;
+    public int minimumSlideSamples = 2;
     public float decisionInterval = 0.35f;
     public float keepSampleInterval = 0.7f;
     public float minimumLaneHoldTime = 0.65f;
@@ -26,6 +28,9 @@ public class AIShadowRunner : MonoBehaviour
     public float shadowPaceMultiplier = 1.02f;
     public float maximumVisibleLead = 16f;
 
+    [Header("Diagnostics")]
+    public bool enableEmergencyReflex = true;
+
     public string CurrentStatus { get; private set; } = "AI影子 · 等待校准";
     public string LastResult { get; private set; } = "";
     public float PlayerLead { get; private set; }
@@ -36,12 +41,25 @@ public class AIShadowRunner : MonoBehaviour
     public int TrainingSampleCount => _profile != null ? _profile.sampleCount : 0;
     public int ActiveTrainingSampleCount =>
         _profile != null ? _profile.activeSampleCount : 0;
+    public int JumpTrainingSampleCount => GetActionSampleCount(ShadowAction.Jump);
+    public int SlideTrainingSampleCount => GetActionSampleCount(ShadowAction.Slide);
+    public float CalibrationProgress => _profile == null || HasActiveOpponent
+        ? 0f
+        : CalculateCalibrationProgress(
+            _profile.sampleCount, _profile.activeSampleCount,
+            _profile.actionCounts, minimumTrainingSamples,
+            minimumActiveTrainingSamples, minimumActionCategories,
+            minimumJumpSamples, minimumSlideSamples);
     public EchoContractData ActiveContract =>
         _contractEvaluator != null ? _contractEvaluator.Contract : null;
     public float DuelPressure => HasActiveOpponent
         ? 1f - Mathf.Clamp01(Mathf.Abs(PlayerLead) / 14f)
         : 0f;
     public ShadowDecisionTrace LastDecisionTrace { get; private set; }
+    public int PolicyCorrectDecisionCount { get; private set; }
+    public int SafetyOverrideDecisionCount { get; private set; }
+    public int EmergencyReflexSaveCount { get; private set; }
+    public bool EmergencyReflexEnabled => enableEmergencyReflex;
 
     private const int SamplesPerCheckpoint = 4;
 
@@ -125,6 +143,8 @@ public class AIShadowRunner : MonoBehaviour
         learningRate = balance.shadowLearningRate;
         minimumTrainingSamples = balance.minimumTrainingSamples;
         minimumActiveTrainingSamples = balance.minimumActiveSamples;
+        minimumJumpSamples = balance.minimumJumpSamples;
+        minimumSlideSamples = balance.minimumSlideSamples;
         LoadProfile();
     }
 
@@ -228,7 +248,22 @@ public class AIShadowRunner : MonoBehaviour
             return _contractEvaluator.BuildHudText();
         return HasActiveOpponent
             ? "回声契约正在生成"
-            : "校准目标：用至少两类动作建立个人行为模型";
+            : "校准目标：跳跃 " + minimumJumpSamples
+              + " 次、滑铲 " + minimumSlideSamples + " 次";
+    }
+
+    public void SetEmergencyReflexEnabled(bool enabled)
+    {
+        enableEmergencyReflex = enabled;
+    }
+
+    private int GetActionSampleCount(ShadowAction action)
+    {
+        if (_profile == null || _profile.actionCounts == null) return 0;
+        int index = (int)action;
+        return index >= 0 && index < _profile.actionCounts.Length
+            ? _profile.actionCounts[index]
+            : 0;
     }
 
     public void RecordPlayerAction(ShadowAction action, int laneBeforeAction)
@@ -341,6 +376,9 @@ public class AIShadowRunner : MonoBehaviour
         LastResult = "";
         LastRunWasChallenge = false;
         LastRunWon = false;
+        PolicyCorrectDecisionCount = 0;
+        SafetyOverrideDecisionCount = 0;
+        EmergencyReflexSaveCount = 0;
         CurrentStatus = "AI影子 · 训练已重置";
         EchoRunSaveSystem.SaveShadowProfile("");
         EchoRunSaveSystem.SaveLastEchoContract("");
@@ -379,6 +417,9 @@ public class AIShadowRunner : MonoBehaviour
         _ghostRecoveryTimer = 0f;
         _sequenceInfluence = 0f;
         _ghostMistakes = 0;
+        PolicyCorrectDecisionCount = 0;
+        SafetyOverrideDecisionCount = 0;
+        EmergencyReflexSaveCount = 0;
         _lastTrainingAction = -1;
         _lastOpponentAction = -1;
         _lastStyleDecision = ShadowAction.Keep;
@@ -433,7 +474,8 @@ public class AIShadowRunner : MonoBehaviour
         bool completedCalibration = HasCalibrationSamples(
             _profile.sampleCount, _profile.activeSampleCount,
             _profile.actionCounts, minimumTrainingSamples,
-            minimumActiveTrainingSamples, minimumActionCategories);
+            minimumActiveTrainingSamples, minimumActionCategories,
+            minimumJumpSamples, minimumSlideSamples);
         if (challengedOpponent || completedCalibration)
             _profile.generation++;
         _profile.weights = _policy.ExportWeights();
@@ -447,6 +489,11 @@ public class AIShadowRunner : MonoBehaviour
                          + Mathf.Max(1, minimumActiveTrainingSamples)
                          + " · 动作类型 " + categories + "/"
                          + Mathf.Max(1, minimumActionCategories)
+                         + " · 跳/滑 "
+                         + _profile.actionCounts[(int)ShadowAction.Jump]
+                         + "/" + _profile.actionCounts[(int)ShadowAction.Slide]
+                         + "（目标 " + minimumJumpSamples
+                         + "/" + minimumSlideSamples + "）"
                          + " · 再跑一局继续训练";
         }
         else if (!challengedOpponent)
@@ -532,10 +579,14 @@ public class AIShadowRunner : MonoBehaviour
             float progress = CalculateCalibrationProgress(
                 _profile.sampleCount, _profile.activeSampleCount,
                 _profile.actionCounts, minimumTrainingSamples,
-                minimumActiveTrainingSamples, minimumActionCategories);
+                minimumActiveTrainingSamples, minimumActionCategories,
+                minimumJumpSamples, minimumSlideSamples);
             CurrentStatus = "AI影子 · 校准 " + (progress * 100f).ToString("0")
                             + "% · 有效动作 " + _profile.activeSampleCount
-                            + "/" + Mathf.Max(1, minimumActiveTrainingSamples);
+                            + "/" + Mathf.Max(1, minimumActiveTrainingSamples)
+                            + " · 跳/滑 "
+                            + _profile.actionCounts[(int)ShadowAction.Jump]
+                            + "/" + _profile.actionCounts[(int)ShadowAction.Slide];
         }
     }
 
@@ -599,7 +650,9 @@ public class AIShadowRunner : MonoBehaviour
         ShadowAction action = _decisionMaker.Select(baseScores,
             _opponentStyle, context, directive,
             (float)_decisionRandom.NextDouble(), out ShadowDecisionTrace trace);
+        trace.originalPrediction = sequenceAction;
         LastDecisionTrace = trace;
+        CountDecisionOutcome(context, sequenceAction, action, trace);
         _lastStyleDecision = action;
         _decisionConfidence = Mathf.Max(baseConfidence, sequenceConfidence);
         _sequenceInfluence = sequenceInfluence;
@@ -675,14 +728,34 @@ public class AIShadowRunner : MonoBehaviour
         if (_opponentPolicy != null)
         {
             float emergencyDistance = Mathf.Clamp(speed * 0.2f, 2f, 4.5f);
-            if (_lastStyleDecision != requiredAction
-                && threatDistance > emergencyDistance)
-                return;
+            if (_lastStyleDecision != requiredAction)
+            {
+                if (!enableEmergencyReflex || threatDistance > emergencyDistance)
+                    return;
+            }
         }
 
         _reactedGhostObstacles.Add(obstacleId);
+        bool reflexSave = _lastStyleDecision != requiredAction;
         if (StartGhostAction(requiredAction))
+        {
+            if (reflexSave) EmergencyReflexSaveCount++;
             RecordOpponentAction(requiredAction);
+        }
+    }
+
+    private void CountDecisionOutcome(ShadowDecisionContext context,
+        ShadowAction originalPrediction, ShadowAction selected,
+        ShadowDecisionTrace trace)
+    {
+        if (!context.hasThreat || context.relativeThreatLane != 0) return;
+        ShadowAction required = RequiredActionForObstacle(context.threatType);
+        if (required == ShadowAction.Keep) return;
+
+        if (originalPrediction == required && selected == required)
+            PolicyCorrectDecisionCount++;
+        else if (selected == required && trace != null && trace.safetyAdjusted)
+            SafetyOverrideDecisionCount++;
     }
 
     private bool StartGhostAction(ShadowAction action)
@@ -792,10 +865,15 @@ public class AIShadowRunner : MonoBehaviour
 
         if (_ghostMaterial != null)
         {
-            float ghostAlpha = 0.52f + Mathf.Sin(Time.time * 5f) * 0.05f;
+            bool reducedMotion = EchoRunAccessibility.ReducedMotion;
+            float ghostAlpha = reducedMotion
+                ? 0.66f
+                : 0.64f + Mathf.Sin(Time.time * 4f) * 0.035f;
             _ghostMaterial.color = _ghostStumbleTimer > 0f
-                ? new Color(0.9f, 0.2f, 0.16f, 0.68f)
-                : new Color(0.16f, 0.68f, 0.74f, ghostAlpha);
+                ? new Color(1.0f, 0.30f, 0.24f, 0.76f)
+                : new Color(0.22f, 0.84f, 1.00f, ghostAlpha);
+            if (_ghostMaterial.HasProperty("_ScanStrength"))
+                _ghostMaterial.SetFloat("_ScanStrength", reducedMotion ? 0f : 0.22f);
         }
     }
 
@@ -952,25 +1030,29 @@ public class AIShadowRunner : MonoBehaviour
                && HasCalibrationSamples(
                    _profile.sampleCount, _profile.activeSampleCount,
                    _profile.actionCounts, minimumTrainingSamples,
-                   minimumActiveTrainingSamples, minimumActionCategories)
+                   minimumActiveTrainingSamples, minimumActionCategories,
+                   minimumJumpSamples, minimumSlideSamples)
                && _profile.pace > 0f;
     }
 
     public static bool HasCalibrationSamples(int totalSamples, int activeSamples,
         int[] actionCounts, int minimumTotal, int minimumActive,
-        int minimumCategories)
+        int minimumCategories, int minimumJumpSamples = 0,
+        int minimumSlideSamples = 0)
     {
         return AIShadowRules.HasCalibrationSamples(totalSamples, activeSamples,
-            actionCounts, minimumTotal, minimumActive, minimumCategories);
+            actionCounts, minimumTotal, minimumActive, minimumCategories,
+            minimumJumpSamples, minimumSlideSamples);
     }
 
     public static float CalculateCalibrationProgress(int totalSamples,
         int activeSamples, int[] actionCounts, int minimumTotal,
-        int minimumActive, int minimumCategories)
+        int minimumActive, int minimumCategories, int minimumJumpSamples = 0,
+        int minimumSlideSamples = 0)
     {
         return AIShadowRules.CalculateCalibrationProgress(totalSamples,
             activeSamples, actionCounts, minimumTotal, minimumActive,
-            minimumCategories);
+            minimumCategories, minimumJumpSamples, minimumSlideSamples);
     }
 
     public static int CountTrainedActionCategories(int[] actionCounts)
@@ -1048,13 +1130,42 @@ public class AIShadowRunner : MonoBehaviour
 
         _ghostMaterial = new Material(shader)
         {
-            color = new Color(0.16f, 0.68f, 0.74f, 0.56f),
+            color = new Color(0.22f, 0.84f, 1.00f, 0.66f),
             renderQueue = 3000
         };
 
+        if (_ghostMaterial.HasProperty("_RimColor"))
+            _ghostMaterial.SetColor("_RimColor", new Color(0.64f, 0.94f, 1f, 1f));
+        if (_ghostMaterial.HasProperty("_RimPower"))
+            _ghostMaterial.SetFloat("_RimPower", 2.1f);
+        if (_ghostMaterial.HasProperty("_EmissionStrength"))
+            _ghostMaterial.SetFloat("_EmissionStrength", 0.72f);
+        if (_ghostMaterial.HasProperty("_ScanStrength"))
+            _ghostMaterial.SetFloat("_ScanStrength", 0.22f);
+
         foreach (Renderer renderer in visual.GetComponentsInChildren<Renderer>(true))
         {
-            renderer.sharedMaterial = _ghostMaterial;
+            Material[] sourceMaterials = renderer.sharedMaterials;
+            Material[] ghostMaterials = new Material[sourceMaterials.Length];
+            MaterialPropertyBlock block = new MaterialPropertyBlock();
+            for (int slot = 0; slot < ghostMaterials.Length; slot++)
+                ghostMaterials[slot] = _ghostMaterial;
+            renderer.sharedMaterials = ghostMaterials;
+
+            for (int slot = 0; slot < sourceMaterials.Length; slot++)
+            {
+                Material sourceMaterial = sourceMaterials[slot];
+                if (sourceMaterial == null || !sourceMaterial.HasProperty("_MainTex")
+                    || !_ghostMaterial.HasProperty("_MainTex"))
+                    continue;
+
+                Texture sourceTexture = sourceMaterial.GetTexture("_MainTex");
+                if (sourceTexture == null) continue;
+                block.Clear();
+                renderer.GetPropertyBlock(block, slot);
+                block.SetTexture("_MainTex", sourceTexture);
+                renderer.SetPropertyBlock(block, slot);
+            }
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.receiveShadows = false;
         }
@@ -1140,6 +1251,7 @@ public class AIShadowRunner : MonoBehaviour
     void OnDestroy()
     {
         SaveProfile();
+        if (_ghostMaterial != null) Destroy(_ghostMaterial);
         if (_gameManager != null)
             _gameManager.OnStateChanged.RemoveListener(OnGameStateChanged);
         if (Instance == this) Instance = null;

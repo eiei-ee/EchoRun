@@ -7,7 +7,7 @@ license or terms.
 
 | Asset | Path | Source | License / permission |
 | --- | --- | --- | --- |
-| Noto Sans CJK SC Regular | `Assets/Resources/Fonts/NotoSansCJKsc-Regular.otf` | [Google Fonts](https://fonts.google.com/noto/specimen/Noto+Sans+SC) | SIL Open Font License 1.1; the license text is included at `Assets/Resources/Fonts/OFL.txt`. |
+| EchoRun Sans SC Regular (project subset) | `Assets/Resources/Fonts/EchoRunSansSC-Regular.otf` | [Noto Sans CJK 2.004 official release](https://github.com/notofonts/noto-cjk/releases/tag/Sans2.004), `Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf` | Derived from Noto Sans CJK SC Regular 2.004 and renamed for this project. SIL Open Font License 1.1; the license text is included at `Assets/Resources/Fonts/OFL.txt`. |
 | Tense Future Loop | `Assets/Resources/Audio/bgm_transit.ogg` | [OpenGameArt](https://opengameart.org/content/tense-future-loop) | CC0. |
 | Impact Sounds | `Assets/Resources/Audio/footstep_01.ogg`, `Assets/Resources/Audio/footstep_02.ogg`, `Assets/Resources/Audio/collision.ogg` | [Kenney](https://kenney.nl/assets/impact-sounds) | CC0. |
 | RPG Audio | `Assets/Resources/Audio/coin.ogg` | [Kenney](https://kenney.nl/assets/rpg-audio) | CC0. |
@@ -22,6 +22,23 @@ and `Assets/Resources/Art/EchoSky.png`) are intended to be covered by the
 repository's MIT license only where the copyright holder is entitled to grant
 that license. If an asset is later found to incorporate third-party work, add
 its attribution and terms to this file before redistributing it.
+
+## EchoRun Sans SC provenance
+
+- Upstream source: official `notofonts/noto-cjk` tag `Sans2.004`, static
+  Simplified Chinese Regular OTF.
+- Upstream SHA-256:
+  `2C76254F6FC379FDDFCE0A7E84FB5385BB135D3E399294F6EEB6680D0365B74B`.
+- Bundled subset SHA-256:
+  `2BE407DC8955F124A6636C7C3DBFD25AB543DFEA340AD200C6109983F8094CD3`.
+- The subset retains the upstream Adobe copyright and Google trademark
+  acknowledgement, but its user-facing family and PostScript names are
+  `EchoRun Sans SC` and `EchoRunSansSC-Regular` so it cannot be mistaken for
+  an unmodified upstream font.
+- Rebuild with FontTools 4.55.0:
+  `python Tools/Fonts/build_echorun_font.py <official-2.004-regular.otf>`.
+  The pinned input hash, Unicode set, naming, weight and static-font checks are
+  enforced by the script.
 
 ## Release checklist
 

@@ -1,7 +1,18 @@
 using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 public class PlayerStyleTests
 {
+    [Test]
+    public void MalformedTelemetryJsonFallsBackWithoutThrowing()
+    {
+        LogAssert.Expect(LogType.Warning,
+            new System.Text.RegularExpressions.Regex(
+                "AI run telemetry could not be loaded:"));
+        Assert.IsNull(AIRunTelemetry.FromJson("{not-json"));
+    }
+
     [Test]
     public void PlayerStyleNormalizesAllPublicParameters()
     {
@@ -62,6 +73,7 @@ public class PlayerStyleTests
 
         Assert.AreEqual(ShadowAction.Jump, selected);
         Assert.IsTrue(trace.safetyAdjusted);
+        Assert.AreEqual(ShadowAction.Keep, trace.originalPrediction);
         Assert.IsFalse(trace.feasibleActions[(int)ShadowAction.Keep]);
         Assert.IsTrue(trace.feasibleActions[(int)ShadowAction.Jump]);
         Assert.AreEqual(-999f,
@@ -153,6 +165,7 @@ public class PlayerStyleTests
                 new AIShadowTrainingSample
                 {
                     action = (int)ShadowAction.Left,
+                    originalPrediction = (int)ShadowAction.Keep,
                     baseScores = new[] { 0.1f, 0.4f, 0.2f, 0.2f, 0.1f },
                     styleAdjustedScores = new[] { 0.1f, 0.7f, 0.1f, 0.1f, 0f },
                     finalScores = new[] { 0.1f, 0.7f, 0.1f, -999f, -999f },
@@ -161,7 +174,20 @@ public class PlayerStyleTests
                     directive = ShadowAIDirective.Neutral,
                     playerStyle = style.Clone()
                 }
-            }
+            },
+            obstacleContacts =
+                new System.Collections.Generic.List<AIObstacleContactSample>
+                {
+                    new AIObstacleContactSample
+                    {
+                        source = (int)ObstacleContactSource.Sweep,
+                        obstacleId = 42,
+                        seed = 9137,
+                        speed = 25f,
+                        verticalClearance = 0.12f,
+                        outcome = (int)ObstacleContactOutcome.Pass
+                    }
+                }
         };
 
         AIRunTelemetryData restored = AIRunTelemetry.FromJson(
@@ -174,6 +200,10 @@ public class PlayerStyleTests
             restored.shadowSamples[0].styleAdjustedScores[1]);
         Assert.IsFalse(restored.shadowSamples[0].feasibleActions[3]);
         Assert.IsTrue(restored.shadowSamples[0].safetyAdjusted);
+        Assert.AreEqual((int)ShadowAction.Keep,
+            restored.shadowSamples[0].originalPrediction);
+        Assert.AreEqual(42, restored.obstacleContacts[0].obstacleId);
+        Assert.AreEqual(9137, restored.obstacleContacts[0].seed);
     }
 
     private static PlayerStyleData ConfidentStyle()

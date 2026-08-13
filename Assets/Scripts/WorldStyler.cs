@@ -10,6 +10,7 @@ public class WorldStyler : MonoBehaviour
     private Material _coralMaterial;
     private Material _goldMaterial;
     private Material _skyMaterial;
+    private Vector2Int _lastCameraScreenSize;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeInstance()
@@ -33,19 +34,7 @@ public class WorldStyler : MonoBehaviour
 
     void Start()
     {
-        Camera camera = Camera.main;
-        if (camera != null)
-        {
-            camera.clearFlags = _skyMaterial != null
-                ? CameraClearFlags.Skybox
-                : CameraClearFlags.SolidColor;
-            camera.farClipPlane = 140f;
-            camera.fieldOfView = 56f;
-            camera.backgroundColor = new Color(0.16f, 0.22f, 0.31f);
-
-            CameraFollow follow = camera.GetComponent<CameraFollow>();
-            if (follow != null) follow.offset = new Vector3(0f, 4.6f, -8.2f);
-        }
+        ApplyCameraLayout(true);
 
         ConfigureLighting();
 
@@ -56,6 +45,43 @@ public class WorldStyler : MonoBehaviour
 
         BuildStartDeck();
         StyleCharacter();
+    }
+
+    void Update()
+    {
+        ApplyCameraLayout(false);
+    }
+
+    private void ApplyCameraLayout(bool force)
+    {
+        Vector2Int screenSize = new Vector2Int(Screen.width, Screen.height);
+        if (!force && screenSize == _lastCameraScreenSize) return;
+        _lastCameraScreenSize = screenSize;
+        Camera camera = Camera.main;
+        if (camera == null) return;
+
+        bool portrait = UILayoutRules.IsCompactPortrait(
+            screenSize.x, screenSize.y);
+        camera.clearFlags = _skyMaterial != null
+            ? CameraClearFlags.Skybox
+            : CameraClearFlags.SolidColor;
+        camera.farClipPlane = 140f;
+        camera.fieldOfView = GetCameraFieldOfView(portrait);
+        camera.backgroundColor = new Color(0.035f, 0.070f, 0.115f);
+        CameraFollow follow = camera.GetComponent<CameraFollow>();
+        if (follow != null) follow.offset = GetCameraOffset(portrait);
+    }
+
+    public static float GetCameraFieldOfView(bool portrait)
+    {
+        return portrait ? 62f : 52f;
+    }
+
+    public static Vector3 GetCameraOffset(bool portrait)
+    {
+        return portrait
+            ? new Vector3(0f, 4.35f, -8.0f)
+            : new Vector3(0f, 3.80f, -6.75f);
     }
 
     public void DecorateSegment(GameObject segment, TrackSegmentType segmentType)
@@ -76,19 +102,23 @@ public class WorldStyler : MonoBehaviour
     {
         RenderSettings.fog = true;
         RenderSettings.fogMode = FogMode.Linear;
-        RenderSettings.fogColor = new Color(0.27f, 0.36f, 0.49f);
-        RenderSettings.fogStartDistance = 58f;
-        RenderSettings.fogEndDistance = 138f;
+        RenderSettings.fogColor = new Color(0.055f, 0.105f, 0.17f);
+        RenderSettings.fogStartDistance = 52f;
+        RenderSettings.fogEndDistance = 130f;
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
-        RenderSettings.ambientSkyColor = new Color(0.72f, 0.78f, 0.88f);
-        RenderSettings.ambientEquatorColor = new Color(0.44f, 0.52f, 0.64f);
-        RenderSettings.ambientGroundColor = new Color(0.18f, 0.23f, 0.31f);
-        RenderSettings.reflectionIntensity = 0.62f;
+        RenderSettings.ambientSkyColor = new Color(0.28f, 0.38f, 0.52f);
+        RenderSettings.ambientEquatorColor = new Color(0.12f, 0.19f, 0.28f);
+        RenderSettings.ambientGroundColor = new Color(0.03f, 0.05f, 0.08f);
+        RenderSettings.reflectionIntensity = 0.35f;
 
         Material skyAsset = Resources.Load<Material>("Art/EchoSky");
         if (skyAsset != null)
         {
             _skyMaterial = new Material(skyAsset) { name = "EchoSky_Runtime" };
+            if (_skyMaterial.HasProperty("_Exposure"))
+                _skyMaterial.SetFloat("_Exposure", 0.42f);
+            if (_skyMaterial.HasProperty("_Tint"))
+                _skyMaterial.SetColor("_Tint", new Color(0.50f, 0.64f, 0.82f, 1f));
             RenderSettings.skybox = _skyMaterial;
         }
     }
@@ -98,8 +128,8 @@ public class WorldStyler : MonoBehaviour
         Light key = FindObjectOfType<Light>();
         if (key != null)
         {
-            key.intensity = 1.34f;
-            key.color = new Color(1f, 0.96f, 0.90f);
+            key.intensity = 1.12f;
+            key.color = new Color(1f, 0.93f, 0.84f);
             key.shadows = LightShadows.Soft;
         }
 
@@ -109,23 +139,23 @@ public class WorldStyler : MonoBehaviour
         fillObject.transform.rotation = Quaternion.Euler(38f, 145f, 0f);
         Light fill = fillObject.AddComponent<Light>();
         fill.type = LightType.Directional;
-        fill.intensity = 0.72f;
-        fill.color = new Color(0.66f, 0.78f, 1f);
+        fill.intensity = 0.42f;
+        fill.color = new Color(0.34f, 0.69f, 0.96f);
         fill.shadows = LightShadows.None;
     }
 
     private void BuildPalette()
     {
         _structureMaterial = MakeMaterial("EchoStructure",
-            new Color(0.43f, 0.49f, 0.58f), new Color(0.018f, 0.025f, 0.038f), 0.58f, 0.74f);
+            new Color(0.22f, 0.29f, 0.39f), new Color(0.010f, 0.020f, 0.035f), 0.52f, 0.70f);
         _deepStructureMaterial = MakeMaterial("EchoDepth",
-            new Color(0.16f, 0.21f, 0.29f), new Color(0.008f, 0.014f, 0.025f), 0.30f, 0.50f);
+            new Color(0.055f, 0.09f, 0.15f), new Color(0.005f, 0.012f, 0.024f), 0.28f, 0.48f);
         _cyanMaterial = MakeMaterial("EchoCyan",
-            new Color(0.30f, 0.62f, 0.94f), new Color(0.035f, 0.22f, 0.56f), 0.26f, 0.68f);
+            new Color(0.22f, 0.84f, 1.00f), new Color(0.020f, 0.34f, 0.56f), 0.24f, 0.68f);
         _coralMaterial = MakeMaterial("EchoCoral",
-            new Color(0.94f, 0.40f, 0.31f), new Color(0.52f, 0.055f, 0.025f), 0.16f, 0.52f);
+            new Color(1.00f, 0.40f, 0.35f), new Color(0.58f, 0.060f, 0.028f), 0.14f, 0.50f);
         _goldMaterial = MakeMaterial("EchoGold",
-            new Color(1.00f, 0.68f, 0.30f), new Color(0.54f, 0.20f, 0.018f), 0.58f, 0.76f);
+            new Color(0.94f, 0.68f, 0.24f), new Color(0.48f, 0.19f, 0.015f), 0.52f, 0.72f);
     }
 
     private void BuildStraightEnvironment(Transform parent, int seed)

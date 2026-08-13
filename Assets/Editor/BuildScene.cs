@@ -965,7 +965,7 @@ public class BuildScene
         text.alignment = align;
         text.color = Color.white;
         Font font = AssetDatabase.LoadAssetAtPath<Font>(
-            "Assets/Resources/Fonts/NotoSansCJKsc-Regular.otf");
+            "Assets/Resources/Fonts/EchoRunSansSC-Regular.otf");
         if (font != null) text.font = font;
         else text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         return text;

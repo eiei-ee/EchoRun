@@ -25,7 +25,6 @@ public sealed class WeixinMiniGameRuntime : MonoBehaviour
     private IEnumerator Start()
     {
         Screen.orientation = ScreenOrientation.Portrait;
-        Application.targetFrameRate = 60;
 
         Canvas canvas = null;
         for (int i = 0; i < 120 && canvas == null; i++)
@@ -103,11 +102,8 @@ public sealed class WeixinMiniGameRuntime : MonoBehaviour
             scaler.matchWidthOrHeight = 0.5f;
         }
 
-        Camera camera = Camera.main;
-        if (camera == null) return;
-        camera.fieldOfView = 70f;
-        CameraFollow follow = camera.GetComponent<CameraFollow>();
-        if (follow != null) follow.offset = new Vector3(0f, 5.8f, -10.8f);
+        // WorldStyler owns camera composition for every platform so a resize
+        // cannot race two different portrait FOV/offset policies.
     }
 
     private void OnDestroy()
