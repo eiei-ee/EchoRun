@@ -13,7 +13,7 @@ AI影子跑酷已跑通微信小游戏（真AppID、构建成功、能玩），�
 - **分支**: `wechat/minigame`（微信迁移分支）
 - **引擎**: 团结引擎 Tuanjie 2022.3.62t8（Unity 2022.3 分叉）
 - **微信SDK**: 官方 `com.qq.weixin.minigame` 0.1.32（WX-WASM-SDK-V2）
-- **AppID**: `wx0d080ce970cf217c`（个人主体，游戏类目，已注册成功）
+- **AppID**: 构建时通过 `WECHAT_MINIGAME_APPID` 注入（不要提交实值）
 - **截止**: 腾讯游戏创作大赛2026 AI赛道 9/15（优先级低于修bug）
 
 ## 当前进度（已通）
@@ -71,7 +71,7 @@ AI影子跑酷已跑通微信小游戏（真AppID、构建成功、能玩），�
 
 ```bash
 # 环境变量注入 AppID
-export WECHAT_MINIGAME_APPID=wx0d080ce970cf217c
+export WECHAT_MINIGAME_APPID=wx...
 
 # 批处理构建（约5分钟）
 "D:/unity/tuanjie/2022.3.62t8/Editor/Tuanjie.exe" -batchmode -quit \

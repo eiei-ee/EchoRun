@@ -15,7 +15,7 @@ AI影子跑酷微信小游戏构建成功、能玩。**唯一卡点：道路段�
 | 分支 | `wechat/minigame` (HEAD: `f2918f7`) |
 | 引擎 | 团结引擎 Tuanjie 2022.3.62t8 (`D:/unity/tuanjie/2022.3.62t8/Editor/Tuanjie.exe`) |
 | 微信SDK | `com.qq.weixin.minigame` 0.1.32, 快适配 v1.2.91 |
-| AppID | `wx0d080ce970cf217c` (个人主体, 游戏类目) |
+| AppID | 构建时通过 `WECHAT_MINIGAME_APPID` 注入（不要提交实值） |
 | devtools | `D:\微信开发\微信web开发者工具\微信开发者工具.exe` (2.02.2608031) |
 | 图形 | **WebGL 1.0** (OpenGL ES 2.0), WebGL2 试过黑屏 |
 
@@ -44,7 +44,7 @@ taskkill //F //IM Tuanjie.exe
 rm -rf Builds/WeixinMiniGameV0-Profile Library/Bee
 
 # 3. 构建
-export WECHAT_MINIGAME_APPID=wx0d080ce970cf217c
+export WECHAT_MINIGAME_APPID=wx...
 "D:/unity/tuanjie/2022.3.62t8/Editor/Tuanjie.exe" -batchmode -quit \
   -projectPath C:/Users/zzz/Desktop/TempleRun -buildTarget WeixinMiniGame \
   -minigamesubplatform weixin -executeMethod BuildConfig.BuildWeixinMiniGameV0 \

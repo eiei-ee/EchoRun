@@ -289,15 +289,15 @@ public class BuildConfig
                 "WeChat CleanBuild field is missing.");
         cleanBuildField.SetValue(compileOptions, true);
 
+        var appIdField = projectConf.GetType().GetField("Appid");
+        if (appIdField == null)
+            throw new BuildFailedException("WeChat Appid field is missing.");
+
         string appId = System.Environment.GetEnvironmentVariable(
             "WECHAT_MINIGAME_APPID");
-        if (!string.IsNullOrWhiteSpace(appId))
-        {
-            var appIdField = projectConf.GetType().GetField("Appid");
-            if (appIdField == null)
-                throw new BuildFailedException("WeChat Appid field is missing.");
-            appIdField.SetValue(projectConf, appId.Trim());
-        }
+        appIdField.SetValue(
+            projectConf,
+            string.IsNullOrWhiteSpace(appId) ? string.Empty : appId.Trim());
     }
 
     static void ConfigureWeixinProfilePlayerSettings(BuildProfile profile)
