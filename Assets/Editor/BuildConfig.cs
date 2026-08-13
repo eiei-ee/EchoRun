@@ -191,8 +191,113 @@ public class BuildConfig
             PlayerSettings.colorSpace = previousColorSpace;
             PlayerSettings.gpuSkinning = previousGpuSkinning;
             QualitySettings.SetQualityLevel(previousQualityLevel, true);
+            RestoreWeixinProfileForSourceControl(
+                "Assets/WeixinMiniGame/BuildProfiles/WeChatV0.asset",
+                "Builds/WeixinMiniGameV0-Clean");
             AssetDatabase.SaveAssets();
+            RestoreSerializedWeixinBuildState(
+                "Assets/WeixinMiniGame/BuildProfiles/WeChatV0.asset",
+                "Builds/WeixinMiniGameV0-Clean",
+                0);
         }
+    }
+
+    static void RestoreWeixinProfileForSourceControl(
+        string profileAssetPath,
+        string relativeOutputDir)
+    {
+        BuildProfile profile = AssetDatabase.LoadAssetAtPath<BuildProfile>(
+            profileAssetPath);
+        object settings = profile?.miniGameSettings;
+        var projectConfField = settings?.GetType().GetField("ProjectConf");
+        object projectConf = projectConfField?.GetValue(settings);
+        if (projectConf == null) return;
+
+        projectConf.GetType().GetField("Appid")?.SetValue(
+            projectConf, string.Empty);
+        projectConf.GetType().GetField("relativeDST")?.SetValue(
+            projectConf, relativeOutputDir);
+        projectConf.GetType().GetField("DST")?.SetValue(
+            projectConf, relativeOutputDir);
+        EditorUtility.SetDirty(profile);
+    }
+
+    static void RestoreSerializedWeixinBuildState(
+        string profileAssetPath,
+        string relativeOutputDir,
+        int activeSubplatform)
+    {
+        string projectRoot = System.IO.Path.GetFullPath(
+            System.IO.Path.Combine(Application.dataPath, "../"));
+        string profileFullPath = System.IO.Path.GetFullPath(
+            System.IO.Path.Combine(projectRoot, profileAssetPath));
+        string profileText = System.IO.File.ReadAllText(profileFullPath);
+        string[] profileLines = profileText.Split(new[] { "\r\n", "\n" },
+            System.StringSplitOptions.None);
+        bool appIdRestored = false;
+        bool relativeDstRestored = false;
+        bool dstRestored = false;
+        for (int i = 0; i < profileLines.Length; i++)
+        {
+            string trimmed = profileLines[i].TrimStart();
+            string indentation = profileLines[i].Substring(
+                0, profileLines[i].Length - trimmed.Length);
+            if (trimmed.StartsWith("Appid:",
+                    System.StringComparison.Ordinal))
+            {
+                profileLines[i] = $"{indentation}Appid:";
+                appIdRestored = true;
+            }
+            else if (trimmed.StartsWith("relativeDST:",
+                         System.StringComparison.Ordinal))
+            {
+                profileLines[i] =
+                    $"{indentation}relativeDST: {relativeOutputDir}";
+                relativeDstRestored = true;
+            }
+            else if (trimmed.StartsWith("DST:",
+                         System.StringComparison.Ordinal))
+            {
+                profileLines[i] = $"{indentation}DST: {relativeOutputDir}";
+                dstRestored = true;
+            }
+        }
+
+        if (!appIdRestored || !relativeDstRestored || !dstRestored)
+            throw new BuildFailedException(
+                "Unable to restore serialized WeChat profile fields.");
+
+        System.IO.File.WriteAllText(
+            profileFullPath, string.Join("\n", profileLines));
+
+        const string projectSettingsPath =
+            "ProjectSettings/ProjectSettings.asset";
+        string fullPath = System.IO.Path.GetFullPath(
+            System.IO.Path.Combine(projectRoot, projectSettingsPath));
+        string text = System.IO.File.ReadAllText(fullPath);
+        string[] lines = text.Split(new[] { "\r\n", "\n" },
+            System.StringSplitOptions.None);
+        bool replaced = false;
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (!lines[i].TrimStart().StartsWith(
+                    "activeSubplatform:",
+                    System.StringComparison.Ordinal))
+                continue;
+
+            string indentation = lines[i].Substring(
+                0, lines[i].Length - lines[i].TrimStart().Length);
+            lines[i] =
+                $"{indentation}activeSubplatform: {activeSubplatform}";
+            replaced = true;
+            break;
+        }
+
+        if (!replaced)
+            throw new BuildFailedException(
+                "Unable to restore the serialized MiniGame subplatform.");
+
+        System.IO.File.WriteAllText(fullPath, string.Join("\n", lines));
     }
 
     static void EnsureOfficialWeixinSdkInstalled()
