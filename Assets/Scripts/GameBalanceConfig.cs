@@ -29,6 +29,8 @@ public sealed class GameplayBalance
     public float speedIncreaseRate = 0.5f;
     public int coinScore = 10;
     public float magnetRadius = 7f;
+    public float calibrationCourseDistance = 450f;
+    public float challengeCourseDistance = 700f;
 }
 
 [Serializable]
@@ -195,6 +197,12 @@ public static class GameBalanceConfig
             : 10, 1, 1000);
         gameplay.magnetRadius = Mathf.Clamp(
             PositiveOrDefault(gameplay.magnetRadius, 7f), 1f, 30f);
+        gameplay.calibrationCourseDistance = Mathf.Clamp(
+            PositiveOrDefault(gameplay.calibrationCourseDistance, 450f),
+            100f, 5000f);
+        gameplay.challengeCourseDistance = Mathf.Clamp(
+            PositiveOrDefault(gameplay.challengeCourseDistance, 700f),
+            gameplay.calibrationCourseDistance, 10000f);
     }
 
     private static void NormalizeTrack(TrackBalance track)

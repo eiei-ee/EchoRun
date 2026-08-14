@@ -62,6 +62,8 @@ public class TrackManager : MonoBehaviour
     private float _plannedDistance;
     private Transform _player;
     private AITrackDirector _aiDirector;
+    private GameObject _finishMarker;
+    private Material _finishMarkerMaterial;
 
     private const float SEGMENT_CHECK_MULT = 1.5f;
     private const float SEGMENT_RECYCLE_MULT = 5f;
@@ -102,7 +104,11 @@ public class TrackManager : MonoBehaviour
     void Update()
     {
         if (GameManager.Instance == null
-            || GameManager.Instance.State != GameState.Playing) return;
+            || GameManager.Instance.State != GameState.Playing)
+        {
+            SetFinishMarkerActive(false);
+            return;
+        }
         if (_player == null) return;
         if (trackSegmentPrefab == null) return;
 
@@ -123,6 +129,8 @@ public class TrackManager : MonoBehaviour
                     SEGMENT_RECYCLE_MULT)) break;
             RecycleSegment(seg);
         }
+
+        UpdateFinishMarker();
     }
 
     float XZSqrDistance(Vector3 a, Vector3 b)
@@ -396,7 +404,12 @@ public class TrackManager : MonoBehaviour
             ? _aiDirector.CreatePlan(baseDifficulty, obstacleChance, coinChance,
                 turnChance, _lastSafeLane, canTurn, _plannedDistance + segmentLength)
             : CreateFallbackPlan(baseDifficulty, canTurn);
-        bool shouldTurn = canTurn && plan.shouldTurn;
+        float courseDistance = GameManager.Instance != null
+            ? GameManager.Instance.CourseDistance
+            : 0f;
+        bool isFinishSegment = courseDistance > _plannedDistance
+                               && courseDistance <= _plannedDistance + segmentLength;
+        bool shouldTurn = canTurn && plan.shouldTurn && !isFinishSegment;
 
         GameObject prefab;
         TrackSegmentType segType;
@@ -436,7 +449,8 @@ public class TrackManager : MonoBehaviour
         if (segType == TrackSegmentType.Straight)
         {
             data.entryDirection = ForwardDirection;
-            SpawnObstaclesAndCoins(segment, segType, plan);
+            if (!isFinishSegment)
+                SpawnObstaclesAndCoins(segment, segType, plan);
             _spawnPosition += ForwardDirection * segmentLength;
             _straightSegmentsSinceLastTurn++;
         }
@@ -473,6 +487,91 @@ public class TrackManager : MonoBehaviour
         AIRunTelemetry.RecordEvent("track_segment", (int)segType,
             plan.safeLane, plan.difficulty, plan.obstacleChance);
         _plannedDistance += segmentLength;
+    }
+
+    private void UpdateFinishMarker()
+    {
+        GameManager gameManager = GameManager.Instance;
+        if (gameManager == null || _player == null)
+        {
+            SetFinishMarkerActive(false);
+            return;
+        }
+
+        float remaining = gameManager.RemainingDistance;
+        float visibleDistance = Mathf.Max(24f, segmentLength * 1.5f);
+        if (remaining <= 0f || remaining > visibleDistance)
+        {
+            SetFinishMarkerActive(false);
+            return;
+        }
+
+        EnsureFinishMarker();
+        PlayerController controller = _player.GetComponent<PlayerController>();
+        Vector3 forward = controller != null
+            ? controller.ForwardDirection
+            : _player.forward;
+        int lane = controller != null ? controller.CurrentLane : 1;
+        GetTrackPoseAhead(_player.position, forward, lane, 1f, remaining,
+            out Vector3 position, out Vector3 trackForward);
+        position.y = 0f;
+        _finishMarker.transform.SetPositionAndRotation(position,
+            Quaternion.LookRotation(trackForward, Vector3.up));
+        SetFinishMarkerActive(true);
+    }
+
+    private void EnsureFinishMarker()
+    {
+        if (_finishMarker != null) return;
+
+        _finishMarker = new GameObject("FinishMarker");
+        _finishMarker.transform.SetParent(transform, false);
+        Shader shader = Shader.Find("Unlit/Color");
+        if (shader == null) shader = Shader.Find("Standard");
+        if (shader == null) shader = Shader.Find("Mobile/Diffuse");
+        if (shader != null)
+        {
+            _finishMarkerMaterial = new Material(shader)
+            {
+                name = "EchoFinishMarker_Runtime",
+                color = new Color(0.05f, 0.95f, 1f, 1f)
+            };
+        }
+
+        CreateFinishMarkerPart("LeftPillar",
+            new Vector3(-5.1f, 2.1f, 0f), new Vector3(0.35f, 4.2f, 0.35f));
+        CreateFinishMarkerPart("RightPillar",
+            new Vector3(5.1f, 2.1f, 0f), new Vector3(0.35f, 4.2f, 0.35f));
+        CreateFinishMarkerPart("TopBeam",
+            new Vector3(0f, 4.2f, 0f), new Vector3(10.55f, 0.35f, 0.35f));
+        CreateFinishMarkerPart("FinishBand",
+            new Vector3(0f, 3.45f, 0f), new Vector3(7.2f, 0.75f, 0.12f));
+        _finishMarker.SetActive(false);
+    }
+
+    private void CreateFinishMarkerPart(string name, Vector3 localPosition,
+        Vector3 localScale)
+    {
+        GameObject part = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        part.name = name;
+        part.transform.SetParent(_finishMarker.transform, false);
+        part.transform.localPosition = localPosition;
+        part.transform.localScale = localScale;
+        Collider collider = part.GetComponent<Collider>();
+        if (collider != null)
+        {
+            collider.enabled = false;
+            Destroy(collider);
+        }
+        Renderer renderer = part.GetComponent<Renderer>();
+        if (renderer != null && _finishMarkerMaterial != null)
+            renderer.sharedMaterial = _finishMarkerMaterial;
+    }
+
+    private void SetFinishMarkerActive(bool active)
+    {
+        if (_finishMarker != null && _finishMarker.activeSelf != active)
+            _finishMarker.SetActive(active);
     }
 
     void RecycleSegment(GameObject segment)
@@ -1058,6 +1157,7 @@ public class TrackManager : MonoBehaviour
 
     void OnDestroy()
     {
+        if (_finishMarkerMaterial != null) Destroy(_finishMarkerMaterial);
         if (Instance == this) Instance = null;
     }
 }

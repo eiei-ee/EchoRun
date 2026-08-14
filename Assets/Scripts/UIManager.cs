@@ -1124,9 +1124,13 @@ public class UIManager : MonoBehaviour
                 if (_gameOverTitleText != null && AIShadowRunner.Instance != null)
                 {
                     AIShadowRunner shadow = AIShadowRunner.Instance;
-                    _gameOverTitleText.text = !shadow.LastRunWasChallenge
-                        ? (shadow.Generation > 0 ? "校准完成" : "继续校准")
-                        : shadow.LastRunWon ? "契约完成" : "回声胜出";
+                    bool interrupted = _gm != null
+                                       && _gm.LastEndReason == RunEndReason.Collision;
+                    _gameOverTitleText.text = interrupted
+                        ? "赛程中断"
+                        : !shadow.LastRunWasChallenge
+                            ? (shadow.Generation > 0 ? "校准完成" : "继续校准")
+                            : shadow.LastRunWon ? "契约完成" : "回声胜出";
                     _gameOverTitleText.color = shadow.LastRunWon ? Success : Danger;
                 }
                 if (_gm != null)
@@ -1183,6 +1187,7 @@ public class UIManager : MonoBehaviour
         if (_statsText == null || _gm == null) return;
         _statsText.text = "SCORE " + _gm.Score.ToString("D5")
                           + "   RANGE " + Mathf.FloorToInt(_gm.Distance).ToString("D3") + "m"
+                          + "   FINISH " + Mathf.CeilToInt(_gm.RemainingDistance).ToString("D3") + "m"
                           + "   SHARDS " + _gm.Coins.ToString("D2");
     }
 
@@ -1285,7 +1290,8 @@ public class UIManager : MonoBehaviour
     void ApplySafeArea(bool force = false)
     {
         if (_safeAreaRoot == null || Screen.width <= 0 || Screen.height <= 0) return;
-        Rect safeArea = Screen.safeArea;
+        Rect safeArea = UILayoutRules.NormalizeSafeArea(
+            Screen.safeArea, Screen.width, Screen.height);
         Vector2Int screenSize = new Vector2Int(Screen.width, Screen.height);
         if (!force && safeArea == _lastSafeArea && screenSize == _lastScreenSize) return;
 
@@ -1301,6 +1307,9 @@ public class UIManager : MonoBehaviour
         _safeAreaRoot.anchorMax = anchorMax;
         _safeAreaRoot.offsetMin = Vector2.zero;
         _safeAreaRoot.offsetMax = Vector2.zero;
+        _safeAreaRoot.anchoredPosition = Vector2.zero;
+        _safeAreaRoot.localScale = Vector3.one;
+        _safeAreaRoot.localRotation = Quaternion.identity;
         ApplyResponsiveLayout();
     }
 
@@ -1394,9 +1403,8 @@ public class UIManager : MonoBehaviour
         if (_startBtn != null)
         {
             RectTransform start = _startBtn.GetComponent<RectTransform>();
-            start.sizeDelta = TouchButtonSize(portrait
-                ? new Vector2(760f, 104f)
-                : new Vector2(520f, 78f), largeTargets, portrait);
+            start.sizeDelta = UILayoutRules.GetPrimaryActionSize(
+                Screen.width, Screen.height, UsesTouchLayout());
         }
         SetButtonSize(_pauseBtn, largeTargets
             ? new Vector2(104f, 104f)
@@ -1406,16 +1414,13 @@ public class UIManager : MonoBehaviour
         SetButtonSize(_pauseToMenuBtn, TouchButtonSize(portrait
             ? new Vector2(420f, 104f) : new Vector2(320f, 80f),
             largeTargets, portrait));
-        SetButtonSize(_restartBtn, TouchButtonSize(portrait
-            ? new Vector2(520f, 104f) : new Vector2(380f, 76f),
-            largeTargets, portrait));
-        SetButtonSize(_goToMenuBtn, TouchButtonSize(portrait
-            ? new Vector2(420f, 104f) : new Vector2(280f, 60f),
-            largeTargets, portrait));
+        SetButtonSize(_restartBtn, UILayoutRules.GetRestartButtonSize(
+            Screen.width, Screen.height, UsesTouchLayout()));
+        SetButtonSize(_goToMenuBtn, UILayoutRules.GetMenuButtonSize(
+            Screen.width, Screen.height, UsesTouchLayout()));
         if (_shadowResultText != null)
-            _shadowResultText.rectTransform.sizeDelta = portrait
-                ? new Vector2(900f, 360f)
-                : new Vector2(1160f, 180f);
+            _shadowResultText.rectTransform.sizeDelta =
+                UILayoutRules.GetResultTextSize(Screen.width, Screen.height);
         SetButtonLayout(_characterBtn,
             new Vector2(portrait ? 0.22f : 0.38f, 0.12f),
             TouchButtonSize(portrait ? new Vector2(260f, 104f)

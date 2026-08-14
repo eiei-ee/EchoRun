@@ -1,9 +1,12 @@
 using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
+using UnityEngine.UI;
 
 public sealed class RuntimeSmokeTests
 {
@@ -204,6 +207,122 @@ public sealed class RuntimeSmokeTests
         Assert.IsNotNull(Object.FindObjectOfType<Canvas>());
         Assert.IsNotNull(Object.FindObjectOfType<PowerUpShopUI>());
         Assert.IsNotNull(Object.FindObjectOfType<AITrainingDashboardUI>());
+    }
+
+    [UnityTest]
+    public IEnumerator HomePrimaryActionIsInsideSafeAreaAndReceivesPointerClick()
+    {
+        SceneManager.LoadScene("SampleScene");
+        yield return null;
+        UIManager ui = null;
+        for (int frame = 0; frame < 180
+             && (GameManager.Instance == null || ui == null); frame++)
+        {
+            ui = Object.FindObjectOfType<UIManager>();
+            yield return null;
+        }
+
+        Assert.IsNotNull(ui);
+        Assert.AreEqual(GameState.Menu, GameManager.Instance.State);
+        Button start = GetPrivateField<Button>(ui, "_startBtn");
+        RectTransform safeArea = GetPrivateField<RectTransform>(
+            ui, "_safeAreaRoot");
+        AssertButtonVisibleAndRaycastable(start, safeArea);
+
+        ExecuteEvents.Execute(start.gameObject,
+            new PointerEventData(EventSystem.current),
+            ExecuteEvents.pointerClickHandler);
+        yield return null;
+        Assert.AreEqual(GameState.Playing, GameManager.Instance.State,
+            "The visible primary action must enter gameplay on pointer click.");
+
+        GameManager activeManager = GameManager.Instance;
+        activeManager.ReturnToMenu();
+        for (int frame = 0; frame < 180
+             && (GameManager.Instance == null
+                 || ReferenceEquals(GameManager.Instance, activeManager)
+                 || GameManager.Instance.State != GameState.Menu); frame++)
+            yield return null;
+        Assert.AreEqual(GameState.Menu, GameManager.Instance.State);
+    }
+
+    [UnityTest]
+    public IEnumerator ResultTextAndActionsStayInsideSafeAreaAndRaycast()
+    {
+        SceneManager.LoadScene("SampleScene");
+        yield return null;
+        UIManager ui = null;
+        for (int frame = 0; frame < 180
+             && (GameManager.Instance == null || ui == null); frame++)
+        {
+            ui = Object.FindObjectOfType<UIManager>();
+            yield return null;
+        }
+
+        Assert.IsNotNull(ui);
+        FieldInfo stateField = typeof(GameManager).GetField(
+            "<State>k__BackingField",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.IsNotNull(stateField);
+        stateField.SetValue(GameManager.Instance, GameState.GameOver);
+        GameManager.Instance.OnStateChanged.Invoke(GameState.GameOver);
+        yield return null;
+        yield return null;
+
+        RectTransform safeArea = GetPrivateField<RectTransform>(
+            ui, "_safeAreaRoot");
+        Text result = GetPrivateField<Text>(ui, "_shadowResultText");
+        Assert.IsTrue(result.gameObject.activeInHierarchy);
+        AssertRectContained(result.rectTransform, safeArea);
+        AssertButtonVisibleAndRaycastable(
+            GetPrivateField<Button>(ui, "_restartBtn"), safeArea);
+        AssertButtonVisibleAndRaycastable(
+            GetPrivateField<Button>(ui, "_goToMenuBtn"), safeArea);
+    }
+
+    [UnityTest]
+    public IEnumerator FinishMarkerAppearsAheadWithoutBlockingTheRunner()
+    {
+        SceneManager.LoadScene("SampleScene");
+        yield return null;
+        for (int frame = 0; frame < 180
+             && (GameManager.Instance == null || TrackManager.Instance == null);
+             frame++)
+            yield return null;
+
+        GameManager gameManager = GameManager.Instance;
+        TrackManager track = TrackManager.Instance;
+        Assert.IsNotNull(gameManager);
+        Assert.IsNotNull(track);
+        gameManager.StartGame();
+        yield return null;
+        yield return null;
+
+        float nearFinish = gameManager.CourseDistance - 10f;
+        typeof(GameManager).GetField("<Distance>k__BackingField",
+            BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(
+            gameManager, nearFinish);
+        typeof(GameManager).GetField("_distanceTraveled",
+            BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(
+            gameManager, nearFinish);
+        MethodInfo updateMarker = typeof(TrackManager).GetMethod(
+            "UpdateFinishMarker",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.IsNotNull(updateMarker);
+        updateMarker.Invoke(track, null);
+
+        Transform marker = track.transform.Find("FinishMarker");
+        Assert.IsNotNull(marker);
+        Assert.IsTrue(marker.gameObject.activeInHierarchy);
+        Assert.AreEqual(4, marker.GetComponentsInChildren<Renderer>().Length);
+        foreach (Collider collider in marker.GetComponentsInChildren<Collider>())
+            Assert.IsFalse(collider.enabled,
+                "The visual finish marker must never collide with the runner.");
+        PlayerController player = Object.FindObjectOfType<PlayerController>();
+        Assert.IsNotNull(player);
+        Vector3 toMarker = marker.position - player.transform.position;
+        Assert.Greater(Vector3.Dot(toMarker, player.ForwardDirection), 1f,
+            "The finish marker must be visibly ahead of the runner.");
     }
 
     [UnityTest]
@@ -421,6 +540,68 @@ public sealed class RuntimeSmokeTests
     {
         return (GameObject)component.GetType().GetField(field,
             BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(component);
+    }
+
+    private static T GetPrivateField<T>(object component, string field)
+        where T : class
+    {
+        FieldInfo info = component.GetType().GetField(field,
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.IsNotNull(info, "Missing private field: " + field);
+        return info.GetValue(component) as T;
+    }
+
+    private static void AssertButtonVisibleAndRaycastable(
+        Button button, RectTransform safeArea)
+    {
+        Assert.IsNotNull(button);
+        Assert.IsTrue(button.gameObject.activeInHierarchy);
+        Assert.IsTrue(button.IsInteractable());
+        Assert.IsNotNull(button.targetGraphic);
+        Assert.IsTrue(button.targetGraphic.enabled);
+        Assert.IsTrue(button.targetGraphic.raycastTarget);
+        Assert.Greater(button.targetGraphic.canvasRenderer.GetAlpha(), 0.01f);
+        AssertRectContained(button.transform as RectTransform, safeArea);
+
+        Canvas canvas = button.GetComponentInParent<Canvas>();
+        Assert.IsNotNull(canvas);
+        GraphicRaycaster raycaster = canvas.GetComponent<GraphicRaycaster>();
+        Assert.IsNotNull(raycaster);
+        Assert.IsNotNull(EventSystem.current);
+        Canvas.ForceUpdateCanvases();
+        RectTransform rect = button.transform as RectTransform;
+        Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(
+            canvas.worldCamera, rect.TransformPoint(rect.rect.center));
+        var eventData = new PointerEventData(EventSystem.current)
+        {
+            position = screenPoint
+        };
+        var hits = new List<RaycastResult>();
+        raycaster.Raycast(eventData, hits);
+        Assert.IsTrue(hits.Exists(hit =>
+                hit.gameObject == button.gameObject
+                || hit.gameObject.transform.IsChildOf(button.transform)),
+            button.name + " is not reachable by a UI raycast at its center.");
+    }
+
+    private static void AssertRectContained(
+        RectTransform child, RectTransform container)
+    {
+        Assert.IsNotNull(child);
+        Assert.IsNotNull(container);
+        Canvas.ForceUpdateCanvases();
+        Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(
+            container, child);
+        Rect rect = container.rect;
+        const float tolerance = 0.5f;
+        Assert.GreaterOrEqual(bounds.min.x, rect.xMin - tolerance,
+            child.name + " extends beyond the left SafeArea edge.");
+        Assert.LessOrEqual(bounds.max.x, rect.xMax + tolerance,
+            child.name + " extends beyond the right SafeArea edge.");
+        Assert.GreaterOrEqual(bounds.min.y, rect.yMin - tolerance,
+            child.name + " extends below the SafeArea edge.");
+        Assert.LessOrEqual(bounds.max.y, rect.yMax + tolerance,
+            child.name + " extends above the SafeArea edge.");
     }
 
     private static void AssertContainedHorizontally(RectTransform child)

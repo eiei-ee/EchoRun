@@ -155,10 +155,36 @@ public sealed class EchoContractTests
     [Test]
     public void DistanceLeadCannotBypassEchoContract()
     {
-        Assert.IsFalse(AIShadowRunner.IsContractVictory(20f, true, false));
-        Assert.IsFalse(AIShadowRunner.IsContractVictory(-1f, true, true));
-        Assert.IsFalse(AIShadowRunner.IsContractVictory(20f, false, true));
-        Assert.IsTrue(AIShadowRunner.IsContractVictory(0f, true, true));
+        Assert.IsFalse(AIShadowRunner.IsContractVictory(
+            20f, true, false, RunEndReason.FinishReached));
+        Assert.IsFalse(AIShadowRunner.IsContractVictory(
+            -1f, true, true, RunEndReason.FinishReached));
+        Assert.IsFalse(AIShadowRunner.IsContractVictory(
+            20f, false, true, RunEndReason.FinishReached));
+        Assert.IsFalse(AIShadowRunner.IsContractVictory(
+            20f, true, true, RunEndReason.Collision));
+        Assert.IsTrue(AIShadowRunner.IsContractVictory(
+            0f, true, true, RunEndReason.FinishReached));
+    }
+
+    [Test]
+    public void CourseDistanceUsesCalibrationThenChallengeLength()
+    {
+        Assert.AreEqual(450f,
+            GameManager.SelectCourseDistance(0, 450f, 700f));
+        Assert.AreEqual(700f,
+            GameManager.SelectCourseDistance(1, 450f, 700f));
+    }
+
+    [Test]
+    public void RunEndReasonsUseStableTelemetryNames()
+    {
+        Assert.AreEqual("finish_reached",
+            GameManager.ToTelemetryReason(RunEndReason.FinishReached));
+        Assert.AreEqual("collision",
+            GameManager.ToTelemetryReason(RunEndReason.Collision));
+        Assert.AreEqual("abandoned",
+            GameManager.ToTelemetryReason(RunEndReason.Abandoned));
     }
 
     [Test]

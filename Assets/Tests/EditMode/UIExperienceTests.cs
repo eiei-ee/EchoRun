@@ -8,6 +8,82 @@ using Object = UnityEngine.Object;
 public sealed class UIExperienceTests
 {
     [Test]
+    public void SafeAreaFallsBackWhenReportedCoordinatesLeaveTheCanvas()
+    {
+        Rect normalized = UILayoutRules.NormalizeSafeArea(
+            new Rect(904f, 508f, 1808f, 1017f), 1808, 1017);
+
+        Assert.AreEqual(new Rect(0f, 0f, 1808f, 1017f), normalized);
+    }
+
+    [Test]
+    public void SafeAreaKeepsAValidMobileInset()
+    {
+        Rect normalized = UILayoutRules.NormalizeSafeArea(
+            new Rect(0f, 54f, 1080f, 1812f), 1080, 1920);
+
+        Assert.AreEqual(new Rect(0f, 54f, 1080f, 1812f), normalized);
+    }
+
+    [Test]
+    public void PrimaryAndResultActionsFitLandscapeAndPortraitReferences()
+    {
+        Vector2 landscape = UILayoutRules.GetReferenceResolution(1920, 1080);
+        Vector2 portrait = UILayoutRules.GetReferenceResolution(1080, 1920);
+        Vector2 landscapeStart = UILayoutRules.GetPrimaryActionSize(
+            1920, 1080, false);
+        Vector2 portraitStart = UILayoutRules.GetPrimaryActionSize(
+            1080, 1920, true);
+        Vector2 landscapeRestart = UILayoutRules.GetRestartButtonSize(
+            1920, 1080, false);
+        Vector2 portraitRestart = UILayoutRules.GetRestartButtonSize(
+            1080, 1920, true);
+        Vector2 landscapeMenu = UILayoutRules.GetMenuButtonSize(
+            1920, 1080, false);
+        Vector2 portraitMenu = UILayoutRules.GetMenuButtonSize(
+            1080, 1920, true);
+        Vector2 landscapeResult = UILayoutRules.GetResultTextSize(1920, 1080);
+        Vector2 portraitResult = UILayoutRules.GetResultTextSize(1080, 1920);
+
+        Assert.AreEqual(new Vector2(520f, 78f), landscapeStart);
+        Assert.AreEqual(new Vector2(760f, 104f), portraitStart);
+        Assert.AreEqual(new Vector2(380f, 76f), landscapeRestart);
+        Assert.AreEqual(new Vector2(520f, 104f), portraitRestart);
+        Assert.AreEqual(new Vector2(280f, 60f), landscapeMenu);
+        Assert.AreEqual(new Vector2(420f, 104f), portraitMenu);
+        Assert.AreEqual(new Vector2(1160f, 180f), landscapeResult);
+        Assert.AreEqual(new Vector2(900f, 360f), portraitResult);
+
+        AssertCenteredRectFits(new Vector2(0.5f, 0.255f),
+            landscapeStart, landscape);
+        AssertCenteredRectFits(new Vector2(0.5f, 0.255f),
+            portraitStart, portrait);
+        AssertCenteredRectFits(new Vector2(0.5f, 0.38f),
+            landscapeResult, landscape);
+        AssertCenteredRectFits(new Vector2(0.5f, 0.38f),
+            portraitResult, portrait);
+        AssertCenteredRectFits(new Vector2(0.5f, 0.18f),
+            landscapeRestart, landscape);
+        AssertCenteredRectFits(new Vector2(0.5f, 0.18f),
+            portraitRestart, portrait);
+        AssertCenteredRectFits(new Vector2(0.5f, 0.07f),
+            landscapeMenu, landscape);
+        AssertCenteredRectFits(new Vector2(0.5f, 0.07f),
+            portraitMenu, portrait);
+    }
+
+    private static void AssertCenteredRectFits(
+        Vector2 anchor, Vector2 size, Vector2 reference)
+    {
+        Vector2 center = Vector2.Scale(anchor, reference);
+        Vector2 half = size * 0.5f;
+        Assert.GreaterOrEqual(center.x - half.x, 0f);
+        Assert.LessOrEqual(center.x + half.x, reference.x);
+        Assert.GreaterOrEqual(center.y - half.y, 0f);
+        Assert.LessOrEqual(center.y + half.y, reference.y);
+    }
+
+    [Test]
     public void MenuPresentationSeparatesCalibrationFromChallenge()
     {
         EchoMenuViewData calibration = EchoRunPresentation.BuildMenu(

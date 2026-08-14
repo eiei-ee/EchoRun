@@ -44,4 +44,68 @@ public static class UILayoutRules
             requested.y = Mathf.Max(requested.y, 72f);
         return requested;
     }
+
+    public static Vector2 GetPrimaryActionSize(
+        int width, int height, bool touchLayout)
+    {
+        bool portrait = IsCompactPortrait(width, height);
+        return EnsureTouchButtonSize(portrait
+            ? new Vector2(760f, 104f)
+            : new Vector2(520f, 78f), touchLayout || portrait, portrait);
+    }
+
+    public static Vector2 GetRestartButtonSize(
+        int width, int height, bool touchLayout)
+    {
+        bool portrait = IsCompactPortrait(width, height);
+        return EnsureTouchButtonSize(portrait
+            ? new Vector2(520f, 104f)
+            : new Vector2(380f, 76f), touchLayout || portrait, portrait);
+    }
+
+    public static Vector2 GetMenuButtonSize(
+        int width, int height, bool touchLayout)
+    {
+        bool portrait = IsCompactPortrait(width, height);
+        return EnsureTouchButtonSize(portrait
+            ? new Vector2(420f, 104f)
+            : new Vector2(280f, 60f), touchLayout || portrait, portrait);
+    }
+
+    public static Vector2 GetResultTextSize(int width, int height)
+    {
+        return IsCompactPortrait(width, height)
+            ? new Vector2(900f, 360f)
+            : new Vector2(1160f, 180f);
+    }
+
+    public static Rect NormalizeSafeArea(Rect reported, int width, int height)
+    {
+        Rect fullScreen = new Rect(0f, 0f,
+            Mathf.Max(0, width), Mathf.Max(0, height));
+        if (width <= 0 || height <= 0
+            || !IsFinite(reported.x) || !IsFinite(reported.y)
+            || !IsFinite(reported.width) || !IsFinite(reported.height))
+            return fullScreen;
+
+        const float tolerance = 0.5f;
+        bool insideCanvas = reported.xMin >= -tolerance
+                            && reported.yMin >= -tolerance
+                            && reported.xMax <= width + tolerance
+                            && reported.yMax <= height + tolerance;
+        bool usable = reported.width >= width * 0.5f
+                      && reported.height >= height * 0.5f;
+        if (!insideCanvas || !usable) return fullScreen;
+
+        float xMin = Mathf.Clamp(reported.xMin, 0f, width);
+        float yMin = Mathf.Clamp(reported.yMin, 0f, height);
+        float xMax = Mathf.Clamp(reported.xMax, xMin, width);
+        float yMax = Mathf.Clamp(reported.yMax, yMin, height);
+        return Rect.MinMaxRect(xMin, yMin, xMax, yMax);
+    }
+
+    private static bool IsFinite(float value)
+    {
+        return !float.IsNaN(value) && !float.IsInfinity(value);
+    }
 }

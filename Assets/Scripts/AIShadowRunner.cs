@@ -457,31 +457,47 @@ public class AIShadowRunner : MonoBehaviour
 
     private void FinishRun()
     {
+        RunEndReason endReason = _gameManager != null
+                                 && _gameManager.LastEndReason != RunEndReason.None
+            ? _gameManager.LastEndReason
+            : RunEndReason.FinishReached;
+        FinishRunWithReason(endReason);
+    }
+
+    private void FinishRunWithReason(RunEndReason endReason)
+    {
         if (!_runStarted || _runFinalized) return;
         _runFinalized = true;
 
         bool challengedOpponent = HasActiveOpponent;
+        bool reachedFinish = endReason == RunEndReason.FinishReached;
         bool contractCompleted = _contractEvaluator != null
                                  && _contractEvaluator.Contract.completed;
         bool playerWon = IsContractVictory(
-            PlayerLead, challengedOpponent, contractCompleted);
+            PlayerLead, challengedOpponent, contractCompleted, endReason);
         LastRunWasChallenge = challengedOpponent;
         LastRunWon = playerWon;
         float runPace = _playerProgress / Mathf.Max(1f, _runTime);
         if (_profile.pace <= 0f) _profile.pace = runPace;
         else _profile.pace = Mathf.Lerp(_profile.pace, runPace, 0.35f);
         _profile.bestProgress = Mathf.Max(_profile.bestProgress, _playerProgress);
-        bool completedCalibration = HasCalibrationSamples(
+        bool completedCalibration = reachedFinish && HasCalibrationSamples(
             _profile.sampleCount, _profile.activeSampleCount,
             _profile.actionCounts, minimumTrainingSamples,
             minimumActiveTrainingSamples, minimumActionCategories,
             minimumJumpSamples, minimumSlideSamples);
-        if (challengedOpponent || completedCalibration)
+        if (reachedFinish && (challengedOpponent || completedCalibration))
             _profile.generation++;
         _profile.weights = _policy.ExportWeights();
         SaveProfile();
 
-        if (!challengedOpponent && !completedCalibration)
+        if (!reachedFinish)
+        {
+            LastResult = challengedOpponent
+                ? "赛程中断 · 未到达终点\n本代契约未结算，重新挑战才能获胜"
+                : "校准中断 · 未到达终点\n本局样本已保留，完成赛程后才会生成回声";
+        }
+        else if (!challengedOpponent && !completedCalibration)
         {
             int categories = CountTrainedActionCategories(_profile.actionCounts);
             LastResult = "校准未完成 · 有效动作 "
@@ -975,9 +991,11 @@ public class AIShadowRunner : MonoBehaviour
     }
 
     public static bool IsContractVictory(float playerLead,
-        bool challengedOpponent, bool contractCompleted)
+        bool challengedOpponent, bool contractCompleted,
+        RunEndReason endReason)
     {
-        return challengedOpponent && contractCompleted && playerLead >= 0f;
+        return endReason == RunEndReason.FinishReached
+               && challengedOpponent && contractCompleted && playerLead >= 0f;
     }
 
     public static bool CanAvoidObstacle(ObstacleType obstacleType,

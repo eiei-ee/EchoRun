@@ -791,6 +791,19 @@ public class BuildConfig
           width: min(100vw, calc(100vh * 16 / 9));
         }
       }
+      @media (orientation: portrait) {
+        #tuanjie-footer, #unity-footer { display: none; }
+        #tuanjie-container.tuanjie-desktop, #unity-container.unity-desktop {
+          width: 100vw;
+          height: 100vh;
+          max-width: none;
+        }
+        #tuanjie-container.tuanjie-desktop canvas, #unity-container.unity-desktop canvas {
+          width: 100% !important;
+          height: 100% !important;
+          aspect-ratio: auto;
+        }
+      }
     </style>
 ";
         if (!html.Contains("echorun-responsive-shell"))

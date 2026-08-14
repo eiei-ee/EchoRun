@@ -4,6 +4,7 @@ using System.Collections;
 using UnityEngine.SceneManagement;
 
 public enum GameState { Menu, Playing, Paused, GameOver }
+public enum RunEndReason { None, FinishReached, Collision, Abandoned }
 
 public class GameManager : MonoBehaviour
 {
@@ -29,6 +30,9 @@ public class GameManager : MonoBehaviour
     public bool IsNewHighScore { get; private set; }
     public bool IsDeathSequence { get; private set; }
     public int RunSeed { get; private set; }
+    public float CourseDistance { get; private set; }
+    public float RemainingDistance => Mathf.Max(0f, CourseDistance - Distance);
+    public RunEndReason LastEndReason { get; private set; }
 
     [Header("Buff (runtime)")]
     public float BuffTimeRemaining;
@@ -45,6 +49,7 @@ public class GameManager : MonoBehaviour
     private PlayerController _telemetryPlayer;
     private int _lastBaseScore;
     private float _powerUpBonusScore;
+    private bool _telemetryFinished;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeInstance()
@@ -143,10 +148,12 @@ public class GameManager : MonoBehaviour
 
     void Update()
     {
-        if (State != GameState.Playing) return;
+        if (State != GameState.Playing || IsDeathSequence) return;
 
         CurrentSpeed = Mathf.Min(CurrentSpeed + speedIncreaseRate * Time.deltaTime, maxSpeed);
         _distanceTraveled += CurrentSpeed * Time.deltaTime;
+        if (CourseDistance > 0f)
+            _distanceTraveled = Mathf.Min(_distanceTraveled, CourseDistance);
 
         int newDist = Mathf.FloorToInt(_distanceTraveled);
         if (newDist != Mathf.FloorToInt(Distance))
@@ -172,6 +179,12 @@ public class GameManager : MonoBehaviour
         if (_telemetryPlayer == null)
             _telemetryPlayer = FindObjectOfType<PlayerController>();
         AIRunTelemetry.Tick(this, _telemetryPlayer);
+
+        if (CourseDistance > 0f && _distanceTraveled >= CourseDistance)
+        {
+            CompleteCourse();
+            return;
+        }
 
         // Buff countdown
         if (BuffTimeRemaining > 0f)
@@ -228,6 +241,15 @@ public class GameManager : MonoBehaviour
         BuffTimeRemaining = 0;
         BuffName = null;
         IsDeathSequence = false;
+        LastEndReason = RunEndReason.None;
+        _telemetryFinished = false;
+        GameplayBalance balance = GameBalanceConfig.Current.gameplay;
+        int generation = AIShadowRunner.Instance != null
+            ? AIShadowRunner.Instance.Generation
+            : 0;
+        CourseDistance = SelectCourseDistance(generation,
+            balance.calibrationCourseDistance,
+            balance.challengeCourseDistance);
         _telemetryPlayer = null;
         State = GameState.Playing;
         OnStateChanged.Invoke(State);
@@ -261,14 +283,22 @@ public class GameManager : MonoBehaviour
         Time.timeScale = 1f;
         AudioManager.Instance?.StopFootsteps();
         InputManager.Instance?.ClearInput();
-        FinishTelemetry("menu");
+        if (State == GameState.Playing || State == GameState.Paused)
+        {
+            LastEndReason = RunEndReason.Abandoned;
+            AIShadowRunner.Instance?.FinalizeRunIfNeeded();
+        }
+        FinishTelemetry(LastEndReason == RunEndReason.None
+            ? RunEndReason.Abandoned
+            : LastEndReason);
         EchoRunSaveSystem.SaveLegacyState();
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
     public void GameOver()
     {
-        if (IsDeathSequence) return;
+        if (State != GameState.Playing || IsDeathSequence) return;
+        LastEndReason = RunEndReason.Collision;
         IsDeathSequence = true;
         var player = GameObject.Find("player");
         if (player != null) ParticleManager.Instance?.EmitDeath(player.transform.position);
@@ -286,7 +316,24 @@ public class GameManager : MonoBehaviour
         State = GameState.GameOver;
         SaveHighScore();
         OnStateChanged.Invoke(State);
-        FinishTelemetry("game_over");
+        FinishTelemetry(LastEndReason);
+        IsDeathSequence = false;
+    }
+
+    private void CompleteCourse()
+    {
+        if (State != GameState.Playing || IsDeathSequence) return;
+        LastEndReason = RunEndReason.FinishReached;
+        IsDeathSequence = true;
+        AudioManager.Instance?.StopFootsteps();
+        InputManager.Instance?.ClearInput();
+        Distance = CourseDistance;
+        _distanceTraveled = CourseDistance;
+        OnDistanceChanged.Invoke(Distance);
+        State = GameState.GameOver;
+        SaveHighScore();
+        OnStateChanged.Invoke(State);
+        FinishTelemetry(LastEndReason);
         IsDeathSequence = false;
     }
 
@@ -295,7 +342,9 @@ public class GameManager : MonoBehaviour
         Time.timeScale = 1f;
         AudioManager.Instance?.StopFootsteps();
         InputManager.Instance?.ClearInput();
-        FinishTelemetry("restart");
+        FinishTelemetry(LastEndReason == RunEndReason.None
+            ? RunEndReason.Abandoned
+            : LastEndReason);
         EchoRunSaveSystem.SaveLegacyState();
         _startAfterSceneLoad = true;
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
@@ -344,6 +393,15 @@ public class GameManager : MonoBehaviour
         _nextRunSeed = seed;
     }
 
+    public static float SelectCourseDistance(int generation,
+        float calibrationDistance, float challengeDistance)
+    {
+        float calibration = Mathf.Max(1f, calibrationDistance);
+        return generation <= 0
+            ? calibration
+            : Mathf.Max(calibration, challengeDistance);
+    }
+
     private static int CreateRunSeed(int sequence)
     {
         unchecked
@@ -353,8 +411,11 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    private void FinishTelemetry(string reason)
+    private void FinishTelemetry(RunEndReason endReason)
     {
+        if (_telemetryFinished) return;
+        _telemetryFinished = true;
+        string reason = ToTelemetryReason(endReason);
         AIPlayerSkillEstimator.EndRun(Distance,
             AIRunTelemetry.IsCompletedTrainingReason(reason));
         StyleTracker.EndRun();
@@ -375,6 +436,19 @@ public class GameManager : MonoBehaviour
             AIShadowRunner.Instance != null
                 ? AIShadowRunner.Instance.GetSequenceStateSnapshot()
                 : "");
+    }
+
+    public static string ToTelemetryReason(RunEndReason endReason)
+    {
+        switch (endReason)
+        {
+            case RunEndReason.FinishReached:
+                return "finish_reached";
+            case RunEndReason.Collision:
+                return "collision";
+            default:
+                return "abandoned";
+        }
     }
 
     void OnApplicationFocus(bool hasFocus)

@@ -32,7 +32,9 @@ public sealed class ProgressionAndTrainingTests
                 maxSpeed = float.NaN,
                 speedIncreaseRate = float.PositiveInfinity,
                 coinScore = 0,
-                magnetRadius = -2f
+                magnetRadius = -2f,
+                calibrationCourseDistance = float.NaN,
+                challengeCourseDistance = -10f
             },
             track = new TrackBalance
             {
@@ -56,6 +58,9 @@ public sealed class ProgressionAndTrainingTests
         Assert.Greater(balance.gameplay.speedIncreaseRate, 0f);
         Assert.Greater(balance.gameplay.coinScore, 0);
         Assert.Greater(balance.gameplay.magnetRadius, 0f);
+        Assert.Greater(balance.gameplay.calibrationCourseDistance, 0f);
+        Assert.GreaterOrEqual(balance.gameplay.challengeCourseDistance,
+            balance.gameplay.calibrationCourseDistance);
         Assert.AreEqual(0f, balance.track.obstacleChance);
         Assert.AreEqual(1f, balance.track.coinChance);
         Assert.That(balance.track.turnChance, Is.InRange(0f, 1f));
@@ -129,7 +134,7 @@ public sealed class ProgressionAndTrainingTests
         var telemetry = new AIRunTelemetryData
         {
             completed = true,
-            finishReason = "game_over",
+            finishReason = "finish_reached",
             shadowGenerationAtStart = 2,
             shadowGenerationAtEnd = 3,
             directorUpdatesAtStart = 10,
@@ -169,7 +174,7 @@ public sealed class ProgressionAndTrainingTests
         var telemetry = new AIRunTelemetryData
         {
             completed = true,
-            finishReason = "game_over"
+            finishReason = "finish_reached"
         };
         telemetry.shadowSamples.Add(new AIShadowTrainingSample
         {
@@ -197,7 +202,7 @@ public sealed class ProgressionAndTrainingTests
         var telemetry = new AIRunTelemetryData
         {
             completed = true,
-            finishReason = "game_over"
+            finishReason = "finish_reached"
         };
         telemetry.shadowSamples.Add(new AIShadowTrainingSample
         {

@@ -4,7 +4,9 @@
     "maxSpeed": 40.0,
     "speedIncreaseRate": 0.5,
     "coinScore": 10,
-    "magnetRadius": 7.0
+    "magnetRadius": 7.0,
+    "calibrationCourseDistance": 450.0,
+    "challengeCourseDistance": 700.0
   },
   "track": {
     "obstacleChance": 0.7,

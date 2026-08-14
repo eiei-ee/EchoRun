@@ -142,7 +142,7 @@ public static class AIRunTelemetry
 {
     public const int SchemaVersion = 5;
     public const float StateSampleInterval = 0.25f;
-    public const string CompletedTrainingReason = "game_over";
+    public const string CompletedTrainingReason = "finish_reached";
 
     private const int MaxStateSamples = 7200;
     private const int MaxEventSamples = 4096;

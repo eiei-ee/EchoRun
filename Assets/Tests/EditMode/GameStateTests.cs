@@ -46,7 +46,39 @@ public class GameStateTests
         Assert.AreEqual(0f, manager.BuffTimeRemaining);
         Assert.AreEqual(1f, Time.timeScale);
         Assert.AreEqual(424242, manager.RunSeed);
+        Assert.Greater(manager.CourseDistance, 0f);
+        Assert.AreEqual(manager.CourseDistance, manager.RemainingDistance);
+        Assert.AreEqual(RunEndReason.None, manager.LastEndReason);
         Assert.IsTrue(AIRunTelemetry.IsRecording);
+    }
+
+    [Test]
+    public void ReachingCourseDistanceCompletesRunWithFinishReason()
+    {
+        GameManager manager = Create<GameManager>("GameManager");
+        manager.StartGame();
+
+        InvokePrivate(manager, "CompleteCourse");
+
+        Assert.AreEqual(GameState.GameOver, manager.State);
+        Assert.AreEqual(RunEndReason.FinishReached, manager.LastEndReason);
+        Assert.AreEqual(manager.CourseDistance, manager.Distance);
+        Assert.AreEqual(0f, manager.RemainingDistance);
+    }
+
+    [Test]
+    public void CollisionRecordsFailureBeforeDeathSequenceCompletes()
+    {
+        GameManager manager = Create<GameManager>("GameManager");
+        manager.StartGame();
+
+        manager.GameOver();
+
+        Assert.AreEqual(RunEndReason.Collision, manager.LastEndReason);
+        Assert.AreEqual(GameState.Playing, manager.State);
+        Assert.IsTrue(manager.IsDeathSequence);
+        Assert.IsFalse(AIShadowRunner.IsContractVictory(
+            10f, true, true, manager.LastEndReason));
     }
 
     [Test]
