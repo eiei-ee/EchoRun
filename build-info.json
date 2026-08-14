@@ -1,30 +1,30 @@
 {
-  "version": "2026-08-13-echo-experience",
+  "version": "2026-08-14-p0-responsive-finite-runs",
   "sourceBranch": "wechat/minigame",
-  "sourceCommit": "5efc1d1064812188669b9b302ca83da19dcdd4ee",
-  "builtAt": "2026-08-13T06:40:00Z",
+  "sourceCommit": "38738408a877f3117eeb5e360fd83cb348dc0e7a",
+  "builtAt": "2026-08-13T13:02:54Z",
   "engine": "Tuanjie 2022.3.62t8",
   "validation": {
-    "editMode": "128/128 passed",
-    "playMode": "15/15 passed",
+    "editMode": "135/135 passed",
+    "playMode": "18/18 passed",
     "webGLBuild": "passed",
-    "localBrowserSmoke": "canvas rendered; no console warnings/errors; entered a live run"
+    "localBrowserSmoke": "landscape and 540x960 portrait rendered; home CTA and collision result controls verified"
   },
   "artifacts": [
     {
       "file": "index.html",
-      "bytes": 7024,
-      "sha256": "79F136C10F67F9808BEA65402BA17A9268A52241A5576DEE3E58F6D658489827"
+      "bytes": 7492,
+      "sha256": "4B6D054993A311826D550A66402895809E1264C69DEF92E2DF0E5DBA8DED3BCC"
     },
     {
-      "file": "Build/42b416b80826888fa65d0f8df90ac629.data.unityweb",
-      "bytes": 5911727,
-      "sha256": "031180654728CDB22ECF1F8C213B402260DFEB16823CA5434FE7E4C0BF3BBD68"
+      "file": "Build/97e4f94b6d091e1373c4a0aad71ba3f0.data.unityweb",
+      "bytes": 5912604,
+      "sha256": "204E95AFFBCF7A5BD277F6B554AA623CD014E247F1BF991FDE8741827CC7B6D6"
     },
     {
-      "file": "Build/862934e7c39b91982d5cd812c9b47482.wasm.unityweb",
-      "bytes": 6388862,
-      "sha256": "D656593308F9E7361B61BB37A63F227C60B18D6E08FCAB4755D4831D6389AD29"
+      "file": "Build/0e273da4d38559f4a78db6cdd47615a4.wasm.unityweb",
+      "bytes": 6389975,
+      "sha256": "B4E77CBB0AC5CC434A947498B5CECAF714E53443DA1F0CD1A4725B6638C31DC0"
     },
     {
       "file": "Build/d88030906d03a56fce720cdde88dd1d5.loader.js",
@@ -32,9 +32,9 @@
       "sha256": "2931859C57C92D36566076BBA415689450DB2392BCEE81F93ED1649BBBFF0904"
     },
     {
-      "file": "Build/ed626b3dff5c3882bd20e5b01e3c4333.framework.js.unityweb",
-      "bytes": 79362,
-      "sha256": "A3183FD7D6D8027053096E5211B6682B2A4490494697A95D08C1D8D0763F652F"
+      "file": "Build/597c366bf9f5833b1c583dce48894610.framework.js.unityweb",
+      "bytes": 79370,
+      "sha256": "76DEAE71306E6C518F6262DC8BB28E7FD519C1732E8B37AF9F5453D90005E543"
     }
   ]
 }

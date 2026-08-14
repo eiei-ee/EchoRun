@@ -32,6 +32,19 @@
           width: min(100vw, calc(100vh * 16 / 9));
         }
       }
+      @media (orientation: portrait) {
+        #tuanjie-footer, #unity-footer { display: none; }
+        #tuanjie-container.tuanjie-desktop, #unity-container.unity-desktop {
+          width: 100vw;
+          height: 100vh;
+          max-width: none;
+        }
+        #tuanjie-container.tuanjie-desktop canvas, #unity-container.unity-desktop canvas {
+          width: 100% !important;
+          height: 100% !important;
+          aspect-ratio: auto;
+        }
+      }
     </style>
   </head>
   <body>
@@ -88,9 +101,9 @@
       var buildUrl = "Build";
       var loaderUrl = buildUrl + "/d88030906d03a56fce720cdde88dd1d5.loader.js";
       var config = {
-        dataUrl: buildUrl + "/42b416b80826888fa65d0f8df90ac629.data.unityweb",
-        frameworkUrl: buildUrl + "/ed626b3dff5c3882bd20e5b01e3c4333.framework.js.unityweb",
-        codeUrl: buildUrl + "/862934e7c39b91982d5cd812c9b47482.wasm.unityweb",
+        dataUrl: buildUrl + "/97e4f94b6d091e1373c4a0aad71ba3f0.data.unityweb",
+        frameworkUrl: buildUrl + "/597c366bf9f5833b1c583dce48894610.framework.js.unityweb",
+        codeUrl: buildUrl + "/0e273da4d38559f4a78db6cdd47615a4.wasm.unityweb",
         streamingAssetsUrl: "StreamingAssets",
         companyName: "Eiei-ee",
         productName: "EchoRun",
