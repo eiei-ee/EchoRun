@@ -12,6 +12,8 @@ public static class InstallHumanMotion
     private const string IdlePath = AnimationFolder + "/HumanIdle.fbx";
     private const string RunPath = AnimationFolder + "/HumanRunForwards.fbx";
     private const string FallingPath = AnimationFolder + "/HumanFalling.fbx";
+    private const string SlidePath = AnimationFolder
+        + "/Visvise/EchoRun_SlideLow_v1_TextMotion_TextMotion0.fbx";
     private const string ControllerPath = AnimationFolder + "/EchoRunHuman.controller";
     private const string ScenePath = "Assets/Scenes/SampleScene.scene";
 
@@ -22,7 +24,10 @@ public static class InstallHumanMotion
         AnimationClip run = ConfigureClip(RunPath, "HumanRun", true);
         AnimationClip falling = ConfigureClip(
             FallingPath, "HumanFalling", true);
-        AnimatorController controller = BuildController(idle, run, falling);
+        AnimationClip slide = ConfigureClip(
+            SlidePath, "EchoRunSlideLow_Candidate1", false, true);
+        AnimatorController controller = BuildController(
+            idle, run, falling, slide);
         AssignControllerToScene(controller);
         ValidateInstalledScene();
         Debug.Log("HUMAN_MOTION_INSTALL_OK");
@@ -53,7 +58,7 @@ public static class InstallHumanMotion
             throw new InvalidOperationException(
                 "Human motion scene validation failed: root motion must stay disabled.");
         if (!driver.enabled || !driver.useHumanoidRig
-            || !driver.useAuthoredAnimations)
+            || !driver.useAuthoredAnimations || !driver.useAuthoredSlide)
         {
             throw new InvalidOperationException(
                 "Human motion scene validation failed: state driver is disabled.");
@@ -64,7 +69,8 @@ public static class InstallHumanMotion
     }
 
     private static AnimationClip ConfigureClip(
-        string path, string clipName, bool loop)
+        string path, string clipName, bool loop,
+        bool rootHeightFromFeet = false)
     {
         AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
         ModelImporter importer = AssetImporter.GetAtPath(path) as ModelImporter;
@@ -92,7 +98,8 @@ public static class InstallHumanMotion
         clip.lockRootHeightY = true;
         clip.lockRootPositionXZ = true;
         clip.keepOriginalOrientation = true;
-        clip.keepOriginalPositionY = true;
+        clip.keepOriginalPositionY = !rootHeightFromFeet;
+        clip.heightFromFeet = rootHeightFromFeet;
         clip.keepOriginalPositionXZ = true;
         importer.clipAnimations = clips;
         importer.SaveAndReimport();
@@ -107,7 +114,8 @@ public static class InstallHumanMotion
     }
 
     private static AnimatorController BuildController(
-        AnimationClip idle, AnimationClip run, AnimationClip falling)
+        AnimationClip idle, AnimationClip run, AnimationClip falling,
+        AnimationClip slide)
     {
         AnimatorController controller =
             AssetDatabase.LoadAssetAtPath<AnimatorController>(ControllerPath);
@@ -126,6 +134,8 @@ public static class InstallHumanMotion
         runState.motion = run;
         AnimatorState jumpState = stateMachine.AddState("Jump");
         jumpState.motion = falling;
+        AnimatorState slideState = stateMachine.AddState("Slide");
+        slideState.motion = slide;
         stateMachine.defaultState = idleState;
 
         EditorUtility.SetDirty(controller);
@@ -156,6 +166,7 @@ public static class InstallHumanMotion
         driver.enabled = true;
         driver.useHumanoidRig = true;
         driver.useAuthoredAnimations = true;
+        driver.useAuthoredSlide = true;
 
         EditorUtility.SetDirty(animator);
         EditorUtility.SetDirty(driver);

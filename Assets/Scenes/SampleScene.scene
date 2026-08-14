@@ -396,8 +396,10 @@ MonoBehaviour:
   rightHand: {fileID: 0}
   hipsTransform: {fileID: 0}
   bodyTransform: {fileID: 0}
+  chestTransform: {fileID: 0}
   useHumanoidRig: 1
   useAuthoredAnimations: 1
+  useAuthoredSlide: 1
   stabilizeAuthoredRun: 1
 --- !u!1 &558227861
 GameObject:

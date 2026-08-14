@@ -1056,23 +1056,97 @@ public class GameStateTests
             controller.animationClips, clip => clip.name == "HumanIdle");
         AnimationClip falling = System.Array.Find(
             controller.animationClips, clip => clip.name == "HumanFalling");
+        AnimationClip slide = System.Array.Find(
+            controller.animationClips,
+            clip => clip.name == "EchoRunSlideLow_Candidate1");
         Assert.IsNotNull(run);
         Assert.IsNotNull(idle);
         Assert.IsNotNull(falling);
+        Assert.IsNotNull(slide);
         Assert.IsTrue(run.isHumanMotion);
+        Assert.IsTrue(slide.isHumanMotion);
+        Assert.IsFalse(slide.isLooping,
+            "The authored slide must play once per slide action.");
         Assert.IsTrue(run.isLooping,
             "The authored running clip must loop without procedural resets.");
 
         AnimatorState runState = null;
+        AnimatorState slideState = null;
         foreach (ChildAnimatorState child in
                  controller.layers[0].stateMachine.states)
         {
             if (child.state.name == "Run") runState = child.state;
+            if (child.state.name == "Slide") slideState = child.state;
         }
         Assert.IsNotNull(runState);
+        Assert.IsNotNull(slideState);
+        Assert.AreEqual(slide, slideState.motion);
         Assert.IsFalse(runState.iKOnFeet,
-            "Run Foot IK must stay off because the procedural slide shares " +
-            "the same controller and owns the leg pose while active.");
+            "Run Foot IK must stay off so it cannot fight the shared Humanoid rig.");
+    }
+
+    [Test]
+    public void AuthoredSlideBakesRootHeightFromFeet()
+    {
+        const string slidePath =
+            "Assets/Animations/HumanMotion/Visvise/" +
+            "EchoRun_SlideLow_v1_TextMotion_TextMotion0.fbx";
+        ModelImporter importer = AssetImporter.GetAtPath(slidePath)
+            as ModelImporter;
+        Assert.IsNotNull(importer);
+
+        ModelImporterClipAnimation slide = System.Array.Find(
+            importer.clipAnimations,
+            clip => clip.name == "EchoRunSlideLow_Candidate1");
+        Assert.IsNotNull(slide);
+        Assert.IsTrue(slide.lockRootHeightY);
+        Assert.IsFalse(slide.keepOriginalPositionY,
+            "The slide must not preserve the generated clip's floating Y origin.");
+        Assert.IsTrue(slide.heightFromFeet,
+            "The baked slide height must use the feet as its ground reference.");
+    }
+
+    [Test]
+    public void CharacterAnimatorPlaysAuthoredSlideAndReturnsToRun()
+    {
+        GameObject modelAsset = AssetDatabase.LoadAssetAtPath<GameObject>(
+            "Assets/Models/Mixamo/ExoGray/ExoGray_TPose.fbx");
+        RuntimeAnimatorController controller =
+            AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
+                "Assets/Animations/HumanMotion/EchoRunHuman.controller");
+        Assert.IsNotNull(modelAsset);
+        Assert.IsNotNull(controller);
+
+        GameObject model = Object.Instantiate(modelAsset);
+        _objects.Add(model);
+        Animator animator = model.GetComponent<Animator>();
+        animator.runtimeAnimatorController = controller;
+        animator.applyRootMotion = false;
+        animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+        animator.Rebind();
+        animator.Update(0f);
+
+        CharacterAnimator driver = model.AddComponent<CharacterAnimator>();
+        driver.useHumanoidRig = true;
+        driver.useAuthoredSlide = true;
+        SetPrivateField(driver, "_initialized", false);
+        InvokePrivate(driver, "Initialize");
+        driver.SetExternalDriver();
+
+        driver.ApplyExternalMotion(
+            false, true, Vector3.forward, 10f, 1f / 60f);
+        Assert.IsTrue(animator.GetCurrentAnimatorStateInfo(0).IsName("Slide"));
+        Assert.Greater(animator.speed, 1f,
+            "The long VISVISE clip must fit the gameplay slide window.");
+        Assert.IsFalse(animator.applyRootMotion);
+
+        driver.ApplyExternalMotion(
+            false, false, Vector3.forward, 10f, 1f / 60f);
+        bool isRunning =
+            animator.GetCurrentAnimatorStateInfo(0).IsName("Run")
+            || animator.GetNextAnimatorStateInfo(0).IsName("Run");
+        Assert.IsTrue(isRunning,
+            "Leaving the slide must immediately return or transition to Run.");
     }
 
     [Test]
@@ -1241,6 +1315,7 @@ public class GameStateTests
 
         CharacterAnimator driver = model.AddComponent<CharacterAnimator>();
         driver.useHumanoidRig = true;
+        driver.useAuthoredSlide = false;
         SetPrivateField(driver, "_initialized", false);
         InvokePrivate(driver, "Initialize");
         driver.SetExternalDriver();

@@ -53,6 +53,7 @@ public class CharacterAnimator : MonoBehaviour
     [Header("Humanoid")]
     public bool useHumanoidRig;
     public bool useAuthoredAnimations = true;
+    public bool useAuthoredSlide = true;
     public bool stabilizeAuthoredRun = true;
 
     private PlayerController _player;
@@ -93,6 +94,7 @@ public class CharacterAnimator : MonoBehaviour
     private static readonly int IdleState = Animator.StringToHash("Idle");
     private static readonly int RunState = Animator.StringToHash("Run");
     private static readonly int JumpState = Animator.StringToHash("Jump");
+    private static readonly int SlideState = Animator.StringToHash("Slide");
 
     private void Awake()
     {
@@ -254,8 +256,16 @@ public class CharacterAnimator : MonoBehaviour
         {
             if (isSliding)
             {
-                FreezeAuthoredSlideBase();
-                ApplySlidePose(slidePhase);
+                if (useAuthoredSlide && _animator.HasState(0, SlideState))
+                {
+                    ResumeAuthoredMotion();
+                    ApplyAuthoredSlideMotion(slideDuration);
+                }
+                else
+                {
+                    FreezeAuthoredSlideBase();
+                    ApplySlidePose(slidePhase);
+                }
             }
             else if (!isJumping)
             {
@@ -311,8 +321,12 @@ public class CharacterAnimator : MonoBehaviour
 
         if (_activeAuthoredState != targetState)
         {
-            if (_activeAuthoredState == 0)
+            bool leavingSlide = _activeAuthoredState == SlideState;
+            if (_activeAuthoredState == 0 || leavingSlide)
+            {
                 _animator.Play(targetState, 0, 0f);
+                if (leavingSlide) _animator.Update(0f);
+            }
             else
                 _animator.CrossFade(targetState, 0.12f, 0);
             _activeAuthoredState = targetState;
@@ -320,6 +334,23 @@ public class CharacterAnimator : MonoBehaviour
 
         _animator.speed = targetState == RunState
             ? Mathf.Clamp(speed / 10f, 0.85f, 1.4f)
+            : 1f;
+    }
+
+    private void ApplyAuthoredSlideMotion(float slideDuration)
+    {
+        if (_animator == null) return;
+
+        if (_activeAuthoredState != SlideState)
+        {
+            _animator.Play(SlideState, 0, 0f);
+            _animator.Update(0f);
+            _activeAuthoredState = SlideState;
+        }
+
+        AnimatorStateInfo state = _animator.GetCurrentAnimatorStateInfo(0);
+        _animator.speed = state.length > 0.001f
+            ? state.length / Mathf.Max(0.2f, slideDuration)
             : 1f;
     }
 
