@@ -155,25 +155,36 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
     private static AILinUcbPolicy _sessionPolicy;
     private GameManager _gameManager;
     private int _decisionCount;
-    private int _evaluatedCoins;
-    private int _evaluatedDodges;
-    private int _evaluatedHits;
-    private float _evaluatedDistance;
+    private int _lastPlannedHitCount;
     private int _laneChanges;
     private int _jumps;
     private int _slides;
     private int _coins;
     private int _dodges;
     private int _hits;
+    private float _lastHitDistance = float.NegativeInfinity;
     private readonly int[] _laneVisits = { 0, 1, 0 };
-    private readonly Queue<PendingDecision> _pendingDecisions =
-        new Queue<PendingDecision>();
-    private sealed class PendingDecision
+    private readonly Queue<PlannedDecision> _plannedDecisions =
+        new Queue<PlannedDecision>();
+    private PlannedDecision _activeDecision;
+
+    private sealed class PlannedDecision
     {
         public int action;
         public float[] context;
+        public AITrackPlan plan;
+        public ShadowAIDirective directive;
+        public float policyMean;
+        public float policyUncertainty;
+        public bool safetyAdjusted;
+        public float segmentStartDistance;
         public float segmentEndDistance;
         public int telemetryDecisionId;
+        public bool activated;
+        public float activationDistance;
+        public int coinsAtActivation;
+        public int dodgesAtActivation;
+        public int hitsAtActivation;
     }
 
     void Awake()
@@ -207,6 +218,15 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         float baseCoinChance, float baseTurnChance, int previousSafeLane, bool canTurn,
         float segmentEndDistance)
     {
+        return CreatePlan(baseDifficulty, baseObstacleChance, baseCoinChance,
+            baseTurnChance, previousSafeLane, canTurn,
+            Mathf.Max(0f, segmentEndDistance - 20f), segmentEndDistance);
+    }
+
+    public AITrackPlan CreatePlan(float baseDifficulty, float baseObstacleChance,
+        float baseCoinChance, float baseTurnChance, int previousSafeLane, bool canTurn,
+        float segmentStartDistance, float segmentEndDistance)
+    {
         if (_sessionPolicy == null)
         {
             _sessionPolicy = new AILinUcbPolicy(
@@ -215,15 +235,14 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         }
 
         _decisionCount++;
-        TrainCompletedPlans(false);
 
         float[] context = BuildContext();
         AIDirectorIntent intent;
         int proposedAction = -1;
-        LastPolicyMean = 0f;
-        LastPolicyUncertainty = 0f;
-        LastDecisionSafetyAdjusted = false;
-        PendingDecision pendingDecision = null;
+        float policyMean = 0f;
+        float policyUncertainty = 0f;
+        bool safetyAdjusted = false;
+        int selectedAction = -1;
         if (!useAI || _decisionCount <= Mathf.Max(1, observationSegments))
         {
             intent = AIDirectorIntent.Observe;
@@ -232,41 +251,79 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         {
             proposedAction = _sessionPolicy.Select(
                 context, explorationRate);
-            LastPolicyMean = _sessionPolicy.LastSelectedMean;
-            LastPolicyUncertainty =
+            policyMean = _sessionPolicy.LastSelectedMean;
+            policyUncertainty =
                 _sessionPolicy.LastSelectedUncertainty;
             int action = ApplySafetyConstraints(
                 proposedAction, context);
-            LastDecisionSafetyAdjusted = action != proposedAction;
+            safetyAdjusted = action != proposedAction;
+            selectedAction = action;
             intent = (AIDirectorIntent)(action + 1);
-            pendingDecision = new PendingDecision
-            {
-                action = action,
-                context = (float[])context.Clone(),
-                segmentEndDistance = segmentEndDistance
-            };
         }
 
-        CurrentPlan = BuildPlan(intent, baseDifficulty, baseObstacleChance,
+        AITrackPlan plan = BuildPlan(intent, baseDifficulty, baseObstacleChance,
             baseCoinChance, baseTurnChance, previousSafeLane, canTurn);
-        CurrentPlan = ApplyEchoContract(
-            CurrentPlan, AIShadowRunner.Instance != null
+        plan = ApplyEchoContract(
+            plan, AIShadowRunner.Instance != null
                 ? AIShadowRunner.Instance.ActiveContract
                 : null,
             _decisionCount);
-        CurrentShadowDirective = BuildShadowDirective(intent);
+        ShadowAIDirective directive = BuildShadowDirective(intent);
         int telemetryDecisionId =
             AIRunTelemetry.RecordDirectorDecision(
-                context, CurrentPlan, proposedAction,
-                LastPolicyMean, LastPolicyUncertainty,
-                LastDecisionSafetyAdjusted);
-        if (pendingDecision != null)
+                context, plan, proposedAction,
+                policyMean, policyUncertainty,
+                safetyAdjusted, segmentStartDistance, segmentEndDistance);
+        _plannedDecisions.Enqueue(new PlannedDecision
         {
-            pendingDecision.telemetryDecisionId = telemetryDecisionId;
-            _pendingDecisions.Enqueue(pendingDecision);
+            action = selectedAction,
+            context = (float[])context.Clone(),
+            plan = plan,
+            directive = directive,
+            policyMean = policyMean,
+            policyUncertainty = policyUncertainty,
+            safetyAdjusted = safetyAdjusted,
+            segmentStartDistance = Mathf.Max(0f, segmentStartDistance),
+            segmentEndDistance = Mathf.Max(segmentStartDistance,
+                segmentEndDistance),
+            telemetryDecisionId = telemetryDecisionId
+        });
+        _lastPlannedHitCount = _hits;
+        return plan;
+    }
+
+    public void ActivatePlanForDistance(float distance)
+    {
+        float routeDistance = Mathf.Max(0f, distance);
+        while (_plannedDecisions.Count > 0
+               && _plannedDecisions.Peek().segmentEndDistance
+               <= routeDistance + 0.01f)
+        {
+            PlannedDecision completed = _plannedDecisions.Dequeue();
+            if (ReferenceEquals(_activeDecision, completed))
+            {
+                ResolveDecision(completed, routeDistance);
+                _activeDecision = null;
+            }
         }
-        CurrentStatus = BuildStatus(CurrentPlan);
-        return CurrentPlan;
+
+        if (_activeDecision != null || _plannedDecisions.Count == 0) return;
+
+        PlannedDecision candidate = _plannedDecisions.Peek();
+        if (candidate.segmentStartDistance > routeDistance + 0.5f
+            || candidate.segmentEndDistance < routeDistance - 0.01f)
+            return;
+
+        ActivateDecision(candidate, routeDistance);
+    }
+
+    public void FinalizeActivePlanForRunEnd(float distance)
+    {
+        if (_activeDecision != null)
+            ResolveDecision(_activeDecision, Mathf.Max(0f, distance));
+        _activeDecision = null;
+        _plannedDecisions.Clear();
+        CurrentShadowDirective = ShadowAIDirective.Neutral;
     }
 
     public void RecordLaneChange(int lane)
@@ -277,9 +334,24 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
 
     public void RecordJump() => _jumps++;
     public void RecordSlide() => _slides++;
-    public void RecordCoin() => _coins++;
-    public void RecordDodge() => _dodges++;
-    public void RecordObstacleHit() => _hits++;
+    public void RecordCoin()
+    {
+        ActivateAtCurrentDistance();
+        _coins++;
+    }
+
+    public void RecordDodge()
+    {
+        ActivateAtCurrentDistance();
+        _dodges++;
+    }
+
+    public void RecordObstacleHit()
+    {
+        ActivateAtCurrentDistance();
+        _hits++;
+        _lastHitDistance = _gameManager != null ? _gameManager.Distance : 0f;
+    }
 
     public float[] GetModelWeightsSnapshot()
     {
@@ -305,10 +377,11 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         CurrentPlan = default;
         CurrentShadowDirective = ShadowAIDirective.Neutral;
         CurrentStatus = "AI导演 · 训练已重置";
-        _pendingDecisions.Clear();
+        _plannedDecisions.Clear();
+        _activeDecision = null;
         _decisionCount = 0;
-        _evaluatedCoins = _evaluatedDodges = _evaluatedHits = 0;
-        _evaluatedDistance = 0f;
+        _lastPlannedHitCount = 0;
+        _lastHitDistance = float.NegativeInfinity;
         _laneChanges = _jumps = _slides = _coins = _dodges = _hits = 0;
         _laneVisits[0] = 0;
         _laneVisits[1] = 1;
@@ -320,7 +393,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
     {
         return ConstrainAction(proposedAction, context[2],
             AIPlayerSkillEstimator.Uncertainty,
-            _hits > _evaluatedHits);
+            _hits > _lastPlannedHitCount);
     }
 
     public static int ConstrainAction(int proposedAction, float strain,
@@ -340,7 +413,8 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             CurrentStatus = "AI导演 · 正在观察";
         else if (state == GameState.GameOver)
         {
-            TrainCompletedPlans(true);
+            float distance = _gameManager != null ? _gameManager.Distance : 0f;
+            FinalizeActivePlanForRunEnd(distance);
             SaveDirectorModel();
         }
     }
@@ -357,7 +431,8 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         float skillConfidence = AIPlayerSkillEstimator.Confidence;
         float mastery = Mathf.Lerp(
             liveMastery, AIPlayerSkillEstimator.Skill, skillConfidence);
-        float strain = Mathf.Clamp01(_hits * 0.8f
+        float strain = Mathf.Clamp01(CalculateRecentHitStrain(
+                           distance, _lastHitDistance)
                        + Mathf.Max(0f, actionCount - distance / 8f) / 20f
                        + AIPlayerSkillEstimator.Uncertainty * 0.18f);
         float recordPressure = highScore > 0f
@@ -379,28 +454,56 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         return new[] { 1f, mastery, strain, recordPressure, engagement };
     }
 
-    private void TrainCompletedPlans(bool includeFailedSegment)
+    public static float CalculateRecentHitStrain(float distance,
+        float lastHitDistance, float recoveryDistance = 60f)
     {
-        if (_sessionPolicy == null || _pendingDecisions.Count == 0) return;
-
-        float distance = _gameManager != null ? _gameManager.Distance : 0f;
-        while (_pendingDecisions.Count > 0
-               && _pendingDecisions.Peek().segmentEndDistance <= distance + 0.5f)
-        {
-            TrainDecision(_pendingDecisions.Dequeue(), distance);
-        }
-
-        // A collision happens inside a segment, before its end marker is reached.
-        if (includeFailedSegment && _pendingDecisions.Count > 0 && _hits > _evaluatedHits)
-            TrainDecision(_pendingDecisions.Dequeue(), distance);
+        if (float.IsNaN(lastHitDistance)
+            || float.IsInfinity(lastHitDistance))
+            return 0f;
+        float sinceHit = Mathf.Max(0f, distance - lastHitDistance);
+        return (1f - Mathf.Clamp01(
+            sinceHit / Mathf.Max(1f, recoveryDistance))) * 0.8f;
     }
 
-    private void TrainDecision(PendingDecision decision, float distance)
+    private void ActivateDecision(PlannedDecision decision, float distance)
     {
-        int coinGain = _coins - _evaluatedCoins;
-        int dodgeGain = _dodges - _evaluatedDodges;
-        int hitGain = _hits - _evaluatedHits;
-        float distanceGain = Mathf.Max(0f, distance - _evaluatedDistance);
+        decision.activated = true;
+        decision.activationDistance = Mathf.Clamp(distance,
+            decision.segmentStartDistance, decision.segmentEndDistance);
+        decision.coinsAtActivation = _coins;
+        decision.dodgesAtActivation = _dodges;
+        decision.hitsAtActivation = _hits;
+        _activeDecision = decision;
+        CurrentPlan = decision.plan;
+        CurrentShadowDirective = decision.directive;
+        LastPolicyMean = decision.policyMean;
+        LastPolicyUncertainty = decision.policyUncertainty;
+        LastDecisionSafetyAdjusted = decision.safetyAdjusted;
+        CurrentStatus = BuildStatus(decision.plan);
+        AIRunTelemetry.RecordDirectorActivation(
+            decision.telemetryDecisionId, decision.activationDistance);
+    }
+
+    private void ActivateAtCurrentDistance()
+    {
+        ActivatePlanForDistance(
+            _gameManager != null ? _gameManager.Distance : 0f);
+    }
+
+    private void ResolveDecision(PlannedDecision decision, float distance)
+    {
+        if (!decision.activated) return;
+        int coinGain = Mathf.Max(0, _coins - decision.coinsAtActivation);
+        int dodgeGain = Mathf.Max(0, _dodges - decision.dodgesAtActivation);
+        int hitGain = Mathf.Max(0, _hits - decision.hitsAtActivation);
+        float evaluatedDistance = Mathf.Clamp(distance,
+            decision.segmentStartDistance, decision.segmentEndDistance);
+        float distanceGain = Mathf.Max(0f,
+            evaluatedDistance - decision.activationDistance);
+
+        AIPlayerSkillEstimator.RecordSegmentOutcome(
+            hitGain == 0, distanceGain);
+        if (decision.action < 0 || _sessionPolicy == null) return;
 
         float reward = 0.15f
                        + Mathf.Clamp01(distanceGain / 25f) * 0.35f
@@ -409,18 +512,12 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
                        - hitGain * 1.25f;
 
         float clampedReward = Mathf.Clamp(reward, -1f, 1f);
-        AIPlayerSkillEstimator.RecordSegmentOutcome(
-            hitGain == 0, distanceGain);
         _sessionPolicy.Update(decision.action, decision.context,
             clampedReward, learningRate * 12.5f);
         ModelUpdateCount++;
         AIRunTelemetry.RecordDirectorOutcome(
             decision.telemetryDecisionId, clampedReward, ModelUpdateCount);
         SaveDirectorModel();
-        _evaluatedDistance = distance;
-        _evaluatedCoins = _coins;
-        _evaluatedDodges = _dodges;
-        _evaluatedHits = _hits;
     }
 
     private void SaveDirectorModel()
@@ -532,29 +629,35 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         return plan;
     }
 
-    private static ShadowAIDirective BuildShadowDirective(
+    public static ShadowAIDirective BuildShadowDirective(
         AIDirectorIntent intent)
     {
         ShadowAIDirective directive = ShadowAIDirective.Neutral;
         switch (intent)
         {
             case AIDirectorIntent.Observe:
-                directive.styleInfluence = 0.65f;
-                directive.riskBias = -0.25f;
+                directive.styleInfluence = 1f;
+                directive.riskBias = 0f;
                 directive.decisionNoise = 0.05f;
                 break;
             case AIDirectorIntent.Recovery:
-                directive.styleInfluence = 0.8f;
-                directive.riskBias = -0.45f;
+                directive.styleInfluence = 1f;
+                directive.riskBias = -0.1f;
                 directive.decisionNoise = 0.04f;
                 break;
+            case AIDirectorIntent.Flow:
+                directive.styleInfluence = 1f;
+                directive.riskBias = 0f;
+                directive.decisionNoise = 0.06f;
+                break;
             case AIDirectorIntent.Pressure:
-                directive.riskBias = 0.2f;
-                directive.decisionNoise = 0.1f;
+                directive.styleInfluence = 1f;
+                directive.riskBias = 0.08f;
+                directive.decisionNoise = 0.08f;
                 break;
             case AIDirectorIntent.RecordPush:
-                directive.styleInfluence = 0.85f;
-                directive.riskBias = 0.4f;
+                directive.styleInfluence = 1f;
+                directive.riskBias = 0.12f;
                 directive.decisionNoise = 0.06f;
                 break;
         }

@@ -106,6 +106,8 @@ public class AIShadowRunner : MonoBehaviour
     private float _gapSmoothVelocity;
     private float _laneDecisionCooldown;
     private float _ghostProgress;
+    private float _playerPhysicalProgress;
+    private float _playerBonusProgress;
     private float _playerProgress;
     private float _runTime;
     private float _decisionTimer;
@@ -173,12 +175,13 @@ public class AIShadowRunner : MonoBehaviour
         _runTime += Time.deltaTime;
         if (HasActiveOpponent && _contractEvaluator != null)
             _contractEvaluator.TickLane(_player.CurrentLane, Time.deltaTime);
-        _playerProgress = _gameManager.Distance
-                          + _runCoins * coinProgressBonus
-                          + _runDodges * dodgeProgressBonus
-                          + (_contractEvaluator != null
-                              ? _contractEvaluator.Contract.playerProgressBonus
-                              : 0f);
+        _playerPhysicalProgress = _gameManager.Distance;
+        _playerBonusProgress = _runCoins * coinProgressBonus
+                               + _runDodges * dodgeProgressBonus
+                               + (_contractEvaluator != null
+                                   ? _contractEvaluator.Contract.playerProgressBonus
+                                   : 0f);
+        _playerProgress = _playerPhysicalProgress + _playerBonusProgress;
 
         _keepSampleTimer += Time.deltaTime;
         if (_keepSampleTimer >= keepSampleInterval)
@@ -275,31 +278,47 @@ public class AIShadowRunner : MonoBehaviour
         float[] features = BuildFeatures(laneBeforeAction, false);
         float timingOffset = 0f;
         float styleProximity = features[3];
-        if (action == ShadowAction.Jump && _gameManager != null
+        bool matchedActionObstacle = false;
+        if ((action == ShadowAction.Jump || action == ShadowAction.Slide)
+            && _gameManager != null
             && _player != null && TrackManager.Instance != null
             && TrackManager.Instance.TryGetUpcomingObstacleInLane(
                 _player.transform.position, _player.ForwardDirection,
-                laneBeforeAction, null, out float jumpObstacleDistance,
-                out ObstacleType jumpObstacleType, out _)
-            && jumpObstacleType == ObstacleType.High)
+                laneBeforeAction, null, out float actionObstacleDistance,
+                out ObstacleType actionObstacleType, out _))
         {
-            styleProximity = 1f - Mathf.Clamp01(jumpObstacleDistance / 24f);
-            float idealDistance = CalculateReactionDistance(
-                _gameManager.CurrentSpeed,
-                _player != null ? _player.jumpDuration : 0.9f);
-            timingOffset = Mathf.Clamp(
-                (idealDistance - jumpObstacleDistance)
-                / Mathf.Max(1f, idealDistance),
-                -1f, 1f);
+            ObstacleType expectedType = action == ShadowAction.Jump
+                ? ObstacleType.High : ObstacleType.Low;
+            if (actionObstacleType == expectedType)
+            {
+                matchedActionObstacle = true;
+                float duration = action == ShadowAction.Jump
+                    ? _player.jumpDuration : _player.slideDuration;
+                float idealDistance = CalculateReactionDistance(
+                    _gameManager.CurrentSpeed, duration);
+                float normalizedTiming = CalculateActionTimingOffset(
+                    actionObstacleDistance, idealDistance);
+                styleProximity = (normalizedTiming + 1f) * 0.5f;
+                if (action == ShadowAction.Jump)
+                    timingOffset = normalizedTiming;
+            }
+            else styleProximity = 0f;
         }
+        else if (action == ShadowAction.Jump || action == ShadowAction.Slide)
+            styleProximity = 0f;
         if (action == ShadowAction.Slide)
             _slideOpportunityTracker.MarkSlide(laneBeforeAction);
         bool airLaneChange = _player != null && _player.IsJumping
                              && (action == ShadowAction.Left
                                  || action == ShadowAction.Right);
         StyleTracker.RecordAction(action, styleProximity, timingOffset,
-            Time.unscaledTime, airLaneChange);
-        AIPlayerSkillEstimator.RecordAction(action, features);
+            airLaneChange);
+        if (matchedActionObstacle)
+        {
+            float[] skillFeatures = (float[])features.Clone();
+            skillFeatures[3] = styleProximity;
+            AIPlayerSkillEstimator.RecordAction(action, skillFeatures);
+        }
         Learn(action, features);
         _keepSampleTimer = 0f;
     }
@@ -360,7 +379,7 @@ public class AIShadowRunner : MonoBehaviour
     public void ResetTraining()
     {
         SetGhostActive(false);
-        _profile = new ShadowProfile { version = 2 };
+        _profile = new ShadowProfile { version = 3 };
         _policy = new AIShadowPolicy();
         _sequencePolicy = new AIShadowSequencePolicy();
         _opponentPolicy = null;
@@ -398,6 +417,8 @@ public class AIShadowRunner : MonoBehaviour
         _runTime = 0f;
         _runCoins = 0;
         _runDodges = 0;
+        _playerPhysicalProgress = 0f;
+        _playerBonusProgress = 0f;
         _playerProgress = 0f;
         _ghostProgress = 0f;
         PlayerLead = 0f;
@@ -477,10 +498,14 @@ public class AIShadowRunner : MonoBehaviour
             PlayerLead, challengedOpponent, contractCompleted, endReason);
         LastRunWasChallenge = challengedOpponent;
         LastRunWon = playerWon;
-        float runPace = _playerProgress / Mathf.Max(1f, _runTime);
+        float physicalDistance = _gameManager != null
+            ? _gameManager.Distance
+            : _playerPhysicalProgress;
+        float runPace = CalculatePhysicalPace(physicalDistance, _runTime);
         if (_profile.pace <= 0f) _profile.pace = runPace;
         else _profile.pace = Mathf.Lerp(_profile.pace, runPace, 0.35f);
-        _profile.bestProgress = Mathf.Max(_profile.bestProgress, _playerProgress);
+        _profile.bestProgress = Mathf.Max(
+            _profile.bestProgress, physicalDistance);
         bool completedCalibration = reachedFinish && HasCalibrationSamples(
             _profile.sampleCount, _profile.activeSampleCount,
             _profile.actionCounts, minimumTrainingSamples,
@@ -573,9 +598,15 @@ public class AIShadowRunner : MonoBehaviour
         AIRunTelemetry.RecordShadowSample(
             action, lane, features, false, confidence, (int)action,
             0f, 0f);
-        _policy.Learn((int)action, features, learningRate);
-        _sequencePolicy.Learn(_lastTrainingAction, (int)action);
-        _lastTrainingAction = (int)action;
+        float sampleLearningRate = action == ShadowAction.Keep
+            ? learningRate * 0.25f
+            : learningRate;
+        _policy.Learn((int)action, features, sampleLearningRate);
+        if (action != ShadowAction.Keep)
+        {
+            _sequencePolicy.Learn(_lastTrainingAction, (int)action);
+            _lastTrainingAction = (int)action;
+        }
         _profile.sampleCount++;
         EnsureActionCounts();
         int actionIndex = Mathf.Clamp((int)action, 0, _profile.actionCounts.Length - 1);
@@ -1032,6 +1063,20 @@ public class AIShadowRunner : MonoBehaviour
         return AIShadowRules.EvaluateSlideAmount(remainingTime, duration);
     }
 
+    public static float CalculatePhysicalPace(float physicalDistance,
+        float elapsedTime)
+    {
+        return Mathf.Max(0f, physicalDistance) / Mathf.Max(1f, elapsedTime);
+    }
+
+    public static float CalculateActionTimingOffset(float obstacleDistance,
+        float idealDistance)
+    {
+        return Mathf.Clamp(
+            (Mathf.Max(0f, idealDistance) - Mathf.Max(0f, obstacleDistance))
+            / Mathf.Max(1f, idealDistance), -1f, 1f);
+    }
+
     private float GetGhostJumpDuration()
     {
         return Mathf.Max(0.2f, _player != null ? _player.jumpDuration : 0.6f);
@@ -1211,7 +1256,7 @@ public class AIShadowRunner : MonoBehaviour
             }
         }
 
-        if (_profile == null) _profile = new ShadowProfile { version = 2 };
+        if (_profile == null) _profile = new ShadowProfile { version = 3 };
         NormalizeProfile();
         _policy = new AIShadowPolicy(_profile.weights);
         _sequencePolicy = new AIShadowSequencePolicy(_profile.sequenceTransitions,
@@ -1235,7 +1280,6 @@ public class AIShadowRunner : MonoBehaviour
     {
         if (_profile.version < 2)
         {
-            _profile.version = 2;
             if (_profile.generation > 0)
             {
                 _profile.sampleCount = Mathf.Max(
@@ -1247,6 +1291,14 @@ public class AIShadowRunner : MonoBehaviour
                 _profile.actionCounts[(int)ShadowAction.Jump] = 1;
             }
         }
+
+        if (_profile.version < 3)
+        {
+            // Older sequence data mixed passive Keep samples into action habits.
+            _profile.sequenceTransitions = null;
+            _profile.sequencePairCount = 0;
+        }
+        _profile.version = 3;
 
         _profile.sampleCount = Mathf.Max(0, _profile.sampleCount);
         _profile.activeSampleCount = Mathf.Clamp(

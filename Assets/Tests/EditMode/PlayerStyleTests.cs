@@ -138,6 +138,7 @@ public class PlayerStyleTests
         {
             style.ObserveAggressiveness(1f);
             style.ObserveJumpTiming(-0.8f);
+            style.ObserveVerticalAction(ShadowAction.Slide);
             style.ObserveSlideOpportunity(true);
             style.ObserveLane(0);
             style.ObserveRhythm(0.95f);
@@ -151,6 +152,36 @@ public class PlayerStyleTests
         Assert.Greater(style.rhythmStability, 0.8f);
         Assert.Greater(style.recoveryStyle, 0.75f);
         Assert.Greater(style.Confidence, 0.5f);
+    }
+
+    [Test]
+    public void ObstacleSuccessDoesNotMasqueradeAsVerticalActionPreference()
+    {
+        var style = new PlayerStyleData();
+        for (int i = 0; i < 6; i++)
+            style.ObserveVerticalAction(ShadowAction.Jump);
+        float actionPreference = style.slideFrequency;
+
+        for (int i = 0; i < 12; i++)
+            style.ObserveSlideOpportunity(true);
+
+        Assert.AreEqual(actionPreference, style.slideFrequency, 0.0001f);
+        Assert.Greater(style.slideOpportunitySuccess, 0.8f);
+        Assert.Less(style.slideFrequency, 0.25f);
+    }
+
+    [Test]
+    public void LegacyObstacleSuccessIsNotImportedAsActionPreference()
+    {
+        PlayerStyleData legacy = JsonUtility.FromJson<PlayerStyleData>(
+            "{\"version\":1,\"slideFrequency\":0.95,"
+            + "\"slideOpportunitySamples\":20}");
+
+        legacy.Normalize();
+
+        Assert.AreEqual(PlayerStyleData.CurrentVersion, legacy.version);
+        Assert.AreEqual(0.5f, legacy.slideFrequency, 0.0001f);
+        Assert.AreEqual(0, legacy.verticalActionSamples);
     }
 
     [Test]
@@ -212,6 +243,7 @@ public class PlayerStyleTests
         {
             aggressivenessSamples = 20,
             jumpTimingSamples = 20,
+            verticalActionSamples = 20,
             slideOpportunitySamples = 20,
             laneSamples = 20,
             rhythmSamples = 20,

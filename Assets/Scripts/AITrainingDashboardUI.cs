@@ -415,7 +415,8 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         _liveDebugText.text = "AI 实时诊断"
             + "\n激进 " + Percent(style.aggressiveness)
             + "  跳时 " + SignedPercent(style.jumpTiming)
-            + "  滑铲 " + Percent(style.slideFrequency)
+            + "  滑铲占比 " + Percent(style.slideFrequency)
+            + "  低障碍成功 " + Percent(style.slideOpportunitySuccess)
             + "\n车道 " + SignedPercent(style.lanePreference)
             + "  节奏 " + Percent(style.rhythmStability)
             + "  恢复 " + Percent(style.recoveryStyle)
@@ -445,7 +446,8 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         return "风格置信       " + Percent(style.Confidence)
             + "\n激进 " + Percent(style.aggressiveness)
             + "  跳时 " + SignedPercent(style.jumpTiming)
-            + "  滑铲 " + Percent(style.slideFrequency)
+            + "  滑铲占比 " + Percent(style.slideFrequency)
+            + "  低障碍成功 " + Percent(style.slideOpportunitySuccess)
             + "\n车道 " + SignedPercent(style.lanePreference)
             + "  节奏 " + Percent(style.rhythmStability)
             + "  恢复 " + Percent(style.recoveryStyle);

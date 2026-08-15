@@ -119,6 +119,7 @@ public class TrackManager : MonoBehaviour
         {
             SpawnSegment();
         }
+        _aiDirector?.ActivatePlanForDistance(playerRouteDistance);
 
         while (_activeSegments.Count > 0)
         {
@@ -402,7 +403,8 @@ public class TrackManager : MonoBehaviour
                        && turnLeftPrefab != null && turnRightPrefab != null;
         AITrackPlan plan = _aiDirector != null && _aiDirector.useAI
             ? _aiDirector.CreatePlan(baseDifficulty, obstacleChance, coinChance,
-                turnChance, _lastSafeLane, canTurn, _plannedDistance + segmentLength)
+                turnChance, _lastSafeLane, canTurn, _plannedDistance,
+                _plannedDistance + segmentLength)
             : CreateFallbackPlan(baseDifficulty, canTurn);
         float courseDistance = GameManager.Instance != null
             ? GameManager.Instance.CourseDistance

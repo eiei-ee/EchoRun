@@ -26,7 +26,7 @@ public sealed class EchoContractTests
         var style = new PlayerStyleData
         {
             slideFrequency = 0.95f,
-            slideOpportunitySamples = 12
+            verticalActionSamples = 12
         };
 
         EchoContractData contract = EchoContractPolicy.Create(style, 4);
@@ -195,6 +195,7 @@ public sealed class EchoContractTests
             {
                 lanePreference = 0.8f,
                 slideFrequency = 0.9f,
+                verticalActionSamples = 12,
                 rhythmStability = 0.9f
             });
 

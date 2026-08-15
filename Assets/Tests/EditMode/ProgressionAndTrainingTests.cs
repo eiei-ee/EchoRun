@@ -216,6 +216,29 @@ public sealed class ProgressionAndTrainingTests
         StringAssert.Contains("没有采集到新的玩家动作样本", report.summary);
     }
 
+    [Test]
+    public void TrainingReportDoesNotPresentPassiveKeepSamplesAsLearningFocus()
+    {
+        var telemetry = new AIRunTelemetryData
+        {
+            completed = true,
+            finishReason = "finish_reached"
+        };
+        for (int i = 0; i < 20; i++)
+            telemetry.shadowSamples.Add(new AIShadowTrainingSample
+            {
+                action = (int)ShadowAction.Keep
+            });
+        telemetry.shadowSamples.Add(new AIShadowTrainingSample
+        {
+            action = (int)ShadowAction.Slide
+        });
+
+        AITrainingReport report = AITrainingReportBuilder.FromTelemetry(telemetry);
+
+        Assert.AreEqual("滑铲", report.learnedAction);
+    }
+
     [TestCase("menu")]
     [TestCase("restart")]
     public void TrainingReportRejectsAbandonedRun(string finishReason)

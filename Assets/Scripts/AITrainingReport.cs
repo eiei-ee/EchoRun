@@ -83,8 +83,8 @@ public static class AITrainingReportBuilder
     private static int DominantAction(int[] counts)
     {
         if (counts == null || counts.Length < 5) return -1;
-        int best = 0;
-        for (int i = 1; i < counts.Length; i++)
+        int best = 1;
+        for (int i = 2; i < counts.Length; i++)
             if (counts[i] > counts[best]) best = i;
         return counts[best] > 0 ? best : -1;
     }

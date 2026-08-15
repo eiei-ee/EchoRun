@@ -4,18 +4,22 @@ using UnityEngine;
 [Serializable]
 public sealed class PlayerStyleData
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     public int version = CurrentVersion;
     [Range(0f, 1f)] public float aggressiveness = 0.5f;
     [Range(-1f, 1f)] public float jumpTiming;
     [Range(0f, 1f)] public float slideFrequency = 0.5f;
+    [Range(0f, 1f)] public float slideOpportunitySuccess = 0.5f;
     [Range(-1f, 1f)] public float lanePreference;
     [Range(0f, 1f)] public float rhythmStability = 0.5f;
     [Range(0f, 1f)] public float recoveryStyle = 0.5f;
 
     public int aggressivenessSamples;
     public int jumpTimingSamples;
+    public int verticalActionSamples;
+    public int jumpActionSamples;
+    public int slideActionSamples;
     public int slideOpportunitySamples;
     public int laneSamples;
     public int rhythmSamples;
@@ -27,7 +31,8 @@ public sealed class PlayerStyleData
         {
             float weightedSamples = aggressivenessSamples
                                     + jumpTimingSamples
-                                    + slideOpportunitySamples
+                                    + verticalActionSamples
+                                    + slideOpportunitySamples * 0.25f
                                     + laneSamples * 0.1f
                                     + rhythmSamples
                                     + recoverySamples * 2f;
@@ -37,15 +42,25 @@ public sealed class PlayerStyleData
 
     public void Normalize()
     {
+        bool migratedLegacyVerticalStyle = version < 2
+                                           && verticalActionSamples <= 0;
         version = CurrentVersion;
         aggressiveness = Mathf.Clamp01(aggressiveness);
         jumpTiming = Mathf.Clamp(jumpTiming, -1f, 1f);
-        slideFrequency = Mathf.Clamp01(slideFrequency);
+        slideFrequency = migratedLegacyVerticalStyle
+            ? 0.5f
+            : Mathf.Clamp01(slideFrequency);
+        slideOpportunitySuccess = Mathf.Clamp01(slideOpportunitySuccess);
         lanePreference = Mathf.Clamp(lanePreference, -1f, 1f);
         rhythmStability = Mathf.Clamp01(rhythmStability);
         recoveryStyle = Mathf.Clamp01(recoveryStyle);
         aggressivenessSamples = Mathf.Max(0, aggressivenessSamples);
         jumpTimingSamples = Mathf.Max(0, jumpTimingSamples);
+        jumpActionSamples = Mathf.Max(0, jumpActionSamples);
+        slideActionSamples = Mathf.Max(0, slideActionSamples);
+        verticalActionSamples = Mathf.Max(
+            jumpActionSamples + slideActionSamples,
+            Mathf.Max(0, verticalActionSamples));
         slideOpportunitySamples = Mathf.Max(0, slideOpportunitySamples);
         laneSamples = Mathf.Max(0, laneSamples);
         rhythmSamples = Mathf.Max(0, rhythmSamples);
@@ -71,8 +86,19 @@ public sealed class PlayerStyleData
 
     public void ObserveSlideOpportunity(bool usedSlide)
     {
-        slideFrequency = UpdateAverage(slideFrequency,
+        slideOpportunitySuccess = UpdateAverage(slideOpportunitySuccess,
             usedSlide ? 1f : 0f, slideOpportunitySamples++);
+    }
+
+    public void ObserveVerticalAction(ShadowAction action)
+    {
+        if (action == ShadowAction.Jump) jumpActionSamples++;
+        else if (action == ShadowAction.Slide) slideActionSamples++;
+        else return;
+
+        verticalActionSamples = jumpActionSamples + slideActionSamples;
+        slideFrequency = (slideActionSamples + 1f)
+                         / (verticalActionSamples + 2f);
     }
 
     public void ObserveLane(int lane)

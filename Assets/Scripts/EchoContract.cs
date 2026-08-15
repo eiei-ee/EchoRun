@@ -72,7 +72,7 @@ public static class EchoContractPolicy
         style.Normalize();
 
         float laneEvidence = Mathf.Clamp01(style.laneSamples / 12f);
-        float verticalEvidence = Mathf.Clamp01(style.slideOpportunitySamples / 5f);
+        float verticalEvidence = Mathf.Clamp01(style.verticalActionSamples / 5f);
         float rhythmEvidence = Mathf.Clamp01(style.rhythmSamples / 6f);
         float laneScore = Mathf.Abs(style.lanePreference) * laneEvidence;
         float verticalScore = Mathf.Abs(style.slideFrequency - 0.5f)
@@ -142,7 +142,7 @@ public static class EchoContractPolicy
             targetAction = target,
             targetProgress = 3f,
             title = "回声契约：动作反转",
-            learnedTrait = "AI识别：你更依赖" + learnedName,
+            learnedTrait = "AI识别：你上一代更常执行" + learnedName,
             ruleDescription = "本代提高需要" + targetName
                               + "破解的组合；重复旧动作会给回声推进优势。",
             objective = "用" + targetName + "正确躲避 3 次，并在终点领先回声。"
@@ -192,9 +192,11 @@ public static class EchoContractPolicy
         string lane = Mathf.Abs(style.lanePreference) < 0.2f
             ? "路线较均衡"
             : style.lanePreference < 0f ? "偏爱左路" : "偏爱右路";
-        string vertical = Mathf.Abs(style.slideFrequency - 0.5f) < 0.12f
-            ? "跳滑均衡"
-            : style.slideFrequency > 0.5f ? "常用滑铲" : "常用跳跃";
+        string vertical = style.verticalActionSamples < 3
+            ? "跳滑样本不足"
+            : Mathf.Abs(style.slideFrequency - 0.5f) < 0.12f
+                ? "跳滑均衡"
+                : style.slideFrequency > 0.5f ? "常用滑铲" : "常用跳跃";
         string rhythm = style.rhythmStability >= 0.65f
             ? "节奏固定"
             : style.rhythmStability <= 0.35f ? "节奏多变" : "节奏中性";

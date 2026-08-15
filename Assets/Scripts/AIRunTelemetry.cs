@@ -47,6 +47,10 @@ public sealed class AIDirectorDecisionSample
     public int safeLane;
     public int maxBlockedLanes;
     public bool shouldTurn;
+    public float segmentStartDistance;
+    public float segmentEndDistance;
+    public bool activated;
+    public float activationDistance;
     public bool trained;
     public float reward;
     public int modelUpdateCount;
@@ -140,7 +144,7 @@ public sealed class AIRunTelemetryData
 
 public static class AIRunTelemetry
 {
-    public const int SchemaVersion = 5;
+    public const int SchemaVersion = 7;
     public const float StateSampleInterval = 0.25f;
     public const string CompletedTrainingReason = "finish_reached";
 
@@ -251,7 +255,8 @@ public static class AIRunTelemetry
 
     public static int RecordDirectorDecision(float[] context,
         AITrackPlan plan, int proposedAction, float policyMean,
-        float policyUncertainty, bool safetyAdjusted)
+        float policyUncertainty, bool safetyAdjusted,
+        float segmentStartDistance = 0f, float segmentEndDistance = 0f)
     {
         if (!IsRecording) return 0;
         int id = _nextDecisionId++;
@@ -273,9 +278,26 @@ public static class AIRunTelemetry
             coinChance = plan.coinChance,
             safeLane = plan.safeLane,
             maxBlockedLanes = plan.maxBlockedLanes,
-            shouldTurn = plan.shouldTurn
+            shouldTurn = plan.shouldTurn,
+            segmentStartDistance = Mathf.Max(0f, segmentStartDistance),
+            segmentEndDistance = Mathf.Max(segmentStartDistance,
+                segmentEndDistance)
         });
         return id;
+    }
+
+    public static void RecordDirectorActivation(int decisionId,
+        float activationDistance)
+    {
+        if (!IsRecording || decisionId <= 0) return;
+        for (int i = _active.directorDecisions.Count - 1; i >= 0; i--)
+        {
+            AIDirectorDecisionSample sample = _active.directorDecisions[i];
+            if (sample.id != decisionId) continue;
+            sample.activated = true;
+            sample.activationDistance = Mathf.Max(0f, activationDistance);
+            return;
+        }
     }
 
     public static void RecordDirectorOutcome(int decisionId, float reward,

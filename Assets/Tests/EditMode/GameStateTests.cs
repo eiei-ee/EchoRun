@@ -246,7 +246,8 @@ public class GameStateTests
         float[] context = { 1f, 0.7f, 0.2f, 0.8f, 0.6f };
 
         int decisionId = AIRunTelemetry.RecordDirectorDecision(
-            context, plan, 1, 0.42f, 0.18f, true);
+            context, plan, 1, 0.42f, 0.18f, true, 40f, 60f);
+        AIRunTelemetry.RecordDirectorActivation(decisionId, 40.2f);
         AIRunTelemetry.RecordDirectorOutcome(decisionId, 0.65f, 49);
         AIRunTelemetry.RecordShadowSample(
             ShadowAction.Jump, 1,
@@ -274,6 +275,13 @@ public class GameStateTests
         Assert.IsTrue(restored.directorDecisions[0].safetyAdjusted);
         Assert.AreEqual(0.18f,
             restored.directorDecisions[0].policyUncertainty, 0.0001f);
+        Assert.IsTrue(restored.directorDecisions[0].activated);
+        Assert.AreEqual(40f,
+            restored.directorDecisions[0].segmentStartDistance, 0.0001f);
+        Assert.AreEqual(60f,
+            restored.directorDecisions[0].segmentEndDistance, 0.0001f);
+        Assert.AreEqual(40.2f,
+            restored.directorDecisions[0].activationDistance, 0.0001f);
         Assert.AreEqual(0.65f, restored.directorDecisions[0].reward, 0.0001f);
         CollectionAssert.AreEqual(context,
             restored.directorDecisions[0].context);
@@ -631,6 +639,19 @@ public class GameStateTests
     }
 
     [Test]
+    public void DirectorHitStrainDecaysInsteadOfLastingForTheWholeRun()
+    {
+        Assert.AreEqual(0f, AITrackDirector.CalculateRecentHitStrain(
+            100f, float.NegativeInfinity), 0.0001f);
+        Assert.AreEqual(0.8f, AITrackDirector.CalculateRecentHitStrain(
+            100f, 100f), 0.0001f);
+        Assert.AreEqual(0.4f, AITrackDirector.CalculateRecentHitStrain(
+            130f, 100f), 0.0001f);
+        Assert.AreEqual(0f, AITrackDirector.CalculateRecentHitStrain(
+            160f, 100f), 0.0001f);
+    }
+
+    [Test]
     public void ArchiveJsonPreservesExistingProgressAndModels()
     {
         EchoRunSaveData original = new EchoRunSaveData
@@ -842,6 +863,38 @@ public class GameStateTests
         Assert.AreEqual(originalBottom,
             capsule.center.y - capsule.height * 0.5f, 0.0001f,
             "Sliding must not lift the player capsule away from the track.");
+    }
+
+    [Test]
+    public void ShadowPhysicalPaceExcludesProgressBonuses()
+    {
+        const float physicalDistance = 120f;
+        const float elapsedTime = 12f;
+        const float coinAndContractBonuses = 48f;
+
+        float pace = AIShadowRunner.CalculatePhysicalPace(
+            physicalDistance, elapsedTime);
+
+        Assert.AreEqual(10f, pace, 0.0001f);
+        float bonusInflatedPace =
+            (physicalDistance + coinAndContractBonuses) / elapsedTime;
+        Assert.Greater(Mathf.Abs(pace - bonusInflatedPace), 0.0001f);
+    }
+
+    [Test]
+    public void ShadowActionTimingIsRelativeToTheObstacleWindow()
+    {
+        float slowWindow = AIShadowRunner.CalculateReactionDistance(10f, 1f);
+        float fastWindow = AIShadowRunner.CalculateReactionDistance(16f, 1f);
+
+        Assert.AreEqual(0f, AIShadowRunner.CalculateActionTimingOffset(
+            slowWindow, slowWindow), 0.0001f);
+        Assert.AreEqual(0f, AIShadowRunner.CalculateActionTimingOffset(
+            fastWindow, fastWindow), 0.0001f);
+        Assert.Greater(AIShadowRunner.CalculateActionTimingOffset(
+            slowWindow * 0.5f, slowWindow), 0f);
+        Assert.Less(AIShadowRunner.CalculateActionTimingOffset(
+            fastWindow * 1.5f, fastWindow), 0f);
     }
 
     [Test]
@@ -2051,6 +2104,94 @@ public class GameStateTests
             Assert.That(plan.maxBlockedLanes, Is.InRange(1, 2));
             previousSafeLane = plan.safeLane;
         }
+    }
+
+    [Test]
+    public void DirectorActivatesTheEnteredPlanInsteadOfTheLastPlannedSegment()
+    {
+        AITrackDirector director = Create<AITrackDirector>("AITrackDirector");
+        director.observationSegments = 1;
+        director.explorationRate = 0f;
+
+        AITrackPlan first = director.CreatePlan(
+            0.2f, 0.4f, 0.6f, 0f, 1, false, 0f, 20f);
+        director.CreatePlan(
+            0.8f, 0.8f, 0.4f, 0f, 1, false, 20f, 40f);
+
+        Assert.AreEqual(ShadowAIDirective.Neutral.styleInfluence,
+            director.CurrentShadowDirective.styleInfluence, 0.0001f);
+
+        director.ActivatePlanForDistance(0f);
+
+        Assert.AreEqual(first.intent, director.CurrentPlan.intent);
+        Assert.AreEqual(1f,
+            director.CurrentShadowDirective.styleInfluence, 0.0001f);
+        Assert.AreEqual(0f,
+            director.CurrentShadowDirective.riskBias, 0.0001f);
+        Assert.AreEqual(0.05f,
+            director.CurrentShadowDirective.decisionNoise, 0.0001f);
+    }
+
+    [Test]
+    public void DirectorDirectivePreservesShadowIdentityWithinTightBounds()
+    {
+        foreach (AIDirectorIntent intent in System.Enum.GetValues(
+                     typeof(AIDirectorIntent)))
+        {
+            ShadowAIDirective directive =
+                AITrackDirector.BuildShadowDirective(intent);
+
+            Assert.AreEqual(1f, directive.styleInfluence, 0.0001f,
+                intent + " must preserve the learned player style.");
+            Assert.LessOrEqual(Mathf.Abs(directive.riskBias), 0.12f,
+                intent + " exceeded the director-to-shadow risk boundary.");
+            Assert.LessOrEqual(directive.decisionNoise, 0.08f,
+                intent + " exceeded the director-to-shadow noise boundary.");
+        }
+    }
+
+    [Test]
+    public void DirectorNeverPunishesAPlannedSegmentThatWasNotEntered()
+    {
+        AITrackDirector director = Create<AITrackDirector>("AITrackDirector");
+        director.observationSegments = 1;
+        director.explorationRate = 0f;
+        int updatesBefore = director.ModelUpdateCount;
+
+        director.CreatePlan(
+            0.2f, 0.4f, 0.6f, 0f, 1, false, 0f, 20f);
+        director.CreatePlan(
+            0.8f, 0.8f, 0.4f, 0f, 1, false, 20f, 40f);
+        director.ActivatePlanForDistance(5f);
+        director.RecordObstacleHit();
+
+        director.FinalizeActivePlanForRunEnd(5f);
+
+        Assert.AreEqual(updatesBefore, director.ModelUpdateCount);
+    }
+
+    [Test]
+    public void DirectorRewardsOnlyEventsRecordedAfterSegmentActivation()
+    {
+        AITrackDirector director = Create<AITrackDirector>("AITrackDirector");
+        director.observationSegments = 1;
+        director.explorationRate = 0f;
+
+        director.CreatePlan(
+            0.2f, 0.4f, 0.6f, 0f, 1, false, 0f, 20f);
+        director.CreatePlan(
+            0.6f, 0.7f, 0.5f, 0f, 1, false, 20f, 40f);
+        director.ActivatePlanForDistance(0f);
+        director.RecordCoin();
+        director.RecordObstacleHit();
+        director.ActivatePlanForDistance(20f);
+        int updatesBefore = director.ModelUpdateCount;
+
+        director.RecordCoin();
+        director.RecordDodge();
+        director.ActivatePlanForDistance(40f);
+
+        Assert.AreEqual(updatesBefore + 1, director.ModelUpdateCount);
     }
 
     [Test]

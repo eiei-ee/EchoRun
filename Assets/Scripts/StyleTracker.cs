@@ -10,10 +10,9 @@ public static class StyleTracker
     private static bool _initialized;
     private static bool _runActive;
     private static float _laneSampleTimer;
-    private static float _lastActionTime = -1f;
-    private static float _intervalMean;
-    private static float _intervalM2;
-    private static int _intervalSamples;
+    private static float _rhythmProximityMean;
+    private static float _rhythmProximityM2;
+    private static int _rhythmSamples;
     private static float _recoveryTimeRemaining;
     private static int _recoveryActions;
     private static float _recoveryRiskTotal;
@@ -45,10 +44,10 @@ public static class StyleTracker
         EnsureInitialized();
         _runActive = true;
         _laneSampleTimer = 0f;
-        _lastActionTime = -1f;
-        _intervalMean = 0f;
-        _intervalM2 = 0f;
-        _intervalSamples = 0;
+        _rhythmProximityMean = 0f;
+        _rhythmProximityM2 = 0f;
+        _rhythmSamples = 0;
+        _recoveryTimeRemaining = 0f;
         _recoveryActions = 0;
         _recoveryRiskTotal = 0f;
     }
@@ -72,7 +71,7 @@ public static class StyleTracker
     }
 
     public static void RecordAction(ShadowAction action, float threatProximity,
-        float jumpTimingOffset, float time, bool airLaneChange = false)
+        float jumpTimingOffset, bool airLaneChange = false)
     {
         if (!_runActive || action == ShadowAction.Keep) return;
         float proximity = Mathf.Clamp01(threatProximity);
@@ -84,22 +83,25 @@ public static class StyleTracker
                     : Mathf.InverseLerp(0.35f, 0.95f, proximity));
         if (action == ShadowAction.Jump && proximity > 0.05f)
             _profile.ObserveJumpTiming(jumpTimingOffset);
+        if (action == ShadowAction.Jump || action == ShadowAction.Slide)
+            _profile.ObserveVerticalAction(action);
 
-        if (_lastActionTime >= 0f)
+        if ((action == ShadowAction.Jump || action == ShadowAction.Slide)
+            && proximity > 0.05f)
         {
-            float interval = Mathf.Max(0f, time - _lastActionTime);
-            _intervalSamples++;
-            float delta = interval - _intervalMean;
-            _intervalMean += delta / _intervalSamples;
-            _intervalM2 += delta * (interval - _intervalMean);
-            if (_intervalSamples >= 2)
+            _rhythmSamples++;
+            float delta = proximity - _rhythmProximityMean;
+            _rhythmProximityMean += delta / _rhythmSamples;
+            _rhythmProximityM2 += delta
+                                  * (proximity - _rhythmProximityMean);
+            if (_rhythmSamples >= 2)
             {
                 float deviation = Mathf.Sqrt(
-                    _intervalM2 / Mathf.Max(1, _intervalSamples - 1));
-                _profile.ObserveRhythm(1f - Mathf.Clamp01(deviation / 1.25f));
+                    _rhythmProximityM2 / Mathf.Max(1, _rhythmSamples - 1));
+                _profile.ObserveRhythm(
+                    1f - Mathf.Clamp01(deviation / 0.25f));
             }
         }
-        _lastActionTime = time;
 
         if (_recoveryTimeRemaining > 0f)
         {
