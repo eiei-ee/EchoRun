@@ -1,30 +1,30 @@
 {
-  "version": "2026-08-14-p0-responsive-finite-runs",
+  "version": "2026-08-15-ai-contract-runner-refinement",
   "sourceBranch": "wechat/minigame",
-  "sourceCommit": "38738408a877f3117eeb5e360fd83cb348dc0e7a",
-  "builtAt": "2026-08-13T13:02:54Z",
+  "sourceCommit": "b1b11424c82a03a9dc1f86591b57eae57619b373",
+  "builtAt": "2026-08-15T13:02:32Z",
   "engine": "Tuanjie 2022.3.62t8",
   "validation": {
-    "editMode": "135/135 passed",
+    "editMode": "179/179 passed",
     "playMode": "18/18 passed",
-    "webGLBuild": "passed",
-    "localBrowserSmoke": "landscape and 540x960 portrait rendered; home CTA and collision result controls verified"
+    "webGLBuild": "passed on clean retry",
+    "preDeploy": "index references and artifact hashes verified"
   },
   "artifacts": [
     {
       "file": "index.html",
       "bytes": 7492,
-      "sha256": "4B6D054993A311826D550A66402895809E1264C69DEF92E2DF0E5DBA8DED3BCC"
+      "sha256": "B425A2F27335506A352CD0BDA64E12C66A4A4433B9B29A732574513626A32C0E"
     },
     {
-      "file": "Build/97e4f94b6d091e1373c4a0aad71ba3f0.data.unityweb",
-      "bytes": 5912604,
-      "sha256": "204E95AFFBCF7A5BD277F6B554AA623CD014E247F1BF991FDE8741827CC7B6D6"
+      "file": "Build/c3b48d49a82b0e53bc62117a892abdcd.data.unityweb",
+      "bytes": 6001589,
+      "sha256": "DA9FB47E9E45BB39D7D083E0FC3C39AAA4B223E9205906E9FF9896A3AC35F9BF"
     },
     {
-      "file": "Build/0e273da4d38559f4a78db6cdd47615a4.wasm.unityweb",
-      "bytes": 6389975,
-      "sha256": "B4E77CBB0AC5CC434A947498B5CECAF714E53443DA1F0CD1A4725B6638C31DC0"
+      "file": "Build/e3de868cdb8d23edc48a3f7fadeb98c8.wasm.unityweb",
+      "bytes": 6410700,
+      "sha256": "2F5FB038009FD7F9CCC28B209899A4194165217190E26FB6CFF7E3F1225398E5"
     },
     {
       "file": "Build/d88030906d03a56fce720cdde88dd1d5.loader.js",
@@ -32,9 +32,9 @@
       "sha256": "2931859C57C92D36566076BBA415689450DB2392BCEE81F93ED1649BBBFF0904"
     },
     {
-      "file": "Build/597c366bf9f5833b1c583dce48894610.framework.js.unityweb",
-      "bytes": 79370,
-      "sha256": "76DEAE71306E6C518F6262DC8BB28E7FD519C1732E8B37AF9F5453D90005E543"
+      "file": "Build/dd04e50aee184406025e76f2d5156c02.framework.js.unityweb",
+      "bytes": 79440,
+      "sha256": "3C69EE07CD4CF780082EED4FE43A29713DB4C2E3B0D1A7FF8B1831F46D422BE8"
     }
   ]
 }
