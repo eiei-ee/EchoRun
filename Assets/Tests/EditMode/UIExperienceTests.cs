@@ -115,25 +115,44 @@ public sealed class UIExperienceTests
         var contract = new EchoContractData
         {
             type = EchoContractType.ChangeVerticalHabit,
+            targetLane = 2,
             targetAction = ShadowAction.Slide,
             progress = 2f,
             targetProgress = 3f,
-            lastFeedback = "反制生效：动作正确"
+            lastFeedback = "反制生效：动作正确",
+            feedbackSequence = 7
         };
 
         EchoDuelViewData leading = EchoRunPresentation.BuildDuel(
             true, contract, 2.75f, 2, 2);
-        Assert.AreEqual("滑铲躲避", leading.contract);
+        Assert.AreEqual("右侧路线 · 滑铲躲避", leading.contract);
         Assert.AreEqual("2 / 3", leading.progress);
         Assert.AreEqual(2f / 3f, leading.progress01, 0.001f);
         Assert.AreEqual(EchoLeadState.Leading, leading.leadState);
         StringAssert.StartsWith("领先 +2.8m", leading.lead);
         StringAssert.StartsWith("反制成功", leading.feedback);
+        Assert.AreEqual(7, leading.feedbackSequence);
 
         EchoDuelViewData trailing = EchoRunPresentation.BuildDuel(
             true, contract, -1.2f, 2, 2);
         Assert.AreEqual(EchoLeadState.Trailing, trailing.leadState);
         StringAssert.StartsWith("落后 -1.2m", trailing.lead);
+    }
+
+    [Test]
+    public void RhythmHudShowsTheNextRequiredAction()
+    {
+        var contract = new EchoContractData
+        {
+            type = EchoContractType.DisruptRhythm,
+            targetAction = ShadowAction.Jump,
+            targetProgress = 4f
+        };
+
+        EchoDuelViewData view = EchoRunPresentation.BuildDuel(
+            true, contract, 0f, 2, 2);
+
+        StringAssert.Contains("下一次：跳跃", view.contract);
     }
 
     [Test]

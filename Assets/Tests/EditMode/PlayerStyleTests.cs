@@ -111,6 +111,8 @@ public class PlayerStyleTests
         Assert.IsTrue(tracker.Update(0, false, false, 0f,
             ObstacleType.Low, 0, 7f, out bool usedSlide));
         Assert.IsFalse(usedSlide);
+        Assert.AreEqual(101, tracker.LastResolvedId);
+        Assert.IsFalse(tracker.LastResolvedByPass);
         Assert.IsFalse(tracker.HasPending);
         Assert.IsTrue(tracker.ResolvedIds.Contains(101));
     }
@@ -127,6 +129,9 @@ public class PlayerStyleTests
             ObstacleType.Low, 0, 7f, out bool usedSlide));
 
         Assert.IsTrue(usedSlide);
+        Assert.AreEqual(202, tracker.LastResolvedId);
+        Assert.AreEqual(1, tracker.LastResolvedLane);
+        Assert.IsTrue(tracker.LastResolvedByPass);
         Assert.IsTrue(tracker.ResolvedIds.Contains(202));
     }
 

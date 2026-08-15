@@ -98,6 +98,32 @@ public sealed class AIObstacleContactSample
 }
 
 [Serializable]
+public sealed class AIRunInputSample
+{
+    public int sequence;
+    public int direction;
+    public int source;
+    public float issuedAt;
+    public float resolvedAt = -1f;
+    public int outcome;
+    public int lane = -1;
+}
+
+[Serializable]
+public sealed class AIRunCapsule
+{
+    public int schemaVersion = 1;
+    public string runId;
+    public int seed;
+    public string buildVersion;
+    public string platform;
+    public string balanceFingerprint;
+    public string shadowModelFingerprint;
+    public string directorModelFingerprint;
+    public List<AIRunInputSample> inputs = new List<AIRunInputSample>();
+}
+
+[Serializable]
 public sealed class AIRunTelemetryData
 {
     public int schemaVersion = AIRunTelemetry.SchemaVersion;
@@ -132,6 +158,7 @@ public sealed class AIRunTelemetryData
     public string shadowSequenceStateAtEnd;
     public float[] directorWeightsAtEnd;
     public string directorPolicyStateAtEnd;
+    public AIRunCapsule runCapsule;
     public List<AIRunStateSample> states = new List<AIRunStateSample>();
     public List<AIRunEventSample> events = new List<AIRunEventSample>();
     public List<AIDirectorDecisionSample> directorDecisions =
@@ -152,11 +179,21 @@ public static class AIRunTelemetry
     private const int MaxEventSamples = 4096;
     private const int MaxShadowSamples = 8192;
     private const int MaxObstacleContactSamples = 2048;
+    private const int MaxInputSamples = 4096;
 
     private static AIRunTelemetryData _active;
     private static float _nextStateSampleTime;
     private static float _runStartTime;
+    private static float _runStartUnscaledTime;
     private static int _nextDecisionId;
+
+    [Serializable]
+    private sealed class ModelFingerprintPayload
+    {
+        public int revision;
+        public float[] weights;
+        public string state;
+    }
 
     public static AIRunTelemetryData ActiveRun => _active;
     public static bool IsRecording => _active != null && !_active.completed;
@@ -179,13 +216,16 @@ public static class AIRunTelemetry
         string shadowSequenceState = "")
     {
         long now = DateTime.UtcNow.Ticks;
+        string runId = seed.ToString("X8") + "-" + sequence.ToString("D6");
+        string buildVersion = Application.version;
+        string platform = Application.platform.ToString();
         _active = new AIRunTelemetryData
         {
-            runId = seed.ToString("X8") + "-" + sequence.ToString("D6"),
+            runId = runId,
             seed = seed,
             startedUtcTicks = now,
-            buildVersion = Application.version,
-            platform = Application.platform.ToString(),
+            buildVersion = buildVersion,
+            platform = platform,
             highScoreBeforeRun = Mathf.Max(0, highScore),
             shadowGenerationAtStart = Mathf.Max(0, shadowGeneration),
             directorUpdatesAtStart = Mathf.Max(0, directorUpdates),
@@ -195,9 +235,23 @@ public static class AIRunTelemetry
             shadowWeightsAtStart = Clone(shadowWeights),
             shadowSequenceStateAtStart = shadowSequenceState ?? "",
             directorWeightsAtStart = Clone(directorWeights),
-            directorPolicyStateAtStart = directorPolicyState ?? ""
+            directorPolicyStateAtStart = directorPolicyState ?? "",
+            runCapsule = new AIRunCapsule
+            {
+                runId = runId,
+                seed = seed,
+                buildVersion = buildVersion,
+                platform = platform,
+                balanceFingerprint = StableHash.ComputeHex(
+                    JsonUtility.ToJson(GameBalanceConfig.Current)),
+                shadowModelFingerprint = FingerprintModel(
+                    shadowGeneration, shadowWeights, shadowSequenceState),
+                directorModelFingerprint = FingerprintModel(
+                    directorUpdates, directorWeights, directorPolicyState)
+            }
         };
         _runStartTime = Time.time;
+        _runStartUnscaledTime = Time.unscaledTime;
         _nextStateSampleTime = 0f;
         _nextDecisionId = 1;
         RecordEvent("run_start", 0, 1, seed, sequence);
@@ -242,6 +296,37 @@ public static class AIRunTelemetry
             value = value,
             value2 = value2
         });
+    }
+
+    public static void RecordInputQueued(BufferedSwipeCommand command)
+    {
+        if (!IsRecording || _active.runCapsule == null
+            || _active.runCapsule.inputs.Count >= MaxInputSamples)
+            return;
+        _active.runCapsule.inputs.Add(new AIRunInputSample
+        {
+            sequence = command.sequence,
+            direction = (int)command.direction,
+            source = (int)command.source,
+            issuedAt = RelativeUnscaledTime(command.issuedAt),
+            outcome = (int)InputIntentOutcome.Pending
+        });
+    }
+
+    public static void RecordInputResolved(BufferedSwipeCommand command,
+        InputIntentOutcome outcome, int lane, float resolvedAt)
+    {
+        if (!IsRecording || _active.runCapsule == null) return;
+        List<AIRunInputSample> inputs = _active.runCapsule.inputs;
+        for (int i = inputs.Count - 1; i >= 0; i--)
+        {
+            AIRunInputSample sample = inputs[i];
+            if (sample.sequence != command.sequence) continue;
+            sample.resolvedAt = RelativeUnscaledTime(resolvedAt);
+            sample.outcome = (int)outcome;
+            sample.lane = lane;
+            return;
+        }
     }
 
     public static int RecordDirectorDecision(float[] context, AITrackPlan plan)
@@ -444,6 +529,15 @@ public static class AIRunTelemetry
         data.shadowSamples = data.shadowSamples ?? new List<AIShadowTrainingSample>();
         data.obstacleContacts = data.obstacleContacts
                                 ?? new List<AIObstacleContactSample>();
+        data.runCapsule = data.runCapsule ?? new AIRunCapsule
+        {
+            runId = data.runId ?? "",
+            seed = data.seed,
+            buildVersion = data.buildVersion ?? "",
+            platform = data.platform ?? ""
+        };
+        data.runCapsule.inputs = data.runCapsule.inputs
+                                 ?? new List<AIRunInputSample>();
         return data;
     }
 
@@ -477,6 +571,23 @@ public static class AIRunTelemetry
     private static float ElapsedTime()
     {
         return Mathf.Max(0f, Time.time - _runStartTime);
+    }
+
+    private static float RelativeUnscaledTime(float timestamp)
+    {
+        return Mathf.Max(0f, timestamp - _runStartUnscaledTime);
+    }
+
+    private static string FingerprintModel(int revision, float[] weights,
+        string state)
+    {
+        var payload = new ModelFingerprintPayload
+        {
+            revision = Mathf.Max(0, revision),
+            weights = Clone(weights),
+            state = state ?? ""
+        };
+        return StableHash.ComputeHex(JsonUtility.ToJson(payload));
     }
 
     private static float[] Clone(float[] values)

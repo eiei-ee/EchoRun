@@ -12,7 +12,7 @@ public enum EchoContractType
 [Serializable]
 public sealed class EchoContractData
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     public int version = CurrentVersion;
     public EchoContractType type;
@@ -20,6 +20,7 @@ public sealed class EchoContractData
     public int learnedLane = -1;
     public int targetLane = -1;
     public ShadowAction learnedAction = ShadowAction.Keep;
+    public ShadowAction startingAction = ShadowAction.Keep;
     public ShadowAction targetAction = ShadowAction.Keep;
     public float targetProgress = 1f;
     public float progress;
@@ -27,6 +28,8 @@ public sealed class EchoContractData
     public float shadowProgressBonus;
     public bool completed;
     public bool won;
+    public bool exploratory;
+    public int feedbackSequence;
     public string title = "";
     public string learnedTrait = "";
     public string ruleDescription = "";
@@ -49,21 +52,78 @@ public sealed class EchoContractData
         generation = Mathf.Max(0, generation);
         learnedLane = Mathf.Clamp(learnedLane, -1, 2);
         targetLane = Mathf.Clamp(targetLane, -1, 2);
+        if (!Enum.IsDefined(typeof(ShadowAction), learnedAction))
+            learnedAction = ShadowAction.Keep;
+        if (!Enum.IsDefined(typeof(ShadowAction), targetAction))
+            targetAction = ShadowAction.Keep;
+        if (!Enum.IsDefined(typeof(ShadowAction), startingAction))
+            startingAction = ShadowAction.Keep;
+        if (startingAction == ShadowAction.Keep
+            && (type == EchoContractType.ChangeVerticalHabit
+                || type == EchoContractType.DisruptRhythm))
+            startingAction = targetAction != ShadowAction.Keep
+                ? targetAction
+                : generation % 2 == 0 ? ShadowAction.Jump : ShadowAction.Slide;
+        if (type == EchoContractType.DisruptRhythm
+            && targetAction == ShadowAction.Keep)
+            targetAction = startingAction;
         targetProgress = Mathf.Max(0.01f, targetProgress);
         progress = Mathf.Clamp(progress, 0f, targetProgress);
         playerProgressBonus = Mathf.Max(0f, playerProgressBonus);
         shadowProgressBonus = Mathf.Max(0f, shadowProgressBonus);
         completed = progress >= targetProgress || completed;
+        feedbackSequence = Mathf.Max(0, feedbackSequence);
         title = title ?? "";
         learnedTrait = learnedTrait ?? "";
         ruleDescription = ruleDescription ?? "";
         objective = objective ?? "";
         lastFeedback = lastFeedback ?? "";
     }
+
+    public EchoContractData ResetForRun()
+    {
+        EchoContractData reset = Clone();
+        reset.Normalize();
+        reset.progress = 0f;
+        reset.playerProgressBonus = 0f;
+        reset.shadowProgressBonus = 0f;
+        reset.completed = false;
+        reset.won = false;
+        reset.feedbackSequence = 0;
+        reset.lastFeedback = "";
+        if (reset.startingAction != ShadowAction.Keep)
+            reset.targetAction = reset.startingAction;
+        return reset;
+    }
 }
 
 public static class EchoContractPolicy
 {
+    public static EchoContractData CreateForRun(PlayerStyleData source,
+        int generation, string retryJson)
+    {
+        if (!string.IsNullOrEmpty(retryJson))
+        {
+            try
+            {
+                EchoContractData retry = JsonUtility.FromJson<EchoContractData>(
+                    retryJson);
+                if (retry != null)
+                {
+                    retry.Normalize();
+                    if (retry.type != EchoContractType.None && !retry.won
+                        && retry.generation == Mathf.Max(1, generation))
+                        return retry.ResetForRun();
+                }
+            }
+            catch (Exception)
+            {
+                // A damaged retry snapshot must not block a playable run.
+            }
+        }
+        return Create(source, generation);
+    }
+
     public static EchoContractData Create(PlayerStyleData source, int generation)
     {
         PlayerStyleData style = source != null
@@ -97,11 +157,17 @@ public static class EchoContractPolicy
 
         // Sparse early data still yields a playable contract. The choice is
         // deterministic and comes from the frozen style snapshot.
+        EchoContractData exploration;
         if (generation % 3 == 1)
-            return CreateVerticalContract(style, generation);
-        if (generation % 3 == 2)
-            return CreateRhythmContract(style, generation);
-        return CreateLaneContract(style, generation);
+            exploration = CreateVerticalContract(style, generation);
+        else if (generation % 3 == 2)
+            exploration = CreateRhythmContract(style, generation);
+        else
+            exploration = CreateLaneContract(style, generation);
+        exploration.exploratory = true;
+        exploration.learnedTrait = "AI探测：有效习惯样本不足";
+        exploration.ruleDescription = "本代用于验证你的反制选择；完成目标后才会形成明确画像。";
+        return exploration;
     }
 
     private static EchoContractData CreateLaneContract(
@@ -117,12 +183,12 @@ public static class EchoContractPolicy
             generation = Mathf.Max(1, generation),
             learnedLane = learnedLane,
             targetLane = targetLane,
-            targetProgress = 5f,
+            targetProgress = 3f,
             title = "回声契约：逆向改道",
             learnedTrait = "AI识别：你经常依赖" + learnedName,
             ruleDescription = "本代把高价值安全路线迁移到" + targetName
                               + "；停留在旧路线会让回声加速。",
-            objective = "累计在" + targetName + "保持 5 秒，并在终点领先回声。"
+            objective = "沿" + targetName + "收集 3 组引导金币，并在终点领先回声。"
         };
     }
 
@@ -132,6 +198,7 @@ public static class EchoContractPolicy
         bool prefersSlide = style.slideFrequency >= 0.5f;
         ShadowAction learned = prefersSlide ? ShadowAction.Slide : ShadowAction.Jump;
         ShadowAction target = prefersSlide ? ShadowAction.Jump : ShadowAction.Slide;
+        int challengeLane = Mathf.Abs(generation) % 3;
         string learnedName = ActionName(learned);
         string targetName = ActionName(target);
         return new EchoContractData
@@ -139,19 +206,24 @@ public static class EchoContractPolicy
             type = EchoContractType.ChangeVerticalHabit,
             generation = Mathf.Max(1, generation),
             learnedAction = learned,
+            targetLane = challengeLane,
+            startingAction = target,
             targetAction = target,
             targetProgress = 3f,
             title = "回声契约：动作反转",
             learnedTrait = "AI识别：你上一代更常执行" + learnedName,
             ruleDescription = "本代提高需要" + targetName
                               + "破解的组合；重复旧动作会给回声推进优势。",
-            objective = "用" + targetName + "正确躲避 3 次，并在终点领先回声。"
+            objective = "在" + LaneName(challengeLane) + "用" + targetName
+                        + "正确躲避 3 次，并在终点领先回声。"
         };
     }
 
     private static EchoContractData CreateRhythmContract(
         PlayerStyleData style, int generation)
     {
+        ShadowAction first = ShadowAction.Jump;
+        int challengeLane = Mathf.Abs(generation) % 3;
         string rhythm = style.rhythmStability >= 0.65f
             ? "你的跳跃/滑铲节奏高度固定"
             : "你的动作序列已被AI归纳";
@@ -159,11 +231,15 @@ public static class EchoContractPolicy
         {
             type = EchoContractType.DisruptRhythm,
             generation = Mathf.Max(1, generation),
+            targetLane = challengeLane,
+            startingAction = first,
+            targetAction = first,
             targetProgress = 4f,
             title = "回声契约：打乱节拍",
             learnedTrait = "AI识别：" + rhythm,
             ruleDescription = "本代交替生成高低障碍；连续复用同一种动作会让回声加速。",
-            objective = "交替用跳跃和滑铲正确躲避 4 次，并在终点领先回声。"
+            objective = "在" + LaneName(challengeLane)
+                        + "按提示交替正确躲避 4 次，并在终点领先回声。"
         };
     }
 
@@ -208,9 +284,9 @@ public sealed class EchoContractEvaluator
 {
     public EchoContractData Contract { get; }
 
-    private float _targetLaneAwardedSeconds;
     private float _learnedLaneAwardedSeconds;
-    private ShadowAction _lastRhythmAction = ShadowAction.Keep;
+    private float _lastLaneMarkerDistance = float.NegativeInfinity;
+    private const float LaneMarkerSpacing = 18f;
 
     public EchoContractEvaluator(EchoContractData contract)
     {
@@ -224,22 +300,7 @@ public sealed class EchoContractEvaluator
             || Contract.completed || deltaTime <= 0f)
             return;
 
-        if (lane == Contract.targetLane)
-        {
-            float before = _targetLaneAwardedSeconds;
-            _targetLaneAwardedSeconds += deltaTime;
-            Contract.progress = Mathf.Min(
-                Contract.targetProgress, Contract.progress + deltaTime);
-            int awards = Mathf.FloorToInt(_targetLaneAwardedSeconds)
-                         - Mathf.FloorToInt(before);
-            if (awards > 0)
-            {
-                Contract.playerProgressBonus += awards * 1.5f;
-                Contract.lastFeedback = "反制生效：新路线为你提供推进";
-            }
-            CompleteIfReady();
-        }
-        else if (lane == Contract.learnedLane)
+        if (lane == Contract.learnedLane)
         {
             float before = _learnedLaneAwardedSeconds;
             _learnedLaneAwardedSeconds += deltaTime;
@@ -248,12 +309,29 @@ public sealed class EchoContractEvaluator
             if (awards > 0)
             {
                 Contract.shadowProgressBonus += awards * 0.75f;
-                Contract.lastFeedback = "AI施压：旧路线习惯正在强化回声";
+                SetFeedback("AI施压：旧路线习惯正在强化回声");
             }
         }
     }
 
-    public void RecordDodge(ObstacleType obstacleType)
+    public void RecordLaneMarker(int lane, float routeDistance)
+    {
+        if (Contract.type != EchoContractType.BreakLaneHabit
+            || Contract.completed || lane != Contract.targetLane)
+            return;
+        if (!float.IsNegativeInfinity(_lastLaneMarkerDistance)
+            && routeDistance - _lastLaneMarkerDistance < LaneMarkerSpacing)
+            return;
+
+        _lastLaneMarkerDistance = routeDistance;
+        Contract.progress = Mathf.Min(
+            Contract.targetProgress, Contract.progress + 1f);
+        Contract.playerProgressBonus += 1.5f;
+        SetFeedback("反制生效：目标路线标记已收集");
+        CompleteIfReady();
+    }
+
+    public void RecordDodge(ObstacleType obstacleType, int playerLane = -1)
     {
         ShadowAction action = obstacleType == ObstacleType.High
             ? ShadowAction.Jump
@@ -264,45 +342,60 @@ public sealed class EchoContractEvaluator
 
         if (Contract.type == EchoContractType.ChangeVerticalHabit)
         {
+            if (Contract.targetLane >= 0 && playerLane != Contract.targetLane)
+                return;
             if (action == Contract.targetAction)
             {
                 Contract.progress = Mathf.Min(
                     Contract.targetProgress, Contract.progress + 1f);
                 Contract.playerProgressBonus += 3.5f;
-                Contract.lastFeedback = "反制生效：动作反转骗过了回声";
+                SetFeedback("反制生效：动作反转骗过了回声");
                 CompleteIfReady();
             }
             else if (action == Contract.learnedAction)
             {
                 Contract.shadowProgressBonus += 2f;
-                Contract.lastFeedback = "AI施压：你重复了被预测的动作";
+                SetFeedback("AI施压：你重复了被预测的动作");
             }
             return;
         }
 
         if (Contract.type != EchoContractType.DisruptRhythm) return;
-        if (_lastRhythmAction == ShadowAction.Keep
-            || action != _lastRhythmAction)
+        if (Contract.targetLane >= 0 && playerLane != Contract.targetLane)
+            return;
+        if (action == Contract.targetAction)
         {
             Contract.progress = Mathf.Min(
                 Contract.targetProgress, Contract.progress + 1f);
             Contract.playerProgressBonus += 2.75f;
-            Contract.lastFeedback = "反制生效：动作节拍已改变";
+            SetFeedback("反制生效：动作节拍已改变");
+            Contract.targetAction = action == ShadowAction.Jump
+                ? ShadowAction.Slide : ShadowAction.Jump;
             CompleteIfReady();
         }
         else
         {
             Contract.shadowProgressBonus += 1.75f;
-            Contract.lastFeedback = "AI施压：重复节拍被回声预测";
+            SetFeedback("AI施压：错误节拍被回声预测");
         }
-        _lastRhythmAction = action;
+    }
+
+    public void SetRhythmTarget(ObstacleType obstacleType)
+    {
+        if (Contract.type != EchoContractType.DisruptRhythm
+            || Contract.completed)
+            return;
+        if (obstacleType == ObstacleType.High)
+            Contract.targetAction = ShadowAction.Jump;
+        else if (obstacleType == ObstacleType.Low)
+            Contract.targetAction = ShadowAction.Slide;
     }
 
     public void RecordHit()
     {
         if (Contract.type == EchoContractType.None || Contract.completed) return;
         Contract.shadowProgressBonus += 2f;
-        Contract.lastFeedback = "AI施压：失误让回声扩大优势";
+        SetFeedback("AI施压：失误让回声扩大优势");
     }
 
     public string BuildHudText()
@@ -321,6 +414,12 @@ public sealed class EchoContractEvaluator
     {
         if (Contract.progress < Contract.targetProgress) return;
         Contract.completed = true;
-        Contract.lastFeedback = "契约已破解：保持领先才能击败本代回声";
+        SetFeedback("契约已破解：保持领先才能击败本代回声");
+    }
+
+    private void SetFeedback(string feedback)
+    {
+        Contract.lastFeedback = feedback;
+        Contract.feedbackSequence++;
     }
 }

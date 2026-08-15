@@ -384,11 +384,7 @@ public sealed class RuntimeSmokeTests
         yield return null;
         yield return null;
 
-        string archiveBefore = PlayerPrefs.GetString(
-            EchoRunSaveSystem.SaveKey, "");
-        bool hadArchive = PlayerPrefs.HasKey(EchoRunSaveSystem.SaveKey);
-        int coinsBefore = PlayerPrefs.GetInt("TotalCoins", 0);
-        bool hadCoins = PlayerPrefs.HasKey("TotalCoins");
+        SavePreferenceSnapshot saveBefore = CaptureSavePreferences();
         int managerCoinsBefore = GameManager.Instance != null
             ? GameManager.Instance.TotalCoins : 0;
         try
@@ -399,10 +395,7 @@ public sealed class RuntimeSmokeTests
                 powerUpInventory = new[] { 1, 1, 0, 0 },
                 selectedPowerUp = (int)PowerUpId.Magnet
             };
-            PlayerPrefs.SetString(EchoRunSaveSystem.SaveKey,
-                JsonUtility.ToJson(isolated));
-            PlayerPrefs.SetInt("TotalCoins", isolated.totalCoins);
-            ResetSaveSystemCache();
+            InstallIsolatedSave(isolated);
 
             PowerUpShopUI shop = Object.FindObjectOfType<PowerUpShopUI>();
             Assert.IsNotNull(shop);
@@ -440,14 +433,7 @@ public sealed class RuntimeSmokeTests
         }
         finally
         {
-            if (hadArchive)
-                PlayerPrefs.SetString(EchoRunSaveSystem.SaveKey, archiveBefore);
-            else
-                PlayerPrefs.DeleteKey(EchoRunSaveSystem.SaveKey);
-            if (hadCoins) PlayerPrefs.SetInt("TotalCoins", coinsBefore);
-            else PlayerPrefs.DeleteKey("TotalCoins");
-            PlayerPrefs.Save();
-            ResetSaveSystemCache();
+            RestoreSavePreferences(saveBefore);
             if (GameManager.Instance != null)
                 typeof(GameManager).GetField("<TotalCoins>k__BackingField",
                     BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(
@@ -461,10 +447,7 @@ public sealed class RuntimeSmokeTests
     [TestCase(PowerUpId.TurboStart)]
     public void PurchaseEquipAndConsumeActivatesEachPowerUp(PowerUpId id)
     {
-        string archiveBefore = PlayerPrefs.GetString(EchoRunSaveSystem.SaveKey, "");
-        bool hadArchive = PlayerPrefs.HasKey(EchoRunSaveSystem.SaveKey);
-        int coinsBefore = PlayerPrefs.GetInt("TotalCoins", 0);
-        bool hadCoins = PlayerPrefs.HasKey("TotalCoins");
+        SavePreferenceSnapshot saveBefore = CaptureSavePreferences();
 
         try
         {
@@ -474,10 +457,7 @@ public sealed class RuntimeSmokeTests
                 powerUpInventory = new int[4],
                 selectedPowerUp = -1
             };
-            PlayerPrefs.SetString(EchoRunSaveSystem.SaveKey,
-                JsonUtility.ToJson(isolated));
-            PlayerPrefs.SetInt("TotalCoins", isolated.totalCoins);
-            ResetSaveSystemCache();
+            InstallIsolatedSave(isolated);
 
             PowerUpBalance definition = GameBalanceConfig.GetPowerUp(id);
             Assert.IsNotNull(definition);
@@ -512,15 +492,87 @@ public sealed class RuntimeSmokeTests
                     BindingFlags.Instance | BindingFlags.NonPublic)?
                     .Invoke(PowerUpController.Instance, null);
             }
-            if (hadArchive)
-                PlayerPrefs.SetString(EchoRunSaveSystem.SaveKey, archiveBefore);
-            else
-                PlayerPrefs.DeleteKey(EchoRunSaveSystem.SaveKey);
-            if (hadCoins) PlayerPrefs.SetInt("TotalCoins", coinsBefore);
-            else PlayerPrefs.DeleteKey("TotalCoins");
-            PlayerPrefs.Save();
-            ResetSaveSystemCache();
+            RestoreSavePreferences(saveBefore);
         }
+    }
+
+    private sealed class SavePreferenceSnapshot
+    {
+        public readonly Dictionary<string, string> strings =
+            new Dictionary<string, string>();
+        public readonly Dictionary<string, int> ints =
+            new Dictionary<string, int>();
+        public readonly Dictionary<string, float> floats =
+            new Dictionary<string, float>();
+    }
+
+    private static readonly string[] SaveStringKeys =
+    {
+        EchoRunSaveSystem.SaveKey,
+        EchoRunSaveSystem.SaveSlotAKey,
+        EchoRunSaveSystem.SaveSlotBKey,
+        EchoRunSaveSystem.TelemetryKey,
+        "AIShadowProfileV1"
+    };
+
+    private static readonly string[] SaveIntKeys =
+    {
+        EchoRunSaveSystem.ActiveSaveSlotKey,
+        "HighScore",
+        "TotalCoins",
+        "TargetFrameRate",
+        "CharacterPreset"
+    };
+
+    private static readonly string[] SaveFloatKeys =
+    {
+        "MusicVolume",
+        "SfxVolume"
+    };
+
+    private static SavePreferenceSnapshot CaptureSavePreferences()
+    {
+        var snapshot = new SavePreferenceSnapshot();
+        foreach (string key in SaveStringKeys)
+            if (PlayerPrefs.HasKey(key))
+                snapshot.strings[key] = PlayerPrefs.GetString(key);
+        foreach (string key in SaveIntKeys)
+            if (PlayerPrefs.HasKey(key))
+                snapshot.ints[key] = PlayerPrefs.GetInt(key);
+        foreach (string key in SaveFloatKeys)
+            if (PlayerPrefs.HasKey(key))
+                snapshot.floats[key] = PlayerPrefs.GetFloat(key);
+        return snapshot;
+    }
+
+    private static void InstallIsolatedSave(EchoRunSaveData data)
+    {
+        ClearSavePreferences();
+        PlayerPrefs.SetString(EchoRunSaveSystem.SaveKey,
+            JsonUtility.ToJson(data));
+        PlayerPrefs.SetInt("TotalCoins", data.totalCoins);
+        PlayerPrefs.Save();
+        ResetSaveSystemCache();
+    }
+
+    private static void RestoreSavePreferences(SavePreferenceSnapshot snapshot)
+    {
+        ClearSavePreferences();
+        foreach (KeyValuePair<string, string> pair in snapshot.strings)
+            PlayerPrefs.SetString(pair.Key, pair.Value);
+        foreach (KeyValuePair<string, int> pair in snapshot.ints)
+            PlayerPrefs.SetInt(pair.Key, pair.Value);
+        foreach (KeyValuePair<string, float> pair in snapshot.floats)
+            PlayerPrefs.SetFloat(pair.Key, pair.Value);
+        PlayerPrefs.Save();
+        ResetSaveSystemCache();
+    }
+
+    private static void ClearSavePreferences()
+    {
+        foreach (string key in SaveStringKeys) PlayerPrefs.DeleteKey(key);
+        foreach (string key in SaveIntKeys) PlayerPrefs.DeleteKey(key);
+        foreach (string key in SaveFloatKeys) PlayerPrefs.DeleteKey(key);
     }
 
     private static void ResetSaveSystemCache()
@@ -529,6 +581,10 @@ public sealed class RuntimeSmokeTests
             BindingFlags.Static | BindingFlags.NonPublic)?.SetValue(null, null);
         typeof(EchoRunSaveSystem).GetField("_initialized",
             BindingFlags.Static | BindingFlags.NonPublic)?.SetValue(null, false);
+        typeof(EchoRunSaveSystem).GetField("_activeSlot",
+            BindingFlags.Static | BindingFlags.NonPublic)?.SetValue(null, -1);
+        typeof(EchoRunSaveSystem).GetField("_generation",
+            BindingFlags.Static | BindingFlags.NonPublic)?.SetValue(null, 0L);
     }
 
     private static GameObject GetPrivatePanel(object component)

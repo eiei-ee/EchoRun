@@ -72,7 +72,7 @@ public class UIManager : MonoBehaviour
     private float _nextDuelRefresh;
     private float _nextMenuRefresh;
     private float _duelFeedbackTimer;
-    private string _lastDuelFeedback = "";
+    private int _lastDuelFeedbackSequence = -1;
     private Transform _pendingTextRefreshRoot;
     private int _pendingTextRefreshFrames;
     private readonly RuntimeRoundedSprite _roundedUi = new RuntimeRoundedSprite();
@@ -879,9 +879,10 @@ public class UIManager : MonoBehaviour
 
         if (_duelFeedbackText == null || string.IsNullOrEmpty(view.feedback))
             return;
-        if (!forceFeedback && view.feedback == _lastDuelFeedback) return;
+        if (!forceFeedback
+            && view.feedbackSequence == _lastDuelFeedbackSequence) return;
 
-        _lastDuelFeedback = view.feedback;
+        _lastDuelFeedbackSequence = view.feedbackSequence;
         _duelFeedbackText.text = view.feedback;
         _duelFeedbackText.color = view.feedback.StartsWith("回声施压")
             ? Danger : Primary;
@@ -1031,7 +1032,7 @@ public class UIManager : MonoBehaviour
         AnchorText(_shadowResultText.GetComponent<RectTransform>(), 0.5f, 0.38f, 1160, 180);
 
         // Restart
-        _restartBtn = MakeButton("RestartBtn", _gameOverPanel.transform, "挑战下一代", 30,
+        _restartBtn = MakeButton("RestartBtn", _gameOverPanel.transform, "重新挑战", 30,
             new Vector2(0.5f, 0.18f), new Vector2(380, 76),
             PrimaryStrong, Primary);
         _restartBtn.onClick.AddListener(() => _gm.Restart());
@@ -1095,7 +1096,7 @@ public class UIManager : MonoBehaviour
             case GameState.Playing:
                 if (_hudPanel != null) _hudPanel.SetActive(true);
                 SelectForNavigation(null);
-                _lastDuelFeedback = "";
+                _lastDuelFeedbackSequence = -1;
                 _nextDuelRefresh = 0f;
                 RefreshDuelHud();
                 ShowControlHintIfNeeded();
@@ -1121,6 +1122,13 @@ public class UIManager : MonoBehaviour
                 SelectForNavigation(_restartBtn);
                 if (_shadowResultText != null && AIShadowRunner.Instance != null)
                     _shadowResultText.text = AIShadowRunner.Instance.FinalizeRunIfNeeded();
+                AIShadowRunner resultShadow = AIShadowRunner.Instance;
+                if (_restartBtn != null)
+                    SetButtonLabel(_restartBtn, GetGameOverActionLabel(
+                        _gm != null ? _gm.LastEndReason : RunEndReason.None,
+                        resultShadow != null && resultShadow.LastRunWasChallenge,
+                        resultShadow != null && resultShadow.LastRunWon,
+                        resultShadow != null ? resultShadow.Generation : 0));
                 if (_gameOverTitleText != null && AIShadowRunner.Instance != null)
                 {
                     AIShadowRunner shadow = AIShadowRunner.Instance;
@@ -1152,6 +1160,16 @@ public class UIManager : MonoBehaviour
                     ? _gameOverPanel.transform : null);
                 break;
         }
+    }
+
+    public static string GetGameOverActionLabel(RunEndReason endReason,
+        bool wasChallenge, bool won, int generation)
+    {
+        if (endReason != RunEndReason.FinishReached)
+            return "重新挑战";
+        if (!wasChallenge)
+            return generation > 0 ? "挑战下一代" : "继续校准";
+        return won ? "挑战下一代" : "重新挑战";
     }
 
     void OnScoreChanged(int score)
@@ -1247,7 +1265,8 @@ public class UIManager : MonoBehaviour
         EchoMenuViewData view = EchoRunPresentation.BuildMenu(
             generation, StyleTracker.GetSnapshot(),
             shadow != null ? shadow.minimumJumpSamples : 2,
-            shadow != null ? shadow.minimumSlideSamples : 2);
+            shadow != null ? shadow.minimumSlideSamples : 2,
+            shadow != null ? shadow.ContractPreview : null);
 
         if (_menuGenerationText != null)
             _menuGenerationText.text = view.generation;

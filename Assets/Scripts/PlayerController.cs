@@ -248,11 +248,14 @@ public class PlayerController : MonoBehaviour
 
     void HandleInput()
     {
-        SwipeDirection swipe = _input != null ? _input.GetSwipe() : SwipeDirection.None;
-        if (swipe == SwipeDirection.None) return;
+        if (_input == null
+            || !_input.TryPeekSwipe(out BufferedSwipeCommand command))
+            return;
+        SwipeDirection swipe = command.direction;
 
         int previousLane = CurrentLane;
         bool accepted = false;
+        bool temporarilyBlocked = false;
 
         switch (swipe)
         {
@@ -275,7 +278,7 @@ public class PlayerController : MonoBehaviour
                 }
                 break;
             case SwipeDirection.Up:
-               if (!IsJumping && IsGrounded())
+               if (!IsJumping && !IsSliding && IsGrounded())
                {
                    AIShadowRunner.Instance?.RecordPlayerAction(
                        ShadowAction.Jump, CurrentLane);
@@ -286,9 +289,13 @@ public class PlayerController : MonoBehaviour
                     AudioManager.Instance?.PlayJump();
                     accepted = true;
                }
+                else
+                {
+                    temporarilyBlocked = true;
+                }
                 break;
             case SwipeDirection.Down:
-               if (!IsSliding && IsGrounded())
+               if (!IsSliding && !IsJumping && IsGrounded())
                {
        AIShadowRunner.Instance?.RecordPlayerAction(
            ShadowAction.Slide, CurrentLane);
@@ -300,13 +307,25 @@ public class PlayerController : MonoBehaviour
                     ApplySlideCollider();
                 accepted = true;
                 }
+                else
+                {
+                    temporarilyBlocked = true;
+                }
                 break;
         }
 
         if (CurrentLane != previousLane)
             AITrackDirector.Instance?.RecordLaneChange(CurrentLane);
 
-        _input?.ReportSwipeResult(swipe, accepted);
+        if (temporarilyBlocked)
+        {
+            _input.DeferSwipe(command);
+            return;
+        }
+        _input.ResolveSwipe(command, accepted
+                ? InputIntentOutcome.Executed
+                : InputIntentOutcome.Rejected,
+            CurrentLane);
     }
 
     void UpdateSlide()
@@ -510,10 +529,17 @@ public class PlayerController : MonoBehaviour
 
        if (evaluation.Passed)
        {
-           AIPlayerSkillEstimator.RecordObstacleOutcome(obs.type, true);
-           AITrackDirector.Instance?.RecordDodge();
-           AIShadowRunner.Instance?.RecordDodge(obs.type);
-           AudioManager.Instance?.PlayDodgeObstacle();
+           AIShadowRunner shadow = AIShadowRunner.Instance;
+           bool firstSettlement = shadow == null
+               || shadow.RecordDodge(obs.type,
+                   TrackManager.GetObstacleTrackingId(obs.gameObject),
+                   CurrentLane);
+           if (firstSettlement)
+           {
+               AIPlayerSkillEstimator.RecordObstacleOutcome(obs.type, true);
+               AITrackDirector.Instance?.RecordDodge();
+               AudioManager.Instance?.PlayDodgeObstacle();
+           }
            return;
        }
 

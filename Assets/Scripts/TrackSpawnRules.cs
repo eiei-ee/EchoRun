@@ -3,6 +3,11 @@ using UnityEngine;
 
 public static class TrackSpawnRules
 {
+    public const float CoinSpacing = 1.8f;
+    public const float GroundCoinHeight = 1f;
+    public const int JumpRewardCoinCount = 7;
+    public const float CoinSegmentMargin = 1f;
+
     public static bool NeedsSegment(float plannedRouteDistance,
         float playerRouteDistance, float segmentLength, int poolSize)
     {
@@ -43,6 +48,43 @@ public static class TrackSpawnRules
         if (float.IsNegativeInfinity(previousRouteDistance)) return true;
         return routeDistance - previousRouteDistance
                >= Mathf.Max(0f, minimumSpacing);
+    }
+
+    public static float CoinTrailEndZ(float startZ, int count, float spacing)
+    {
+        return startZ + Mathf.Max(0, count - 1) * Mathf.Max(0f, spacing);
+    }
+
+    public static bool CoinTrailOverlapsObstacle(float startZ, int count,
+        float spacing, float obstacleZ, float obstacleHalfDepth)
+    {
+        if (count <= 0) return false;
+        float safeSpacing = Mathf.Max(0f, spacing);
+        float halfCoinStep = safeSpacing * 0.5f;
+        float endZ = CoinTrailEndZ(startZ, count, safeSpacing);
+        float halfDepth = Mathf.Max(0f, obstacleHalfDepth);
+        return obstacleZ + halfDepth >= startZ - halfCoinStep
+               && obstacleZ - halfDepth <= endZ + halfCoinStep;
+    }
+
+    public static float ClampJumpRewardCenter(float centerZ,
+        float segmentLength, int coinCount, float spacing, float margin)
+    {
+        float safeLength = Mathf.Max(0f, segmentLength);
+        float safeMargin = Mathf.Max(0f, margin);
+        float halfSpan = Mathf.Max(0, coinCount - 1)
+                         * Mathf.Max(0f, spacing) * 0.5f;
+        float minimum = safeMargin + halfSpan;
+        float maximum = safeLength - safeMargin - halfSpan;
+        if (maximum < minimum) return safeLength * 0.5f;
+        return Mathf.Clamp(centerZ, minimum, maximum);
+    }
+
+    public static float JumpCoinHeight(float normalizedProgress,
+        float groundHeight, float jumpHeight)
+    {
+        return groundHeight + PlayerController.EvaluateJumpArc(
+                   normalizedProgress) * Mathf.Max(0f, jumpHeight);
     }
 
     public static int SelectObstaclePrefabIndex(float difficulty, float typeRoll)

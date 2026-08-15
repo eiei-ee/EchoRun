@@ -611,6 +611,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
 
         plan.echoContractType = contract.type;
         plan.echoTargetAction = contract.targetAction;
+        plan.shouldTurn = false;
         if (contract.type == EchoContractType.BreakLaneHabit)
         {
             plan.safeLane = Mathf.Clamp(contract.targetLane, 0, 2);
@@ -621,8 +622,12 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         }
 
         int safeLane = Mathf.Clamp(plan.safeLane, 0, 2);
-        int offset = Mathf.Abs(decisionCount) % 2 == 0 ? 1 : 2;
-        plan.echoChallengeLane = (safeLane + offset) % 3;
+        plan.echoChallengeLane = Mathf.Clamp(contract.targetLane, 0, 2);
+        if (safeLane == plan.echoChallengeLane)
+        {
+            safeLane = (safeLane + 1) % 3;
+            plan.safeLane = safeLane;
+        }
         plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.72f);
         plan.coinChance = Mathf.Max(plan.coinChance, 0.8f);
         plan.maxBlockedLanes = Mathf.Max(1, plan.maxBlockedLanes);

@@ -172,21 +172,21 @@ public sealed class AIShadowRuntimeTests
         switch (contract.type)
         {
             case EchoContractType.BreakLaneHabit:
-                evaluator.TickLane(contract.targetLane,
-                    contract.targetProgress + 0.1f);
+                for (int i = 0; i < Mathf.CeilToInt(contract.targetProgress); i++)
+                    evaluator.RecordLaneMarker(contract.targetLane, i * 20f);
                 break;
             case EchoContractType.ChangeVerticalHabit:
                 ObstacleType required = contract.targetAction == ShadowAction.Jump
                     ? ObstacleType.High
                     : ObstacleType.Low;
                 for (int i = 0; i < Mathf.CeilToInt(contract.targetProgress); i++)
-                    evaluator.RecordDodge(required);
+                    evaluator.RecordDodge(required, contract.targetLane);
                 break;
             case EchoContractType.DisruptRhythm:
                 for (int i = 0; i < Mathf.CeilToInt(contract.targetProgress); i++)
                     evaluator.RecordDodge(i % 2 == 0
                         ? ObstacleType.High
-                        : ObstacleType.Low);
+                        : ObstacleType.Low, contract.targetLane);
                 break;
         }
     }

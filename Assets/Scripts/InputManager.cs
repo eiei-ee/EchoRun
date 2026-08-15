@@ -1,6 +1,5 @@
 ﻿using UnityEngine;
 using System;
-using System.Collections.Generic;
 using UnityEngine.EventSystems;
 
 public enum SwipeDirection { None, Up, Down, Left, Right }
@@ -22,9 +21,10 @@ public class InputManager : MonoBehaviour
     private bool _swipeDetected;
     private bool _ignoreTouch;
     private bool _suppressUntilPointersReleased;
-    private Queue<SwipeDirection> _swipeQueue = new Queue<SwipeDirection>();
+    private readonly InputIntentBuffer _intentBuffer = new InputIntentBuffer();
 
     public event Action<SwipeDirection, bool> SwipeResolved;
+    public int PendingInputCount => _intentBuffer.Count;
 
     void Awake()
     {
@@ -70,13 +70,17 @@ public class InputManager : MonoBehaviour
 
         // Keyboard input - queue all pressed keys instead of returning early
         if (Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.LeftArrow))
-            _swipeQueue.Enqueue(SwipeDirection.Left);
+            QueueSwipe(SwipeDirection.Left, InputIntentSource.Keyboard,
+                Time.unscaledTime);
         if (Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.RightArrow))
-            _swipeQueue.Enqueue(SwipeDirection.Right);
+            QueueSwipe(SwipeDirection.Right, InputIntentSource.Keyboard,
+                Time.unscaledTime);
         if (Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.Space))
-            _swipeQueue.Enqueue(SwipeDirection.Up);
+            QueueSwipe(SwipeDirection.Up, InputIntentSource.Keyboard,
+                Time.unscaledTime);
         if (Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.LeftControl))
-            _swipeQueue.Enqueue(SwipeDirection.Down);
+            QueueSwipe(SwipeDirection.Down, InputIntentSource.Keyboard,
+                Time.unscaledTime);
 
         // Touch input
         if (Input.touchCount > 0)
@@ -91,11 +95,11 @@ public class InputManager : MonoBehaviour
             }
             else if (touch.phase == TouchPhase.Moved && !_swipeDetected && !_ignoreTouch)
             {
-                DetectSwipe(touch.position);
+                DetectSwipe(touch.position, InputIntentSource.Touch);
             }
             else if (touch.phase == TouchPhase.Ended && !_swipeDetected && !_ignoreTouch)
             {
-                DetectSwipe(touch.position);
+                DetectSwipe(touch.position, InputIntentSource.Touch);
             }
         }
 
@@ -111,11 +115,11 @@ public class InputManager : MonoBehaviour
         if (Input.touchCount == 0 && Input.mousePresent
             && Input.GetMouseButtonUp(0) && !_swipeDetected && !_ignoreTouch)
         {
-            DetectSwipe(Input.mousePosition);
+            DetectSwipe(Input.mousePosition, InputIntentSource.Mouse);
         }
     }
 
-    void DetectSwipe(Vector2 endPos)
+    void DetectSwipe(Vector2 endPos, InputIntentSource source)
     {
         Vector2 delta = endPos - _touchStart;
         float shortEdge = Mathf.Min(Screen.width, Screen.height);
@@ -125,12 +129,55 @@ public class InputManager : MonoBehaviour
         if (direction == SwipeDirection.None) return;
 
         _swipeDetected = true;
-        _swipeQueue.Enqueue(direction);
+        QueueSwipe(direction, source, Time.unscaledTime);
+    }
+
+    public void QueueSwipe(SwipeDirection direction, InputIntentSource source,
+        float issuedAt)
+    {
+        if (direction == SwipeDirection.None) return;
+        BufferedSwipeCommand command = _intentBuffer.Enqueue(
+            direction, source, issuedAt, out BufferedSwipeCommand evicted);
+        if (evicted.sequence != 0)
+            ResolveIntent(evicted, InputIntentOutcome.Dropped, -1, issuedAt);
+        AIRunTelemetry.RecordInputQueued(command);
+    }
+
+    public bool TryPeekSwipe(out BufferedSwipeCommand command)
+    {
+        return TryPeekSwipe(Time.unscaledTime, out command);
+    }
+
+    public bool TryPeekSwipe(float now, out BufferedSwipeCommand command)
+    {
+        while (_intentBuffer.TryPopExpired(now,
+                   out BufferedSwipeCommand expired))
+            ResolveIntent(expired, InputIntentOutcome.Expired, -1, now);
+        return _intentBuffer.TryPeek(out command);
+    }
+
+    public void ResolveSwipe(BufferedSwipeCommand command,
+        InputIntentOutcome outcome, int lane)
+    {
+        if (outcome == InputIntentOutcome.Pending) return;
+        if (!_intentBuffer.TryResolveHead(command.sequence,
+                out BufferedSwipeCommand resolved))
+            return;
+        ResolveIntent(resolved, outcome, lane, Time.unscaledTime);
+    }
+
+    public void DeferSwipe(BufferedSwipeCommand command)
+    {
+        _intentBuffer.TryDeferHead(command.sequence);
     }
 
     public SwipeDirection GetSwipe()
     {
-        return _swipeQueue.Count > 0 ? _swipeQueue.Dequeue() : SwipeDirection.None;
+        if (!TryPeekSwipe(out BufferedSwipeCommand command))
+            return SwipeDirection.None;
+        return _intentBuffer.TryResolveHead(command.sequence, out _)
+            ? command.direction
+            : SwipeDirection.None;
     }
 
     public void ReportSwipeResult(SwipeDirection direction, bool accepted)
@@ -158,7 +205,9 @@ public class InputManager : MonoBehaviour
 
     public void ClearInput()
     {
-        _swipeQueue.Clear();
+        float now = Time.unscaledTime;
+        while (_intentBuffer.TryDequeue(out BufferedSwipeCommand command))
+            ResolveIntent(command, InputIntentOutcome.Dropped, -1, now);
         _swipeDetected = false;
         _ignoreTouch = false;
         _suppressUntilPointersReleased = true;
@@ -181,5 +230,14 @@ public class InputManager : MonoBehaviour
     void OnDestroy()
     {
         if (Instance == this) Instance = null;
+    }
+
+    private void ResolveIntent(BufferedSwipeCommand command,
+        InputIntentOutcome outcome, int lane, float resolvedAt)
+    {
+        AIRunTelemetry.RecordInputResolved(
+            command, outcome, lane, resolvedAt);
+        SwipeResolved?.Invoke(command.direction,
+            outcome == InputIntentOutcome.Executed);
     }
 }

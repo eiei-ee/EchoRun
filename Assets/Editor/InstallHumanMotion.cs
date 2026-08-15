@@ -20,10 +20,12 @@ public static class InstallHumanMotion
     [MenuItem("Tools/Echo Runner/Install Human Motion")]
     public static void Install()
     {
-        AnimationClip idle = ConfigureClip(IdlePath, "HumanIdle", true);
-        AnimationClip run = ConfigureClip(RunPath, "HumanRun", true);
+        AnimationClip idle = ConfigureClip(
+            IdlePath, "HumanIdle", true, true);
+        AnimationClip run = ConfigureClip(
+            RunPath, "HumanRun", true, true);
         AnimationClip falling = ConfigureClip(
-            FallingPath, "HumanFalling", true);
+            FallingPath, "HumanFalling", true, true);
         AnimationClip slide = ConfigureClip(
             SlidePath, "EchoRunSlideLow_Candidate1", false, true);
         AnimatorController controller = BuildController(
@@ -130,12 +132,16 @@ public static class InstallHumanMotion
 
         AnimatorState idleState = stateMachine.AddState("Idle");
         idleState.motion = idle;
+        idleState.iKOnFeet = true;
         AnimatorState runState = stateMachine.AddState("Run");
         runState.motion = run;
+        runState.iKOnFeet = true;
         AnimatorState jumpState = stateMachine.AddState("Jump");
         jumpState.motion = falling;
+        jumpState.iKOnFeet = false;
         AnimatorState slideState = stateMachine.AddState("Slide");
         slideState.motion = slide;
+        slideState.iKOnFeet = false;
         stateMachine.defaultState = idleState;
 
         EditorUtility.SetDirty(controller);

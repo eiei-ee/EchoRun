@@ -81,6 +81,19 @@ public class GameStateTests
             10f, true, true, manager.LastEndReason));
     }
 
+    [TestCase(RunEndReason.Collision, true, false, 3, "重新挑战")]
+    [TestCase(RunEndReason.FinishReached, true, false, 3, "重新挑战")]
+    [TestCase(RunEndReason.FinishReached, true, true, 4, "挑战下一代")]
+    [TestCase(RunEndReason.FinishReached, false, false, 0, "继续校准")]
+    [TestCase(RunEndReason.FinishReached, false, false, 1, "挑战下一代")]
+    public void GameOverActionLabelMatchesSettlementOutcome(
+        RunEndReason endReason, bool wasChallenge, bool won,
+        int generation, string expected)
+    {
+        Assert.AreEqual(expected, UIManager.GetGameOverActionLabel(
+            endReason, wasChallenge, won, generation));
+    }
+
     [Test]
     public void StartGameIgnoresDuplicateSubmitAfterRunBegins()
     {
@@ -298,15 +311,14 @@ public class GameStateTests
     public void ClearInputEmptiesQueuedSwipes()
     {
         InputManager input = Create<InputManager>("InputManager");
-        FieldInfo field = typeof(InputManager).GetField(
-            "_swipeQueue", BindingFlags.Instance | BindingFlags.NonPublic);
-        var queue = (Queue<SwipeDirection>)field.GetValue(input);
-        queue.Enqueue(SwipeDirection.Left);
-        queue.Enqueue(SwipeDirection.Up);
+        input.QueueSwipe(SwipeDirection.Left, InputIntentSource.Replay, 1f);
+        input.QueueSwipe(SwipeDirection.Up, InputIntentSource.Replay, 1.01f);
+        Assert.AreEqual(2, input.PendingInputCount);
 
         input.ClearInput();
 
-        Assert.AreEqual(SwipeDirection.None, input.GetSwipe());
+        Assert.AreEqual(0, input.PendingInputCount);
+        Assert.IsFalse(input.TryPeekSwipe(1.02f, out _));
     }
 
     [Test]
@@ -1123,19 +1135,31 @@ public class GameStateTests
         Assert.IsTrue(run.isLooping,
             "The authored running clip must loop without procedural resets.");
 
+        AnimatorState idleState = null;
         AnimatorState runState = null;
+        AnimatorState jumpState = null;
         AnimatorState slideState = null;
         foreach (ChildAnimatorState child in
                  controller.layers[0].stateMachine.states)
         {
+            if (child.state.name == "Idle") idleState = child.state;
             if (child.state.name == "Run") runState = child.state;
+            if (child.state.name == "Jump") jumpState = child.state;
             if (child.state.name == "Slide") slideState = child.state;
         }
+        Assert.IsNotNull(idleState);
         Assert.IsNotNull(runState);
+        Assert.IsNotNull(jumpState);
         Assert.IsNotNull(slideState);
         Assert.AreEqual(slide, slideState.motion);
-        Assert.IsFalse(runState.iKOnFeet,
-            "Run Foot IK must stay off so it cannot fight the shared Humanoid rig.");
+        Assert.IsTrue(idleState.iKOnFeet,
+            "Idle Foot IK must keep the player's feet planted on the track.");
+        Assert.IsTrue(runState.iKOnFeet,
+            "Run Foot IK must keep support feet planted during the stride.");
+        Assert.IsFalse(jumpState.iKOnFeet,
+            "Jump Foot IK must stay off while the player is airborne.");
+        Assert.IsFalse(slideState.iKOnFeet,
+            "Slide Foot IK must not pull the authored low pose upward.");
     }
 
     [Test]
@@ -1157,6 +1181,26 @@ public class GameStateTests
             "The slide must not preserve the generated clip's floating Y origin.");
         Assert.IsTrue(slide.heightFromFeet,
             "The baked slide height must use the feet as its ground reference.");
+    }
+
+    [TestCase("Assets/Animations/HumanMotion/HumanIdle.fbx", "HumanIdle")]
+    [TestCase("Assets/Animations/HumanMotion/HumanRunForwards.fbx", "HumanRun")]
+    [TestCase("Assets/Animations/HumanMotion/HumanFalling.fbx", "HumanFalling")]
+    public void AuthoredLocomotionBakesRootHeightFromFeet(
+        string path, string clipName)
+    {
+        ModelImporter importer = AssetImporter.GetAtPath(path) as ModelImporter;
+        Assert.IsNotNull(importer);
+
+        ModelImporterClipAnimation clip = System.Array.Find(
+            importer.clipAnimations,
+            candidate => candidate.name == clipName);
+        Assert.IsNotNull(clip);
+        Assert.IsTrue(clip.lockRootHeightY);
+        Assert.IsFalse(clip.keepOriginalPositionY,
+            clipName + " must not preserve a floating source Y origin.");
+        Assert.IsTrue(clip.heightFromFeet,
+            clipName + " must use the feet as its ground reference.");
     }
 
     [Test]

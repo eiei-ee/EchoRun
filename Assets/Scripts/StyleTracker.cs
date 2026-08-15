@@ -71,7 +71,8 @@ public static class StyleTracker
     }
 
     public static void RecordAction(ShadowAction action, float threatProximity,
-        float jumpTimingOffset, bool airLaneChange = false)
+        float jumpTimingOffset, bool airLaneChange = false,
+        bool matchedActionObstacle = false)
     {
         if (!_runActive || action == ShadowAction.Keep) return;
         float proximity = Mathf.Clamp01(threatProximity);
@@ -83,7 +84,7 @@ public static class StyleTracker
                     : Mathf.InverseLerp(0.35f, 0.95f, proximity));
         if (action == ShadowAction.Jump && proximity > 0.05f)
             _profile.ObserveJumpTiming(jumpTimingOffset);
-        if (action == ShadowAction.Jump || action == ShadowAction.Slide)
+        if (ShouldObserveVerticalAction(action, matchedActionObstacle))
             _profile.ObserveVerticalAction(action);
 
         if ((action == ShadowAction.Jump || action == ShadowAction.Slide)
@@ -108,6 +109,13 @@ public static class StyleTracker
             _recoveryActions++;
             _recoveryRiskTotal += proximity;
         }
+    }
+
+    public static bool ShouldObserveVerticalAction(ShadowAction action,
+        bool matchedActionObstacle)
+    {
+        return matchedActionObstacle
+               && (action == ShadowAction.Jump || action == ShadowAction.Slide);
     }
 
     public static void RecordObstacleOpportunity(ObstacleType type,
@@ -179,6 +187,9 @@ public sealed class SlideOpportunityTracker
 
     public bool HasPending => _pendingId != 0;
     public int PendingId => _pendingId;
+    public int LastResolvedId { get; private set; }
+    public int LastResolvedLane { get; private set; } = 1;
+    public bool LastResolvedByPass { get; private set; }
     public System.Collections.Generic.ISet<int> ResolvedIds => _resolvedIds;
 
     public void Reset()
@@ -186,6 +197,9 @@ public sealed class SlideOpportunityTracker
         _pendingId = 0;
         _pendingLane = 1;
         _usedSlide = false;
+        LastResolvedId = 0;
+        LastResolvedLane = 1;
+        LastResolvedByPass = false;
         _resolvedIds.Clear();
         _resolvedOrder.Clear();
     }
@@ -202,7 +216,7 @@ public sealed class SlideOpportunityTracker
                 return Resolve(out usedSlide);
             if (isSliding) _usedSlide = true;
             if (!hasObstacle || obstacleId != _pendingId)
-                return Resolve(out usedSlide);
+                return Resolve(out usedSlide, true);
             return false;
         }
 
@@ -223,10 +237,13 @@ public sealed class SlideOpportunityTracker
             _usedSlide = true;
     }
 
-    public bool Resolve(out bool usedSlide)
+    public bool Resolve(out bool usedSlide, bool passedInLane = false)
     {
         usedSlide = _usedSlide;
         if (!HasPending) return false;
+        LastResolvedId = _pendingId;
+        LastResolvedLane = _pendingLane;
+        LastResolvedByPass = passedInLane;
         if (_resolvedIds.Add(_pendingId))
         {
             _resolvedOrder.Enqueue(_pendingId);

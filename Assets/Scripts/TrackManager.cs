@@ -51,11 +51,26 @@ public class TrackManager : MonoBehaviour
         public GameObject ownerSegment;
     }
 
+    private struct CoinTrailPlan
+    {
+        public int lane;
+        public float startZ;
+        public int count;
+    }
+
+    private struct SpawnedObstacleInfo
+    {
+        public int lane;
+        public float z;
+        public ObstacleType type;
+    }
+
     private Vector3 _spawnPosition;
    private float _spawnAngle;
     private int _lastSafeLane = 1;
     private int _obstacleFreeSegments;
     private int _straightSegmentsSpawned;
+    private int _rhythmContractRowsSpawned;
     private readonly int[] _laneObstacleDrought = new int[3];
     private float _lastObstacleRouteDistance = float.NegativeInfinity;
     private int _straightSegmentsSinceLastTurn;
@@ -259,10 +274,7 @@ public class TrackManager : MonoBehaviour
                 currentLane + Mathf.RoundToInt(laneDelta), 0, 2);
             if (currentLaneOnly && candidateLane != currentLane) continue;
 
-            Vector3 obstaclePosition = entry.instance.transform.position;
-            int candidateId = entry.instance.GetInstanceID()
-                              ^ Mathf.RoundToInt(obstaclePosition.x * 17f)
-                              ^ Mathf.RoundToInt(obstaclePosition.z * 31f);
+            int candidateId = GetObstacleTrackingId(entry.instance);
             if (ignoredObstacleIds != null && ignoredObstacleIds.Contains(candidateId))
                 continue;
 
@@ -274,6 +286,15 @@ public class TrackManager : MonoBehaviour
         }
 
         return found;
+    }
+
+    public static int GetObstacleTrackingId(GameObject obstacleInstance)
+    {
+        if (obstacleInstance == null) return 0;
+        Vector3 position = obstacleInstance.transform.position;
+        return obstacleInstance.GetInstanceID()
+               ^ Mathf.RoundToInt(position.x * 17f)
+               ^ Mathf.RoundToInt(position.z * 31f);
     }
 
     public void GetTrackPoseAhead(Vector3 playerPosition, Vector3 playerForward,
@@ -649,18 +670,28 @@ public class TrackManager : MonoBehaviour
 
         // Preserve route continuity while rotating protection away from lanes
         // that have gone too long without an obstacle.
-        int safeLane = ChooseFairSafeLane(
-            plan.safeLane, _lastSafeLane, _laneObstacleDrought);
+        int safeLane = ChooseContractSafeLane(
+            plan.echoContractType, plan.safeLane, _lastSafeLane,
+            _laneObstacleDrought, plan.echoChallengeLane);
         _lastSafeLane = safeLane;
 
         // Determine coin Z first so obstacles can avoid it
         float coinZ = AIRunRandom.Range(buffer + 2f, end - 4f);
 
-        // Always put a dense coin trail on the safe lane
+        // Plan rewards first, then instantiate them after obstacle types and
+        // positions are known. This keeps jump rewards aligned with the actual
+        // player jump instead of leaving ground coins inside a jump obstacle.
+        var coinTrails = new List<CoinTrailPlan>(3);
+
+        // Always put a dense coin trail on the safe lane.
         int minCoins = Mathf.Max(2, plan.minCoinCount);
         int maxCoins = Mathf.Max(minCoins + 1, plan.maxCoinCount);
-        SpawnCoinLine(segment, safeLane, coinZ,
-            AIRunRandom.Range(minCoins, maxCoins));
+        coinTrails.Add(new CoinTrailPlan
+        {
+            lane = safeLane,
+            startZ = coinZ,
+            count = AIRunRandom.Range(minCoins, maxCoins)
+        });
         int echoChallengeLane = plan.echoChallengeLane;
         if (plan.echoContractType == EchoContractType.ChangeVerticalHabit
             || plan.echoContractType == EchoContractType.DisruptRhythm)
@@ -670,22 +701,53 @@ public class TrackManager : MonoBehaviour
                 echoChallengeLane = (safeLane + 1) % 3;
             // The contract route carries visibly denser rewards but remains
             // optional: the untouched safe lane preserves route solvability.
-            SpawnCoinLine(segment, echoChallengeLane, coinZ + 0.6f,
-                AIRunRandom.Range(7, 10));
+            coinTrails.Add(new CoinTrailPlan
+            {
+                lane = echoChallengeLane,
+                startZ = coinZ + 0.6f,
+                count = AIRunRandom.Range(7, 10)
+            });
         }
         // Sometimes add sparse coins on an adjacent lane
         if (AIRunRandom.Value < plan.coinChance)
         {
             int altLane = (safeLane + (AIRunRandom.Value < 0.5f ? -1 : 1) + 3) % 3;
-            SpawnCoinLine(segment, altLane,
-                coinZ + AIRunRandom.Range(-1f, 1f), AIRunRandom.Range(2, 5));
+            float altStartZ = coinZ + AIRunRandom.Range(-1f, 1f);
+            int altCount = AIRunRandom.Range(2, 5);
+            if (altLane != echoChallengeLane)
+            {
+                coinTrails.Add(new CoinTrailPlan
+                {
+                    lane = altLane,
+                    startZ = altStartZ,
+                    count = altCount
+                });
+            }
         }
 
+        var spawnedObstacles = new List<SpawnedObstacleInfo>(2);
+        float currentSpeed = GameManager.Instance != null
+            ? GameManager.Instance.CurrentSpeed
+            : 10f;
+        PlayerController playerController = _player != null
+            ? _player.GetComponent<PlayerController>()
+            : null;
+        float jumpDuration = playerController != null
+            ? playerController.jumpDuration
+            : 0.6f;
+        float jumpHeight = playerController != null
+            ? playerController.jumpHeight
+            : 3f;
         bool prefabsReady = obstaclePrefabs != null && obstaclePrefabs.Length >= 3;
-        bool shouldSpawnObstacles = prefabsReady && ShouldSpawnObstacleRow(
-            _straightSegmentsSpawned, _obstacleFreeSegments, warmupSegments,
-            maxConsecutiveObstacleFreeStraights, plan.obstacleChance,
-            AIRunRandom.Value);
+        bool guaranteedContractRow = RequiresGuaranteedContractRow(
+            plan.echoContractType);
+        bool shouldSpawnObstacles = prefabsReady
+            && (guaranteedContractRow
+                ? _straightSegmentsSpawned > warmupSegments
+                : ShouldSpawnObstacleRow(
+                    _straightSegmentsSpawned, _obstacleFreeSegments,
+                    warmupSegments, maxConsecutiveObstacleFreeStraights,
+                    plan.obstacleChance, AIRunRandom.Value));
         if (shouldSpawnObstacles)
         {
             // Place obstacles at a different Z from the coin trail
@@ -697,26 +759,29 @@ public class TrackManager : MonoBehaviour
             float rowRouteDistance = (segmentData != null
                 ? segmentData.routeDistance
                 : _plannedDistance) + obsZ;
-            float currentSpeed = GameManager.Instance != null
-                ? GameManager.Instance.CurrentSpeed
-                : 10f;
-            PlayerController playerController = _player != null
-                ? _player.GetComponent<PlayerController>()
-                : null;
-            float jumpDuration = playerController != null
-                ? playerController.jumpDuration
-                : 0.6f;
             float minimumSpacing = TrackSpawnRules.MinimumObstacleRowSpacing(
                 currentSpeed, jumpDuration, segmentLength);
             if (TrackSpawnRules.CanSpawnObstacleRow(
-                    rowRouteDistance, _lastObstacleRouteDistance, minimumSpacing)
-                && SpawnObstacleRow(
-                    segment, obsZ, diff, safeLane, plan.maxBlockedLanes,
-                    plan, echoChallengeLane) > 0)
+                    rowRouteDistance, _lastObstacleRouteDistance, minimumSpacing))
             {
-                _obstacleFreeSegments = 0;
-                _lastObstacleRouteDistance = rowRouteDistance;
+                int spawned = SpawnObstacleRow(
+                    segment, obsZ, diff, safeLane, plan.maxBlockedLanes,
+                    plan, echoChallengeLane, spawnedObstacles);
+                if (spawned > 0)
+                {
+                    if (plan.echoContractType == EchoContractType.DisruptRhythm)
+                        _rhythmContractRowsSpawned++;
+                    _obstacleFreeSegments = 0;
+                    _lastObstacleRouteDistance = rowRouteDistance;
+                }
             }
+        }
+
+        for (int i = 0; i < coinTrails.Count; i++)
+        {
+            CoinTrailPlan trail = coinTrails[i];
+            SpawnCoinTrail(segment, trail.lane, trail.startZ, trail.count,
+                spawnedObstacles, jumpHeight);
         }
    }
 
@@ -754,15 +819,69 @@ public class TrackManager : MonoBehaviour
 
     // ---- coin patterns ----
 
-    void SpawnCoinLine(GameObject segment, int lane, float startZ, int count)
+    void SpawnCoinTrail(GameObject segment, int lane, float startZ, int count,
+        List<SpawnedObstacleInfo> obstacles, float jumpHeight)
     {
         if (coinPrefab == null) return;
+        if (TryGetOverlappingJumpObstacle(
+                lane, startZ, count, obstacles, out float obstacleZ))
+        {
+            SpawnJumpCoinArc(segment, lane, obstacleZ, jumpHeight);
+            return;
+        }
+
         float x = (lane - 1) * laneDistance;
         for (int c = 0; c < count; c++)
         {
-            Vector3 lp = new Vector3(x, 1f, startZ + c * 1.8f);
+            Vector3 lp = new Vector3(x, TrackSpawnRules.GroundCoinHeight,
+                startZ + c * TrackSpawnRules.CoinSpacing);
             if (lp.z > segmentLength - 1f) break;
             Vector3 wp = segment.transform.TransformPoint(lp);
+            SpawnDynamic(coinPrefab, segment, wp, Quaternion.identity);
+        }
+    }
+
+    bool TryGetOverlappingJumpObstacle(int lane, float startZ, int count,
+        List<SpawnedObstacleInfo> obstacles, out float obstacleZ)
+    {
+        for (int i = 0; i < obstacles.Count; i++)
+        {
+            SpawnedObstacleInfo obstacle = obstacles[i];
+            if (obstacle.lane != lane || obstacle.type != ObstacleType.High)
+                continue;
+            float halfDepth = ObstacleGeometryRules.ColliderSize(obstacle.type).z
+                              * 0.5f;
+            if (!TrackSpawnRules.CoinTrailOverlapsObstacle(
+                    startZ, count, TrackSpawnRules.CoinSpacing,
+                    obstacle.z, halfDepth))
+                continue;
+            obstacleZ = obstacle.z;
+            return true;
+        }
+
+        obstacleZ = 0f;
+        return false;
+    }
+
+    void SpawnJumpCoinArc(GameObject segment, int lane, float obstacleZ,
+        float jumpHeight)
+    {
+        int count = TrackSpawnRules.JumpRewardCoinCount;
+        float spacing = TrackSpawnRules.CoinSpacing;
+        float halfSpan = (count - 1) * spacing * 0.5f;
+        float startZ = obstacleZ - halfSpan;
+        float x = (lane - 1) * laneDistance;
+        for (int c = 0; c < count; c++)
+        {
+            float progress = count > 1 ? (float)c / (count - 1) : 0.5f;
+            float z = startZ + c * spacing;
+            if (z < TrackSpawnRules.CoinSegmentMargin
+                || z > segmentLength - TrackSpawnRules.CoinSegmentMargin)
+                continue;
+            float y = TrackSpawnRules.JumpCoinHeight(progress,
+                TrackSpawnRules.GroundCoinHeight, jumpHeight);
+            Vector3 wp = segment.transform.TransformPoint(
+                new Vector3(x, y, z));
             SpawnDynamic(coinPrefab, segment, wp, Quaternion.identity);
         }
     }
@@ -802,7 +921,8 @@ public class TrackManager : MonoBehaviour
 
     // Guarantees at least 1 lane is always open
     int SpawnObstacleRow(GameObject segment, float obsZ, float difficulty, int safeLane,
-        int maxBlockedLanes, AITrackPlan plan, int echoChallengeLane)
+        int maxBlockedLanes, AITrackPlan plan, int echoChallengeLane,
+        List<SpawnedObstacleInfo> spawnedObstacles)
     {
        if (obstaclePrefabs == null || obstaclePrefabs.Length < 3) return 0;
 
@@ -823,13 +943,33 @@ public class TrackManager : MonoBehaviour
             // remain meaningful because every row still preserves a safe lane.
             int type = SelectContractObstaclePrefabIndex(
                 plan.echoContractType, plan.echoTargetAction,
-                _straightSegmentsSpawned, difficulty, AIRunRandom.Value);
+                plan.echoContractType == EchoContractType.DisruptRhythm
+                    ? _rhythmContractRowsSpawned : _straightSegmentsSpawned,
+                difficulty, AIRunRandom.Value);
 
-            if (SpawnObstacleAt(
-                    segment, lane,
-                    obsZ + AIRunRandom.Range(-0.8f, 0.8f), type))
+            float obstacleZ = obsZ + AIRunRandom.Range(-0.8f, 0.8f);
+            Obstacle obstacleData = obstaclePrefabs[type].GetComponent<Obstacle>();
+            ObstacleType obstacleType = obstacleData != null
+                ? obstacleData.type
+                : (ObstacleType)Mathf.Clamp(type, 0, 2);
+            if (obstacleType == ObstacleType.High)
+            {
+                obstacleZ = TrackSpawnRules.ClampJumpRewardCenter(
+                    obstacleZ, segmentLength,
+                    TrackSpawnRules.JumpRewardCoinCount,
+                    TrackSpawnRules.CoinSpacing,
+                    TrackSpawnRules.CoinSegmentMargin);
+            }
+
+            if (SpawnObstacleAt(segment, lane, obstacleZ, type))
             {
                 _laneObstacleDrought[lane] = 0;
+                spawnedObstacles.Add(new SpawnedObstacleInfo
+                {
+                    lane = lane,
+                    z = obstacleZ,
+                    type = obstacleType
+                });
                 spawned++;
             }
        }
@@ -873,6 +1013,38 @@ public class TrackManager : MonoBehaviour
             safeLane, blockedLaneCount, laneObstacleDrought);
     }
 
+    public static int ChooseContractSafeLane(EchoContractType contractType,
+        int proposedLane, int previousSafeLane, int[] laneObstacleDrought,
+        int challengeLane = -1)
+    {
+        if (contractType == EchoContractType.BreakLaneHabit)
+            return Mathf.Clamp(proposedLane, 0, 2);
+
+        int safe = ChooseFairSafeLane(
+            proposedLane, previousSafeLane, laneObstacleDrought);
+        if ((contractType != EchoContractType.ChangeVerticalHabit
+             && contractType != EchoContractType.DisruptRhythm)
+            || safe != challengeLane)
+            return safe;
+
+        int previous = Mathf.Clamp(previousSafeLane, 0, 2);
+        for (int offset = 1; offset <= 2; offset++)
+        {
+            int left = previous - offset;
+            if (left >= 0 && left != challengeLane) return left;
+            int right = previous + offset;
+            if (right <= 2 && right != challengeLane) return right;
+        }
+        return (Mathf.Clamp(challengeLane, 0, 2) + 1) % 3;
+    }
+
+    public static bool RequiresGuaranteedContractRow(
+        EchoContractType contractType)
+    {
+        return contractType == EchoContractType.ChangeVerticalHabit
+               || contractType == EchoContractType.DisruptRhythm;
+    }
+
     public static int[] SelectContractBlockedLanes(int safeLane,
         int blockedLaneCount, int[] laneObstacleDrought,
         EchoContractType contractType, int challengeLane)
@@ -906,7 +1078,7 @@ public class TrackManager : MonoBehaviour
         if (contractType == EchoContractType.ChangeVerticalHabit)
             return targetAction == ShadowAction.Jump ? 1 : 0;
         if (contractType == EchoContractType.DisruptRhythm)
-            return Mathf.Abs(straightSegmentIndex) % 2 == 0 ? 0 : 1;
+            return Mathf.Abs(straightSegmentIndex) % 2 == 0 ? 1 : 0;
         return TrackSpawnRules.SelectObstaclePrefabIndex(difficulty, typeRoll);
     }
 

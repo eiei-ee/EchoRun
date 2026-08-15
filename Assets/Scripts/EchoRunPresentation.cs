@@ -25,12 +25,14 @@ public struct EchoDuelViewData
     public string lead;
     public EchoLeadState leadState;
     public string feedback;
+    public int feedbackSequence;
 }
 
 public static class EchoRunPresentation
 {
     public static EchoMenuViewData BuildMenu(int generation,
-        PlayerStyleData style, int minimumJumpSamples, int minimumSlideSamples)
+        PlayerStyleData style, int minimumJumpSamples, int minimumSlideSamples,
+        EchoContractData contractPreview = null)
     {
         if (generation <= 0)
         {
@@ -45,7 +47,9 @@ public static class EchoRunPresentation
             };
         }
 
-        EchoContractData contract = EchoContractPolicy.Create(style, generation);
+        EchoContractData contract = contractPreview != null
+            ? contractPreview.ResetForRun()
+            : EchoContractPolicy.Create(style, generation);
         return new EchoMenuViewData
         {
             generation = "第 " + generation + " 代回声",
@@ -107,7 +111,8 @@ public static class EchoRunPresentation
             progress01 = contract.Progress01,
             lead = lead,
             leadState = state,
-            feedback = BuildFeedback(contract.lastFeedback)
+            feedback = BuildFeedback(contract.lastFeedback),
+            feedbackSequence = contract.feedbackSequence
         };
     }
 
@@ -117,11 +122,16 @@ public static class EchoRunPresentation
         switch (contract.type)
         {
             case EchoContractType.BreakLaneHabit:
-                return EchoContractPolicy.LaneName(contract.targetLane) + "保持";
+                return EchoContractPolicy.LaneName(contract.targetLane)
+                       + " · 收集引导金币";
             case EchoContractType.ChangeVerticalHabit:
-                return EchoContractPolicy.ActionName(contract.targetAction) + "躲避";
+                return EchoContractPolicy.LaneName(contract.targetLane) + " · "
+                       + EchoContractPolicy.ActionName(contract.targetAction)
+                       + "躲避";
             case EchoContractType.DisruptRhythm:
-                return "交替动作";
+                return EchoContractPolicy.LaneName(contract.targetLane)
+                       + " · 下一次："
+                       + EchoContractPolicy.ActionName(contract.targetAction);
             default:
                 return TrimPrefix(contract.title, "回声契约：");
         }

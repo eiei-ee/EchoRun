@@ -49,26 +49,42 @@ public sealed class EchoContractTests
 
         Assert.AreEqual(EchoContractType.DisruptRhythm, contract.type);
         StringAssert.Contains("交替", contract.objective);
+        Assert.AreNotEqual(ShadowAction.Keep, contract.targetAction);
     }
 
     [Test]
-    public void LaneContractRewardsCounterRouteAndPunishesLearnedRoute()
+    public void SparseStyleUsesHonestExplorationCopy()
+    {
+        EchoContractData contract = EchoContractPolicy.Create(
+            new PlayerStyleData(), 1);
+
+        Assert.IsTrue(contract.exploratory);
+        StringAssert.StartsWith("AI探测：", contract.learnedTrait);
+        StringAssert.DoesNotContain("AI识别：", contract.learnedTrait);
+    }
+
+    [Test]
+    public void LaneContractRequiresSpacedRouteMarkersAndPunishesLearnedRoute()
     {
         var contract = new EchoContractData
         {
             type = EchoContractType.BreakLaneHabit,
             learnedLane = 2,
             targetLane = 0,
-            targetProgress = 5f,
+            targetProgress = 3f,
             title = "lane"
         };
         var evaluator = new EchoContractEvaluator(contract);
 
         evaluator.TickLane(2, 2.1f);
-        evaluator.TickLane(0, 5.1f);
+        evaluator.TickLane(0, 20f);
+        evaluator.RecordLaneMarker(0, 30f);
+        evaluator.RecordLaneMarker(0, 31f);
+        evaluator.RecordLaneMarker(0, 48f);
+        evaluator.RecordLaneMarker(0, 66f);
 
         Assert.IsTrue(evaluator.Contract.completed);
-        Assert.AreEqual(5f, evaluator.Contract.progress);
+        Assert.AreEqual(3f, evaluator.Contract.progress);
         Assert.Greater(evaluator.Contract.playerProgressBonus, 0f);
         Assert.Greater(evaluator.Contract.shadowProgressBonus, 0f);
     }
@@ -81,15 +97,18 @@ public sealed class EchoContractTests
             type = EchoContractType.ChangeVerticalHabit,
             learnedAction = ShadowAction.Slide,
             targetAction = ShadowAction.Jump,
+            targetLane = 0,
             targetProgress = 3f,
             title = "vertical"
         };
         var evaluator = new EchoContractEvaluator(contract);
 
-        evaluator.RecordDodge(ObstacleType.Low);
-        evaluator.RecordDodge(ObstacleType.High);
-        evaluator.RecordDodge(ObstacleType.High);
-        evaluator.RecordDodge(ObstacleType.High);
+        evaluator.RecordDodge(ObstacleType.High, 1);
+        Assert.AreEqual(0f, evaluator.Contract.progress);
+        evaluator.RecordDodge(ObstacleType.Low, 0);
+        evaluator.RecordDodge(ObstacleType.High, 0);
+        evaluator.RecordDodge(ObstacleType.High, 0);
+        evaluator.RecordDodge(ObstacleType.High, 0);
 
         Assert.IsTrue(evaluator.Contract.completed);
         Assert.AreEqual(3f, evaluator.Contract.progress);
@@ -107,15 +126,21 @@ public sealed class EchoContractTests
         };
         var evaluator = new EchoContractEvaluator(contract);
 
-        evaluator.RecordDodge(ObstacleType.High);
-        evaluator.RecordDodge(ObstacleType.High);
-        evaluator.RecordDodge(ObstacleType.Low);
-        evaluator.RecordDodge(ObstacleType.High);
-        evaluator.RecordDodge(ObstacleType.Low);
+        ObstacleType first = evaluator.Contract.targetAction == ShadowAction.Jump
+            ? ObstacleType.High : ObstacleType.Low;
+        ObstacleType second = first == ObstacleType.High
+            ? ObstacleType.Low : ObstacleType.High;
+        evaluator.RecordDodge(first);
+        int firstFeedback = evaluator.Contract.feedbackSequence;
+        evaluator.RecordDodge(first);
+        evaluator.RecordDodge(second);
+        evaluator.RecordDodge(first);
+        evaluator.RecordDodge(second);
 
         Assert.IsTrue(evaluator.Contract.completed);
         Assert.AreEqual(4f, evaluator.Contract.progress);
         Assert.Greater(evaluator.Contract.shadowProgressBonus, 0f);
+        Assert.Greater(evaluator.Contract.feedbackSequence, firstFeedback);
     }
 
     [Test]
@@ -144,12 +169,89 @@ public sealed class EchoContractTests
         Assert.AreEqual(EchoContractType.ChangeVerticalHabit,
             changed.echoContractType);
         Assert.AreNotEqual(changed.safeLane, changed.echoChallengeLane);
+        Assert.IsFalse(changed.shouldTurn);
         Assert.Contains(changed.echoChallengeLane, blocked);
         Assert.IsFalse(System.Array.Exists(blocked,
             lane => lane == changed.safeLane));
         Assert.AreEqual(1, TrackManager.SelectContractObstaclePrefabIndex(
             changed.echoContractType, changed.echoTargetAction,
             10, changed.difficulty, 0.9f));
+        Assert.IsTrue(TrackManager.RequiresGuaranteedContractRow(
+            changed.echoContractType));
+    }
+
+    [Test]
+    public void LaneContractKeepsItsPromisedTargetLaneSafe()
+    {
+        Assert.AreEqual(2, TrackManager.ChooseContractSafeLane(
+            EchoContractType.BreakLaneHabit, 2, 1, new[] { 0, 20, 20 }));
+    }
+
+    [Test]
+    public void RhythmContractRowsAlternateFromJumpToSlide()
+    {
+        Assert.AreEqual(1, TrackManager.SelectContractObstaclePrefabIndex(
+            EchoContractType.DisruptRhythm, ShadowAction.Jump,
+            0, 1f, 0f));
+        Assert.AreEqual(0, TrackManager.SelectContractObstaclePrefabIndex(
+            EchoContractType.DisruptRhythm, ShadowAction.Jump,
+            1, 1f, 0f));
+    }
+
+    [Test]
+    public void RetryContractResetsProgressButPreservesRule()
+    {
+        var failed = new EchoContractData
+        {
+            generation = 3,
+            type = EchoContractType.DisruptRhythm,
+            startingAction = ShadowAction.Jump,
+            targetAction = ShadowAction.Slide,
+            targetProgress = 4f,
+            progress = 2f,
+            shadowProgressBonus = 5f,
+            lastFeedback = "failed"
+        };
+
+        EchoContractData retry = EchoContractPolicy.CreateForRun(
+            new PlayerStyleData(), 3, UnityEngine.JsonUtility.ToJson(failed));
+
+        Assert.AreEqual(EchoContractType.DisruptRhythm, retry.type);
+        Assert.AreEqual(ShadowAction.Jump, retry.targetAction);
+        Assert.AreEqual(0f, retry.progress);
+        Assert.AreEqual(0f, retry.shadowProgressBonus);
+        Assert.IsEmpty(retry.lastFeedback);
+    }
+
+    [Test]
+    public void EmptyVerticalActionsCannotRewriteContractStyle()
+    {
+        Assert.IsFalse(StyleTracker.ShouldObserveVerticalAction(
+            ShadowAction.Jump, false));
+        Assert.IsTrue(StyleTracker.ShouldObserveVerticalAction(
+            ShadowAction.Jump, true));
+        Assert.IsFalse(StyleTracker.ShouldObserveVerticalAction(
+            ShadowAction.Left, true));
+    }
+
+    [Test]
+    public void ChallengeGenerationOnlyAdvancesAfterVictory()
+    {
+        Assert.IsFalse(AIShadowRunner.ShouldAdvanceGeneration(
+            true, false, false, false));
+        Assert.IsFalse(AIShadowRunner.ShouldAdvanceGeneration(
+            true, true, false, false));
+        Assert.IsTrue(AIShadowRunner.ShouldAdvanceGeneration(
+            true, true, true, false));
+        Assert.IsTrue(AIShadowRunner.ShouldAdvanceGeneration(
+            false, true, false, true));
+    }
+
+    [Test]
+    public void DuelLeadUsesOnlyRunnerRoutePositions()
+    {
+        Assert.AreEqual(4f,
+            AIShadowRunner.CalculatePhysicalLead(104f, 100f));
     }
 
     [Test]

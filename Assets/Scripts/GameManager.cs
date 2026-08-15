@@ -304,6 +304,7 @@ public class GameManager : MonoBehaviour
         if (player != null) ParticleManager.Instance?.EmitDeath(player.transform.position);
         if (AudioManager.Instance != null) AudioManager.Instance.PlayDeath();
         if (AudioManager.Instance != null) AudioManager.Instance.StopFootsteps();
+        InputManager.Instance?.ClearInput();
         StartCoroutine(DeathSequenceCoroutine());
     }
 

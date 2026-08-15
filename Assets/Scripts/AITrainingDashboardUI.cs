@@ -225,7 +225,8 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
             ? shadow.minimumSlideSamples : ai.minimumSlideSamples;
         EchoMenuViewData next = EchoRunPresentation.BuildMenu(
             currentGeneration, StyleTracker.GetSnapshot(),
-            minimumJumps, minimumSlides);
+            minimumJumps, minimumSlides,
+            shadow != null ? shadow.ContractPreview : null);
         _metrics.text = "回声进化\n第 " + report.generationBefore
                         + " 代  →  第 " + report.generationAfter + " 代"
                         + "\n\n它重点观察了\n" + report.learnedAction;
