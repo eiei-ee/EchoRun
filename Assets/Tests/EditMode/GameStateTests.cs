@@ -81,6 +81,20 @@ public class GameStateTests
             10f, true, true, manager.LastEndReason));
     }
 
+    [Test]
+    public void FirstCollisionRecoversAndSecondCollisionEndsRun()
+    {
+        GameManager manager = Create<GameManager>("GameManager");
+        manager.StartGame();
+
+        Assert.IsTrue(manager.TryRecoverFromCollision());
+        Assert.AreEqual(1, manager.CollisionStrikes);
+        Assert.Greater(manager.CollisionRecoveryTimeRemaining, 0f);
+
+        Assert.IsFalse(manager.TryRecoverFromCollision());
+        Assert.AreEqual(2, manager.CollisionStrikes);
+    }
+
     [TestCase(RunEndReason.Collision, true, false, 3, "重新挑战")]
     [TestCase(RunEndReason.FinishReached, true, false, 3, "重新挑战")]
     [TestCase(RunEndReason.FinishReached, true, true, 4, "挑战下一代")]
@@ -394,14 +408,16 @@ public class GameStateTests
     }
 
     [Test]
-    public void DesktopWebGlKeepsThe120FrameRateOption()
+    public void NativeAndroidAndDesktopWebGlKeepThe120FrameRateOption()
     {
         Assert.IsFalse(GameManager.ShouldConstrainHighFrameRate(
             false, true, false));
         Assert.IsTrue(GameManager.ShouldConstrainHighFrameRate(
             false, true, true));
-        Assert.IsTrue(GameManager.ShouldConstrainHighFrameRate(
+        Assert.IsFalse(GameManager.ShouldConstrainHighFrameRate(
             true, false, false));
+        Assert.IsFalse(GameManager.ShouldConstrainHighFrameRate(
+            true, false, true));
     }
 
     [Test]
@@ -2174,6 +2190,46 @@ public class GameStateTests
             director.CurrentShadowDirective.riskBias, 0.0001f);
         Assert.AreEqual(0.05f,
             director.CurrentShadowDirective.decisionNoise, 0.0001f);
+    }
+
+    [Test]
+    public void DirectorObservationWindowUsesRouteDistanceNotPregenerationCount()
+    {
+        Assert.IsTrue(AITrackDirector.IsObservationSegment(
+            0f, 20f, 2));
+        Assert.IsTrue(AITrackDirector.IsObservationSegment(
+            20f, 40f, 2));
+        Assert.IsFalse(AITrackDirector.IsObservationSegment(
+            40f, 60f, 2));
+        Assert.IsFalse(AITrackDirector.IsObservationSegment(
+            0f, 20f, 0));
+    }
+
+    [Test]
+    public void ContractOverridesAreExcludedFromDirectorRewardAttribution()
+    {
+        Assert.IsTrue(AITrackDirector.IsPolicyAttributionEligible(null));
+        Assert.IsTrue(AITrackDirector.IsPolicyAttributionEligible(
+            new EchoContractData { type = EchoContractType.None }));
+        Assert.IsFalse(AITrackDirector.IsPolicyAttributionEligible(
+            new EchoContractData
+            {
+                type = EchoContractType.BreakLaneHabit
+            }));
+    }
+
+    [Test]
+    public void ObstacleFreeTurnsDoNotMasqueradeAsPressure()
+    {
+        float recovery = AITrackDirector.TurnMultiplierForIntent(
+            AIDirectorIntent.Recovery);
+        float pressure = AITrackDirector.TurnMultiplierForIntent(
+            AIDirectorIntent.Pressure);
+        float recordPush = AITrackDirector.TurnMultiplierForIntent(
+            AIDirectorIntent.RecordPush);
+
+        Assert.Greater(recovery, pressure);
+        Assert.Greater(pressure, recordPush);
     }
 
     [Test]

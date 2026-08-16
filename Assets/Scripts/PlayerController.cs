@@ -141,7 +141,10 @@ public class PlayerController : MonoBehaviour
 
        HandleInput();
        UpdateSlide();
-       StyleTracker.TickLane(CurrentLane, Time.deltaTime);
+       float offeredLaneCenter = AITrackDirector.Instance != null
+           ? AITrackDirector.Instance.CurrentLaneIncentiveCenter : 1f;
+       StyleTracker.TickLane(CurrentLane, Time.deltaTime,
+           offeredLaneCenter);
 
         // Running trail dust
         if (_runTrailTimer > 0.12f)
@@ -388,7 +391,7 @@ public class PlayerController : MonoBehaviour
         {
             _gm.AddCoins(1);
             AITrackDirector.Instance?.RecordCoin();
-            AIShadowRunner.Instance?.RecordCoin();
+            AIShadowRunner.Instance?.RecordCoin(coin.IsEchoContractMarker);
             AudioManager.Instance?.PlayCoin();
             ParticleManager.Instance?.EmitCoin(other.transform.position);
             if (TrackManager.Instance != null)
@@ -551,6 +554,14 @@ public class PlayerController : MonoBehaviour
            AudioManager.Instance?.PlayCollision();
            if (PowerUpController.Instance != null
                && PowerUpController.Instance.TryAbsorbCollision())
+           {
+               if (TrackManager.Instance != null)
+                   TrackManager.Instance.ReleaseDynamic(other.gameObject);
+               else
+                   other.gameObject.SetActive(false);
+               return;
+           }
+           if (_gm.TryRecoverFromCollision())
            {
                if (TrackManager.Instance != null)
                    TrackManager.Instance.ReleaseDynamic(other.gameObject);

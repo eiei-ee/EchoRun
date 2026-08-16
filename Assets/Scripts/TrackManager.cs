@@ -56,6 +56,7 @@ public class TrackManager : MonoBehaviour
         public int lane;
         public float startZ;
         public int count;
+        public bool echoContractMarker;
     }
 
     private struct SpawnedObstacleInfo
@@ -690,7 +691,9 @@ public class TrackManager : MonoBehaviour
         {
             lane = safeLane,
             startZ = coinZ,
-            count = AIRunRandom.Range(minCoins, maxCoins)
+            count = AIRunRandom.Range(minCoins, maxCoins),
+            echoContractMarker = plan.echoContractType
+                                 == EchoContractType.BreakLaneHabit
         });
         int echoChallengeLane = plan.echoChallengeLane;
         if (plan.echoContractType == EchoContractType.ChangeVerticalHabit
@@ -781,7 +784,7 @@ public class TrackManager : MonoBehaviour
         {
             CoinTrailPlan trail = coinTrails[i];
             SpawnCoinTrail(segment, trail.lane, trail.startZ, trail.count,
-                spawnedObstacles, jumpHeight);
+                spawnedObstacles, jumpHeight, trail.echoContractMarker);
         }
    }
 
@@ -820,13 +823,15 @@ public class TrackManager : MonoBehaviour
     // ---- coin patterns ----
 
     void SpawnCoinTrail(GameObject segment, int lane, float startZ, int count,
-        List<SpawnedObstacleInfo> obstacles, float jumpHeight)
+        List<SpawnedObstacleInfo> obstacles, float jumpHeight,
+        bool echoContractMarker = false)
     {
         if (coinPrefab == null) return;
         if (TryGetOverlappingJumpObstacle(
                 lane, startZ, count, obstacles, out float obstacleZ))
         {
-            SpawnJumpCoinArc(segment, lane, obstacleZ, jumpHeight);
+            SpawnJumpCoinArc(segment, lane, obstacleZ, jumpHeight,
+                echoContractMarker);
             return;
         }
 
@@ -837,7 +842,7 @@ public class TrackManager : MonoBehaviour
                 startZ + c * TrackSpawnRules.CoinSpacing);
             if (lp.z > segmentLength - 1f) break;
             Vector3 wp = segment.transform.TransformPoint(lp);
-            SpawnDynamic(coinPrefab, segment, wp, Quaternion.identity);
+            SpawnCoinInstance(segment, wp, echoContractMarker);
         }
     }
 
@@ -864,7 +869,7 @@ public class TrackManager : MonoBehaviour
     }
 
     void SpawnJumpCoinArc(GameObject segment, int lane, float obstacleZ,
-        float jumpHeight)
+        float jumpHeight, bool echoContractMarker = false)
     {
         int count = TrackSpawnRules.JumpRewardCoinCount;
         float spacing = TrackSpawnRules.CoinSpacing;
@@ -882,7 +887,7 @@ public class TrackManager : MonoBehaviour
                 TrackSpawnRules.GroundCoinHeight, jumpHeight);
             Vector3 wp = segment.transform.TransformPoint(
                 new Vector3(x, y, z));
-            SpawnDynamic(coinPrefab, segment, wp, Quaternion.identity);
+            SpawnCoinInstance(segment, wp, echoContractMarker);
         }
     }
 
@@ -911,7 +916,7 @@ public class TrackManager : MonoBehaviour
                 Vector3 lp = new Vector3(cx, 1f, z + c * 1.2f);
                 if (lp.z > zEnd) break;
                 Vector3 wp = segment.transform.TransformPoint(lp);
-                SpawnDynamic(coinPrefab, segment, wp, Quaternion.identity);
+                SpawnCoinInstance(segment, wp, false);
             }
             fromLane = toLane;
         }
@@ -1112,6 +1117,16 @@ public class TrackManager : MonoBehaviour
            prefab = prefab,
            ownerSegment = ownerSegment
        });
+       return instance;
+   }
+
+   private GameObject SpawnCoinInstance(GameObject ownerSegment,
+       Vector3 position, bool echoContractMarker)
+   {
+       GameObject instance = SpawnDynamic(
+           coinPrefab, ownerSegment, position, Quaternion.identity);
+       Coin coin = instance != null ? instance.GetComponent<Coin>() : null;
+       coin?.ConfigureEchoContractMarker(echoContractMarker);
        return instance;
    }
 

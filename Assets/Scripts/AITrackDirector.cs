@@ -151,6 +151,18 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
     public ShadowAIDirective CurrentShadowDirective { get; private set; }
         = ShadowAIDirective.Neutral;
     public string CurrentStatus { get; private set; } = "AI导演 · 等待开局";
+    public float CurrentLaneIncentiveCenter
+    {
+        get
+        {
+            if (_activeDecision == null) return 1f;
+            float safe = Mathf.Clamp(CurrentPlan.safeLane, 0, 2);
+            if (CurrentPlan.echoChallengeLane < 0
+                || CurrentPlan.echoChallengeLane > 2)
+                return safe;
+            return (safe + CurrentPlan.echoChallengeLane) * 0.5f;
+        }
+    }
 
     private static AILinUcbPolicy _sessionPolicy;
     private GameManager _gameManager;
@@ -185,6 +197,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         public int coinsAtActivation;
         public int dodgesAtActivation;
         public int hitsAtActivation;
+        public bool policyUpdateEligible;
     }
 
     void Awake()
@@ -243,7 +256,8 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         float policyUncertainty = 0f;
         bool safetyAdjusted = false;
         int selectedAction = -1;
-        if (!useAI || _decisionCount <= Mathf.Max(1, observationSegments))
+        if (!useAI || IsObservationSegment(segmentStartDistance,
+                segmentEndDistance, observationSegments))
         {
             intent = AIDirectorIntent.Observe;
         }
@@ -263,10 +277,10 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
 
         AITrackPlan plan = BuildPlan(intent, baseDifficulty, baseObstacleChance,
             baseCoinChance, baseTurnChance, previousSafeLane, canTurn);
+        EchoContractData activeContract = AIShadowRunner.Instance != null
+            ? AIShadowRunner.Instance.ActiveContract : null;
         plan = ApplyEchoContract(
-            plan, AIShadowRunner.Instance != null
-                ? AIShadowRunner.Instance.ActiveContract
-                : null,
+            plan, activeContract,
             _decisionCount);
         ShadowAIDirective directive = BuildShadowDirective(intent);
         int telemetryDecisionId =
@@ -286,7 +300,10 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             segmentStartDistance = Mathf.Max(0f, segmentStartDistance),
             segmentEndDistance = Mathf.Max(segmentStartDistance,
                 segmentEndDistance),
-            telemetryDecisionId = telemetryDecisionId
+            telemetryDecisionId = telemetryDecisionId,
+            policyUpdateEligible = selectedAction >= 0
+                                   && IsPolicyAttributionEligible(
+                                       activeContract)
         });
         _lastPlannedHitCount = _hits;
         return plan;
@@ -503,7 +520,8 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
 
         AIPlayerSkillEstimator.RecordSegmentOutcome(
             hitGain == 0, distanceGain);
-        if (decision.action < 0 || _sessionPolicy == null) return;
+        if (decision.action < 0 || _sessionPolicy == null
+            || !decision.policyUpdateEligible) return;
 
         float reward = 0.15f
                        + Mathf.Clamp01(distanceGain / 25f) * 0.35f
@@ -548,7 +566,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             echoTargetAction = ShadowAction.Keep
         };
 
-        float turnMultiplier = 1f;
+        float turnMultiplier = TurnMultiplierForIntent(intent);
         switch (intent)
         {
             case AIDirectorIntent.Observe:
@@ -558,7 +576,6 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
                 plan.minCoinCount = 5;
                 plan.maxCoinCount = 7;
                 plan.maxBlockedLanes = 1;
-                turnMultiplier = 0f;
                 break;
             case AIDirectorIntent.Recovery:
                 plan.difficulty = Mathf.Min(plan.difficulty, 0.35f);
@@ -567,13 +584,11 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
                 plan.minCoinCount = 6;
                 plan.maxCoinCount = 9;
                 plan.maxBlockedLanes = 1;
-                turnMultiplier = 0.45f;
                 break;
             case AIDirectorIntent.Flow:
                 plan.difficulty = Mathf.Clamp(plan.difficulty, 0.3f, 0.6f);
                 plan.obstacleChance = Mathf.Clamp(plan.obstacleChance, 0.4f, 0.62f);
                 plan.coinChance = Mathf.Max(plan.coinChance, 0.65f);
-                turnMultiplier = 0.85f;
                 break;
             case AIDirectorIntent.Pressure:
                 plan.difficulty = Mathf.Max(plan.difficulty, 0.68f);
@@ -582,7 +597,6 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
                 plan.minCoinCount = 4;
                 plan.maxCoinCount = 6;
                 plan.maxBlockedLanes = 2;
-                turnMultiplier = 1.35f;
                 break;
             case AIDirectorIntent.RecordPush:
                 plan.difficulty = Mathf.Max(plan.difficulty, 0.82f);
@@ -591,7 +605,6 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
                 plan.minCoinCount = 3;
                 plan.maxCoinCount = 5;
                 plan.maxBlockedLanes = 2;
-                turnMultiplier = 1.75f;
                 break;
         }
 
@@ -602,19 +615,90 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         return plan;
     }
 
+    public static bool IsObservationSegment(float segmentStartDistance,
+        float segmentEndDistance, int observationSegments)
+    {
+        int count = Mathf.Max(0, observationSegments);
+        if (count == 0) return false;
+        float length = Mathf.Max(1f,
+            segmentEndDistance - segmentStartDistance);
+        return Mathf.Max(0f, segmentStartDistance) < length * count;
+    }
+
+    public static bool IsPolicyAttributionEligible(
+        EchoContractData activeContract)
+    {
+        return activeContract == null
+               || activeContract.type == EchoContractType.None;
+    }
+
+    public static float TurnMultiplierForIntent(AIDirectorIntent intent)
+    {
+        switch (intent)
+        {
+            case AIDirectorIntent.Observe: return 0f;
+            case AIDirectorIntent.Recovery: return 1.15f;
+            case AIDirectorIntent.Flow: return 0.85f;
+            case AIDirectorIntent.Pressure: return 0.4f;
+            case AIDirectorIntent.RecordPush: return 0.2f;
+            default: return 1f;
+        }
+    }
+
     public static AITrackPlan ApplyEchoContract(AITrackPlan plan,
         EchoContractData contract, int decisionCount)
     {
-        if (contract == null || contract.type == EchoContractType.None
-            || contract.completed)
+        if (contract == null || contract.type == EchoContractType.None)
             return plan;
+
+        EchoDuelPhase phase = contract.duelPhase == EchoDuelPhase.None
+            ? EchoDuelPhase.Resistance : contract.duelPhase;
+        if (phase == EchoDuelPhase.Detection
+            || phase == EchoDuelPhase.Reveal)
+        {
+            plan.echoContractType = EchoContractType.None;
+            plan.obstacleChance = Mathf.Min(plan.obstacleChance, 0.35f);
+            plan.coinChance = Mathf.Max(plan.coinChance, 0.78f);
+            plan.maxBlockedLanes = 1;
+            plan.shouldTurn = false;
+            return plan;
+        }
+
+        if (phase == EchoDuelPhase.Rewrite)
+        {
+            // The player is authoring a new style, so provide several readable
+            // routes instead of continuing to order a single counter-action.
+            plan.echoContractType = EchoContractType.None;
+            plan.safeLane = Mathf.Abs(decisionCount) % 3;
+            plan.obstacleChance = Mathf.Clamp(plan.obstacleChance, 0.42f, 0.58f);
+            plan.coinChance = Mathf.Max(plan.coinChance, 0.82f);
+            plan.maxBlockedLanes = 1;
+            plan.shouldTurn = false;
+            return plan;
+        }
 
         plan.echoContractType = contract.type;
         plan.echoTargetAction = contract.targetAction;
         plan.shouldTurn = false;
+        if (phase == EchoDuelPhase.Counterattack)
+        {
+            plan.safeLane = Mathf.Abs(decisionCount + contract.generation) % 3;
+            plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.8f);
+            plan.coinChance = Mathf.Max(plan.coinChance, 0.78f);
+            plan.maxBlockedLanes = Mathf.Max(1, plan.maxBlockedLanes);
+        }
+        else if (phase == EchoDuelPhase.Finale)
+        {
+            plan.difficulty = Mathf.Max(plan.difficulty, 0.78f);
+            plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.84f);
+            plan.coinChance = Mathf.Max(plan.coinChance, 0.72f);
+            plan.maxBlockedLanes = 2;
+        }
         if (contract.type == EchoContractType.BreakLaneHabit)
         {
-            plan.safeLane = Mathf.Clamp(contract.targetLane, 0, 2);
+            if (phase != EchoDuelPhase.Counterattack
+                && phase != EchoDuelPhase.Finale)
+                plan.safeLane = Mathf.Clamp(contract.targetLane, 0, 2);
             plan.coinChance = Mathf.Max(plan.coinChance, 0.9f);
             plan.minCoinCount = Mathf.Max(plan.minCoinCount, 7);
             plan.maxCoinCount = Mathf.Max(plan.maxCoinCount, 10);

@@ -25,12 +25,14 @@ public sealed class PowerUpBalance
 public sealed class GameplayBalance
 {
     public float startSpeed = 10f;
-    public float maxSpeed = 40f;
-    public float speedIncreaseRate = 0.5f;
+    public float maxSpeed = 24f;
+    public float speedIncreaseRate = 0.12f;
     public int coinScore = 10;
     public float magnetRadius = 7f;
     public float calibrationCourseDistance = 450f;
     public float challengeCourseDistance = 700f;
+    public float calibrationDuration = 75f;
+    public float challengeDuration = 190f;
 }
 
 [Serializable]
@@ -203,6 +205,11 @@ public static class GameBalanceConfig
         gameplay.challengeCourseDistance = Mathf.Clamp(
             PositiveOrDefault(gameplay.challengeCourseDistance, 700f),
             gameplay.calibrationCourseDistance, 10000f);
+        gameplay.calibrationDuration = Mathf.Clamp(
+            PositiveOrDefault(gameplay.calibrationDuration, 75f), 45f, 120f);
+        gameplay.challengeDuration = Mathf.Clamp(
+            PositiveOrDefault(gameplay.challengeDuration, 190f),
+            120f, 240f);
     }
 
     private static void NormalizeTrack(TrackBalance track)

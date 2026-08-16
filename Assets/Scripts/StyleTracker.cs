@@ -54,6 +54,12 @@ public static class StyleTracker
 
     public static void TickLane(int lane, float deltaTime)
     {
+        TickLane(lane, deltaTime, 1f);
+    }
+
+    public static void TickLane(int lane, float deltaTime,
+        float offeredLaneCenter)
+    {
         if (!_runActive) return;
         float elapsed = Mathf.Max(0f, deltaTime);
         _laneSampleTimer += elapsed;
@@ -61,7 +67,7 @@ public static class StyleTracker
         while (_laneSampleTimer >= LaneSampleInterval)
         {
             _laneSampleTimer -= LaneSampleInterval;
-            _profile.ObserveLane(lane);
+            _profile.ObserveLaneChoice(lane, offeredLaneCenter);
         }
 
         if (_recoveryTimeRemaining <= 0f) return;

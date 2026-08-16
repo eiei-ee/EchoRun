@@ -17,7 +17,7 @@ public sealed class EchoContractTests
         Assert.AreEqual(2, contract.learnedLane);
         Assert.AreEqual(0, contract.targetLane);
         StringAssert.Contains("右侧", contract.learnedTrait);
-        StringAssert.Contains("左侧", contract.objective);
+        StringAssert.Contains("路线", contract.objective);
     }
 
     [Test]
@@ -48,7 +48,7 @@ public sealed class EchoContractTests
         EchoContractData contract = EchoContractPolicy.Create(style, 5);
 
         Assert.AreEqual(EchoContractType.DisruptRhythm, contract.type);
-        StringAssert.Contains("交替", contract.objective);
+        StringAssert.Contains("节拍", contract.objective);
         Assert.AreNotEqual(ShadowAction.Keep, contract.targetAction);
     }
 
@@ -71,20 +71,27 @@ public sealed class EchoContractTests
             type = EchoContractType.BreakLaneHabit,
             learnedLane = 2,
             targetLane = 0,
-            targetProgress = 3f,
+            targetProgress = 100f,
             title = "lane"
         };
         var evaluator = new EchoContractEvaluator(contract);
 
+        evaluator.SetPhase(EchoDuelPhase.Resistance);
         evaluator.TickLane(2, 2.1f);
-        evaluator.TickLane(0, 20f);
-        evaluator.RecordLaneMarker(0, 30f);
-        evaluator.RecordLaneMarker(0, 31f);
-        evaluator.RecordLaneMarker(0, 48f);
-        evaluator.RecordLaneMarker(0, 66f);
+        evaluator.RecordLaneMarker(0, 50f, 10f);
+        evaluator.RecordLaneMarker(0, 51f, 10f);
+        evaluator.RecordLaneMarker(0, 100f, 10f);
+        evaluator.RecordLaneMarker(0, 150f, 10f);
+
+        Assert.IsTrue(evaluator.Contract.initialBreakCompleted);
+        Assert.IsFalse(evaluator.Contract.completed);
+
+        evaluator.SetPhase(EchoDuelPhase.Counterattack);
+        evaluator.RecordLaneMarker(1, 200f, 10f);
+        evaluator.RecordLaneMarker(2, 250f, 10f);
 
         Assert.IsTrue(evaluator.Contract.completed);
-        Assert.AreEqual(3f, evaluator.Contract.progress);
+        Assert.AreEqual(100f, evaluator.Contract.progress);
         Assert.Greater(evaluator.Contract.playerProgressBonus, 0f);
         Assert.Greater(evaluator.Contract.shadowProgressBonus, 0f);
     }
@@ -98,11 +105,12 @@ public sealed class EchoContractTests
             learnedAction = ShadowAction.Slide,
             targetAction = ShadowAction.Jump,
             targetLane = 0,
-            targetProgress = 3f,
+            targetProgress = 100f,
             title = "vertical"
         };
         var evaluator = new EchoContractEvaluator(contract);
 
+        evaluator.SetPhase(EchoDuelPhase.Resistance);
         evaluator.RecordDodge(ObstacleType.High, 1);
         Assert.AreEqual(0f, evaluator.Contract.progress);
         evaluator.RecordDodge(ObstacleType.Low, 0);
@@ -110,8 +118,16 @@ public sealed class EchoContractTests
         evaluator.RecordDodge(ObstacleType.High, 0);
         evaluator.RecordDodge(ObstacleType.High, 0);
 
+        Assert.IsTrue(evaluator.Contract.initialBreakCompleted);
+        Assert.IsFalse(evaluator.Contract.completed);
+
+        evaluator.SetPhase(EchoDuelPhase.Counterattack);
+        while (!evaluator.Contract.completed)
+            evaluator.RecordDodge(RequiredObstacle(
+                evaluator.Contract.targetAction), 0);
+
         Assert.IsTrue(evaluator.Contract.completed);
-        Assert.AreEqual(3f, evaluator.Contract.progress);
+        Assert.AreEqual(100f, evaluator.Contract.progress);
         Assert.Greater(evaluator.Contract.shadowProgressBonus, 0f);
     }
 
@@ -121,24 +137,27 @@ public sealed class EchoContractTests
         var contract = new EchoContractData
         {
             type = EchoContractType.DisruptRhythm,
-            targetProgress = 4f,
+            targetProgress = 100f,
             title = "rhythm"
         };
         var evaluator = new EchoContractEvaluator(contract);
 
-        ObstacleType first = evaluator.Contract.targetAction == ShadowAction.Jump
-            ? ObstacleType.High : ObstacleType.Low;
-        ObstacleType second = first == ObstacleType.High
-            ? ObstacleType.Low : ObstacleType.High;
+        evaluator.SetPhase(EchoDuelPhase.Resistance);
+        ObstacleType first = RequiredObstacle(evaluator.Contract.targetAction);
         evaluator.RecordDodge(first);
         int firstFeedback = evaluator.Contract.feedbackSequence;
         evaluator.RecordDodge(first);
-        evaluator.RecordDodge(second);
-        evaluator.RecordDodge(first);
-        evaluator.RecordDodge(second);
+        while (!evaluator.Contract.initialBreakCompleted)
+            evaluator.RecordDodge(RequiredObstacle(
+                evaluator.Contract.targetAction));
+
+        evaluator.SetPhase(EchoDuelPhase.Counterattack);
+        while (!evaluator.Contract.completed)
+            evaluator.RecordDodge(RequiredObstacle(
+                evaluator.Contract.targetAction));
 
         Assert.IsTrue(evaluator.Contract.completed);
-        Assert.AreEqual(4f, evaluator.Contract.progress);
+        Assert.AreEqual(100f, evaluator.Contract.progress);
         Assert.Greater(evaluator.Contract.shadowProgressBonus, 0f);
         Assert.Greater(evaluator.Contract.feedbackSequence, firstFeedback);
     }
@@ -248,6 +267,96 @@ public sealed class EchoContractTests
     }
 
     [Test]
+    public void ActiveGenerationSnapshotCloneIsDeepAndStable()
+    {
+        var source = new EchoGenerationSnapshot
+        {
+            generation = 3,
+            policyWeights = new[] { 1f, 2f },
+            sequenceTransitions = new[] { 3f, 4f },
+            sequencePairCount = 7,
+            styleJson = UnityEngine.JsonUtility.ToJson(new PlayerStyleData
+            {
+                lanePreference = 0.75f,
+                laneSamples = 12
+            }),
+            pace = 13.5f,
+            clarity = 0.8f
+        };
+
+        EchoGenerationSnapshot clone = source.Clone();
+        string frozenJson = clone.ToJson();
+        source.policyWeights[0] = 99f;
+        source.sequenceTransitions[0] = 99f;
+        source.styleJson = "{}";
+        source.pace = 99f;
+
+        Assert.AreEqual(1f, clone.policyWeights[0]);
+        Assert.AreEqual(3f, clone.sequenceTransitions[0]);
+        Assert.AreEqual(13.5f, clone.pace);
+        Assert.AreEqual(0.75f, clone.GetStyle().lanePreference, 0.001f);
+        Assert.AreEqual(frozenJson, clone.ToJson());
+    }
+
+    [Test]
+    public void PendingPaceRejectsAbandonedShortAndTurboRuns()
+    {
+        Assert.IsFalse(AIShadowRunner.ShouldRecordPendingPace(
+            RunEndReason.Abandoned, 500f, 30f, false));
+        Assert.IsFalse(AIShadowRunner.ShouldRecordPendingPace(
+            RunEndReason.Collision, 59f, 30f, false));
+        Assert.IsFalse(AIShadowRunner.ShouldRecordPendingPace(
+            RunEndReason.FinishReached, 500f, 7.9f, false));
+        Assert.IsFalse(AIShadowRunner.ShouldRecordPendingPace(
+            RunEndReason.FinishReached, 500f, 30f, true));
+        Assert.IsTrue(AIShadowRunner.ShouldRecordPendingPace(
+            RunEndReason.FinishReached, 500f, 30f, false));
+    }
+
+    [Test]
+    public void DuelKeepsRewriteAsPursuitUntilFinalWindow()
+    {
+        var flow = new EchoDuelFlow(true, 2f, 1f, 3f, 5f);
+        var contract = new EchoContractData
+        {
+            type = EchoContractType.BreakLaneHabit,
+            targetProgress = 100f
+        };
+
+        Assert.IsTrue(flow.Tick(2f, 100f, contract));
+        Assert.AreEqual(EchoDuelPhase.Reveal, flow.Phase);
+        Assert.IsTrue(flow.Tick(1f, 100f, contract));
+        Assert.AreEqual(EchoDuelPhase.Resistance, flow.Phase);
+
+        contract.initialBreakCompleted = true;
+        Assert.IsTrue(flow.Tick(0.1f, 90f, contract));
+        Assert.AreEqual(EchoDuelPhase.Counterattack, flow.Phase);
+        contract.completed = true;
+        Assert.IsTrue(flow.Tick(0.1f, 80f, contract));
+        Assert.AreEqual(EchoDuelPhase.Rewrite, flow.Phase);
+
+        flow.Tick(4f, 40f, contract);
+        Assert.AreEqual(EchoDuelPhase.Rewrite, flow.Phase,
+            "Rewrite must not turn the whole second half into a finale.");
+        Assert.IsFalse(flow.IsRewriteLearningWindow,
+            "Boosted rewrite learning must remain time-bounded.");
+
+        Assert.IsTrue(flow.Tick(0.1f, 5f, contract));
+        Assert.AreEqual(EchoDuelPhase.Finale, flow.Phase);
+    }
+
+    [Test]
+    public void OrdinaryCoinsCannotAdvanceLaneContract()
+    {
+        Assert.IsFalse(AIShadowRunner.ShouldCountContractMarker(
+            EchoContractType.BreakLaneHabit, false));
+        Assert.IsTrue(AIShadowRunner.ShouldCountContractMarker(
+            EchoContractType.BreakLaneHabit, true));
+        Assert.IsFalse(AIShadowRunner.ShouldCountContractMarker(
+            EchoContractType.ChangeVerticalHabit, true));
+    }
+
+    [Test]
     public void DuelLeadUsesOnlyRunnerRoutePositions()
     {
         Assert.AreEqual(4f,
@@ -304,5 +413,11 @@ public sealed class EchoContractTests
         StringAssert.Contains("偏爱右路", summary);
         StringAssert.Contains("常用滑铲", summary);
         StringAssert.Contains("节奏固定", summary);
+    }
+
+    private static ObstacleType RequiredObstacle(ShadowAction action)
+    {
+        return action == ShadowAction.Jump
+            ? ObstacleType.High : ObstacleType.Low;
     }
 }

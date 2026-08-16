@@ -1,12 +1,14 @@
 {
   "gameplay": {
     "startSpeed": 10.0,
-    "maxSpeed": 40.0,
-    "speedIncreaseRate": 0.5,
+    "maxSpeed": 24.0,
+    "speedIncreaseRate": 0.12,
     "coinScore": 10,
     "magnetRadius": 7.0,
     "calibrationCourseDistance": 450.0,
-    "challengeCourseDistance": 700.0
+    "challengeCourseDistance": 700.0,
+    "calibrationDuration": 75.0,
+    "challengeDuration": 190.0
   },
   "track": {
     "obstacleChance": 0.7,

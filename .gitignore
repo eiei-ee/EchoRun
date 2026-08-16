@@ -36,6 +36,10 @@ TrainingData/
 # Local Codex diagnostics and test artifacts
 TempCodex*
 artifacts/
+.firecrawl/
+/*EditMode.xml
+/*PlayMode.xml
+/TestResults*.xml
 
 # Local credentials and release signing material
 .env

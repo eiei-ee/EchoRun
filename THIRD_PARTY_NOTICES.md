@@ -14,6 +14,7 @@ license or terms.
 | Interface Sounds | `Assets/Resources/Audio/ui_click.ogg`, `Assets/Resources/Audio/ui_confirm.ogg`, `Assets/Resources/Audio/ui_error.ogg` | [Kenney](https://kenney.nl/assets/interface-sounds) | CC0. |
 | Exo Gray humanoid character | `Assets/Models/Mixamo/ExoGray` | [Adobe Mixamo](https://helpx.adobe.com/creative-cloud/faq/mixamo-faq.html) | Adobe permits royalty-free use of Mixamo characters and animations in personal, commercial, and non-profit video-game projects. The character remains subject to Adobe's terms and is not covered by this repository's MIT license. |
 | Standard Assets humanoid animations | `Assets/Animations/HumanMotion` | [Unity Standard Assets Characters](https://github.com/Unity-Technologies/Standard-Assets-Characters) | Unity Companion License; the source notice and license text are included at `Assets/ThirdParty/UnityStandardAssets`. |
+| WeChat Mini Game Tuanjie adapter SDK | Git package `com.qq.weixin.minigame` and the tracked `Assets/WX-WASM-SDK-V2` compatibility mirror | [wechat-miniprogram/minigame-tuanjie-transform-sdk v0.1.32](https://github.com/wechat-miniprogram/minigame-tuanjie-transform-sdk/tree/v0.1.32) | MIT License; the upstream copyright and license text are included at `Assets/ThirdParty/WeChatMiniGameSDK`. |
 
 ## Assets created for this project
 
@@ -54,4 +55,7 @@ Revisions before commit `ffb82b5` may contain an unused
 were not recorded. The file is not covered by this repository's MIT License
 and was removed from the current default branch. Do not redistribute an older
 source snapshot without removing that file or independently establishing its
-license.
+license. GitHub's read-only `refs/pull/1/head` still exposes the pre-rewrite PR
+commit `1f03857`; ordinary Git pushes cannot delete this special reference.
+Removing that backend reference requires GitHub Support. See the current
+[release-candidate audit](docs/releases/v0.2.0-alpha.1-audit.md).

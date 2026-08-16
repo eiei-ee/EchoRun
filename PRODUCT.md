@@ -36,7 +36,8 @@ Feature-heavy menus, decorative UI that hides the game, unfinished systems prese
 
 ## Design Principles
 
-- Keep the calibrate-identify-counter-challenge-evolve loop obvious and fast.
+- Keep the calibrate-identify-counter-challenge-evolve loop readable, staged,
+  and long enough for each reversal to register.
 - Prefer reliable feedback over additional features.
 - Make every claim in the submission match the playable build.
 - Separate demonstrated AI capabilities from planned work and deterministic fallbacks.

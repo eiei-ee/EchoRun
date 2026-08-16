@@ -31,8 +31,13 @@ public class GameManager : MonoBehaviour
     public bool IsDeathSequence { get; private set; }
     public int RunSeed { get; private set; }
     public float CourseDistance { get; private set; }
+    public float CourseTargetDuration { get; private set; }
+    public float RunElapsed { get; private set; }
     public float RemainingDistance => Mathf.Max(0f, CourseDistance - Distance);
     public RunEndReason LastEndReason { get; private set; }
+    public int CollisionStrikes { get; private set; }
+    public int MaximumCollisionStrikes => 2;
+    public float CollisionRecoveryTimeRemaining { get; private set; }
 
     [Header("Buff (runtime)")]
     public float BuffTimeRemaining;
@@ -112,7 +117,10 @@ public class GameManager : MonoBehaviour
     public static bool ShouldConstrainHighFrameRate(bool isAndroid,
         bool isWebGl, bool usesTouchLayout)
     {
-        return isAndroid || (isWebGl && usesTouchLayout);
+        // Native Android can request the display's high-refresh mode through
+        // Application.targetFrameRate. Mobile WebGL remains capped because
+        // browser frame pacing is outside the player's control.
+        return isWebGl && usesTouchLayout;
     }
 
     public static int NormalizeFrameRate(int requested, bool constrainedPlatform)
@@ -150,6 +158,9 @@ public class GameManager : MonoBehaviour
     {
         if (State != GameState.Playing || IsDeathSequence) return;
 
+        RunElapsed += Time.deltaTime;
+        CollisionRecoveryTimeRemaining = Mathf.Max(0f,
+            CollisionRecoveryTimeRemaining - Time.deltaTime);
         CurrentSpeed = Mathf.Min(CurrentSpeed + speedIncreaseRate * Time.deltaTime, maxSpeed);
         _distanceTraveled += CurrentSpeed * Time.deltaTime;
         if (CourseDistance > 0f)
@@ -242,14 +253,18 @@ public class GameManager : MonoBehaviour
         BuffName = null;
         IsDeathSequence = false;
         LastEndReason = RunEndReason.None;
+        RunElapsed = 0f;
+        CollisionStrikes = 0;
+        CollisionRecoveryTimeRemaining = 0f;
         _telemetryFinished = false;
         GameplayBalance balance = GameBalanceConfig.Current.gameplay;
         int generation = AIShadowRunner.Instance != null
             ? AIShadowRunner.Instance.Generation
             : 0;
-        CourseDistance = SelectCourseDistance(generation,
-            balance.calibrationCourseDistance,
-            balance.challengeCourseDistance);
+        CourseTargetDuration = SelectCourseDuration(generation,
+            balance.calibrationDuration, balance.challengeDuration);
+        CourseDistance = EchoTimeRules.DistanceForAcceleratingRun(
+            CurrentSpeed, maxSpeed, speedIncreaseRate, CourseTargetDuration);
         _telemetryPlayer = null;
         State = GameState.Playing;
         OnStateChanged.Invoke(State);
@@ -306,6 +321,20 @@ public class GameManager : MonoBehaviour
         if (AudioManager.Instance != null) AudioManager.Instance.StopFootsteps();
         InputManager.Instance?.ClearInput();
         StartCoroutine(DeathSequenceCoroutine());
+    }
+
+    public bool TryRecoverFromCollision()
+    {
+        if (State != GameState.Playing || IsDeathSequence) return false;
+        CollisionStrikes++;
+        if (CollisionStrikes >= MaximumCollisionStrikes) return false;
+
+        CurrentSpeed = Mathf.Max(startSpeed * 0.75f, CurrentSpeed * 0.55f);
+        CollisionRecoveryTimeRemaining = 1.25f;
+        InputManager.Instance?.ClearInput();
+        AIRunTelemetry.RecordEvent("player_collision_recovery",
+            CollisionStrikes, -1, CurrentSpeed, CollisionRecoveryTimeRemaining);
+        return true;
     }
 
     System.Collections.IEnumerator DeathSequenceCoroutine()
@@ -401,6 +430,15 @@ public class GameManager : MonoBehaviour
         return generation <= 0
             ? calibration
             : Mathf.Max(calibration, challengeDistance);
+    }
+
+    public static float SelectCourseDuration(int generation,
+        float calibrationDuration, float challengeDuration)
+    {
+        float calibration = Mathf.Max(1f, calibrationDuration);
+        return generation <= 0
+            ? calibration
+            : Mathf.Max(calibration, challengeDuration);
     }
 
     private static int CreateRunSeed(int sequence)

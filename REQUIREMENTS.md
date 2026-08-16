@@ -26,6 +26,9 @@ safety.
 - A per-generation Echo Contract derived from lane, vertical-action, or rhythm
   habits. It must alter track rewards or obstacle composition and expose a
   measurable counter-objective.
+- A challenge must stage detection, reveal, resistance, counterattack, rewrite,
+  and finale as distinct states. Initial contract completion must survive a
+  counterattack and a second stability objective before the contract is broken.
 - Pre-run learned-trait/rule/objective disclosure, live contract progress and
   pressure/recovery feedback, and post-run learning/next-generation analysis.
 - An adaptive track director whose choices cannot produce an impossible route.
@@ -38,6 +41,15 @@ safety.
 - Distance lead without contract completion must never produce a challenge win.
 - Current-run observations may train only the next generation; the active
   opponent, style snapshot, and contract stay frozen for the duel.
+- A challenge loss, collision, abandonment, or same-generation retry must not
+  mutate active policy weights, action-sequence data, style, pace, clarity, or
+  contract input.
+- Contract-modified track plans must not train the director policy. Director
+  observations are settled by physical route distance, and turn segments must
+  remain obstacle-free under all pacing states.
+- Ordinary coins must not advance a lane contract; only explicit contract
+  markers may count. Lane style must be measured relative to the route offer so
+  generated incentives do not become a false player preference.
 - Recurring runtime track content must use pooling where practical.
 - EditMode and PlayMode regression suites must cover gameplay and restart
   behavior.

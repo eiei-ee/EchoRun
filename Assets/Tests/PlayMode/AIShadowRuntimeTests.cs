@@ -33,7 +33,8 @@ public sealed class AIShadowRuntimeTests
             runner.RecordPlayerAction(i % 2 == 0
                 ? ShadowAction.Jump
                 : ShadowAction.Slide, 1);
-        string calibrationResult = runner.FinalizeRunIfNeeded();
+        Invoke(gameManager, "CompleteCourse");
+        string calibrationResult = runner.LastResult;
 
         Assert.AreEqual(1, runner.Generation);
         StringAssert.Contains("校准完成", calibrationResult);
@@ -63,13 +64,79 @@ public sealed class AIShadowRuntimeTests
         Assert.IsTrue(runner.ActiveContract.completed);
 
         SetField(runner, "<PlayerLead>k__BackingField", 2f);
-        Invoke(runner, "FinishRun");
+        Invoke(GameManager.Instance, "CompleteCourse");
 
         Assert.IsTrue(runner.LastRunWasChallenge);
         Assert.IsTrue(runner.LastRunWon);
         StringAssert.Contains("契约破解", runner.LastResult);
         StringAssert.Contains("本代学习", runner.LastResult);
         StringAssert.Contains("下一代变化", runner.LastResult);
+
+        runner.ResetTraining();
+        StyleTracker.ResetTraining();
+        AIPlayerSkillEstimator.ResetTraining();
+        yield return null;
+    }
+
+    [UnityTest]
+    public IEnumerator FailedRetryKeepsPolicySequenceStyleAndPaceFrozen()
+    {
+        SceneManager.LoadScene("SampleScene");
+        yield return null;
+        for (int frame = 0; frame < 240
+             && (GameManager.Instance == null || AIShadowRunner.Instance == null);
+             frame++)
+            yield return null;
+
+        GameManager gameManager = GameManager.Instance;
+        AIShadowRunner runner = AIShadowRunner.Instance;
+        Assert.IsNotNull(gameManager);
+        Assert.IsNotNull(runner);
+
+        runner.ResetTraining();
+        StyleTracker.ResetTraining();
+        AIPlayerSkillEstimator.ResetTraining();
+        gameManager.StartGame();
+        for (int frame = 0; frame < 10; frame++) yield return null;
+        int calibrationActions = Mathf.Max(
+            runner.minimumTrainingSamples, runner.minimumActiveTrainingSamples);
+        for (int i = 0; i < calibrationActions; i++)
+            runner.RecordPlayerAction(i % 2 == 0
+                ? ShadowAction.Jump : ShadowAction.Slide, i % 3);
+        Invoke(gameManager, "CompleteCourse");
+
+        Assert.AreEqual(1, runner.Generation);
+        string promotedGeneration = runner.GetActiveGenerationSnapshotJson();
+        Assert.IsNotEmpty(promotedGeneration);
+
+        gameManager.Restart();
+        AIShadowRunner calibrationRunner = runner;
+        yield return WaitForChallenge(calibrationRunner);
+        runner = AIShadowRunner.Instance;
+        gameManager = GameManager.Instance;
+        string beforeFailure = runner.GetActiveGenerationSnapshotJson();
+        Assert.AreEqual(promotedGeneration, beforeFailure);
+
+        for (int i = 0; i < calibrationActions * 2; i++)
+            runner.RecordPlayerAction(i % 3 == 0
+                ? ShadowAction.Left : ShadowAction.Right, i % 3);
+        gameManager.GameOver();
+        for (int frame = 0; frame < 360
+             && GameManager.Instance.State != GameState.GameOver; frame++)
+            yield return null;
+
+        Assert.AreEqual(1, runner.Generation);
+        Assert.AreEqual(beforeFailure,
+            runner.GetActiveGenerationSnapshotJson(),
+            "A failed run must not mutate the active generation snapshot.");
+
+        gameManager.Restart();
+        AIShadowRunner failedRunner = runner;
+        yield return WaitForChallenge(failedRunner);
+        runner = AIShadowRunner.Instance;
+        Assert.AreEqual(beforeFailure,
+            runner.GetActiveGenerationSnapshotJson(),
+            "Retry must load identical policy, sequence, style and pace.");
 
         runner.ResetTraining();
         StyleTracker.ResetTraining();
@@ -168,26 +235,55 @@ public sealed class AIShadowRuntimeTests
 
     private static void CompleteContract(EchoContractEvaluator evaluator)
     {
+        evaluator.SetPhase(EchoDuelPhase.Resistance);
+        CompleteContractStage(evaluator, false);
+        Assert.IsTrue(evaluator.Contract.initialBreakCompleted);
+        evaluator.SetPhase(EchoDuelPhase.Counterattack);
+        CompleteContractStage(evaluator, true);
+    }
+
+    private static void CompleteContractStage(EchoContractEvaluator evaluator,
+        bool counterattack)
+    {
         EchoContractData contract = evaluator.Contract;
-        switch (contract.type)
+        int guard = 0;
+        while (!(counterattack ? contract.completed
+                   : contract.initialBreakCompleted) && guard++ < 20)
         {
-            case EchoContractType.BreakLaneHabit:
-                for (int i = 0; i < Mathf.CeilToInt(contract.targetProgress); i++)
-                    evaluator.RecordLaneMarker(contract.targetLane, i * 20f);
-                break;
-            case EchoContractType.ChangeVerticalHabit:
+            if (contract.type == EchoContractType.BreakLaneHabit)
+            {
+                int lane = counterattack
+                    ? (contract.predictionLane + guard) % 3
+                    : contract.targetLane;
+                if (lane == contract.predictionLane && counterattack)
+                    lane = (lane + 1) % 3;
+                evaluator.RecordLaneMarker(lane, guard * 100f, 10f);
+            }
+            else
+            {
                 ObstacleType required = contract.targetAction == ShadowAction.Jump
-                    ? ObstacleType.High
-                    : ObstacleType.Low;
-                for (int i = 0; i < Mathf.CeilToInt(contract.targetProgress); i++)
-                    evaluator.RecordDodge(required, contract.targetLane);
-                break;
-            case EchoContractType.DisruptRhythm:
-                for (int i = 0; i < Mathf.CeilToInt(contract.targetProgress); i++)
-                    evaluator.RecordDodge(i % 2 == 0
-                        ? ObstacleType.High
-                        : ObstacleType.Low, contract.targetLane);
-                break;
+                    ? ObstacleType.High : ObstacleType.Low;
+                evaluator.RecordDodge(required, contract.targetLane);
+            }
         }
+        Assert.Less(guard, 20, "Contract stage did not converge.");
+    }
+
+    private static IEnumerator WaitForChallenge(AIShadowRunner previousRunner)
+    {
+        for (int frame = 0; frame < 360
+             && (AIShadowRunner.Instance == null
+                 || AIShadowRunner.Instance == previousRunner
+                 || GameManager.Instance == null
+                 || GameManager.Instance.State != GameState.Playing
+                 || !AIShadowRunner.Instance.HasActiveOpponent
+                 || AIShadowRunner.Instance.ActiveContract == null);
+             frame++)
+            yield return null;
+
+        Assert.IsNotNull(AIShadowRunner.Instance);
+        Assert.AreNotSame(previousRunner, AIShadowRunner.Instance);
+        Assert.IsTrue(AIShadowRunner.Instance.HasActiveOpponent);
+        Assert.IsNotNull(AIShadowRunner.Instance.ActiveContract);
     }
 }

@@ -13,9 +13,28 @@ not a promise of delivery dates.
 - Persistent progression, four consumable power-ups, audio, and settings
 - EditMode and PlayMode regression coverage
 
+## Local `v0.2.0-alpha.1` candidate
+
+- Immutable active-generation snapshots and separately trained pending state
+- Retry-invariant policy, sequence, style, pace, clarity, and contract input
+- Fuzzy echo fallback for interrupted but minimally useful calibration
+- Finite 75-second calibration and 190-second challenge targets
+- Six-stage, time-aware duel with stability, counterattack, prediction, rewrite,
+  and a final 25-second closing race
+- Contract-only marker coins, residual lane-style learning, distance-based
+  director attribution, contract-plan reward isolation, and obstacle-free turns
+- Two-hit player collision flow with a first-hit recovery window
+- 190 EditMode and 19 PlayMode tests passing, plus a clean local WebGL build
+  and browser-entry/gameplay validation
+
+This candidate has not yet been committed, pushed, deployed to GitHub Pages, or
+published as a GitHub Release. Those states must remain distinct from local
+validation.
+
 ## Near term
 
-- Improve onboarding and make the calibration requirements visible during play
+- Playtest the full 190-second dramatic curve with new and existing save data
+- Tune first-generation echo lead without weakening retry invariance
 - Add deterministic run seeds and shareable diagnostic reports
 - Expand accessibility options and mobile device coverage
 - Publish performance budgets for WebGL, Windows, and representative Android
@@ -26,7 +45,7 @@ not a promise of delivery dates.
 
 - Stabilize save and balance configuration formats
 - Document the AI training data schema and evaluation methodology
-- Add reproducible release packaging and checksums for all supported targets
+- Add reproducible release packaging and checksums for Windows and Android
 - Complete an asset-provenance audit for every distributable file
 - Establish compatibility and deprecation policies
 

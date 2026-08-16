@@ -160,6 +160,35 @@ public class PlayerStyleTests
     }
 
     [Test]
+    public void LanePreferenceMeasuresChoiceBeyondOfferedRoute()
+    {
+        var style = new PlayerStyleData();
+        for (int i = 0; i < 12; i++)
+            style.ObserveLaneChoice(0, 0f);
+
+        Assert.AreEqual(0f, style.lanePreference, 0.001f,
+            "Following a left-side reward route is not evidence of left bias.");
+
+        for (int i = 0; i < 12; i++)
+            style.ObserveLaneChoice(0, 2f);
+        Assert.Less(style.lanePreference, -0.5f,
+            "Choosing left against a right-side offer is real preference evidence.");
+    }
+
+    [Test]
+    public void LegacyLanePreferenceIsClearedDuringChoiceModelMigration()
+    {
+        PlayerStyleData legacy = JsonUtility.FromJson<PlayerStyleData>(
+            "{\"version\":2,\"lanePreference\":0.95,\"laneSamples\":40}");
+
+        legacy.Normalize();
+
+        Assert.AreEqual(PlayerStyleData.CurrentVersion, legacy.version);
+        Assert.AreEqual(0f, legacy.lanePreference);
+        Assert.AreEqual(0, legacy.laneSamples);
+    }
+
+    [Test]
     public void ObstacleSuccessDoesNotMasqueradeAsVerticalActionPreference()
     {
         var style = new PlayerStyleData();

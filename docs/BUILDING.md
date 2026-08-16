@@ -18,8 +18,8 @@ files.
 3. Allow the editor to restore packages.
 4. Open the enabled scene from Build Settings if it is not already open.
 
-Do not commit generated `Library`, `Temp`, `Logs`, `Builds`, IDE files, or
-local training exports.
+Do not commit generated `Library`, `Temp`, `Logs`, `Builds`, root-level test
+result XML, IDE files, or local training exports.
 
 ## Tests
 
@@ -28,7 +28,10 @@ and PlayMode suites.
 
 The CI workflow runs the same suites before any platform build. PlayMode tests
 exercise runtime bootstrap, progression UI, gameplay assets, power-ups, and
-the first-run-to-next-generation restart path.
+the first-run-to-next-generation restart path. EditMode tests also cover active
+generation snapshot immutability, failed-retry invariance, duel timing,
+contract-marker isolation, director attribution, lane-style normalization, and
+the two-hit collision rule.
 
 ## Builds
 
@@ -46,6 +49,20 @@ Equivalent batch entry points are `BuildConfig.BuildWebGL`,
 The WebGL shell enables IndexedDB persistence, responsive 16:9 sizing, mobile
 safe-area behavior, and a capped device-pixel ratio. Windows and Android use
 IL2CPP release builds.
+
+## Release evidence gates
+
+Treat the following as separate gates:
+
+1. test suites completed with zero failures;
+2. the requested platform build completed successfully;
+3. the built artifact loaded in its real runtime;
+4. core inputs and visible gameplay were exercised; and
+5. published artifacts and checksums match the tested files.
+
+A successful editor test does not prove a player build, and a successful build
+log does not prove visible gameplay. Do not publish a target as an official
+download until every applicable gate has concrete evidence.
 
 ## Continuous integration
 

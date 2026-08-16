@@ -20,7 +20,7 @@ need to change.
 
 ## Player model
 
-`PlayerStyleData` is the persistent, explainable player model. Version 1 tracks:
+`PlayerStyleData` is the persistent, explainable player model. Version 3 tracks:
 
 - aggressiveness: `0..1`
 - jump timing: `-1..1`, early to late
@@ -34,9 +34,18 @@ derived from evidence, so a new profile remains close to the existing behavior
 cloning policy until enough observations exist. `StyleTracker` is the only
 runtime writer and `EchoRunSaveSystem` is the persistence boundary.
 
-The shadow freezes a style snapshot at the beginning of a run. Inputs from the
-current run train the next shadow generation and cannot alter the opponent that
-the player is currently racing.
+Lane preference is learned as residual choice relative to the route's offered
+incentive center. This prevents safe-lane placement and coin trails from being
+misread as an intrinsic left/right preference. Legacy raw-lane profiles are
+normalized during migration instead of carrying the biased measurement into a
+new contract.
+
+`EchoGenerationSnapshot` is the versioned challenge boundary. It deep-copies
+policy weights, sequence transitions, pair count, normalized style JSON, pace,
+clarity, and generation number. Inputs from the current run train a separate
+pending generation and cannot alter the active opponent. Only a finish with a
+broken contract and player lead promotes the pending state; retrying a loss
+reconstructs the same active generation byte-for-byte.
 
 ## Echo Contract pipeline
 
@@ -50,17 +59,35 @@ explainable rule primitive:
    action sequence is no longer optimal.
 
 `EchoContractEvaluator` measures only successful, relevant counter-behaviour.
-Counter-actions add duel progress; repeating the learned habit adds progress to
-the echo. `AITrackDirector.ApplyEchoContract` writes the selected rule into the
+Counter-actions add stability; repeating the learned habit reduces it and adds
+pressure to the echo. Stability must reach 100% during resistance, is reset to
+55% when the echo counterattacks, and must reach 100% again before the contract
+is broken. `AITrackDirector.ApplyEchoContract` writes the selected rule into the
 next `AITrackPlan`, and `TrackManager` realizes it while keeping an independent
-safe lane open. The learned model proposes the personal rule, but deterministic
-route validation still owns physical safety.
+safe lane open. Lane contracts count only coins explicitly tagged as contract
+markers, not ordinary rewards. The learned model proposes the personal rule,
+but deterministic route validation still owns physical safety.
+
+`EchoDuelFlow` makes the confrontation time-aware:
+
+1. Detection (`20s`) observes without allowing a premature break;
+2. Reveal (`8s`) discloses the learned habit and rule;
+3. Resistance opens the first stability objective;
+4. Counterattack applies the 55% reset and a stronger track response;
+5. Rewrite remains the long pursuit phase; only its first `32s` boosts learning;
+6. Finale starts in the last `25s`, preserving a genuine closing race.
 
 Challenge victory is the conjunction `contract completed && player lead >= 0`.
 Distance, coins, dodges, and score remain feedback signals but cannot bypass the
 AI-generated objective. The UI exposes the same contract before the run, during
-the duel, and in the post-run learning report; the diagnostic dashboard remains
+the duel, and in the post-run learning report. During play it also exposes duel
+phase, prediction, stability, and lead. The diagnostic dashboard remains
 available separately for technical inspection.
+
+The first calibration aims for complete action coverage. If an interrupted run
+has enough valid time and samples to seed a model but misses full coverage, the
+next run may use a fuzzy echo with reduced clarity. This preserves continuity
+without representing partial evidence as a fully learned player.
 
 ## Decision pipeline
 
@@ -96,6 +123,11 @@ the same pipeline in play mode and refreshes at four times per second.
 - Global AI publishes intent; it does not issue character actions.
 - Style modifies valid choices; it never bypasses feasibility or safety.
 - Player and shadow observations must not be mixed within the active generation.
+- A failed or abandoned retry must preserve policy, sequence, style, pace,
+  clarity, generation number, and contract source data.
+- Director rewards must not train on plans that the active contract rewrote.
+- Director observations mature by physical route distance, not generation call
+  count; turns remain obstacle-free under every pacing state.
 - A challenge cannot be won by distance or score without completing its frozen
   Echo Contract.
 - Add new persistent fields through a save-data version bump and normalization.

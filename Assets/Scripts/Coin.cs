@@ -5,6 +5,7 @@ public class Coin : MonoBehaviour
     public float rotateSpeed = 180f;
     public float bobSpeed = 2f;
     public float bobHeight = 0.3f;
+    public bool IsEchoContractMarker { get; private set; }
 
     private float _baseY;
     private float _phaseOffset;
@@ -69,5 +70,10 @@ public class Coin : MonoBehaviour
         _cachedPlayer = player != null ? player.transform : null;
         _player = _cachedPlayer;
         return _player;
+    }
+
+    public void ConfigureEchoContractMarker(bool isMarker)
+    {
+        IsEchoContractMarker = isMarker;
     }
 }

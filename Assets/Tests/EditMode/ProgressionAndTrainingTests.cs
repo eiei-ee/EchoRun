@@ -6,6 +6,13 @@ using UnityEngine;
 public sealed class ProgressionAndTrainingTests
 {
     [Test]
+    public void RuntimeVersionMatchesProjectVersion()
+    {
+        Assert.AreEqual("0.2.0-alpha.1", EchoRunVersion.Current);
+        Assert.AreEqual(EchoRunVersion.Current, Application.version);
+    }
+
+    [Test]
     public void BalanceDefinesExactlyFourPurchasablePowerUps()
     {
         GameBalanceData balance = GameBalanceConfig.Current;

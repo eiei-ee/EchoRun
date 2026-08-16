@@ -23,7 +23,7 @@ public class UIManager : MonoBehaviour
     // ── Settings (sub-panel of menu) ──
     GameObject _settingsPanel;
     Slider _bgmSlider, _sfxSlider;
-    Text _bgmValueText, _sfxValueText;
+    Text _bgmValueText, _sfxValueText, _fpsStatusText;
     Button _fps30Btn, _fps60Btn, _fps120Btn;
     Button _largeTextBtn, _highContrastBtn, _reducedMotionBtn;
     Button _settingsBackBtn;
@@ -71,6 +71,8 @@ public class UIManager : MonoBehaviour
     private float _controlHintTimer;
     private float _nextDuelRefresh;
     private float _nextMenuRefresh;
+    private float _fpsSampleElapsed;
+    private int _fpsSampleFrames;
     private float _duelFeedbackTimer;
     private int _lastDuelFeedbackSequence = -1;
     private Transform _pendingTextRefreshRoot;
@@ -143,6 +145,7 @@ public class UIManager : MonoBehaviour
     {
         ApplySafeArea();
         UpdateLandscapeGuard();
+        UpdateFrameRateStatus();
         if (_pendingTextRefreshFrames > 0)
         {
             _pendingTextRefreshFrames--;
@@ -389,6 +392,10 @@ public class UIManager : MonoBehaviour
         });
 
         MakeLabel("FpsLabel", c, "画面帧率", new Vector2(0.34f, 0.49f));
+        _fpsStatusText = MakeText("FpsStatus", c, "目标 60 · 正在测量…", 24,
+            TextAnchor.MiddleRight);
+        _fpsStatusText.color = TextMuted;
+        AnchorText(_fpsStatusText.rectTransform, 0.72f, 0.49f, 340, 40);
         _fps30Btn  = MakeSmallButton("Fps30", c, "30",
             new Vector2(0.25f, 0.42f), new Vector2(140, 60), SurfaceRaised);
         _fps60Btn  = MakeSmallButton("Fps60", c, "60",
@@ -467,6 +474,31 @@ public class UIManager : MonoBehaviour
         SetButtonLabel(_fps30Btn, cur == 30 ? "✓ 30" : "30");
         SetButtonLabel(_fps60Btn, cur == 60 ? "✓ 60" : "60");
         SetButtonLabel(_fps120Btn, cur == 120 ? "✓ 120" : "120");
+        _fpsSampleElapsed = 0f;
+        _fpsSampleFrames = 0;
+        if (_fpsStatusText != null)
+            _fpsStatusText.text = $"目标 {cur} · 正在测量…";
+    }
+
+    void UpdateFrameRateStatus()
+    {
+        if (_fpsStatusText == null || _settingsPanel == null
+            || !_settingsPanel.activeInHierarchy)
+        {
+            _fpsSampleElapsed = 0f;
+            _fpsSampleFrames = 0;
+            return;
+        }
+
+        _fpsSampleElapsed += Time.unscaledDeltaTime;
+        _fpsSampleFrames++;
+        if (_fpsSampleElapsed < 0.5f) return;
+
+        int target = _gm != null ? _gm.GetFrameRate() : 60;
+        int actual = Mathf.RoundToInt(_fpsSampleFrames / _fpsSampleElapsed);
+        _fpsStatusText.text = $"目标 {target} · 实际约 {actual} FPS";
+        _fpsSampleElapsed = 0f;
+        _fpsSampleFrames = 0;
     }
 
     void RefreshVolumeLabels()
@@ -855,14 +887,20 @@ public class UIManager : MonoBehaviour
             shadow != null ? shadow.minimumSlideSamples : 2,
             shadow != null ? shadow.JumpTrainingSampleCount : 0,
             shadow != null ? shadow.SlideTrainingSampleCount : 0,
-            shadow != null ? shadow.CalibrationProgress : 0f);
+            shadow != null ? shadow.CalibrationProgress : 0f,
+            shadow != null ? shadow.DuelPhase : EchoDuelPhase.Calibration,
+            shadow != null ? shadow.DuelPhaseProgress : 0f,
+            shadow != null ? shadow.PublicPrediction : "");
 
-        if (_contractText != null) _contractText.text = view.contract;
+        if (_contractText != null)
+            _contractText.text = view.phase + " · " + view.contract;
         if (_contractProgressText != null)
             _contractProgressText.text = view.progress;
         if (_leadText != null)
         {
-            _leadText.text = view.lead;
+            _leadText.text = string.IsNullOrEmpty(view.prediction)
+                ? view.lead
+                : view.prediction + "　|　" + view.lead;
             _leadText.color = view.leadState == EchoLeadState.Leading
                 ? Reward
                 : view.leadState == EchoLeadState.Trailing
@@ -885,7 +923,8 @@ public class UIManager : MonoBehaviour
         _lastDuelFeedbackSequence = view.feedbackSequence;
         _duelFeedbackText.text = view.feedback;
         _duelFeedbackText.color = view.feedback.StartsWith("回声施压")
-            ? Danger : Primary;
+            ? Danger
+            : view.feedback.StartsWith("预测失效") ? Reward : Primary;
         _duelFeedbackTimer = 1.8f;
         _duelFeedbackText.gameObject.SetActive(true);
     }
@@ -1266,7 +1305,8 @@ public class UIManager : MonoBehaviour
             generation, StyleTracker.GetSnapshot(),
             shadow != null ? shadow.minimumJumpSamples : 2,
             shadow != null ? shadow.minimumSlideSamples : 2,
-            shadow != null ? shadow.ContractPreview : null);
+            shadow != null ? shadow.ContractPreview : null,
+            shadow != null ? shadow.EchoClarity : 1f);
 
         if (_menuGenerationText != null)
             _menuGenerationText.text = view.generation;

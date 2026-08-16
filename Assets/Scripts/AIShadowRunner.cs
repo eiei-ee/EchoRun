@@ -35,7 +35,9 @@ public class AIShadowRunner : MonoBehaviour
     public bool HasActiveOpponent { get; private set; }
     public bool LastRunWasChallenge { get; private set; }
     public bool LastRunWon { get; private set; }
-    public int Generation => _profile != null ? _profile.generation : 0;
+    public int Generation => _activeGeneration != null
+        ? _activeGeneration.generation
+        : _profile != null ? _profile.generation : 0;
     public int TrainingSampleCount => _profile != null ? _profile.sampleCount : 0;
     public int ActiveTrainingSampleCount =>
         _profile != null ? _profile.activeSampleCount : 0;
@@ -48,12 +50,23 @@ public class AIShadowRunner : MonoBehaviour
             _profile.actionCounts, minimumTrainingSamples,
             minimumActiveTrainingSamples, minimumActionCategories,
             minimumJumpSamples, minimumSlideSamples);
+    public float EchoClarity => _activeGeneration != null
+        ? Mathf.Clamp01(_activeGeneration.clarity)
+        : _profile != null ? Mathf.Clamp01(_profile.clarity) : 0f;
+    public EchoDuelPhase DuelPhase => _duelFlow != null
+        ? _duelFlow.Phase
+        : HasActiveOpponent ? EchoDuelPhase.Detection : EchoDuelPhase.Calibration;
+    public float DuelPhaseProgress => _duelFlow != null
+        ? _duelFlow.PhaseProgress01 : 0f;
+    public string PublicPrediction => _contractEvaluator != null
+        ? _contractEvaluator.BuildPredictionText() : "";
     public EchoContractData ActiveContract =>
         _contractEvaluator != null ? _contractEvaluator.Contract : null;
-    public EchoContractData ContractPreview => _profile != null
-        && _profile.generation > 0
-        ? EchoContractPolicy.CreateForRun(StyleTracker.GetSnapshot(),
-            _profile.generation, EchoRunSaveSystem.GetLastEchoContractJson())
+    public EchoContractData ContractPreview => _activeGeneration != null
+        && _activeGeneration.generation > 0
+        ? EchoContractPolicy.CreateForRun(_activeGeneration.GetStyle(),
+            _activeGeneration.generation,
+            EchoRunSaveSystem.GetLastEchoContractJson())
         : null;
     public float DuelPressure => HasActiveOpponent
         ? 1f - Mathf.Clamp01(Mathf.Abs(PlayerLead) / 14f)
@@ -79,9 +92,12 @@ public class AIShadowRunner : MonoBehaviour
         public float[] weights;
         public float[] sequenceTransitions;
         public int sequencePairCount;
+        public float clarity;
+        public string activeGenerationJson;
     }
 
     private ShadowProfile _profile;
+    private EchoGenerationSnapshot _activeGeneration;
     private AIShadowPolicy _policy;
     private AIShadowPolicy _opponentPolicy;
     private AIShadowSequencePolicy _sequencePolicy;
@@ -90,6 +106,7 @@ public class AIShadowRunner : MonoBehaviour
         new ShadowDecisionMaker();
     private PlayerStyleData _opponentStyle;
     private EchoContractEvaluator _contractEvaluator;
+    private EchoDuelFlow _duelFlow;
     private IShadowDirectiveSource _directiveSource;
     private System.Random _decisionRandom = new System.Random(1337);
     private GameManager _gameManager;
@@ -109,6 +126,7 @@ public class AIShadowRunner : MonoBehaviour
     private float _gapSmoothVelocity;
     private float _laneDecisionCooldown;
     private float _ghostProgress;
+    private float _opponentPace;
     private float _playerPhysicalProgress;
     private float _playerProgress;
     private float _appliedContractPlayerBonus;
@@ -131,6 +149,7 @@ public class AIShadowRunner : MonoBehaviour
     private ShadowAction _lastStyleDecision = ShadowAction.Keep;
     private bool _runStarted;
     private bool _runFinalized;
+    private bool _runUsedTurboStart;
     private readonly HashSet<int> _handledGhostObstacles = new HashSet<int>();
     private readonly HashSet<int> _reactedGhostObstacles = new HashSet<int>();
     private readonly HashSet<int> _recordedPlayerDodgeIds = new HashSet<int>();
@@ -180,8 +199,19 @@ public class AIShadowRunner : MonoBehaviour
         _runTime += Time.deltaTime;
         if (HasActiveOpponent && _contractEvaluator != null)
         {
+            float remainingSeconds = EchoTimeRules.EstimateRemainingSeconds(
+                _gameManager.RemainingDistance, _gameManager.CurrentSpeed);
+            if (_duelFlow != null && _duelFlow.Tick(Time.deltaTime,
+                    remainingSeconds, _contractEvaluator.Contract))
+            {
+                _contractEvaluator.SetPhase(_duelFlow.Phase);
+                AIRunTelemetry.RecordEvent("echo_duel_phase",
+                    (int)_duelFlow.Phase, _player.CurrentLane,
+                    _runTime, remainingSeconds);
+            }
             SyncRhythmTarget();
-            _contractEvaluator.TickLane(_player.CurrentLane, Time.deltaTime);
+            _contractEvaluator.TickLane(_player.CurrentLane, Time.deltaTime,
+                _gameManager.CurrentSpeed);
             ApplyContractMotionDelta();
         }
         _playerPhysicalProgress = _gameManager.Distance;
@@ -205,7 +235,7 @@ public class AIShadowRunner : MonoBehaviour
         _ghostJumpTimer = Mathf.Max(0f, _ghostJumpTimer - Time.deltaTime);
         _ghostSlideTimer = Mathf.Max(0f, _ghostSlideTimer - Time.deltaTime);
         float stumbleSpeed = _ghostStumbleTimer > 0f ? 0.25f : 1f;
-        _ghostProgress += Mathf.Max(1f, _profile.pace)
+        _ghostProgress += Mathf.Max(1f, _opponentPace)
                           * shadowPaceMultiplier * stumbleSpeed * Time.deltaTime;
         PlayerLead = CalculatePhysicalLead(_playerProgress, _ghostProgress);
 
@@ -237,10 +267,12 @@ public class AIShadowRunner : MonoBehaviour
         if (!HasTrainedProfile())
             return "首局校准：AI 将学习你的路线、动作与节奏";
 
-        PlayerStyleData style = StyleTracker.GetSnapshot();
+        PlayerStyleData style = _activeGeneration != null
+            ? _activeGeneration.GetStyle()
+            : StyleTracker.GetSnapshot();
         EchoContractData preview = EchoContractPolicy.Create(
-            style, _profile.generation);
-        return "第 " + _profile.generation + " 代回声已生成\n"
+            style, Generation);
+        return "第 " + Generation + " 代回声已生成\n"
                + "AI画像：" + EchoContractPolicy.BuildStyleSummary(style) + "\n"
                + preview.title + " · " + preview.learnedTrait + "\n"
                + "规则：" + preview.ruleDescription + "\n目标：" + preview.objective;
@@ -324,19 +356,30 @@ public class AIShadowRunner : MonoBehaviour
         _keepSampleTimer = 0f;
     }
 
-    public void RecordCoin()
+    public void RecordCoin(bool isEchoContractMarker = false)
     {
         _runCoins++;
-        if (HasActiveOpponent && _contractEvaluator != null && _player != null)
+        if (HasActiveOpponent && _contractEvaluator != null && _player != null
+            && ShouldCountContractMarker(
+                _contractEvaluator.Contract.type, isEchoContractMarker))
         {
             float routeDistance = _gameManager != null
                 ? _gameManager.Distance : _playerPhysicalProgress;
             _contractEvaluator.RecordLaneMarker(
-                _player.CurrentLane, routeDistance);
+                _player.CurrentLane, routeDistance,
+                _gameManager != null ? _gameManager.CurrentSpeed : 10f);
             ApplyContractMotionDelta();
         }
         AIRunTelemetry.RecordEvent("coin", 0,
-            _player != null ? _player.CurrentLane : -1, _runCoins);
+            _player != null ? _player.CurrentLane : -1, _runCoins,
+            isEchoContractMarker ? 1f : 0f);
+    }
+
+    public static bool ShouldCountContractMarker(EchoContractType contractType,
+        bool isEchoContractMarker)
+    {
+        return contractType == EchoContractType.BreakLaneHabit
+               && isEchoContractMarker;
     }
 
     public bool RecordDodge()
@@ -353,7 +396,8 @@ public class AIShadowRunner : MonoBehaviour
         _runDodges++;
         if (HasActiveOpponent && _contractEvaluator != null)
         {
-            _contractEvaluator.RecordDodge(obstacleType, playerLane);
+            _contractEvaluator.RecordDodge(obstacleType, playerLane,
+                _gameManager != null ? _gameManager.CurrentSpeed : 10f);
             ApplyContractMotionDelta();
         }
         AIRunTelemetry.RecordEvent("dodge", 0,
@@ -368,7 +412,8 @@ public class AIShadowRunner : MonoBehaviour
         ResolvePlayerSlideOpportunity();
         if (HasActiveOpponent && _contractEvaluator != null)
         {
-            _contractEvaluator.RecordHit();
+            _contractEvaluator.RecordHit(
+                _gameManager != null ? _gameManager.CurrentSpeed : 10f);
             ApplyContractMotionDelta();
         }
         AIRunTelemetry.RecordEvent("obstacle_hit", 0,
@@ -383,14 +428,32 @@ public class AIShadowRunner : MonoBehaviour
 
     public float[] GetModelWeightsSnapshot()
     {
+        if (_activeGeneration != null
+            && _activeGeneration.policyWeights != null)
+            return (float[])_activeGeneration.policyWeights.Clone();
         return _policy != null ? _policy.ExportWeights() : null;
     }
 
     public string GetSequenceStateSnapshot()
     {
+        if (_activeGeneration != null)
+        {
+            return JsonUtility.ToJson(new AIShadowSequenceState
+            {
+                transitions = _activeGeneration.sequenceTransitions != null
+                    ? (float[])_activeGeneration.sequenceTransitions.Clone()
+                    : null,
+                pairCount = _activeGeneration.sequencePairCount
+            });
+        }
         return _sequencePolicy == null
             ? ""
             : JsonUtility.ToJson(_sequencePolicy.ExportState());
+    }
+
+    public string GetActiveGenerationSnapshotJson()
+    {
+        return _activeGeneration != null ? _activeGeneration.ToJson() : "";
     }
 
     public void SetDirectiveSource(IShadowDirectiveSource source)
@@ -401,12 +464,14 @@ public class AIShadowRunner : MonoBehaviour
     public void ResetTraining()
     {
         SetGhostActive(false);
-        _profile = new ShadowProfile { version = 3 };
+        _profile = new ShadowProfile { version = 5 };
+        _activeGeneration = null;
         _policy = new AIShadowPolicy();
         _sequencePolicy = new AIShadowSequencePolicy();
         _opponentPolicy = null;
         _opponentSequencePolicy = null;
         _opponentStyle = null;
+        _opponentPace = 0f;
         _contractEvaluator = null;
         LastDecisionTrace = null;
         _runStarted = false;
@@ -437,6 +502,9 @@ public class AIShadowRunner : MonoBehaviour
         _runStarted = true;
         _runFinalized = false;
         _runTime = 0f;
+        _runUsedTurboStart = PowerUpController.Instance != null
+                             && PowerUpController.Instance.ActivePowerUp
+                             == PowerUpId.TurboStart;
         _runCoins = 0;
         _runDodges = 0;
         _playerPhysicalProgress = 0f;
@@ -470,7 +538,8 @@ public class AIShadowRunner : MonoBehaviour
         LastDecisionTrace = null;
         _slideOpportunityTracker.Reset();
         _recordedPlayerDodgeIds.Clear();
-        _opponentStyle = StyleTracker.GetSnapshot();
+        _opponentStyle = null;
+        _opponentPace = 0f;
         int decisionSeed = _gameManager != null
             ? _gameManager.RunSeed ^ unchecked((int)0x51ED270B)
             : 1337;
@@ -478,19 +547,25 @@ public class AIShadowRunner : MonoBehaviour
         _handledGhostObstacles.Clear();
         _reactedGhostObstacles.Clear();
         HasActiveOpponent = HasTrainedProfile();
+        _duelFlow = new EchoDuelFlow(HasActiveOpponent);
 
         if (HasActiveOpponent)
         {
             // Freeze the previous generation for this duel. New player actions train
             // the next generation and cannot make the current shadow mirror inputs.
-            _opponentPolicy = new AIShadowPolicy(_policy.ExportWeights());
-            AIShadowSequenceState state = _sequencePolicy.ExportState();
+            _opponentPolicy = new AIShadowPolicy(
+                _activeGeneration.policyWeights);
             _opponentSequencePolicy = new AIShadowSequencePolicy(
-                state.transitions, state.pairCount);
+                _activeGeneration.sequenceTransitions,
+                _activeGeneration.sequencePairCount);
+            _opponentStyle = _activeGeneration.GetStyle();
+            _opponentPace = Mathf.Max(1f, _activeGeneration.pace);
             _contractEvaluator = new EchoContractEvaluator(
                 EchoContractPolicy.CreateForRun(_opponentStyle,
-                    _profile.generation,
+                    _activeGeneration.generation,
                     EchoRunSaveSystem.GetLastEchoContractJson()));
+            _contractEvaluator.Contract.duelPhase = EchoDuelPhase.None;
+            _contractEvaluator.SetPhase(_duelFlow.Phase);
             CreateGhost();
             CurrentStatus = _contractEvaluator.BuildHudText();
         }
@@ -507,7 +582,7 @@ public class AIShadowRunner : MonoBehaviour
         RunEndReason endReason = _gameManager != null
                                  && _gameManager.LastEndReason != RunEndReason.None
             ? _gameManager.LastEndReason
-            : RunEndReason.FinishReached;
+            : RunEndReason.Abandoned;
         FinishRunWithReason(endReason);
     }
 
@@ -528,22 +603,57 @@ public class AIShadowRunner : MonoBehaviour
             ? _gameManager.Distance
             : _playerPhysicalProgress;
         float runPace = CalculatePhysicalPace(physicalDistance, _runTime);
-        if (_profile.pace <= 0f) _profile.pace = runPace;
-        else _profile.pace = Mathf.Lerp(_profile.pace, runPace, 0.35f);
+        if (ShouldRecordPendingPace(endReason, physicalDistance,
+                _runTime, _runUsedTurboStart))
+        {
+            if (_profile.pace <= 0f) _profile.pace = runPace;
+            else _profile.pace = Mathf.Lerp(_profile.pace, runPace, 0.35f);
+        }
         _profile.bestProgress = Mathf.Max(
             _profile.bestProgress, physicalDistance);
-        bool completedCalibration = reachedFinish && HasCalibrationSamples(
+        float calibrationProgress = CalculateCalibrationProgress(
             _profile.sampleCount, _profile.activeSampleCount,
             _profile.actionCounts, minimumTrainingSamples,
             minimumActiveTrainingSamples, minimumActionCategories,
             minimumJumpSamples, minimumSlideSamples);
-        if (ShouldAdvanceGeneration(challengedOpponent, reachedFinish,
-                playerWon, completedCalibration))
-            _profile.generation++;
+        bool completedCalibration = reachedFinish
+                                    && calibrationProgress >= 0.999f;
+        bool formedPartialEcho = !challengedOpponent
+                                 && HasPartialEchoSamples(
+                                     _profile.sampleCount,
+                                     _profile.activeSampleCount,
+                                     _profile.actionCounts,
+                                     _runTime,
+                                     minimumTrainingSamples);
+        if (challengedOpponent && reachedFinish && playerWon)
+        {
+            float nextClarity = Mathf.Max(EchoClarity,
+                Mathf.Clamp01(calibrationProgress));
+            PromotePendingGeneration(Generation + 1, nextClarity);
+        }
+        else if (!challengedOpponent && Generation <= 0
+                 && (completedCalibration || formedPartialEcho))
+        {
+            float firstClarity = completedCalibration
+                ? 1f
+                : Mathf.Clamp(calibrationProgress, 0.25f, 0.85f);
+            PromotePendingGeneration(1, firstClarity);
+        }
         _profile.weights = _policy.ExportWeights();
         SaveProfile();
 
-        if (!reachedFinish)
+        if (!challengedOpponent && formedPartialEcho && !completedCalibration)
+        {
+            EchoContractData nextContract = EchoContractPolicy.Create(
+                _activeGeneration.GetStyle(), Generation);
+            LastResult = "校准中断，但回声已经记住了你\n"
+                         + "回声清晰度 "
+                         + (EchoClarity * 100f).ToString("0") + "% · "
+                         + nextContract.learnedTrait + "\n"
+                         + "下一局将由模糊回声继续校准："
+                         + nextContract.title;
+        }
+        else if (!reachedFinish)
         {
             LastResult = challengedOpponent
                 ? "赛程中断 · 未到达终点\n本代契约未结算，重新挑战才能获胜"
@@ -567,15 +677,16 @@ public class AIShadowRunner : MonoBehaviour
         else if (!challengedOpponent)
         {
             EchoContractData nextContract = EchoContractPolicy.Create(
-                StyleTracker.GetSnapshot(), _profile.generation);
+                _activeGeneration.GetStyle(), Generation);
             LastResult = "校准完成 · 第 1 代 AI 回声已生成\n"
+                         + "回声清晰度 100%\n"
                          + nextContract.learnedTrait + "\n"
                          + "下一局规则：" + nextContract.ruleDescription;
         }
         else if (playerWon)
         {
             EchoContractData nextContract = EchoContractPolicy.Create(
-                StyleTracker.GetSnapshot(), _profile.generation);
+                _activeGeneration.GetStyle(), Generation);
             _contractEvaluator.Contract.won = true;
             LastResult = "契约破解 · 领先回声 "
                          + Mathf.Abs(PlayerLead).ToString("0.0") + "m\n"
@@ -633,6 +744,47 @@ public class AIShadowRunner : MonoBehaviour
         SetGhostActive(false);
     }
 
+    private void PromotePendingGeneration(int generation, float clarity)
+    {
+        AIShadowSequenceState sequence = _sequencePolicy != null
+            ? _sequencePolicy.ExportState()
+            : new AIShadowSequenceState();
+        PlayerStyleData style = StyleTracker.GetSnapshot();
+        style.Normalize();
+        float promotedPace = _profile.pace;
+        if (promotedPace <= 0f && _gameManager != null)
+        {
+            float expectedDistance = EchoTimeRules.DistanceForAcceleratingRun(
+                _gameManager.startSpeed, _gameManager.maxSpeed,
+                _gameManager.speedIncreaseRate, Mathf.Max(1f, _runTime));
+            promotedPace = CalculatePhysicalPace(expectedDistance, _runTime);
+        }
+        _activeGeneration = new EchoGenerationSnapshot
+        {
+            generation = Mathf.Max(1, generation),
+            policyWeights = _policy != null
+                ? _policy.ExportWeights() : _profile.weights,
+            sequenceTransitions = sequence.transitions,
+            sequencePairCount = sequence.pairCount,
+            styleJson = JsonUtility.ToJson(style),
+            pace = Mathf.Max(1f, promotedPace),
+            clarity = Mathf.Clamp01(clarity)
+        };
+        _activeGeneration.Normalize();
+        _profile.generation = _activeGeneration.generation;
+        _profile.clarity = _activeGeneration.clarity;
+        _profile.activeGenerationJson = _activeGeneration.ToJson();
+    }
+
+    public static bool ShouldRecordPendingPace(RunEndReason endReason,
+        float physicalDistance, float runTime, bool usedTurboStart)
+    {
+        return endReason != RunEndReason.Abandoned
+               && !usedTurboStart
+               && runTime >= 8f
+               && physicalDistance >= 60f;
+    }
+
     private void Learn(ShadowAction action, float[] features)
     {
         int lane = features != null && features.Length > 1
@@ -642,9 +794,12 @@ public class AIShadowRunner : MonoBehaviour
         AIRunTelemetry.RecordShadowSample(
             action, lane, features, false, confidence, (int)action,
             0f, 0f);
-        float sampleLearningRate = action == ShadowAction.Keep
+        float rewriteWeight = _duelFlow != null
+                              && _duelFlow.IsRewriteLearningWindow
+            ? 2f : 1f;
+        float sampleLearningRate = (action == ShadowAction.Keep
             ? learningRate * 0.25f
-            : learningRate;
+            : learningRate) * rewriteWeight;
         _policy.Learn((int)action, features, sampleLearningRate);
         if (action != ShadowAction.Keep)
         {
@@ -1072,7 +1227,11 @@ public class AIShadowRunner : MonoBehaviour
         string contract = _contractEvaluator != null
             ? _contractEvaluator.BuildHudText()
             : "回声契约未载入";
-        return contract + "\n第 " + _profile.generation + " 代 · " + lead
+        string phase = _duelFlow != null
+            ? EchoDuelFlow.PhaseName(_duelFlow.Phase) : "回声决斗";
+        return phase + " · " + contract + "\n第 " + _profile.generation
+                + " 代 · 回声清晰度 " + (EchoClarity * 100f).ToString("0")
+                + "% · " + lead
                 + " · AI置信 " + (_decisionConfidence * 100f).ToString("0")
                 + "%" + sequence;
     }
@@ -1190,13 +1349,10 @@ public class AIShadowRunner : MonoBehaviour
 
     private bool HasTrainedProfile()
     {
-        return _profile != null && _profile.generation > 0
-               && HasCalibrationSamples(
-                   _profile.sampleCount, _profile.activeSampleCount,
-                   _profile.actionCounts, minimumTrainingSamples,
-                   minimumActiveTrainingSamples, minimumActionCategories,
-                   minimumJumpSamples, minimumSlideSamples)
-               && _profile.pace > 0f;
+        return _activeGeneration != null
+               && _activeGeneration.generation > 0
+               && _activeGeneration.pace > 0f
+               && _activeGeneration.clarity >= 0.2f;
     }
 
     public static bool HasCalibrationSamples(int totalSamples, int activeSamples,
@@ -1222,6 +1378,17 @@ public class AIShadowRunner : MonoBehaviour
     public static int CountTrainedActionCategories(int[] actionCounts)
     {
         return AIShadowRules.CountTrainedActionCategories(actionCounts);
+    }
+
+    public static bool HasPartialEchoSamples(int totalSamples,
+        int activeSamples, int[] actionCounts, float runTime,
+        int minimumTotalSamples)
+    {
+        int minimumSeedSamples = Mathf.Max(4, minimumTotalSamples / 4);
+        return runTime >= 8f
+               && totalSamples >= minimumSeedSamples
+               && activeSamples >= 1
+               && CountTrainedActionCategories(actionCounts) >= 1;
     }
 
     private void CreateGhost()
@@ -1357,8 +1524,32 @@ public class AIShadowRunner : MonoBehaviour
             }
         }
 
-        if (_profile == null) _profile = new ShadowProfile { version = 3 };
+        if (_profile == null) _profile = new ShadowProfile { version = 5 };
         NormalizeProfile();
+        _activeGeneration = EchoGenerationSnapshot.FromJson(
+            _profile.activeGenerationJson);
+        if (_activeGeneration == null && _profile.generation > 0
+            && _profile.pace > 0f)
+        {
+            PlayerStyleData legacyStyle = StyleTracker.GetSnapshot();
+            legacyStyle.Normalize();
+            _activeGeneration = new EchoGenerationSnapshot
+            {
+                generation = _profile.generation,
+                policyWeights = _profile.weights,
+                sequenceTransitions = _profile.sequenceTransitions,
+                sequencePairCount = _profile.sequencePairCount,
+                styleJson = JsonUtility.ToJson(legacyStyle),
+                pace = _profile.pace,
+                clarity = Mathf.Max(0.2f, _profile.clarity)
+            };
+            _profile.activeGenerationJson = _activeGeneration.ToJson();
+        }
+        if (_activeGeneration != null)
+        {
+            _profile.generation = _activeGeneration.generation;
+            _profile.clarity = _activeGeneration.clarity;
+        }
         _policy = new AIShadowPolicy(_profile.weights);
         _sequencePolicy = new AIShadowSequencePolicy(_profile.sequenceTransitions,
             _profile.sequencePairCount);
@@ -1374,6 +1565,8 @@ public class AIShadowRunner : MonoBehaviour
             _profile.sequenceTransitions = state.transitions;
             _profile.sequencePairCount = state.pairCount;
         }
+        _profile.activeGenerationJson = _activeGeneration != null
+            ? _activeGeneration.ToJson() : "";
         EchoRunSaveSystem.SaveShadowProfile(JsonUtility.ToJson(_profile));
     }
 
@@ -1399,7 +1592,11 @@ public class AIShadowRunner : MonoBehaviour
             _profile.sequenceTransitions = null;
             _profile.sequencePairCount = 0;
         }
-        _profile.version = 3;
+        if (_profile.version < 4 && _profile.generation > 0)
+            _profile.clarity = 1f;
+        _profile.version = 5;
+        _profile.clarity = Mathf.Clamp01(_profile.clarity);
+        _profile.activeGenerationJson = _profile.activeGenerationJson ?? "";
 
         _profile.sampleCount = Mathf.Max(0, _profile.sampleCount);
         _profile.activeSampleCount = Mathf.Clamp(

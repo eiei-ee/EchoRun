@@ -126,7 +126,7 @@ public sealed class UIExperienceTests
         EchoDuelViewData leading = EchoRunPresentation.BuildDuel(
             true, contract, 2.75f, 2, 2);
         Assert.AreEqual("右侧路线 · 滑铲躲避", leading.contract);
-        Assert.AreEqual("2 / 3", leading.progress);
+        Assert.AreEqual("稳定度 67%", leading.progress);
         Assert.AreEqual(2f / 3f, leading.progress01, 0.001f);
         Assert.AreEqual(EchoLeadState.Leading, leading.leadState);
         StringAssert.StartsWith("领先 +2.8m", leading.lead);

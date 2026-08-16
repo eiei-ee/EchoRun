@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using UnityEditor;
@@ -15,6 +16,32 @@ public class BuildConfig
     const string BundleId = "com.eieiee.echorun";
     const string CompanyName = "Eiei-ee";
     const string ProductName = "EchoRun";
+    const string PublicWebGLUrl = EchoRunVersion.PublicWebGLUrl;
+
+    [System.Serializable]
+    sealed class BuildArtifactInfo
+    {
+        public string path;
+        public long bytes;
+        public string sha256;
+    }
+
+    [System.Serializable]
+    sealed class BuildInfo
+    {
+        public int schemaVersion = 1;
+        public string product = ProductName;
+        public string version = EchoRunVersion.Current;
+        public string sourceRevision;
+        public string sourceBranch;
+        public bool sourceDirty;
+        public string builtAtUtc;
+        public string engineVersion;
+        public string target;
+        public string playableUrl = PublicWebGLUrl;
+        public string entryPoint = "index.html";
+        public BuildArtifactInfo[] artifacts;
+    }
 
     static string[] GetScenePaths()
     {
@@ -44,21 +71,44 @@ public class BuildConfig
     [MenuItem("Tools/Build Android")]
     public static void BuildAndroid()
     {
-        OpenPrimaryScene();
+        UIOrientation previousOrientation = PlayerSettings.defaultInterfaceOrientation;
+        bool previousPortrait = PlayerSettings.allowedAutorotateToPortrait;
+        bool previousPortraitUpsideDown =
+            PlayerSettings.allowedAutorotateToPortraitUpsideDown;
+        bool previousLandscapeLeft = PlayerSettings.allowedAutorotateToLandscapeLeft;
+        bool previousLandscapeRight = PlayerSettings.allowedAutorotateToLandscapeRight;
+        int previousQualityLevel = QualitySettings.GetQualityLevel();
+        int previousVSyncCount = QualitySettings.vSyncCount;
 
-        EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Android, BuildTarget.Android);
+        try
+        {
+            OpenPrimaryScene();
+            EditorUserBuildSettings.SwitchActiveBuildTarget(
+                BuildTargetGroup.Android, BuildTarget.Android);
 
-        ConfigureBaseSettings();
-        ConfigureAndroid();
-        EnsureSceneInBuild();
+            ConfigureBaseSettings();
+            ConfigureAndroid();
+            EnsureSceneInBuild();
 
-        string outputPath = "Builds/Android/EchoRun.apk";
-        EnsureDirectory("Builds/Android");
+            string outputPath = "Builds/Android/EchoRun.apk";
+            EnsureDirectory("Builds/Android");
 
-        BuildReport report = BuildPipeline.BuildPlayer(
-            GetScenePaths(), outputPath, BuildTarget.Android, BuildOptions.None);
-        EnsureBuildSucceeded(report, "Android");
-        Debug.Log($"Android build complete: {outputPath}");
+            BuildReport report = BuildPipeline.BuildPlayer(
+                GetScenePaths(), outputPath, BuildTarget.Android, BuildOptions.None);
+            EnsureBuildSucceeded(report, "Android");
+            Debug.Log($"Android build complete: {outputPath}");
+        }
+        finally
+        {
+            PlayerSettings.defaultInterfaceOrientation = previousOrientation;
+            PlayerSettings.allowedAutorotateToPortrait = previousPortrait;
+            PlayerSettings.allowedAutorotateToPortraitUpsideDown =
+                previousPortraitUpsideDown;
+            PlayerSettings.allowedAutorotateToLandscapeLeft = previousLandscapeLeft;
+            PlayerSettings.allowedAutorotateToLandscapeRight = previousLandscapeRight;
+            QualitySettings.SetQualityLevel(previousQualityLevel, true);
+            QualitySettings.vSyncCount = previousVSyncCount;
+        }
     }
 
     [MenuItem("Tools/Build iOS")]
@@ -103,6 +153,7 @@ public class BuildConfig
                 GetScenePaths(), outputDir, BuildTarget.WebGL, BuildOptions.None);
             EnsureBuildSucceeded(report, "WebGL");
             OptimizeWebGLShell(outputDir);
+            WriteBuildInfo(outputDir, BuildTarget.WebGL);
             Debug.Log($"WebGL build complete: {outputDir}");
         }
         finally
@@ -631,6 +682,7 @@ public class BuildConfig
     {
         PlayerSettings.companyName = CompanyName;
         PlayerSettings.productName = ProductName;
+        PlayerSettings.bundleVersion = EchoRunVersion.Current;
 
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Android, BundleId);
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.WebGL, BundleId);
@@ -652,10 +704,11 @@ public class BuildConfig
         PlayerSettings.Android.useCustomKeystore = false;
         PlayerSettings.Android.androidIsGame = true;
 
-        PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
-        PlayerSettings.allowedAutorotateToPortrait = false;
-        PlayerSettings.allowedAutorotateToLandscapeLeft = true;
-        PlayerSettings.allowedAutorotateToLandscapeRight = true;
+        PlayerSettings.Android.optimizedFramePacing = true;
+        PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
+        PlayerSettings.allowedAutorotateToPortrait = true;
+        PlayerSettings.allowedAutorotateToLandscapeLeft = false;
+        PlayerSettings.allowedAutorotateToLandscapeRight = false;
         PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
 
         QualitySettings.SetQualityLevel(2, true);
@@ -818,6 +871,122 @@ public class BuildConfig
             + "      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {");
 
         File.WriteAllText(indexPath, html, new UTF8Encoding(false));
+    }
+
+    static void WriteBuildInfo(string outputDir, BuildTarget target)
+    {
+        string projectRoot = Path.GetFullPath(
+            Path.Combine(Application.dataPath, "../"));
+        string outputRoot = Path.GetFullPath(
+            Path.Combine(projectRoot, outputDir));
+        string requiredPrefix = projectRoot.TrimEnd(
+            Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        if (!outputRoot.StartsWith(requiredPrefix,
+                System.StringComparison.OrdinalIgnoreCase))
+        {
+            throw new BuildFailedException(
+                "Refusing to write build metadata outside the project: "
+                + outputRoot);
+        }
+
+        var artifactPaths = new List<string>();
+        string indexPath = Path.Combine(outputRoot, "index.html");
+        if (File.Exists(indexPath)) artifactPaths.Add(indexPath);
+        string buildDir = Path.Combine(outputRoot, "Build");
+        if (Directory.Exists(buildDir))
+            artifactPaths.AddRange(Directory.GetFiles(
+                buildDir, "*", SearchOption.AllDirectories));
+        artifactPaths.Sort(System.StringComparer.Ordinal);
+
+        var artifacts = new List<BuildArtifactInfo>();
+        foreach (string path in artifactPaths)
+        {
+            var file = new FileInfo(path);
+            artifacts.Add(new BuildArtifactInfo
+            {
+                path = RelativePath(outputRoot, path),
+                bytes = file.Length,
+                sha256 = CalculateSha256(path)
+            });
+        }
+
+        string revision = RunGit(projectRoot, "rev-parse HEAD");
+        string branch = RunGit(projectRoot, "rev-parse --abbrev-ref HEAD");
+        string status = RunGit(
+            projectRoot, "status --porcelain --untracked-files=normal");
+        var info = new BuildInfo
+        {
+            sourceRevision = string.IsNullOrEmpty(revision)
+                ? "unknown" : revision,
+            sourceBranch = string.IsNullOrEmpty(branch) ? "unknown" : branch,
+            sourceDirty = !string.IsNullOrEmpty(status),
+            builtAtUtc = System.DateTime.UtcNow.ToString("o"),
+            engineVersion = Application.unityVersion,
+            target = target.ToString(),
+            artifacts = artifacts.ToArray()
+        };
+
+        File.WriteAllText(
+            Path.Combine(outputRoot, "build-info.json"),
+            JsonUtility.ToJson(info, true) + "\n",
+            new UTF8Encoding(false));
+    }
+
+    static string RelativePath(string root, string path)
+    {
+        string prefix = root.TrimEnd(
+            Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        string relative = path.StartsWith(prefix,
+                System.StringComparison.OrdinalIgnoreCase)
+            ? path.Substring(prefix.Length)
+            : Path.GetFileName(path);
+        return relative.Replace(Path.DirectorySeparatorChar, '/');
+    }
+
+    static string CalculateSha256(string path)
+    {
+        using (SHA256 hash = SHA256.Create())
+        using (FileStream stream = File.OpenRead(path))
+        {
+            byte[] digest = hash.ComputeHash(stream);
+            var result = new StringBuilder(digest.Length * 2);
+            for (int i = 0; i < digest.Length; i++)
+                result.Append(digest[i].ToString("X2"));
+            return result.ToString();
+        }
+    }
+
+    static string RunGit(string projectRoot, string arguments)
+    {
+        try
+        {
+            var start = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = arguments,
+                WorkingDirectory = projectRoot,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            using (System.Diagnostics.Process process =
+                   System.Diagnostics.Process.Start(start))
+            {
+                if (process == null) return string.Empty;
+                string output = process.StandardOutput.ReadToEnd();
+                process.StandardError.ReadToEnd();
+                if (!process.WaitForExit(5000) || process.ExitCode != 0)
+                    return string.Empty;
+                return output.Trim();
+            }
+        }
+        catch (System.Exception)
+        {
+            return string.Empty;
+        }
     }
 
     static void EnsureSceneInBuild()

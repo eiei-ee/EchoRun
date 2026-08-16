@@ -4,7 +4,7 @@ using UnityEngine;
 [Serializable]
 public sealed class PlayerStyleData
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     public int version = CurrentVersion;
     [Range(0f, 1f)] public float aggressiveness = 0.5f;
@@ -44,6 +44,7 @@ public sealed class PlayerStyleData
     {
         bool migratedLegacyVerticalStyle = version < 2
                                            && verticalActionSamples <= 0;
+        bool migratedBiasedLaneStyle = version < 3;
         version = CurrentVersion;
         aggressiveness = Mathf.Clamp01(aggressiveness);
         jumpTiming = Mathf.Clamp(jumpTiming, -1f, 1f);
@@ -51,7 +52,8 @@ public sealed class PlayerStyleData
             ? 0.5f
             : Mathf.Clamp01(slideFrequency);
         slideOpportunitySuccess = Mathf.Clamp01(slideOpportunitySuccess);
-        lanePreference = Mathf.Clamp(lanePreference, -1f, 1f);
+        lanePreference = migratedBiasedLaneStyle
+            ? 0f : Mathf.Clamp(lanePreference, -1f, 1f);
         rhythmStability = Mathf.Clamp01(rhythmStability);
         recoveryStyle = Mathf.Clamp01(recoveryStyle);
         aggressivenessSamples = Mathf.Max(0, aggressivenessSamples);
@@ -62,7 +64,7 @@ public sealed class PlayerStyleData
             jumpActionSamples + slideActionSamples,
             Mathf.Max(0, verticalActionSamples));
         slideOpportunitySamples = Mathf.Max(0, slideOpportunitySamples);
-        laneSamples = Mathf.Max(0, laneSamples);
+        laneSamples = migratedBiasedLaneStyle ? 0 : Mathf.Max(0, laneSamples);
         rhythmSamples = Mathf.Max(0, rhythmSamples);
         recoverySamples = Mathf.Max(0, recoverySamples);
     }
@@ -105,6 +107,15 @@ public sealed class PlayerStyleData
     {
         lanePreference = UpdateAverage(lanePreference,
             Mathf.Clamp(lane, 0, 2) - 1f, laneSamples++);
+    }
+
+    public void ObserveLaneChoice(int lane, float offeredLaneCenter)
+    {
+        float choiceResidual = Mathf.Clamp(
+            Mathf.Clamp(lane, 0, 2)
+            - Mathf.Clamp(offeredLaneCenter, 0f, 2f), -1f, 1f);
+        lanePreference = UpdateAverage(lanePreference,
+            choiceResidual, laneSamples++);
     }
 
     public void ObserveRhythm(float normalizedStability)
