@@ -134,6 +134,7 @@ public class BuildConfig
     [MenuItem("Tools/Build WebGL")]
     public static void BuildWebGL()
     {
+        const string outputDir = "Builds/WebGL";
         int previousQualityLevel = QualitySettings.GetQualityLevel();
         int previousVSyncCount = QualitySettings.vSyncCount;
 
@@ -146,21 +147,21 @@ public class BuildConfig
             ConfigureWebGL();
             EnsureSceneInBuild();
 
-            const string outputDir = "Builds/WebGL";
             RecreateBuildDirectory(outputDir);
 
             BuildReport report = BuildPipeline.BuildPlayer(
                 GetScenePaths(), outputDir, BuildTarget.WebGL, BuildOptions.None);
             EnsureBuildSucceeded(report, "WebGL");
             OptimizeWebGLShell(outputDir);
-            WriteBuildInfo(outputDir, BuildTarget.WebGL);
-            Debug.Log($"WebGL build complete: {outputDir}");
         }
         finally
         {
             QualitySettings.SetQualityLevel(previousQualityLevel, true);
             QualitySettings.vSyncCount = previousVSyncCount;
         }
+
+        WriteBuildInfo(outputDir, BuildTarget.WebGL);
+        Debug.Log($"WebGL build complete: {outputDir}");
     }
 
     public static void BuildWeixinMiniGameV0()
