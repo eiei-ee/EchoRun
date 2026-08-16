@@ -913,14 +913,12 @@ public class BuildConfig
 
         string revision = RunGit(projectRoot, "rev-parse HEAD");
         string branch = RunGit(projectRoot, "rev-parse --abbrev-ref HEAD");
-        string status = RunGit(
-            projectRoot, "status --porcelain --untracked-files=normal");
         var info = new BuildInfo
         {
             sourceRevision = string.IsNullOrEmpty(revision)
                 ? "unknown" : revision,
             sourceBranch = string.IsNullOrEmpty(branch) ? "unknown" : branch,
-            sourceDirty = !string.IsNullOrEmpty(status),
+            sourceDirty = IsGitDirty(projectRoot),
             builtAtUtc = System.DateTime.UtcNow.ToString("o"),
             engineVersion = Application.unityVersion,
             target = target.ToString(),
@@ -960,6 +958,37 @@ public class BuildConfig
 
     static string RunGit(string projectRoot, string arguments)
     {
+        string output;
+        return TryRunGit(projectRoot, arguments, out output)
+            ? output
+            : string.Empty;
+    }
+
+    static bool IsGitDirty(string projectRoot)
+    {
+        string unstaged;
+        string staged;
+        string untracked;
+        if (!TryRunGit(projectRoot,
+                "diff --name-only --ignore-submodules", out unstaged)
+            || !TryRunGit(projectRoot,
+                "diff --cached --name-only --ignore-submodules", out staged)
+            || !TryRunGit(projectRoot,
+                "ls-files --others --exclude-standard", out untracked))
+        {
+            // Build provenance must fail closed if the source state cannot be read.
+            return true;
+        }
+
+        return !string.IsNullOrEmpty(unstaged)
+            || !string.IsNullOrEmpty(staged)
+            || !string.IsNullOrEmpty(untracked);
+    }
+
+    static bool TryRunGit(
+        string projectRoot, string arguments, out string output)
+    {
+        output = string.Empty;
         try
         {
             var start = new System.Diagnostics.ProcessStartInfo
@@ -975,17 +1004,18 @@ public class BuildConfig
             using (System.Diagnostics.Process process =
                    System.Diagnostics.Process.Start(start))
             {
-                if (process == null) return string.Empty;
-                string output = process.StandardOutput.ReadToEnd();
+                if (process == null) return false;
+                output = process.StandardOutput.ReadToEnd().Trim();
                 process.StandardError.ReadToEnd();
                 if (!process.WaitForExit(5000) || process.ExitCode != 0)
-                    return string.Empty;
-                return output.Trim();
+                    return false;
+                return true;
             }
         }
         catch (System.Exception)
         {
-            return string.Empty;
+            output = string.Empty;
+            return false;
         }
     }
 
