@@ -1,40 +1,40 @@
 {
-  "version": "2026-08-15-ai-contract-runner-refinement",
-  "sourceBranch": "wechat/minigame",
-  "sourceCommit": "b1b11424c82a03a9dc1f86591b57eae57619b373",
-  "builtAt": "2026-08-15T13:02:32Z",
-  "engine": "Tuanjie 2022.3.62t8",
-  "validation": {
-    "editMode": "179/179 passed",
-    "playMode": "18/18 passed",
-    "webGLBuild": "passed on clean retry",
-    "preDeploy": "index references and artifact hashes verified"
-  },
-  "artifacts": [
-    {
-      "file": "index.html",
-      "bytes": 7492,
-      "sha256": "B425A2F27335506A352CD0BDA64E12C66A4A4433B9B29A732574513626A32C0E"
-    },
-    {
-      "file": "Build/c3b48d49a82b0e53bc62117a892abdcd.data.unityweb",
-      "bytes": 6001589,
-      "sha256": "DA9FB47E9E45BB39D7D083E0FC3C39AAA4B223E9205906E9FF9896A3AC35F9BF"
-    },
-    {
-      "file": "Build/e3de868cdb8d23edc48a3f7fadeb98c8.wasm.unityweb",
-      "bytes": 6410700,
-      "sha256": "2F5FB038009FD7F9CCC28B209899A4194165217190E26FB6CFF7E3F1225398E5"
-    },
-    {
-      "file": "Build/d88030906d03a56fce720cdde88dd1d5.loader.js",
-      "bytes": 44358,
-      "sha256": "2931859C57C92D36566076BBA415689450DB2392BCEE81F93ED1649BBBFF0904"
-    },
-    {
-      "file": "Build/dd04e50aee184406025e76f2d5156c02.framework.js.unityweb",
-      "bytes": 79440,
-      "sha256": "3C69EE07CD4CF780082EED4FE43A29713DB4C2E3B0D1A7FF8B1831F46D422BE8"
-    }
-  ]
+    "schemaVersion": 1,
+    "product": "EchoRun",
+    "version": "0.2.0-alpha.1",
+    "sourceRevision": "f26ecfa1ab0ce387b6c5e648a53e3292b5ba6bf7",
+    "sourceBranch": "master",
+    "sourceDirty": false,
+    "builtAtUtc": "2026-08-16T10:08:44.8172973Z",
+    "engineVersion": "2022.3.62t8",
+    "target": "WebGL",
+    "playableUrl": "https://eiei-ee.github.io/EchoRun/",
+    "entryPoint": "index.html",
+    "artifacts": [
+        {
+            "path": "Build/6d90c14b370184495f0379b138fddf4f.data.unityweb",
+            "bytes": 5971865,
+            "sha256": "31812426053801BACB74E0B2C6CCAF0520B13EB411A344BD682F5DFA95EBFEB0"
+        },
+        {
+            "path": "Build/818dffe63a93a46c2f7220b36eaff158.wasm.unityweb",
+            "bytes": 6414995,
+            "sha256": "5B8698D23A2C7F770CC2E1F5168E8AF86BC08F99EEDBFFCCFDADB2054C9D4528"
+        },
+        {
+            "path": "Build/9136288db4962e4f09ff312eddfb14c6.framework.js.unityweb",
+            "bytes": 79469,
+            "sha256": "2715B3FDDE4419619DB5C0F6ECC354E4B0F6296DAA88FF9CBF9B024AE37BF459"
+        },
+        {
+            "path": "Build/d88030906d03a56fce720cdde88dd1d5.loader.js",
+            "bytes": 44358,
+            "sha256": "2931859C57C92D36566076BBA415689450DB2392BCEE81F93ED1649BBBFF0904"
+        },
+        {
+            "path": "index.html",
+            "bytes": 7542,
+            "sha256": "B7E7C987FB80737B51E9B7DEC263565D0CB2A6C0D414CA4C32F5643CAE7DF3F0"
+        }
+    ]
 }
