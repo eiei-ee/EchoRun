@@ -1,10 +1,9 @@
 # Changelog
 
 All notable changes to ECHO//RUN are documented here. This project follows
-semantic versioning once a candidate is actually tagged; an entry marked
-"local candidate" is not a published release.
+semantic versioning for tagged releases.
 
-## [v0.2.0-alpha.1] - local candidate - 2026-08-16
+## [v0.2.0-alpha.1] - pre-release - 2026-08-16
 
 ### Added
 
@@ -29,8 +28,10 @@ semantic versioning once a candidate is actually tagged; an entry marked
 
 - EditMode: 193/193 passed.
 - PlayMode: 19/19 passed.
-- Clean local WebGL build succeeded and entered visible gameplay over local
-  HTTP with no browser-console warnings or errors.
+- The public WebGL entry page and four runtime artifacts match the verified
+  local candidate byte-for-byte.
+- Public-browser validation entered visible gameplay, exercised lane, jump,
+  and slide input, and recorded no browser-console warnings or errors.
 
 See [docs/releases/v0.2.0-alpha.1.md](docs/releases/v0.2.0-alpha.1.md) for the
-candidate evidence and publication boundary.
+release evidence and publication boundary.

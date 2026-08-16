@@ -2,12 +2,11 @@
 
 [![Three-platform Tuanjie CI](https://github.com/eiei-ee/EchoRun/actions/workflows/three-platform-ci.yml/badge.svg)](https://github.com/eiei-ee/EchoRun/actions/workflows/three-platform-ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/eiei-ee/EchoRun)](https://github.com/eiei-ee/EchoRun/releases/latest)
+[![Release](https://img.shields.io/github/v/release/eiei-ee/EchoRun?include_prereleases)](https://github.com/eiei-ee/EchoRun/releases/tag/v0.2.0-alpha.1)
 [![Play WebGL](https://img.shields.io/badge/Play-WebGL-ff8a3d)](https://eiei-ee.github.io/EchoRun/)
 
-> **Project status:** public alpha. Source and the currently deployed browser
-> demo are public. `v0.2.0-alpha.1` is a locally verified release candidate;
-> it is not yet the deployed WebGL build or a published GitHub Release.
+> **Project status:** public alpha. Source, the `v0.2.0-alpha.1` GitHub
+> pre-release, and its verified browser build are public.
 > Automated WebGL, Windows, and Android verification runs on the self-hosted
 > CI runner when it is online; APIs and data formats may still change before
 > 1.0.
@@ -31,8 +30,8 @@ Release 后才会标记为正式下载。
 
 **浏览器即玩：https://eiei-ee.github.io/EchoRun/**
 
-当前线上试玩可能仍早于本地 `v0.2.0-alpha.1` 候选版；发布状态以
-[版本说明](docs/releases/v0.2.0-alpha.1.md)为准。
+当前线上试玩已部署为 `v0.2.0-alpha.1`；发布证据与已知边界见
+[版本说明](docs/releases/v0.2.0-alpha.1.md)。
 
 支持键盘操作：A/D 或 ← → 左右变道，W 或 ↑ 跳跃，S 或 ↓ 滑铲，Esc 暂停或继续。网页端和桌面端也可按住鼠标拖动，移动端使用触屏滑动并建议横屏游玩。
 
@@ -132,12 +131,11 @@ excluded unless explicitly stated otherwise. See
 
 ## Releases
 
-`v0.2.0-alpha.1` is currently a local release candidate, not a published
-GitHub Release. Its EditMode, PlayMode, clean WebGL build, and local-browser
-evidence are recorded in
-[docs/releases/v0.2.0-alpha.1.md](docs/releases/v0.2.0-alpha.1.md). The live
-WebGL badge continues to point to the previously deployed build until this
-candidate is deliberately published.
+[`v0.2.0-alpha.1`](https://github.com/eiei-ee/EchoRun/releases/tag/v0.2.0-alpha.1)
+is a published GitHub pre-release. Its EditMode, PlayMode, clean WebGL build,
+byte-for-byte deployment check, and public-browser evidence are recorded in
+[docs/releases/v0.2.0-alpha.1.md](docs/releases/v0.2.0-alpha.1.md). No Windows
+or Android package is claimed for this candidate.
 
 The previous `v0.1.0` release was withdrawn during asset-provenance cleanup;
 its historical record remains in
