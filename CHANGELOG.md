@@ -27,7 +27,7 @@ semantic versioning once a candidate is actually tagged; an entry marked
 
 ### Validation
 
-- EditMode: 190/190 passed.
+- EditMode: 193/193 passed.
 - PlayMode: 19/19 passed.
 - Clean local WebGL build succeeded and entered visible gameplay over local
   HTTP with no browser-console warnings or errors.

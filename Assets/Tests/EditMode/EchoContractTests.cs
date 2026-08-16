@@ -388,6 +388,30 @@ public sealed class EchoContractTests
     }
 
     [Test]
+    public void CourseDurationUsesCalibrationThenChallengeTiming()
+    {
+        Assert.AreEqual(75f,
+            GameManager.SelectCourseDuration(0, 75f, 190f));
+        Assert.AreEqual(190f,
+            GameManager.SelectCourseDuration(1, 75f, 190f));
+    }
+
+    [Test]
+    public void PartialEchoRequiresTimeActiveInputAndMinimumEvidence()
+    {
+        int[] actionCounts = { 0, 0, 0, 1, 0 };
+
+        Assert.IsFalse(AIShadowRunner.HasPartialEchoSamples(
+            6, 1, actionCounts, 7.9f, 24));
+        Assert.IsFalse(AIShadowRunner.HasPartialEchoSamples(
+            5, 1, actionCounts, 8f, 24));
+        Assert.IsFalse(AIShadowRunner.HasPartialEchoSamples(
+            6, 0, actionCounts, 8f, 24));
+        Assert.IsTrue(AIShadowRunner.HasPartialEchoSamples(
+            6, 1, actionCounts, 8f, 24));
+    }
+
+    [Test]
     public void RunEndReasonsUseStableTelemetryNames()
     {
         Assert.AreEqual("finish_reached",

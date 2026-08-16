@@ -140,6 +140,31 @@ public sealed class UIExperienceTests
     }
 
     [Test]
+    public void DuelPredictionAppearsOnlyAfterDetection()
+    {
+        var contract = new EchoContractData
+        {
+            type = EchoContractType.BreakLaneHabit,
+            learnedLane = 2,
+            predictionLane = 2,
+            targetProgress = 100f
+        };
+
+        EchoDuelViewData detection = EchoRunPresentation.BuildDuel(
+            true, contract, 0f, 2, 2,
+            duelPhase: EchoDuelPhase.Detection,
+            publicPrediction: "回声预判：你会继续依赖右侧路线");
+        EchoDuelViewData reveal = EchoRunPresentation.BuildDuel(
+            true, contract, 0f, 2, 2,
+            duelPhase: EchoDuelPhase.Reveal,
+            publicPrediction: "回声预判：你会继续依赖右侧路线");
+
+        Assert.IsEmpty(detection.prediction);
+        Assert.AreEqual("回声预判：你会继续依赖右侧路线",
+            reveal.prediction);
+    }
+
+    [Test]
     public void RhythmHudShowsTheNextRequiredAction()
     {
         var contract = new EchoContractData

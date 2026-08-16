@@ -24,12 +24,12 @@ not a promise of delivery dates.
 - Contract-only marker coins, residual lane-style learning, distance-based
   director attribution, contract-plan reward isolation, and obstacle-free turns
 - Two-hit player collision flow with a first-hit recovery window
-- 190 EditMode and 19 PlayMode tests passing, plus a clean local WebGL build
+- 193 EditMode and 19 PlayMode tests passing, plus a clean local WebGL build
   and browser-entry/gameplay validation
 
-This candidate has not yet been committed, pushed, deployed to GitHub Pages, or
-published as a GitHub Release. Those states must remain distinct from local
-validation.
+This candidate is committed and carries a local annotated tag. It has not yet
+been pushed, deployed to GitHub Pages, or published as a GitHub Release. Those
+states must remain distinct from local validation.
 
 ## Near term
 
