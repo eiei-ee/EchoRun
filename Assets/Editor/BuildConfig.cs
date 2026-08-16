@@ -43,6 +43,13 @@ public class BuildConfig
         public BuildArtifactInfo[] artifacts;
     }
 
+    sealed class BuildSourceState
+    {
+        public string revision;
+        public string branch;
+        public bool dirty;
+    }
+
     static string[] GetScenePaths()
     {
         var list = new List<string>();
@@ -135,6 +142,7 @@ public class BuildConfig
     public static void BuildWebGL()
     {
         const string outputDir = "Builds/WebGL";
+        BuildSourceState sourceState = CaptureBuildSourceState();
         int previousQualityLevel = QualitySettings.GetQualityLevel();
         int previousVSyncCount = QualitySettings.vSyncCount;
 
@@ -160,7 +168,7 @@ public class BuildConfig
             QualitySettings.vSyncCount = previousVSyncCount;
         }
 
-        WriteBuildInfo(outputDir, BuildTarget.WebGL);
+        WriteBuildInfo(outputDir, BuildTarget.WebGL, sourceState);
         Debug.Log($"WebGL build complete: {outputDir}");
     }
 
@@ -874,7 +882,22 @@ public class BuildConfig
         File.WriteAllText(indexPath, html, new UTF8Encoding(false));
     }
 
-    static void WriteBuildInfo(string outputDir, BuildTarget target)
+    static BuildSourceState CaptureBuildSourceState()
+    {
+        string projectRoot = Path.GetFullPath(
+            Path.Combine(Application.dataPath, "../"));
+        string revision = RunGit(projectRoot, "rev-parse HEAD");
+        string branch = RunGit(projectRoot, "rev-parse --abbrev-ref HEAD");
+        return new BuildSourceState
+        {
+            revision = string.IsNullOrEmpty(revision) ? "unknown" : revision,
+            branch = string.IsNullOrEmpty(branch) ? "unknown" : branch,
+            dirty = IsGitDirty(projectRoot)
+        };
+    }
+
+    static void WriteBuildInfo(
+        string outputDir, BuildTarget target, BuildSourceState sourceState)
     {
         string projectRoot = Path.GetFullPath(
             Path.Combine(Application.dataPath, "../"));
@@ -912,14 +935,11 @@ public class BuildConfig
             });
         }
 
-        string revision = RunGit(projectRoot, "rev-parse HEAD");
-        string branch = RunGit(projectRoot, "rev-parse --abbrev-ref HEAD");
         var info = new BuildInfo
         {
-            sourceRevision = string.IsNullOrEmpty(revision)
-                ? "unknown" : revision,
-            sourceBranch = string.IsNullOrEmpty(branch) ? "unknown" : branch,
-            sourceDirty = IsGitDirty(projectRoot),
+            sourceRevision = sourceState.revision,
+            sourceBranch = sourceState.branch,
+            sourceDirty = sourceState.dirty,
             builtAtUtc = System.DateTime.UtcNow.ToString("o"),
             engineVersion = Application.unityVersion,
             target = target.ToString(),
