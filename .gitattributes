@@ -1,0 +1,5 @@
+# Preserve generated deployment files byte-for-byte.
+Build/** -text
+TemplateData/** -text
+index.html -text
+build-info.json -text
