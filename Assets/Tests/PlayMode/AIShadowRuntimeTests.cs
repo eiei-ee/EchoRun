@@ -69,7 +69,8 @@ public sealed class AIShadowRuntimeTests
         Assert.IsTrue(runner.LastRunWasChallenge);
         Assert.IsTrue(runner.LastRunWon);
         StringAssert.Contains("契约破解", runner.LastResult);
-        StringAssert.Contains("本代学习", runner.LastResult);
+        StringAssert.Contains("本局观察", runner.LastResult);
+        StringAssert.Contains("下一代吸收", runner.LastResult);
         StringAssert.Contains("下一代变化", runner.LastResult);
 
         runner.ResetTraining();
@@ -236,37 +237,38 @@ public sealed class AIShadowRuntimeTests
     private static void CompleteContract(EchoContractEvaluator evaluator)
     {
         evaluator.SetPhase(EchoDuelPhase.Resistance);
-        CompleteContractStage(evaluator, false);
+        CompleteContractStage(evaluator, false, 3);
         Assert.IsTrue(evaluator.Contract.initialBreakCompleted);
         evaluator.SetPhase(EchoDuelPhase.Counterattack);
-        CompleteContractStage(evaluator, true);
+        CompleteContractStage(evaluator, true, 4);
+        evaluator.SetPhase(EchoDuelPhase.Rewrite);
+        Assert.IsTrue(evaluator.Contract.completed);
     }
 
     private static void CompleteContractStage(EchoContractEvaluator evaluator,
-        bool counterattack)
+        bool counterattack, int groupCount)
     {
-        EchoContractData contract = evaluator.Contract;
-        int guard = 0;
-        while (!(counterattack ? contract.completed
-                   : contract.initialBreakCompleted) && guard++ < 20)
+        var prediction = new EchoPredictionSnapshot
         {
-            if (contract.type == EchoContractType.BreakLaneHabit)
+            conclusion = EchoEvidenceConclusion.Jump,
+            predictedResponse = EchoResponseKind.Jump,
+            confidence = 0.8f
+        };
+        int offset = counterattack ? 100 : 10;
+        for (int i = 0; i < groupCount; i++)
+        {
+            evaluator.RecordChoice(new ObstacleOpportunityResolution
             {
-                int lane = counterattack
-                    ? (contract.predictionLane + guard) % 3
-                    : contract.targetLane;
-                if (lane == contract.predictionLane && counterattack)
-                    lane = (lane + 1) % 3;
-                evaluator.RecordLaneMarker(lane, guard * 100f, 10f);
-            }
-            else
-            {
-                ObstacleType required = contract.targetAction == ShadowAction.Jump
-                    ? ObstacleType.High : ObstacleType.Low;
-                evaluator.RecordDodge(required, contract.targetLane);
-            }
+                opportunityId = offset + i,
+                groupId = offset + i,
+                lane = 1,
+                obstacleType = ObstacleType.Low,
+                response = i == groupCount - 1 && !counterattack
+                    ? EchoResponseKind.Jump : EchoResponseKind.Slide,
+                physicallySucceeded = true,
+                passedInLane = true
+            }, prediction, 10f);
         }
-        Assert.Less(guard, 20, "Contract stage did not converge.");
     }
 
     private static IEnumerator WaitForChallenge(AIShadowRunner previousRunner)

@@ -33,6 +33,7 @@ public sealed class EchoChoiceGroup
     public int planVersion;
     public int rowId;
     public float routeDistance;
+    public EchoPredictionSnapshot prediction;
     public ObstacleOpportunity[] options = Array.Empty<ObstacleOpportunity>();
 }
 
@@ -59,6 +60,7 @@ public sealed class ObstacleOpportunityTracker
     private ObstacleOpportunity _pending;
     private bool _usedJump;
     private bool _usedSlide;
+    private bool _clearRoute;
 
     public bool HasPending => _pending != null;
     public int PendingOpportunityId => HasPending ? _pending.opportunityId : 0;
@@ -69,6 +71,7 @@ public sealed class ObstacleOpportunityTracker
         _pending = null;
         _usedJump = false;
         _usedSlide = false;
+        _clearRoute = false;
         _resolvedGroups.Clear();
         _resolvedOrder.Clear();
         ResolvedOpportunityIds.Clear();
@@ -126,6 +129,37 @@ public sealed class ObstacleOpportunityTracker
         };
         _usedJump = isJumping;
         _usedSlide = isSliding;
+        _clearRoute = false;
+        return false;
+    }
+
+    public bool UpdateClearRoute(int playerLane, bool hasGroup,
+        float groupDistance, int groupId, float detectionDistance,
+        out ObstacleOpportunityResolution resolution)
+    {
+        resolution = default;
+        int lane = Mathf.Clamp(playerLane, 0, 2);
+        if (HasPending)
+        {
+            if (lane != _pending.lane)
+                return Resolve(EchoResponseKind.RouteAvoid, true, false,
+                    out resolution);
+            if (!hasGroup || groupId != _pending.groupId)
+                return Resolve(EchoResponseKind.RouteAvoid, true, true,
+                    out resolution);
+            return false;
+        }
+        if (!hasGroup || groupId == 0 || _resolvedGroups.Contains(groupId)
+            || groupDistance > Mathf.Max(0f, detectionDistance))
+            return false;
+        _pending = new ObstacleOpportunity
+        {
+            opportunityId = -Mathf.Abs(groupId),
+            groupId = groupId,
+            lane = lane,
+            obstacleType = ObstacleType.Barrier
+        };
+        _clearRoute = true;
         return false;
     }
 
@@ -150,6 +184,7 @@ public sealed class ObstacleOpportunityTracker
 
     private EchoResponseKind ResponseForPending()
     {
+        if (_clearRoute) return EchoResponseKind.RouteAvoid;
         if (_usedJump) return EchoResponseKind.Jump;
         if (_usedSlide) return EchoResponseKind.Slide;
         return EchoResponseKind.NoAction;
@@ -180,6 +215,7 @@ public sealed class ObstacleOpportunityTracker
         _pending = null;
         _usedJump = false;
         _usedSlide = false;
+        _clearRoute = false;
         return true;
     }
 

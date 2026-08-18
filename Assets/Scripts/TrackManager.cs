@@ -383,6 +383,9 @@ public class TrackManager : MonoBehaviour
                 routeDistance = obstacle.routeDistance
             });
         }
+        Obstacle representative = FindObstacle(nearestGroupId);
+        EchoResponseKind predicted = representative != null
+            ? representative.predictedResponse : EchoResponseKind.None;
         group = new EchoChoiceGroup
         {
             groupId = nearestGroupId,
@@ -390,9 +393,42 @@ public class TrackManager : MonoBehaviour
             planVersion = planVersion,
             rowId = nearestGroupId,
             routeDistance = routeDistance,
+            prediction = new EchoPredictionSnapshot
+            {
+                conclusion = ConclusionFor(
+                    predicted),
+                predictedResponse = predicted,
+                confidence = representative != null
+                    ? representative.predictionConfidence : 0f
+            },
             options = options.ToArray()
         };
         return options.Count > 0;
+    }
+
+    private Obstacle FindObstacle(int choiceGroupId)
+    {
+        for (int i = 0; i < _dynamicObjects.Count; i++)
+        {
+            GameObject instance = _dynamicObjects[i].instance;
+            if (instance == null || !instance.activeInHierarchy) continue;
+            Obstacle obstacle = instance.GetComponent<Obstacle>();
+            if (obstacle != null && obstacle.choiceGroupId == choiceGroupId)
+                return obstacle;
+        }
+        return null;
+    }
+
+    private static EchoEvidenceConclusion ConclusionFor(
+        EchoResponseKind response)
+    {
+        if (response == EchoResponseKind.Jump)
+            return EchoEvidenceConclusion.Jump;
+        if (response == EchoResponseKind.Slide)
+            return EchoEvidenceConclusion.Slide;
+        if (response == EchoResponseKind.RouteAvoid)
+            return EchoEvidenceConclusion.RouteAvoid;
+        return EchoEvidenceConclusion.Insufficient;
     }
 
     public void GetTrackPoseAhead(Vector3 playerPosition, Vector3 playerForward,
@@ -775,9 +811,11 @@ public class TrackManager : MonoBehaviour
 
         // Preserve route continuity while rotating protection away from lanes
         // that have gone too long without an obstacle.
-        int safeLane = ChooseContractSafeLane(
-            plan.echoContractType, plan.safeLane, _lastSafeLane,
-            _laneObstacleDrought, plan.echoChallengeLane);
+        int safeLane = plan.echoChoiceGroup
+            ? Mathf.Clamp(plan.safeLane, 0, 2)
+            : ChooseContractSafeLane(
+                plan.echoContractType, plan.safeLane, _lastSafeLane,
+                _laneObstacleDrought, plan.echoChallengeLane);
         _lastSafeLane = safeLane;
 
         // Determine coin Z first so obstacles can avoid it
@@ -788,9 +826,18 @@ public class TrackManager : MonoBehaviour
         // player jump instead of leaving ground coins inside a jump obstacle.
         var coinTrails = new List<CoinTrailPlan>(3);
 
-        // Always put a dense coin trail on the safe lane.
-        int minCoins = Mathf.Max(2, plan.minCoinCount);
-        int maxCoins = Mathf.Max(minCoins + 1, plan.maxCoinCount);
+        // The published prediction is the comfortable, higher-value route.
+        // Breaking it stays legal but carries a visible reward/precision cost.
+        int minCoins = plan.echoChoiceGroup ? 2
+            : Mathf.Max(2, plan.minCoinCount);
+        int maxCoins = plan.echoChoiceGroup ? 5
+            : Mathf.Max(minCoins + 1, plan.maxCoinCount);
+        if (plan.echoChoiceGroup
+            && plan.echoPredictedResponse == EchoResponseKind.RouteAvoid)
+        {
+            minCoins = 8;
+            maxCoins = 11;
+        }
         coinTrails.Add(new CoinTrailPlan
         {
             lane = safeLane,
@@ -800,7 +847,29 @@ public class TrackManager : MonoBehaviour
                                  == EchoContractType.BreakLaneHabit
         });
         int echoChallengeLane = plan.echoChallengeLane;
-        if (plan.echoContractType == EchoContractType.ChangeVerticalHabit
+        if (plan.echoChoiceGroup)
+        {
+            int[] choiceLanes = SelectContractBlockedLanes(
+                safeLane, 2, _laneObstacleDrought,
+                plan.echoContractType, plan.echoChallengeLane);
+            for (int option = 0; option < choiceLanes.Length; option++)
+            {
+                int prefabIndex = SelectChoiceObstaclePrefabIndex(
+                    plan.echoRowId, option);
+                EchoResponseKind response = prefabIndex == 1
+                    ? EchoResponseKind.Jump : EchoResponseKind.Slide;
+                bool predicted = response == plan.echoPredictedResponse;
+                coinTrails.Add(new CoinTrailPlan
+                {
+                    lane = choiceLanes[option],
+                    startZ = coinZ + 0.6f,
+                    count = predicted
+                        ? AIRunRandom.Range(8, 11)
+                        : AIRunRandom.Range(3, 6)
+                });
+            }
+        }
+        else if (plan.echoContractType == EchoContractType.ChangeVerticalHabit
             || plan.echoContractType == EchoContractType.DisruptRhythm)
         {
             if (echoChallengeLane < 0 || echoChallengeLane > 2
@@ -816,7 +885,7 @@ public class TrackManager : MonoBehaviour
             });
         }
         // Sometimes add sparse coins on an adjacent lane
-        if (AIRunRandom.Value < plan.coinChance)
+        if (!plan.echoChoiceGroup && AIRunRandom.Value < plan.coinChance)
         {
             int altLane = (safeLane + (AIRunRandom.Value < 0.5f ? -1 : 1) + 3) % 3;
             float altStartZ = coinZ + AIRunRandom.Range(-1f, 1f);
@@ -1080,7 +1149,9 @@ public class TrackManager : MonoBehaviour
 
             if (SpawnObstacleAt(segment, lane, obstacleZ, type,
                     choiceGroupId, groupRouteDistance,
-                    plan.echoPhaseSequence, plan.echoPlanVersion))
+                    plan.echoPhaseSequence, plan.echoPlanVersion,
+                    plan.echoPredictedResponse,
+                    plan.echoPredictionConfidence))
             {
                 _laneObstacleDrought[lane] = 0;
                 spawnedObstacles.Add(new SpawnedObstacleInfo
@@ -1097,7 +1168,8 @@ public class TrackManager : MonoBehaviour
 
     bool SpawnObstacleAt(GameObject segment, int lane, float z, int prefabIndex,
         int choiceGroupId, float routeDistance, int phaseSequence,
-        int planVersion)
+        int planVersion, EchoResponseKind predictedResponse,
+        float predictionConfidence)
     {
         if (obstaclePrefabs == null || prefabIndex < 0
             || prefabIndex >= obstaclePrefabs.Length || obstaclePrefabs[prefabIndex] == null)
@@ -1113,7 +1185,8 @@ public class TrackManager : MonoBehaviour
             ? instance.GetComponent<Obstacle>() : null;
         if (obstacle != null)
             obstacle.ConfigureOpportunity(_nextOpportunityId++, choiceGroupId,
-                phaseSequence, planVersion, lane, routeDistance);
+                phaseSequence, planVersion, lane, routeDistance,
+                predictedResponse, predictionConfidence);
         return true;
     }
 

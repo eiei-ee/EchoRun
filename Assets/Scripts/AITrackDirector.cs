@@ -30,6 +30,8 @@ public struct AITrackPlan
     public int echoPhaseSequence;
     public int echoRowId;
     public int echoPlanVersion;
+    public EchoResponseKind echoPredictedResponse;
+    public float echoPredictionConfidence;
 }
 
 // Online linear contextual bandit. Its weights are the runtime model and are
@@ -681,6 +683,13 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             ? shadow.DuelPhaseSequence : 0;
         plan.echoRowId = decisionCount;
         plan.echoPlanVersion = plan.echoPhaseSequence;
+        if (shadow != null && shadow.CurrentPrediction != null)
+        {
+            plan.echoPredictedResponse =
+                shadow.CurrentPrediction.predictedResponse;
+            plan.echoPredictionConfidence =
+                shadow.CurrentPrediction.confidence;
+        }
         if (phase == EchoDuelPhase.Detection
             || phase == EchoDuelPhase.Reveal)
         {

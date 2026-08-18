@@ -2640,7 +2640,7 @@ public class GameStateTests
 
         Assert.IsTrue((bool)InvokePrivate(
             manager, "SpawnObstacleAt", segment, 0, 5f, 0,
-            1, 5f, 0, 0));
+            1, 5f, 0, 0, EchoResponseKind.None, 0f));
         Assert.AreEqual(1, segment.transform.childCount);
         Assert.AreEqual(-manager.laneDistance,
             segment.transform.GetChild(0).position.x, 0.0001f,

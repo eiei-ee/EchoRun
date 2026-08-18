@@ -201,9 +201,17 @@ public static class EchoRunPresentation
             return "复现 " + Mathf.RoundToInt(phaseProgress01 * 100f) + "%";
         if (phase == EchoDuelPhase.Reveal)
             return "习惯暴露";
+        if (phase == EchoDuelPhase.Resistance)
+            return "反抗 " + contract.resistanceGroupsResolved + "/3 · 预测失效 "
+                   + contract.resistancePredictionMisses + "/2";
+        if (phase == EchoDuelPhase.Counterattack)
+            return "反扑 " + contract.counterattackGroupsResolved
+                   + "/4 · 预测失效 "
+                   + contract.counterattackPredictionMisses + "/3";
         if (phase == EchoDuelPhase.Rewrite)
-            return "重写 " + Mathf.RoundToInt(phaseProgress01 * 100f) + "%";
-        if (contract.completed) return "已重写";
+            return (contract.contractBroken ? "契约已破解 · " : "契约未破解 · ")
+                   + "重写 " + Mathf.RoundToInt(phaseProgress01 * 100f) + "%";
+        if (contract.completed) return "已破解";
         return "稳定度 " + Mathf.RoundToInt(contract.Progress01 * 100f) + "%";
     }
 

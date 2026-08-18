@@ -155,6 +155,7 @@ public sealed class ProgressionAndTrainingTests
         };
         telemetry.shadowSamples.Add(new AIShadowTrainingSample { action = (int)ShadowAction.Jump });
         telemetry.shadowSamples.Add(new AIShadowTrainingSample { action = (int)ShadowAction.Jump });
+        telemetry.shadowSamples.Add(new AIShadowTrainingSample { action = (int)ShadowAction.Jump });
         telemetry.shadowSamples.Add(new AIShadowTrainingSample { action = (int)ShadowAction.Left });
 
         AITrainingReport report = AITrainingReportBuilder.FromTelemetry(telemetry);
@@ -198,9 +199,10 @@ public sealed class ProgressionAndTrainingTests
 
         AITrainingReport report = AITrainingReportBuilder.FromTelemetry(telemetry);
 
-        Assert.AreEqual("跳跃", report.learnedAction);
+        Assert.AreEqual("样本不足", report.learnedAction);
         Assert.AreEqual(1, report.actionSamples[(int)ShadowAction.Jump]);
         Assert.AreEqual(0, report.actionSamples[(int)ShadowAction.Left]);
+        StringAssert.Contains("尚未达到确定画像阈值", report.summary);
     }
 
     [Test]
@@ -236,10 +238,11 @@ public sealed class ProgressionAndTrainingTests
             {
                 action = (int)ShadowAction.Keep
             });
-        telemetry.shadowSamples.Add(new AIShadowTrainingSample
-        {
-            action = (int)ShadowAction.Slide
-        });
+        for (int i = 0; i < 3; i++)
+            telemetry.shadowSamples.Add(new AIShadowTrainingSample
+            {
+                action = (int)ShadowAction.Slide
+            });
 
         AITrainingReport report = AITrainingReportBuilder.FromTelemetry(telemetry);
 

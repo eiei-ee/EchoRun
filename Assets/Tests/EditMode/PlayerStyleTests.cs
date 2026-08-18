@@ -158,6 +158,20 @@ public class PlayerStyleTests
     }
 
     [Test]
+    public void OpportunitySettlesClearLaneAsRouteAvoidance()
+    {
+        var tracker = new ObstacleOpportunityTracker();
+        Assert.IsFalse(tracker.UpdateClearRoute(
+            1, true, 5f, 44, 7f, out _));
+        Assert.IsTrue(tracker.UpdateClearRoute(
+            1, false, 0f, 0, 7f,
+            out ObstacleOpportunityResolution result));
+        Assert.AreEqual(EchoResponseKind.RouteAvoid, result.response);
+        Assert.IsTrue(result.physicallySucceeded);
+        Assert.AreEqual(44, result.groupId);
+    }
+
+    [Test]
     public void SixCalibrationSignalsMoveInExpectedDirections()
     {
         var style = new PlayerStyleData();

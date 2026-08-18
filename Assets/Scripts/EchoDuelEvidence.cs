@@ -101,7 +101,14 @@ public sealed class EchoDuelEvidence
 
     public string BuildPredictionText(string prefix = "回声预判：")
     {
-        EchoPredictionSnapshot snapshot = BuildPrediction();
+        return BuildPredictionText(BuildPrediction(), prefix);
+    }
+
+    public static string BuildPredictionText(EchoPredictionSnapshot snapshot,
+        string prefix = "回声预判：")
+    {
+        if (snapshot == null)
+            return prefix + "证据不足，暂不下结论";
         if (snapshot.conclusion == EchoEvidenceConclusion.Insufficient)
             return prefix + "证据不足，暂不下结论";
         if (snapshot.conclusion == EchoEvidenceConclusion.Balanced)

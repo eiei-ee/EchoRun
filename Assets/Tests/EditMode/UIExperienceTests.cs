@@ -117,8 +117,10 @@ public sealed class UIExperienceTests
             type = EchoContractType.ChangeVerticalHabit,
             targetLane = 2,
             targetAction = ShadowAction.Slide,
-            progress = 2f,
-            targetProgress = 3f,
+            progress = 100f / 3f,
+            targetProgress = 100f,
+            resistanceGroupsResolved = 2,
+            resistancePredictionMisses = 2,
             lastFeedback = "反制生效：动作正确",
             feedbackSequence = 7
         };
@@ -126,8 +128,8 @@ public sealed class UIExperienceTests
         EchoDuelViewData leading = EchoRunPresentation.BuildDuel(
             true, contract, 2.75f, 2, 2);
         Assert.AreEqual("破解要求：右侧路线 · 滑铲躲避", leading.contract);
-        Assert.AreEqual("稳定度 67%", leading.progress);
-        Assert.AreEqual(2f / 3f, leading.progress01, 0.001f);
+        Assert.AreEqual("反抗 2/3 · 预测失效 2/2", leading.progress);
+        Assert.AreEqual(1f / 3f, leading.progress01, 0.001f);
         Assert.AreEqual(EchoLeadState.Leading, leading.leadState);
         StringAssert.StartsWith("领先 +2.8m", leading.lead);
         StringAssert.StartsWith("反制成功", leading.feedback);

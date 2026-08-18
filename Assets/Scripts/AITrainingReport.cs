@@ -51,10 +51,11 @@ public static class AITrainingReportBuilder
             }
         }
 
+        int activeSamples = ActiveSampleCount(report.actionSamples);
         int learnedIndex = DominantAction(report.actionSamples);
         report.learnedAction = learnedIndex >= 0
             ? ActionNames[learnedIndex]
-            : "暂无有效动作";
+            : activeSamples > 0 ? "样本不足" : "暂无有效动作";
         int updateGain = Mathf.Max(0,
             report.directorUpdatesAfter - report.directorUpdatesBefore);
         float skillDelta = report.skillAfter - report.skillBefore;
@@ -64,8 +65,11 @@ public static class AITrainingReportBuilder
             ? "本代重点学习了“" + report.learnedAction + "”，"
               + "导演新增 " + updateGain + " 次反馈更新，并倾向"
               + skillTrend + "。"
-            : "本代没有采集到新的玩家动作样本，导演新增 " + updateGain
-              + " 次反馈更新，并倾向" + skillTrend + "。";
+            : activeSamples > 0
+                ? "本代采集到 " + activeSamples
+                  + " 个有效动作，但尚未达到确定画像阈值。"
+                : "本代没有采集到新的玩家动作样本，导演新增 " + updateGain
+                  + " 次反馈更新，并倾向" + skillTrend + "。";
         return report;
     }
 
@@ -84,8 +88,26 @@ public static class AITrainingReportBuilder
     {
         if (counts == null || counts.Length < 5) return -1;
         int best = 1;
+        int second = 0;
         for (int i = 2; i < counts.Length; i++)
-            if (counts[i] > counts[best]) best = i;
-        return counts[best] > 0 ? best : -1;
+        {
+            if (counts[i] > counts[best])
+            {
+                second = counts[best];
+                best = i;
+            }
+            else second = Mathf.Max(second, counts[i]);
+        }
+        return counts[best] >= 3 && counts[best] - second >= 2
+            ? best : -1;
+    }
+
+    private static int ActiveSampleCount(int[] counts)
+    {
+        if (counts == null) return 0;
+        int total = 0;
+        for (int i = 1; i < counts.Length; i++)
+            total += Mathf.Max(0, counts[i]);
+        return total;
     }
 }

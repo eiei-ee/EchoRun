@@ -12,7 +12,7 @@ public enum EchoContractType
 [Serializable]
 public sealed class EchoContractData
 {
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     public int version = CurrentVersion;
     public EchoContractType type;
@@ -32,6 +32,12 @@ public sealed class EchoContractData
     public int predictionLane = -1;
     public ShadowAction predictionAction = ShadowAction.Keep;
     public bool completed;
+    public bool contractBroken;
+    public int detectionGroupsResolved;
+    public int resistanceGroupsResolved;
+    public int resistancePredictionMisses;
+    public int counterattackGroupsResolved;
+    public int counterattackPredictionMisses;
     public bool won;
     public bool exploratory;
     public int feedbackSequence;
@@ -90,7 +96,9 @@ public sealed class EchoContractData
         progress = Mathf.Clamp(progress, 0f, targetProgress);
         playerProgressBonus = Mathf.Max(0f, playerProgressBonus);
         shadowProgressBonus = Mathf.Max(0f, shadowProgressBonus);
-        completed = progress >= targetProgress || completed;
+        completed = sourceVersion >= 4
+            ? contractBroken
+            : progress >= targetProgress || completed;
         if (!Enum.IsDefined(typeof(EchoDuelPhase), duelPhase))
             duelPhase = EchoDuelPhase.None;
         if (duelPhase == EchoDuelPhase.None && type != EchoContractType.None)
@@ -104,6 +112,15 @@ public sealed class EchoContractData
             && type != EchoContractType.BreakLaneHabit)
             predictionAction = learnedAction;
         feedbackSequence = Mathf.Max(0, feedbackSequence);
+        detectionGroupsResolved = Mathf.Max(0, detectionGroupsResolved);
+        resistanceGroupsResolved = Mathf.Max(0, resistanceGroupsResolved);
+        resistancePredictionMisses = Mathf.Clamp(
+            resistancePredictionMisses, 0, resistanceGroupsResolved);
+        counterattackGroupsResolved = Mathf.Max(0,
+            counterattackGroupsResolved);
+        counterattackPredictionMisses = Mathf.Clamp(
+            counterattackPredictionMisses, 0,
+            counterattackGroupsResolved);
         title = title ?? "";
         learnedTrait = learnedTrait ?? "";
         ruleDescription = ruleDescription ?? "";
@@ -124,6 +141,12 @@ public sealed class EchoContractData
         reset.predictionLane = reset.learnedLane;
         reset.predictionAction = reset.learnedAction;
         reset.completed = false;
+        reset.contractBroken = false;
+        reset.detectionGroupsResolved = 0;
+        reset.resistanceGroupsResolved = 0;
+        reset.resistancePredictionMisses = 0;
+        reset.counterattackGroupsResolved = 0;
+        reset.counterattackPredictionMisses = 0;
         reset.won = false;
         reset.feedbackSequence = 0;
         reset.lastFeedback = "";
@@ -319,6 +342,8 @@ public sealed class EchoContractEvaluator
     private float _learnedLaneFeedbackTimer;
     private float _lastLaneMarkerDistance = float.NegativeInfinity;
     private int _lastCounterLane = -1;
+    private readonly System.Collections.Generic.HashSet<int> _resolvedChoiceGroups =
+        new System.Collections.Generic.HashSet<int>();
     private const float LaneMarkerSpacingSeconds = 4.5f;
     private const float CorrectLeadSeconds = 0.35f;
     private const float MistakeLeadSeconds = 0.2f;
@@ -353,8 +378,14 @@ public sealed class EchoContractEvaluator
                 BeginCounterattack();
                 break;
             case EchoDuelPhase.Rewrite:
-                Contract.completed = true;
-                SetFeedback("契约已重写：本阶段行为将更强地塑造下一代回声");
+                Contract.initialBreakCompleted =
+                    Contract.resistancePredictionMisses >= 2;
+                Contract.contractBroken =
+                    Contract.counterattackPredictionMisses >= 3;
+                Contract.completed = Contract.contractBroken;
+                SetFeedback(Contract.contractBroken
+                    ? "契约已破解：本阶段行为将塑造下一代回声"
+                    : "契约未破解：仍进入重写阶段，但本局不能战胜回声");
                 break;
             case EchoDuelPhase.Finale:
                 SetFeedback(Contract.completed
@@ -382,6 +413,7 @@ public sealed class EchoContractEvaluator
 
     public void TickLane(int lane, float deltaTime, float currentSpeed = 10f)
     {
+        if (Contract.version >= 4) return;
         if (Contract.type != EchoContractType.BreakLaneHabit
             || !CanChangeStability() || deltaTime <= 0f)
             return;
@@ -408,6 +440,7 @@ public sealed class EchoContractEvaluator
     public void RecordLaneMarker(int lane, float routeDistance,
         float currentSpeed = 10f)
     {
+        if (Contract.version >= 4) return;
         if (Contract.type != EchoContractType.BreakLaneHabit
             || !CanChangeStability())
             return;
@@ -435,6 +468,7 @@ public sealed class EchoContractEvaluator
     public void RecordDodge(ObstacleType obstacleType, int playerLane = -1,
         float currentSpeed = 10f)
     {
+        if (Contract.version >= 4) return;
         ShadowAction action = obstacleType == ObstacleType.High
             ? ShadowAction.Jump
             : obstacleType == ObstacleType.Low
@@ -504,6 +538,12 @@ public sealed class EchoContractEvaluator
     public void RecordHit(float currentSpeed = 10f)
     {
         if (Contract.type == EchoContractType.None) return;
+        if (Contract.version >= 4)
+        {
+            AddShadowLead(0.4f, currentSpeed);
+            SetFeedback("回声施压：碰撞让预测命中");
+            return;
+        }
         ReduceStability(18f);
         AddShadowLead(0.4f, currentSpeed);
         SetFeedback("回声施压：碰撞让契约重新收紧");
@@ -546,20 +586,78 @@ public sealed class EchoContractEvaluator
     private void BeginCounterattack()
     {
         Contract.counterattackActive = true;
-        Contract.progress = Mathf.Clamp(Contract.progress,
-            Contract.targetProgress * 0.5f,
-            Contract.targetProgress * 0.7f);
-        if (Contract.type == EchoContractType.BreakLaneHabit)
+        Contract.initialBreakCompleted =
+            Contract.resistancePredictionMisses >= 2;
+        Contract.progress = 50f;
+        SetFeedback("回声反扑：预测会在每个选择组生成时冻结");
+    }
+
+    public bool RecordChoice(ObstacleOpportunityResolution result,
+        EchoPredictionSnapshot frozenPrediction, float currentSpeed = 10f)
+    {
+        if (Contract.type == EchoContractType.None || result.groupId == 0
+            || !_resolvedChoiceGroups.Add(result.groupId))
+            return false;
+
+        bool predictionMissed = frozenPrediction != null
+                                && frozenPrediction.HasSpecificPrediction
+                                && result.physicallySucceeded
+                                && result.response
+                                != frozenPrediction.predictedResponse;
+        switch (Contract.duelPhase)
         {
-            Contract.predictionLane = Contract.targetLane;
-            _lastCounterLane = Contract.predictionLane;
+            case EchoDuelPhase.Detection:
+                Contract.detectionGroupsResolved++;
+                SetFeedback("侦测样本已记录：" + ResponseName(result.response));
+                break;
+            case EchoDuelPhase.Resistance:
+                Contract.resistanceGroupsResolved++;
+                if (predictionMissed)
+                    Contract.resistancePredictionMisses++;
+                Contract.progress = Mathf.Clamp01(
+                    Contract.resistanceGroupsResolved / 3f) * 50f;
+                Contract.initialBreakCompleted =
+                    Contract.resistancePredictionMisses >= 2;
+                ApplyChoiceLead(predictionMissed, currentSpeed);
+                SetFeedback(predictionMissed
+                    ? "预测失效：反抗选择已记录"
+                    : "预测命中：回声保住了旧判断");
+                break;
+            case EchoDuelPhase.Counterattack:
+                Contract.counterattackGroupsResolved++;
+                if (predictionMissed)
+                    Contract.counterattackPredictionMisses++;
+                Contract.progress = 50f + Mathf.Clamp01(
+                    Contract.counterattackGroupsResolved / 4f) * 50f;
+                Contract.contractBroken =
+                    Contract.counterattackPredictionMisses >= 3;
+                Contract.completed = Contract.contractBroken;
+                ApplyChoiceLead(predictionMissed, currentSpeed);
+                SetFeedback(predictionMissed
+                    ? "反扑预测失效"
+                    : "反扑预测命中");
+                break;
+            default:
+                return true;
         }
+        return true;
+    }
+
+    private void ApplyChoiceLead(bool predictionMissed, float currentSpeed)
+    {
+        if (predictionMissed)
+            AddStability(0f, CorrectLeadSeconds, currentSpeed);
         else
-        {
-            Contract.predictionAction = Contract.targetAction;
-            Contract.targetAction = OppositeVertical(Contract.targetAction);
-        }
-        SetFeedback(BuildPredictionText(true));
+            AddShadowLead(MistakeLeadSeconds, currentSpeed);
+    }
+
+    private static string ResponseName(EchoResponseKind response)
+    {
+        if (response == EchoResponseKind.Jump) return "跳跃";
+        if (response == EchoResponseKind.Slide) return "滑铲";
+        if (response == EchoResponseKind.RouteAvoid) return "改道";
+        if (response == EchoResponseKind.Hit) return "碰撞";
+        return "未响应";
     }
 
     private bool CanChangeStability()

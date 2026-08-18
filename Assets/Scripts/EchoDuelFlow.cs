@@ -20,8 +20,10 @@ public enum EchoDuelPhase
 /// </summary>
 public sealed class EchoDuelFlow
 {
-    public const float DefaultDetectionDuration = 20f;
-    public const float DefaultRevealDuration = 8f;
+    public const float DefaultDetectionDuration = 25f;
+    public const float DefaultRevealDuration = 6f;
+    public const float DefaultResistanceDuration = 30f;
+    public const float DefaultCounterattackDuration = 40f;
     public const float DefaultRewriteDuration = 32f;
     public const float DefaultFinaleDuration = 25f;
 
@@ -32,6 +34,8 @@ public sealed class EchoDuelFlow
 
     public float DetectionDuration { get; }
     public float RevealDuration { get; }
+    public float ResistanceDuration { get; }
+    public float CounterattackDuration { get; }
     public float RewriteDuration { get; }
     public float FinaleDuration { get; }
 
@@ -42,12 +46,16 @@ public sealed class EchoDuelFlow
         float detectionDuration = DefaultDetectionDuration,
         float revealDuration = DefaultRevealDuration,
         float rewriteDuration = DefaultRewriteDuration,
-        float finaleDuration = DefaultFinaleDuration)
+        float finaleDuration = DefaultFinaleDuration,
+        float resistanceDuration = DefaultResistanceDuration,
+        float counterattackDuration = DefaultCounterattackDuration)
     {
         DetectionDuration = Mathf.Max(1f, detectionDuration);
         RevealDuration = Mathf.Max(1f, revealDuration);
         RewriteDuration = Mathf.Max(1f, rewriteDuration);
         FinaleDuration = Mathf.Max(5f, finaleDuration);
+        ResistanceDuration = Mathf.Max(1f, resistanceDuration);
+        CounterattackDuration = Mathf.Max(1f, counterattackDuration);
         Phase = hasOpponent
             ? EchoDuelPhase.Detection
             : EchoDuelPhase.Calibration;
@@ -64,7 +72,9 @@ public sealed class EchoDuelFlow
         switch (Phase)
         {
             case EchoDuelPhase.Detection:
-                if (PhaseElapsed >= DetectionDuration)
+                if (PhaseElapsed >= DetectionDuration
+                    || (contract != null
+                        && contract.detectionGroupsResolved >= 6))
                     next = EchoDuelPhase.Reveal;
                 break;
             case EchoDuelPhase.Reveal:
@@ -72,16 +82,16 @@ public sealed class EchoDuelFlow
                     next = EchoDuelPhase.Resistance;
                 break;
             case EchoDuelPhase.Resistance:
-                if (contract != null && contract.initialBreakCompleted)
+                if (PhaseElapsed >= ResistanceDuration
+                    || (contract != null
+                        && contract.resistanceGroupsResolved >= 3))
                     next = EchoDuelPhase.Counterattack;
-                else if (ShouldEnterFinale(estimatedRemainingSeconds))
-                    next = EchoDuelPhase.Finale;
                 break;
             case EchoDuelPhase.Counterattack:
-                if (contract != null && contract.completed)
+                if (PhaseElapsed >= CounterattackDuration
+                    || (contract != null
+                        && contract.counterattackGroupsResolved >= 4))
                     next = EchoDuelPhase.Rewrite;
-                else if (ShouldEnterFinale(estimatedRemainingSeconds))
-                    next = EchoDuelPhase.Finale;
                 break;
             case EchoDuelPhase.Rewrite:
                 // Rewrite remains the long pursuit phase. Only its opening
@@ -114,6 +124,10 @@ public sealed class EchoDuelFlow
                     return Mathf.Clamp01(PhaseElapsed / DetectionDuration);
                 case EchoDuelPhase.Reveal:
                     return Mathf.Clamp01(PhaseElapsed / RevealDuration);
+                case EchoDuelPhase.Resistance:
+                    return Mathf.Clamp01(PhaseElapsed / ResistanceDuration);
+                case EchoDuelPhase.Counterattack:
+                    return Mathf.Clamp01(PhaseElapsed / CounterattackDuration);
                 case EchoDuelPhase.Rewrite:
                     return Mathf.Clamp01(PhaseElapsed / RewriteDuration);
                 default:

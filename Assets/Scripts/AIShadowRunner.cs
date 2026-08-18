@@ -61,8 +61,7 @@ public class AIShadowRunner : MonoBehaviour
     public int DuelPhaseSequence => _duelFlow != null
         ? _duelFlow.PhaseSequence : 0;
     public string PublicPrediction => HasActiveOpponent
-        ? _duelEvidence.BuildPredictionText(
-            DuelPhase == EchoDuelPhase.Counterattack ? "新预判：" : "回声预判：")
+        ? BuildPublicPrediction()
         : "";
     public string PublicEvidence => HasActiveOpponent
         ? _duelEvidence.BuildEvidenceText() : "";
@@ -232,9 +231,16 @@ public class AIShadowRunner : MonoBehaviour
         {
             float remainingSeconds = EchoTimeRules.EstimateRemainingSeconds(
                 _gameManager.RemainingDistance, _gameManager.CurrentSpeed);
+            EchoDuelPhase phaseBefore = _duelFlow != null
+                ? _duelFlow.Phase : EchoDuelPhase.None;
+            float phaseElapsedBefore = _duelFlow != null
+                ? _duelFlow.PhaseElapsed : 0f;
             if (_duelFlow != null && _duelFlow.Tick(Time.deltaTime,
                     remainingSeconds, _contractEvaluator.Contract))
             {
+                AIRunTelemetry.RecordEvent("echo_duel_phase_complete",
+                    (int)phaseBefore, _player.CurrentLane,
+                    phaseElapsedBefore, PhaseResolvedGroupCount(phaseBefore));
                 _contractEvaluator.SetPhase(_duelFlow.Phase);
                 TrackManager.Instance?.ReplanFutureDuelRows(
                     _duelFlow.PhaseSequence, _gameManager.Distance,
@@ -683,6 +689,11 @@ public class AIShadowRunner : MonoBehaviour
             PromotePendingGeneration(1, firstClarity);
         }
         _profile.weights = _policy.ExportWeights();
+        if (TrackManager.Instance != null)
+            AIRunTelemetry.RecordEvent("echo_track_summary",
+                TrackManager.Instance.PlannedTurnCount, -1,
+                TrackManager.Instance.MaximumPlannedStraightRun,
+                physicalDistance);
         SaveProfile();
 
         if (!challengedOpponent && formedPartialEcho && !completedCalibration)
@@ -733,8 +744,7 @@ public class AIShadowRunner : MonoBehaviour
             _contractEvaluator.Contract.won = true;
             LastResult = "契约破解 · 领先回声 "
                          + Mathf.Abs(PlayerLead).ToString("0.0") + "m\n"
-                         + "上一代行为：" + _contractEvaluator.Contract.learnedTrait + "\n"
-                         + "本代学习：AI已记录你的反制策略\n"
+                         + BuildDuelResultLayers(true) + "\n"
                          + "下一代变化：" + nextContract.title + " · "
                          + nextContract.ruleDescription;
         }
@@ -761,12 +771,8 @@ public class AIShadowRunner : MonoBehaviour
                 learning = "旧习惯仍被回声掌握";
             }
             LastResult = "回声胜出 · " + cause + "\n"
-                         + "上一代行为：" + _contractEvaluator.Contract.learnedTrait + "\n"
-                         + "反制进度 "
-                         + _contractEvaluator.Contract.progress.ToString("0.#")
-                         + "/"
-                         + _contractEvaluator.Contract.targetProgress.ToString("0.#")
-                         + "\n本代结论：" + learning + "\n"
+                         + BuildDuelResultLayers(false) + "\n"
+                         + "本代结论：" + learning + "\n"
                          + "重试规则保持不变："
                          + _contractEvaluator.Contract.title;
         }
@@ -1225,6 +1231,9 @@ public class AIShadowRunner : MonoBehaviour
             || TrackManager.Instance == null)
             return;
 
+        bool hasChoiceGroup = TrackManager.Instance.TryGetUpcomingChoiceGroup(
+            _player.transform.position, _player.ForwardDirection,
+            out EchoChoiceGroup choiceGroup);
         bool found = TrackManager.Instance.TryGetUpcomingObstacleInLane(
             _player.transform.position, _player.ForwardDirection,
             _player.CurrentLane, _opportunityTracker.ResolvedOpportunityIds,
@@ -1237,10 +1246,28 @@ public class AIShadowRunner : MonoBehaviour
             _gameManager.CurrentSpeed,
             Mathf.Max(0.2f, Mathf.Max(_player.jumpDuration,
                 _player.slideDuration))) * 1.25f;
-        if (_opportunityTracker.Update(
+        bool currentLaneHasOption = false;
+        if (hasChoiceGroup && choiceGroup.options != null)
+        {
+            for (int i = 0; i < choiceGroup.options.Length; i++)
+                currentLaneHasOption |= choiceGroup.options[i].lane
+                                        == _player.CurrentLane;
+        }
+        ObstacleOpportunityResolution result;
+        bool resolved;
+        if (hasChoiceGroup && !currentLaneHasOption)
+            resolved = _opportunityTracker.UpdateClearRoute(
+                _player.CurrentLane, true,
+                Mathf.Max(0f, choiceGroup.routeDistance
+                              - _gameManager.Distance),
+                choiceGroup.groupId, detectionDistance,
+                out result);
+        else
+            resolved = _opportunityTracker.Update(
                 _player.CurrentLane, _player.IsJumping, _player.IsSliding,
                 found, distance, type, obstacleId, groupId,
-                detectionDistance, out ObstacleOpportunityResolution result))
+                detectionDistance, out result);
+        if (resolved)
         {
             ObserveDuelOpportunity(result);
             bool usedRequiredAction = result.response == EchoResponseKind.Jump
@@ -1262,10 +1289,59 @@ public class AIShadowRunner : MonoBehaviour
     private void ObserveDuelOpportunity(ObstacleOpportunityResolution result)
     {
         if (!HasActiveOpponent) return;
+        EchoPredictionSnapshot frozenPrediction = _duelEvidence.Prediction;
         _duelEvidence.Observe(result);
+        if (_contractEvaluator != null)
+            _contractEvaluator.RecordChoice(result, frozenPrediction,
+                _gameManager != null ? _gameManager.CurrentSpeed : 10f);
         AIRunTelemetry.RecordEvent("echo_choice_resolved",
             (int)result.response, result.lane, result.groupId,
             result.physicallySucceeded ? 1f : 0f);
+        AIRunTelemetry.RecordEvent("echo_choice_prediction",
+            frozenPrediction != null
+                ? (int)frozenPrediction.predictedResponse : 0,
+            result.lane, result.groupId,
+            frozenPrediction != null ? frozenPrediction.confidence : 0f);
+    }
+
+    private int PhaseResolvedGroupCount(EchoDuelPhase phase)
+    {
+        EchoContractData contract = ActiveContract;
+        if (contract == null) return 0;
+        if (phase == EchoDuelPhase.Detection)
+            return contract.detectionGroupsResolved;
+        if (phase == EchoDuelPhase.Resistance)
+            return contract.resistanceGroupsResolved;
+        if (phase == EchoDuelPhase.Counterattack)
+            return contract.counterattackGroupsResolved;
+        return 0;
+    }
+
+    private string BuildDuelResultLayers(bool promoted)
+    {
+        string previous = ActiveContract != null
+            ? ActiveContract.learnedTrait : "暂无上一代画像";
+        string absorbed = promoted
+            ? "已晋升：本局反制行为进入下一代训练池"
+            : "未晋升：本局证据保留在待晋升训练池";
+        return "上一代画像：" + previous + "\n"
+               + "本局观察：" + _duelEvidence.BuildEvidenceText() + " · "
+               + _duelEvidence.BuildPredictionText("") + "\n"
+               + "下一代吸收：" + absorbed;
+    }
+
+    private string BuildPublicPrediction()
+    {
+        string prefix = DuelPhase == EchoDuelPhase.Counterattack
+            ? "新预判：" : "回声预判：";
+        if (TrackManager.Instance != null && _player != null
+            && TrackManager.Instance.TryGetUpcomingChoiceGroup(
+                _player.transform.position, _player.ForwardDirection,
+                out EchoChoiceGroup group)
+            && group.prediction != null)
+            return EchoDuelEvidence.BuildPredictionText(
+                group.prediction, prefix);
+        return _duelEvidence.BuildPredictionText(prefix);
     }
 
     private string BuildDuelStatus()

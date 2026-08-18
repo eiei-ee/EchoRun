@@ -121,102 +121,95 @@ public sealed class EchoContractTests
     }
 
     [Test]
-    public void LaneContractRequiresSpacedRouteMarkersAndPunishesLearnedRoute()
+    public void ChoiceGroupsBreakContractOnTwoOfThreeThenThreeOfFourMisses()
     {
         var contract = new EchoContractData
         {
-            type = EchoContractType.BreakLaneHabit,
-            learnedLane = 2,
-            targetLane = 0,
+            type = EchoContractType.ChangeVerticalHabit,
             targetProgress = 100f,
-            title = "lane"
+            title = "choice"
         };
         var evaluator = new EchoContractEvaluator(contract);
+        var predictsJump = Prediction(EchoResponseKind.Jump);
 
         evaluator.SetPhase(EchoDuelPhase.Resistance);
-        evaluator.TickLane(2, 2.1f);
-        evaluator.RecordLaneMarker(0, 50f, 10f);
-        evaluator.RecordLaneMarker(0, 51f, 10f);
-        evaluator.RecordLaneMarker(0, 100f, 10f);
-        evaluator.RecordLaneMarker(0, 150f, 10f);
+        evaluator.RecordChoice(Resolved(EchoResponseKind.Slide, 10),
+            predictsJump);
+        evaluator.RecordChoice(Resolved(EchoResponseKind.Jump, 11),
+            predictsJump);
+        evaluator.RecordChoice(Resolved(EchoResponseKind.RouteAvoid, 12),
+            predictsJump);
 
         Assert.IsTrue(evaluator.Contract.initialBreakCompleted);
+        Assert.AreEqual(2, evaluator.Contract.resistancePredictionMisses);
         Assert.IsFalse(evaluator.Contract.completed);
 
         evaluator.SetPhase(EchoDuelPhase.Counterattack);
-        evaluator.RecordLaneMarker(1, 200f, 10f);
-        evaluator.RecordLaneMarker(2, 250f, 10f);
+        evaluator.RecordChoice(Resolved(EchoResponseKind.Slide, 20),
+            predictsJump);
+        evaluator.RecordChoice(Resolved(EchoResponseKind.RouteAvoid, 21),
+            predictsJump);
+        evaluator.RecordChoice(Resolved(EchoResponseKind.Jump, 22),
+            predictsJump);
+        evaluator.RecordChoice(Resolved(EchoResponseKind.Slide, 23),
+            predictsJump);
+        evaluator.SetPhase(EchoDuelPhase.Rewrite);
 
         Assert.IsTrue(evaluator.Contract.completed);
+        Assert.IsTrue(evaluator.Contract.contractBroken);
         Assert.AreEqual(100f, evaluator.Contract.progress);
         Assert.Greater(evaluator.Contract.playerProgressBonus, 0f);
         Assert.Greater(evaluator.Contract.shadowProgressBonus, 0f);
     }
 
     [Test]
-    public void VerticalContractOnlyCountsRequiredSuccessfulDodges()
+    public void ChoiceGroupIsSettledExactlyOnce()
     {
         var contract = new EchoContractData
         {
             type = EchoContractType.ChangeVerticalHabit,
-            learnedAction = ShadowAction.Slide,
-            targetAction = ShadowAction.Jump,
-            targetLane = 0,
-            targetProgress = 100f,
-            title = "vertical"
+            targetProgress = 100f
         };
         var evaluator = new EchoContractEvaluator(contract);
-
         evaluator.SetPhase(EchoDuelPhase.Resistance);
-        evaluator.RecordDodge(ObstacleType.High, 1);
-        Assert.AreEqual(0f, evaluator.Contract.progress);
-        evaluator.RecordDodge(ObstacleType.Low, 0);
-        evaluator.RecordDodge(ObstacleType.High, 0);
-        evaluator.RecordDodge(ObstacleType.High, 0);
-        evaluator.RecordDodge(ObstacleType.High, 0);
-
-        Assert.IsTrue(evaluator.Contract.initialBreakCompleted);
-        Assert.IsFalse(evaluator.Contract.completed);
-
-        evaluator.SetPhase(EchoDuelPhase.Counterattack);
-        while (!evaluator.Contract.completed)
-            evaluator.RecordDodge(RequiredObstacle(
-                evaluator.Contract.targetAction), 0);
-
-        Assert.IsTrue(evaluator.Contract.completed);
-        Assert.AreEqual(100f, evaluator.Contract.progress);
-        Assert.Greater(evaluator.Contract.shadowProgressBonus, 0f);
+        Assert.IsTrue(evaluator.RecordChoice(
+            Resolved(EchoResponseKind.Slide, 99),
+            Prediction(EchoResponseKind.Jump)));
+        Assert.IsFalse(evaluator.RecordChoice(
+            Resolved(EchoResponseKind.RouteAvoid, 99),
+            Prediction(EchoResponseKind.Jump)));
+        Assert.AreEqual(1, evaluator.Contract.resistanceGroupsResolved);
+        Assert.AreEqual(1, evaluator.Contract.resistancePredictionMisses);
     }
 
     [Test]
-    public void RhythmContractRejectsRepeatedDodgeAndCountsAlternation()
+    public void FailedResistanceAndCounterattackStillReachRewrite()
     {
-        var contract = new EchoContractData
+        var contract = new EchoContractData { type = EchoContractType.DisruptRhythm };
+        var flow = new EchoDuelFlow(true, 1f, 1f, 2f, 5f, 1f, 1f);
+        Assert.IsTrue(flow.Tick(1f, 100f, contract));
+        Assert.AreEqual(EchoDuelPhase.Reveal, flow.Phase);
+        Assert.IsTrue(flow.Tick(1f, 100f, contract));
+        Assert.AreEqual(EchoDuelPhase.Resistance, flow.Phase);
+        Assert.IsTrue(flow.Tick(1f, 100f, contract));
+        Assert.AreEqual(EchoDuelPhase.Counterattack, flow.Phase);
+        Assert.IsTrue(flow.Tick(1f, 100f, contract));
+        Assert.AreEqual(EchoDuelPhase.Rewrite, flow.Phase);
+        Assert.IsFalse(contract.completed);
+    }
+
+    private static EchoPredictionSnapshot Prediction(EchoResponseKind response)
+    {
+        return new EchoPredictionSnapshot
         {
-            type = EchoContractType.DisruptRhythm,
-            targetProgress = 100f,
-            title = "rhythm"
+            conclusion = response == EchoResponseKind.Jump
+                ? EchoEvidenceConclusion.Jump
+                : response == EchoResponseKind.Slide
+                    ? EchoEvidenceConclusion.Slide
+                    : EchoEvidenceConclusion.RouteAvoid,
+            predictedResponse = response,
+            confidence = 0.8f
         };
-        var evaluator = new EchoContractEvaluator(contract);
-
-        evaluator.SetPhase(EchoDuelPhase.Resistance);
-        ObstacleType first = RequiredObstacle(evaluator.Contract.targetAction);
-        evaluator.RecordDodge(first);
-        int firstFeedback = evaluator.Contract.feedbackSequence;
-        evaluator.RecordDodge(first);
-        while (!evaluator.Contract.initialBreakCompleted)
-            evaluator.RecordDodge(RequiredObstacle(
-                evaluator.Contract.targetAction));
-
-        evaluator.SetPhase(EchoDuelPhase.Counterattack);
-        while (!evaluator.Contract.completed)
-            evaluator.RecordDodge(RequiredObstacle(
-                evaluator.Contract.targetAction));
-
-        Assert.IsTrue(evaluator.Contract.completed);
-        Assert.AreEqual(100f, evaluator.Contract.progress);
-        Assert.Greater(evaluator.Contract.shadowProgressBonus, 0f);
-        Assert.Greater(evaluator.Contract.feedbackSequence, firstFeedback);
     }
 
     [Test]
@@ -440,10 +433,10 @@ public sealed class EchoContractTests
         Assert.IsTrue(flow.Tick(1f, 100f, contract));
         Assert.AreEqual(EchoDuelPhase.Resistance, flow.Phase);
 
-        contract.initialBreakCompleted = true;
+        contract.resistanceGroupsResolved = 3;
         Assert.IsTrue(flow.Tick(0.1f, 90f, contract));
         Assert.AreEqual(EchoDuelPhase.Counterattack, flow.Phase);
-        contract.completed = true;
+        contract.counterattackGroupsResolved = 4;
         Assert.IsTrue(flow.Tick(0.1f, 80f, contract));
         Assert.AreEqual(EchoDuelPhase.Rewrite, flow.Phase);
 
