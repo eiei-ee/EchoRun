@@ -1,0 +1,33 @@
+{
+  "set": "EchoRun Icon Set v1",
+  "icons": [
+    "clarity",
+    "contract",
+    "counterattack",
+    "defeat",
+    "detection",
+    "echo",
+    "finale",
+    "generation",
+    "hold",
+    "jump",
+    "lead",
+    "left",
+    "pace",
+    "resistance",
+    "reveal",
+    "rewrite",
+    "right",
+    "shard",
+    "slide",
+    "stability",
+    "victory"
+  ],
+  "count": 21,
+  "size_px": 96,
+  "stroke_px": 7,
+  "supersample": 4,
+  "svg_dir": "/tmp/echowork/ArtSource/Icons",
+  "png_dir": "/tmp/echowork/Assets/Resources/Art/Icons",
+  "sheet": "/tmp/echowork/docs/ConceptArt/IconSet-v1.png"
+}

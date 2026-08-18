@@ -60,6 +60,11 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         }
         _gameManager.OnStateChanged.AddListener(OnStateChanged);
         OnStateChanged(_gameManager.State);
+
+        // Competition demo archives open the AI insight panel by default so
+        // judges see the learning evidence without hunting for the launcher.
+        if (EchoDemoMode.IsDemoSeeded && _gameManager.State == GameState.Menu)
+            Open();
     }
 
     void Update()

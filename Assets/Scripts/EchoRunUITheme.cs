@@ -15,6 +15,30 @@ public static class EchoRunUITheme
     public static readonly Color TextMuted = new Color32(165, 187, 200, 255);
     public static readonly Color Ink = new Color32(5, 14, 22, 255);
 
+    // ── Type scale (reference-resolution pixels) ──
+    public const int TypeCaption = 16;
+    public const int TypeBody = 21;
+    public const int TypeHud = 25;
+    public const int TypeTitle = 32;
+    public const int TypeDisplay = 48;
+    public const int TypeHero = 76;
+
+    // ── Spacing rhythm ──
+    public const float SpaceXS = 6f;
+    public const float SpaceS = 12f;
+    public const float SpaceM = 18f;
+    public const float SpaceL = 28f;
+    public const float SpaceXL = 44f;
+
+    // ── Duel phase accents, aligned with EchoAtmosphereDirector so the
+    // banner and the world lighting tell the same story. ──
+    public static readonly Color PhaseDetection = new Color32(115, 158, 224, 255);
+    public static readonly Color PhaseReveal = new Color32(150, 138, 230, 255);
+    public static readonly Color PhaseResistance = new Color32(168, 126, 224, 255);
+    public static readonly Color PhaseCounterattack = new Color32(255, 122, 106, 255);
+    public static readonly Color PhaseRewrite = new Color32(64, 224, 238, 255);
+    public static readonly Color PhaseFinale = new Color32(244, 190, 92, 255);
+
     public static Color WithAlpha(Color color, float alpha)
     {
         color.a = Mathf.Clamp01(alpha);

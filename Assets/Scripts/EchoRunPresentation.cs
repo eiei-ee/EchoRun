@@ -30,6 +30,57 @@ public struct EchoDuelViewData
     public int feedbackSequence;
 }
 
+public struct EchoBriefingRow
+{
+    public string icon;
+    public string label;
+    public string value;
+
+    public EchoBriefingRow(string icon, string label, string value)
+    {
+        this.icon = icon;
+        this.label = label;
+        this.value = value;
+    }
+}
+
+public struct EchoBriefingViewData
+{
+    public string title;
+    public string subtitle;
+    public EchoBriefingRow[] rows;
+    public string primaryAction;
+    public string footnote;
+}
+
+public sealed class EchoPhaseBannerData
+{
+    public readonly string title;
+    public readonly string subtitle;
+    public readonly Color accent;
+
+    public EchoPhaseBannerData(string title, string subtitle, Color accent)
+    {
+        this.title = title;
+        this.subtitle = subtitle;
+        this.accent = accent;
+    }
+}
+
+public struct EchoReportRow
+{
+    public string icon;
+    public string label;
+    public string value;
+
+    public EchoReportRow(string icon, string label, string value)
+    {
+        this.icon = icon;
+        this.label = label;
+        this.value = value;
+    }
+}
+
 public static class EchoRunPresentation
 {
     public static EchoMenuViewData BuildMenu(int generation,
@@ -214,5 +265,141 @@ public static class EchoRunPresentation
     {
         if (string.IsNullOrEmpty(value)) return "";
         return value.StartsWith(prefix) ? value.Substring(prefix.Length) : value;
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  Competition surfaces (briefing / banner / report)
+    // ═══════════════════════════════════════════════════
+
+    /// <summary>
+    /// The contract briefing only earns its extra click when an echo
+    /// contract actually exists (generation &gt; 0). Calibration runs and
+    /// auto-start recording flows go straight to the track.
+    /// </summary>
+    public static bool ShouldShowContractBriefing(int generation,
+        bool autoStartRequested)
+    {
+        return generation > 0 && !autoStartRequested;
+    }
+
+    public static EchoBriefingViewData BuildBriefing(int generation,
+        PlayerStyleData style, EchoContractData contractPreview,
+        float echoClarity, int minimumJumpSamples, int minimumSlideSamples)
+    {
+        if (generation <= 0)
+        {
+            return new EchoBriefingViewData
+            {
+                title = "首次回声校准",
+                subtitle = "没有对手的这一局，正在塑造你未来的对手",
+                rows = new[]
+                {
+                    new EchoBriefingRow("echo", "它将学习",
+                        "路线选择、跳滑时机与行动节奏"),
+                    new EchoBriefingRow("detection", "校准目标",
+                        "至少跳跃 " + minimumJumpSamples
+                        + " 次 · 滑铲 " + minimumSlideSamples + " 次"),
+                    new EchoBriefingRow("generation", "完成后",
+                        "生成第 1 代回声与首份回声契约"),
+                },
+                primaryAction = "开始校准",
+                footnote = "校准约 75 秒，全程可正常游玩"
+            };
+        }
+
+        EchoContractData contract = contractPreview != null
+            ? contractPreview.ResetForRun()
+            : EchoContractPolicy.Create(style, generation);
+        int clarityPercent = Mathf.RoundToInt(
+            Mathf.Clamp01(echoClarity) * 100f);
+        return new EchoBriefingViewData
+        {
+            title = "第 " + generation + " 代回声 · 赛前简报",
+            subtitle = "它按你的习惯布防——按契约跑，拆它的预判",
+            rows = new[]
+            {
+                new EchoBriefingRow("echo", "AI 识别",
+                    TrimPrefix(contract.learnedTrait, "AI识别：")),
+                new EchoBriefingRow("contract", "本代规则",
+                    contract.ruleDescription),
+                new EchoBriefingRow("lead", "破解目标", contract.objective),
+                new EchoBriefingRow("clarity", "回声清晰度",
+                    clarityPercent + "%"),
+            },
+            primaryAction = "开跑",
+            footnote = "决斗六阶段：侦测 → 暴露 → 反抗 → 反扑 → 重写 → 决胜"
+        };
+    }
+
+    /// <summary>
+    /// Returns null for phases that must not interrupt the run with a
+    /// banner (None / Calibration / Finished).
+    /// </summary>
+    public static EchoPhaseBannerData BuildPhaseBanner(EchoDuelPhase phase)
+    {
+        switch (phase)
+        {
+            case EchoDuelPhase.Detection:
+                return new EchoPhaseBannerData("侦测",
+                    "回声正在复现你的跑法", EchoRunUITheme.PhaseDetection);
+            case EchoDuelPhase.Reveal:
+                return new EchoPhaseBannerData("暴露",
+                    "它看穿了你的习惯", EchoRunUITheme.PhaseReveal);
+            case EchoDuelPhase.Resistance:
+                return new EchoPhaseBannerData("反抗",
+                    "按契约行动，打破它的预判", EchoRunUITheme.PhaseResistance);
+            case EchoDuelPhase.Counterattack:
+                return new EchoPhaseBannerData("反扑",
+                    "回声开始针对你的弱点", EchoRunUITheme.PhaseCounterattack);
+            case EchoDuelPhase.Rewrite:
+                return new EchoPhaseBannerData("重写",
+                    "坚持住，它的模型正在崩解", EchoRunUITheme.PhaseRewrite);
+            case EchoDuelPhase.Finale:
+                return new EchoPhaseBannerData("决胜",
+                    "最后窗口——拉开身位", EchoRunUITheme.PhaseFinale);
+            default:
+                return null;
+        }
+    }
+
+    public static EchoReportRow[] BuildTrainingReportRows(
+        AITrainingReport report)
+    {
+        if (report == null) return new EchoReportRow[0];
+
+        int sampleTotal = 0;
+        if (report.actionSamples != null)
+            for (int i = 0; i < report.actionSamples.Length; i++)
+                sampleTotal += report.actionSamples[i];
+
+        string generationTransition = report.generationAfter
+                                          > report.generationBefore
+            ? "第 " + report.generationBefore + " 代 → 第 "
+              + report.generationAfter + " 代"
+            : "第 " + report.generationAfter + " 代 · 未晋升";
+        string weightDrift = "影子 ±"
+                             + Mathf.RoundToInt(report.shadowWeightDelta
+                                                * 100f) + "%"
+                             + " · 导演 ±"
+                             + Mathf.RoundToInt(report.directorWeightDelta
+                                                * 100f) + "%";
+        string skillDrift = Mathf.Abs(report.skillAfter
+                                      - report.skillBefore) < 0.005f
+            ? "评估稳定"
+            : (report.skillAfter > report.skillBefore ? "+" : "")
+              + Mathf.RoundToInt((report.skillAfter - report.skillBefore)
+                                 * 100f) + "%";
+
+        return new[]
+        {
+            new EchoReportRow("generation", "代际", generationTransition),
+            new EchoReportRow("echo", "本代学习",
+                string.IsNullOrEmpty(report.learnedAction)
+                    ? "待观察" : report.learnedAction),
+            new EchoReportRow("rewrite", "模型更新", weightDrift),
+            new EchoReportRow("pace", "技术评估", skillDrift),
+            new EchoReportRow("stability", "本局样本",
+                sampleTotal > 0 ? sampleTotal + " 个动作样本" : "样本不足"),
+        };
     }
 }

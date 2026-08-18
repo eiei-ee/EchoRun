@@ -60,6 +60,32 @@ public class UIManager : MonoBehaviour
     Text _gameOverTitleText, _gameOverStatsText;
     Button _restartBtn, _goToMenuBtn;
 
+    // ── Contract briefing (pre-run, generation > 0) ──
+    GameObject _briefingPanel;
+    RectTransform _briefingCard;
+    Text _briefingTitle, _briefingSubtitle, _briefingFootnote;
+    readonly GameObject[] _briefingRows = new GameObject[4];
+    readonly Image[] _briefingRowIcons = new Image[4];
+    readonly Text[] _briefingRowLabels = new Text[4];
+    readonly Text[] _briefingRowValues = new Text[4];
+    Button _briefingStartBtn, _briefingBackBtn;
+
+    // ── Duel phase banner (HUD overlay) ──
+    CanvasGroup _phaseBannerGroup;
+    RectTransform _phaseBannerRoot;
+    Text _phaseBannerTitle, _phaseBannerSubtitle;
+    Image _phaseBannerRule;
+    EchoDuelPhase _lastBannerPhase = EchoDuelPhase.None;
+    float _phaseBannerTimer;
+    const float PhaseBannerDuration = 2.2f;
+
+    // ── Training report grid (GameOver) ──
+    GameObject _reportGrid;
+    readonly GameObject[] _reportCells = new GameObject[5];
+    readonly Image[] _reportIcons = new Image[5];
+    readonly Text[] _reportLabels = new Text[5];
+    readonly Text[] _reportValues = new Text[5];
+
     private Font _font;
     private Font _titleFont;
     private GameManager _gm;
@@ -119,6 +145,8 @@ public class UIManager : MonoBehaviour
         CreateControlHint();
         CreatePausePanel();
         CreateGameOverPanel();
+        CreateBriefingPanel();
+        CreatePhaseBanner();
         CreateLandscapeGuard();
 
         _menuRouter.Register(MenuScreen.Home, _menuPanel, _startBtn);
@@ -198,6 +226,35 @@ public class UIManager : MonoBehaviour
             if (_duelFeedbackTimer <= 0f)
                 _duelFeedbackText.gameObject.SetActive(false);
         }
+
+        UpdatePhaseBanner();
+    }
+
+    void UpdatePhaseBanner()
+    {
+        if (_phaseBannerGroup == null || _phaseBannerTimer <= 0f) return;
+        _phaseBannerTimer -= Time.unscaledDeltaTime;
+        bool reducedMotion = EchoRunAccessibility.ReducedMotion;
+        float fadeIn = reducedMotion ? 0.05f : 0.18f;
+        float fadeOut = reducedMotion ? 0.08f : 0.45f;
+        float elapsed = PhaseBannerDuration - _phaseBannerTimer;
+        float alpha = elapsed < fadeIn
+            ? elapsed / fadeIn
+            : _phaseBannerTimer < fadeOut
+                ? _phaseBannerTimer / fadeOut
+                : 1f;
+        _phaseBannerGroup.alpha = Mathf.Clamp01(alpha);
+        if (_phaseBannerRoot != null && !reducedMotion)
+        {
+            float punch = Mathf.Max(0f, 1f - elapsed / 0.22f);
+            _phaseBannerRoot.localScale =
+                Vector3.one * (1f + 0.12f * punch);
+        }
+        else if (_phaseBannerRoot != null)
+        {
+            _phaseBannerRoot.localScale = Vector3.one;
+        }
+        if (_phaseBannerTimer <= 0f) _phaseBannerGroup.alpha = 0f;
     }
 
     // ═══════════════════════════════════════════════════
@@ -262,11 +319,20 @@ public class UIManager : MonoBehaviour
         protocol.fontStyle = FontStyle.Bold;
         AnchorText(protocol.GetComponent<RectTransform>(), 0.5f, 0.87f, 620, 30);
 
-        Text title = MakeText("Title", _menuPanel.transform, "ECHO//RUN", 76, TextAnchor.MiddleCenter);
+        Text title = MakeText("Title", _menuPanel.transform, "ECHO//RUN",
+            EchoRunUITheme.TypeHero, TextAnchor.MiddleCenter);
         if (_titleFont != null) title.font = _titleFont;
         title.color = TextPrimary;
         title.fontStyle = FontStyle.Bold;
         AddShadow(title.gameObject, WithAlpha(Ink, 0.9f));
+        // Cyan halo in two diagonal directions reads as a neon glow around
+        // the wordmark without any texture assets.
+        Outline glowA = title.gameObject.AddComponent<Outline>();
+        glowA.effectColor = WithAlpha(Primary, 0.40f);
+        glowA.effectDistance = new Vector2(2.2f, -2.2f);
+        Outline glowB = title.gameObject.AddComponent<Outline>();
+        glowB.effectColor = WithAlpha(Primary, 0.40f);
+        glowB.effectDistance = new Vector2(-2.2f, 2.2f);
         AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.76f, 760, 92);
 
         Text subtitle = MakeText("Subtitle", _menuPanel.transform,
@@ -879,6 +945,14 @@ public class UIManager : MonoBehaviour
     void RefreshDuelHud(bool forceFeedback = false)
     {
         AIShadowRunner shadow = AIShadowRunner.Instance;
+        EchoDuelPhase bannerPhase = shadow != null
+            ? shadow.DuelPhase : EchoDuelPhase.None;
+        if (bannerPhase != _lastBannerPhase)
+        {
+            _lastBannerPhase = bannerPhase;
+            ShowPhaseBanner(EchoRunPresentation.BuildPhaseBanner(bannerPhase));
+        }
+
         EchoDuelViewData view = EchoRunPresentation.BuildDuel(
             shadow != null && shadow.HasActiveOpponent,
             shadow != null ? shadow.ActiveContract : null,
@@ -1068,7 +1142,7 @@ public class UIManager : MonoBehaviour
         _shadowResultText.horizontalOverflow = HorizontalWrapMode.Wrap;
         _shadowResultText.verticalOverflow = VerticalWrapMode.Truncate;
         _shadowResultText.lineSpacing = 1.05f;
-        AnchorText(_shadowResultText.GetComponent<RectTransform>(), 0.5f, 0.38f, 1160, 180);
+        AnchorText(_shadowResultText.GetComponent<RectTransform>(), 0.5f, 0.42f, 1160, 150);
 
         // Restart
         _restartBtn = MakeButton("RestartBtn", _gameOverPanel.transform, "重新挑战", 30,
@@ -1099,7 +1173,260 @@ public class UIManager : MonoBehaviour
         AddOutline(_gameOverStatsText.gameObject, new Color(0, 0, 0, 0.7f));
         AnchorText(_gameOverStatsText.GetComponent<RectTransform>(), 0.5f, 0.62f, 720, 120);
 
+        // Structured training report: what the echo learned this run and how
+        // much its models moved. Populated on GameOver from run telemetry.
+        _reportGrid = new GameObject("TrainingReportGrid", typeof(RectTransform));
+        _reportGrid.transform.SetParent(_gameOverPanel.transform, false);
+        RectTransform gridRect = _reportGrid.GetComponent<RectTransform>();
+        gridRect.anchorMin = new Vector2(0.5f, 0.5f);
+        gridRect.anchorMax = new Vector2(0.5f, 0.5f);
+        gridRect.sizeDelta = new Vector2(1120f, 116f);
+        gridRect.anchoredPosition = new Vector2(0f, -250f);
+        for (int i = 0; i < _reportCells.Length; i++)
+            _reportCells[i] = MakeReportCell(_reportGrid.transform, i,
+                out _reportIcons[i], out _reportLabels[i],
+                out _reportValues[i]);
+        _reportGrid.SetActive(false);
+
         _gameOverPanel.SetActive(false);
+    }
+
+    GameObject MakeReportCell(Transform parent, int index,
+        out Image iconOut, out Text labelOut, out Text valueOut)
+    {
+        GameObject cell = new GameObject("ReportCell" + index, typeof(Image));
+        cell.transform.SetParent(parent, false);
+        Image background = cell.GetComponent<Image>();
+        background.color = WithAlpha(SurfaceRaised, 0.55f);
+        background.raycastTarget = false;
+        ApplyRounded(background);
+        RectTransform cellRect = cell.GetComponent<RectTransform>();
+        cellRect.anchorMin = new Vector2(0f, 1f);
+        cellRect.anchorMax = new Vector2(0f, 1f);
+        cellRect.pivot = new Vector2(0f, 1f);
+        cellRect.sizeDelta = new Vector2(360f, 54f);
+
+        GameObject iconGo = new GameObject("Icon", typeof(Image));
+        iconGo.transform.SetParent(cell.transform, false);
+        iconOut = iconGo.GetComponent<Image>();
+        iconOut.raycastTarget = false;
+        iconOut.preserveAspect = true;
+        RectTransform iconRect = iconOut.rectTransform;
+        iconRect.anchorMin = new Vector2(0f, 0.5f);
+        iconRect.anchorMax = new Vector2(0f, 0.5f);
+        iconRect.pivot = new Vector2(0f, 0.5f);
+        iconRect.sizeDelta = new Vector2(32f, 32f);
+        iconRect.anchoredPosition = new Vector2(12f, 0f);
+
+        labelOut = MakeText("Label", cell.transform, "",
+            EchoRunUITheme.TypeCaption, TextAnchor.MiddleLeft);
+        labelOut.color = TextMuted;
+        RectTransform labelRect = labelOut.rectTransform;
+        labelRect.anchorMin = new Vector2(0f, 1f);
+        labelRect.anchorMax = new Vector2(0f, 1f);
+        labelRect.pivot = new Vector2(0f, 1f);
+        labelRect.sizeDelta = new Vector2(296f, 20f);
+        labelRect.anchoredPosition = new Vector2(56f, -5f);
+
+        valueOut = MakeText("Value", cell.transform, "",
+            EchoRunUITheme.TypeBody, TextAnchor.MiddleLeft);
+        valueOut.color = TextPrimary;
+        valueOut.fontStyle = FontStyle.Bold;
+        valueOut.resizeTextForBestFit = true;
+        valueOut.resizeTextMinSize = 14;
+        valueOut.resizeTextMaxSize = EchoRunUITheme.TypeBody;
+        RectTransform valueRect = valueOut.rectTransform;
+        valueRect.anchorMin = new Vector2(0f, 1f);
+        valueRect.anchorMax = new Vector2(0f, 1f);
+        valueRect.pivot = new Vector2(0f, 1f);
+        valueRect.sizeDelta = new Vector2(296f, 26f);
+        valueRect.anchoredPosition = new Vector2(56f, -25f);
+        return cell;
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  Contract Briefing Panel (pre-run)
+    // ═══════════════════════════════════════════════════
+
+    void CreateBriefingPanel()
+    {
+        _briefingPanel = NewPanel("ContractBriefing", WithAlpha(Backdrop, 0.82f));
+
+        GameObject card = new GameObject("BriefingCard", typeof(Image));
+        card.transform.SetParent(_briefingPanel.transform, false);
+        Image cardImage = card.GetComponent<Image>();
+        cardImage.color = WithAlpha(Surface, 0.97f);
+        ApplyRounded(cardImage);
+        _briefingCard = card.GetComponent<RectTransform>();
+        _briefingCard.anchorMin = new Vector2(0.5f, 0.5f);
+        _briefingCard.anchorMax = new Vector2(0.5f, 0.5f);
+        _briefingCard.sizeDelta = new Vector2(920f, 640f);
+        _briefingCard.anchoredPosition = new Vector2(0f, 10f);
+        AddPanelRule(card.transform, Primary);
+
+        _briefingTitle = MakeText("Title", card.transform, "赛前简报",
+            EchoRunUITheme.TypeTitle, TextAnchor.MiddleLeft);
+        _briefingTitle.color = TextPrimary;
+        _briefingTitle.fontStyle = FontStyle.Bold;
+        PlaceTopLeft(_briefingTitle.rectTransform, 48f, -36f, 824f, 46f);
+
+        _briefingSubtitle = MakeText("Subtitle", card.transform, "",
+            EchoRunUITheme.TypeBody, TextAnchor.MiddleLeft);
+        _briefingSubtitle.color = TextMuted;
+        PlaceTopLeft(_briefingSubtitle.rectTransform, 48f, -88f, 824f, 30f);
+
+        for (int i = 0; i < _briefingRows.Length; i++)
+        {
+            GameObject row = new GameObject("BriefingRow" + i, typeof(Image));
+            row.transform.SetParent(card.transform, false);
+            Image rowImage = row.GetComponent<Image>();
+            rowImage.color = WithAlpha(SurfaceRaised, 0.55f);
+            ApplyRounded(rowImage);
+            RectTransform rowRect = row.GetComponent<RectTransform>();
+            rowRect.anchorMin = new Vector2(0f, 1f);
+            rowRect.anchorMax = new Vector2(0f, 1f);
+            rowRect.pivot = new Vector2(0f, 1f);
+            rowRect.sizeDelta = new Vector2(824f, 62f);
+            rowRect.anchoredPosition = new Vector2(48f, -150f - i * 74f);
+
+            GameObject iconGo = new GameObject("Icon", typeof(Image));
+            iconGo.transform.SetParent(row.transform, false);
+            _briefingRowIcons[i] = iconGo.GetComponent<Image>();
+            _briefingRowIcons[i].raycastTarget = false;
+            _briefingRowIcons[i].preserveAspect = true;
+            RectTransform iconRect = _briefingRowIcons[i].rectTransform;
+            iconRect.anchorMin = new Vector2(0f, 0.5f);
+            iconRect.anchorMax = new Vector2(0f, 0.5f);
+            iconRect.pivot = new Vector2(0f, 0.5f);
+            iconRect.sizeDelta = new Vector2(40f, 40f);
+            iconRect.anchoredPosition = new Vector2(16f, 0f);
+
+            _briefingRowLabels[i] = MakeText("Label", row.transform, "",
+                EchoRunUITheme.TypeBody, TextAnchor.MiddleLeft);
+            _briefingRowLabels[i].color = TextMuted;
+            _briefingRowLabels[i].fontStyle = FontStyle.Bold;
+            PlaceMiddleLeft(_briefingRowLabels[i].rectTransform,
+                72f, 0f, 160f, 32f);
+
+            _briefingRowValues[i] = MakeText("Value", row.transform, "",
+                EchoRunUITheme.TypeBody, TextAnchor.MiddleLeft);
+            _briefingRowValues[i].color = TextPrimary;
+            _briefingRowValues[i].resizeTextForBestFit = true;
+            _briefingRowValues[i].resizeTextMinSize = 16;
+            _briefingRowValues[i].resizeTextMaxSize = EchoRunUITheme.TypeBody;
+            PlaceMiddleLeft(_briefingRowValues[i].rectTransform,
+                240f, 0f, 560f, 36f);
+
+            _briefingRows[i] = row;
+        }
+
+        _briefingFootnote = MakeText("Footnote", card.transform, "",
+            EchoRunUITheme.TypeCaption, TextAnchor.MiddleLeft);
+        _briefingFootnote.color = TextMuted;
+        PlaceTopLeft(_briefingFootnote.rectTransform, 48f, -462f, 824f, 26f);
+
+        _briefingStartBtn = MakeButton("BriefingStart", card.transform, "开跑",
+            EchoRunUITheme.TypeHud, new Vector2(0.5f, 0f),
+            new Vector2(360f, 74f), Primary, Primary, Ink);
+        RectTransform startRect = _briefingStartBtn.GetComponent<RectTransform>();
+        startRect.pivot = new Vector2(0.5f, 0f);
+        startRect.anchoredPosition = new Vector2(0f, 34f);
+        _briefingStartBtn.onClick.AddListener(() =>
+        {
+            _briefingPanel.SetActive(false);
+            _gm.StartGame();
+        });
+
+        _briefingBackBtn = MakeButton("BriefingBack", card.transform, "返回",
+            EchoRunUITheme.TypeBody, new Vector2(0f, 0f),
+            new Vector2(170f, 60f), WithAlpha(SurfaceRaised, 0.96f), TextMuted);
+        RectTransform backRect = _briefingBackBtn.GetComponent<RectTransform>();
+        backRect.pivot = new Vector2(0f, 0f);
+        backRect.anchoredPosition = new Vector2(36f, 34f);
+        _briefingBackBtn.onClick.AddListener(() =>
+        {
+            _briefingPanel.SetActive(false);
+            SelectForNavigation(_startBtn);
+        });
+
+        _briefingPanel.SetActive(false);
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  Duel Phase Banner (HUD overlay)
+    // ═══════════════════════════════════════════════════
+
+    void CreatePhaseBanner()
+    {
+        GameObject root = new GameObject("PhaseBanner", typeof(RectTransform),
+            typeof(CanvasGroup));
+        root.transform.SetParent(
+            _safeAreaRoot != null ? _safeAreaRoot : transform, false);
+        _phaseBannerRoot = root.GetComponent<RectTransform>();
+        _phaseBannerRoot.anchorMin = new Vector2(0.5f, 0.62f);
+        _phaseBannerRoot.anchorMax = new Vector2(0.5f, 0.62f);
+        _phaseBannerRoot.sizeDelta = new Vector2(920f, 150f);
+        _phaseBannerRoot.anchoredPosition = Vector2.zero;
+        _phaseBannerGroup = root.GetComponent<CanvasGroup>();
+        _phaseBannerGroup.alpha = 0f;
+        _phaseBannerGroup.interactable = false;
+        _phaseBannerGroup.blocksRaycasts = false;
+
+        _phaseBannerTitle = MakeText("BannerTitle", root.transform, "",
+            EchoRunUITheme.TypeDisplay, TextAnchor.MiddleCenter);
+        _phaseBannerTitle.fontStyle = FontStyle.Bold;
+        AddOutline(_phaseBannerTitle.gameObject, WithAlpha(Ink, 0.85f));
+        PlaceTopLeft(_phaseBannerTitle.rectTransform, 0f, 0f, 920f, 62f);
+
+        _phaseBannerSubtitle = MakeText("BannerSubtitle", root.transform, "",
+            EchoRunUITheme.TypeHud, TextAnchor.MiddleCenter);
+        _phaseBannerSubtitle.color = TextPrimary;
+        AddOutline(_phaseBannerSubtitle.gameObject, WithAlpha(Ink, 0.7f));
+        PlaceTopLeft(_phaseBannerSubtitle.rectTransform, 0f, 68f, 920f, 34f);
+
+        GameObject rule = new GameObject("AccentRule", typeof(Image));
+        rule.transform.SetParent(root.transform, false);
+        _phaseBannerRule = rule.GetComponent<Image>();
+        _phaseBannerRule.raycastTarget = false;
+        ApplyRounded(_phaseBannerRule);
+        RectTransform ruleRect = _phaseBannerRule.rectTransform;
+        ruleRect.anchorMin = new Vector2(0.5f, 0f);
+        ruleRect.anchorMax = new Vector2(0.5f, 0f);
+        ruleRect.pivot = new Vector2(0.5f, 0f);
+        ruleRect.sizeDelta = new Vector2(140f, 6f);
+        ruleRect.anchoredPosition = new Vector2(0f, 18f);
+    }
+
+    void ShowPhaseBanner(EchoPhaseBannerData data)
+    {
+        if (data == null || _phaseBannerGroup == null) return;
+        if (_gm == null || _gm.State != GameState.Playing) return;
+        _phaseBannerTitle.text = data.title;
+        _phaseBannerTitle.color = data.accent;
+        _phaseBannerSubtitle.text = data.subtitle;
+        _phaseBannerRule.color = data.accent;
+        _phaseBannerTimer = PhaseBannerDuration;
+        _phaseBannerGroup.alpha = EchoRunAccessibility.ReducedMotion ? 1f : 0f;
+    }
+
+    static void PlaceTopLeft(RectTransform rect, float x, float y,
+        float width, float height)
+    {
+        rect.anchorMin = new Vector2(0f, 1f);
+        rect.anchorMax = new Vector2(0f, 1f);
+        rect.pivot = new Vector2(0f, 1f);
+        rect.sizeDelta = new Vector2(width, height);
+        rect.anchoredPosition = new Vector2(x, y);
+    }
+
+    static void PlaceMiddleLeft(RectTransform rect, float x, float y,
+        float width, float height)
+    {
+        rect.anchorMin = new Vector2(0f, 0.5f);
+        rect.anchorMax = new Vector2(0f, 0.5f);
+        rect.pivot = new Vector2(0f, 0.5f);
+        rect.sizeDelta = new Vector2(width, height);
+        rect.anchoredPosition = new Vector2(x, y);
     }
 
     // ═══════════════════════════════════════════════════
@@ -1118,6 +1445,7 @@ public class UIManager : MonoBehaviour
         if (_hudPanel != null) _hudPanel.SetActive(false);
         if (_pausePanel != null) _pausePanel.SetActive(false);
         if (_gameOverPanel != null) _gameOverPanel.SetActive(false);
+        if (_briefingPanel != null) _briefingPanel.SetActive(false);
 
         switch (state)
         {
@@ -1136,6 +1464,9 @@ public class UIManager : MonoBehaviour
                 if (_hudPanel != null) _hudPanel.SetActive(true);
                 SelectForNavigation(null);
                 _lastDuelFeedbackSequence = -1;
+                _lastBannerPhase = EchoDuelPhase.None;
+                _phaseBannerTimer = 0f;
+                if (_phaseBannerGroup != null) _phaseBannerGroup.alpha = 0f;
                 _nextDuelRefresh = 0f;
                 RefreshDuelHud();
                 ShowControlHintIfNeeded();
@@ -1195,6 +1526,7 @@ public class UIManager : MonoBehaviour
                                                    + "\n金币 " + _gm.Coins
                                                    + "  ·  历史最高 " + _gm.HighScore;
                 }
+                PopulateTrainingReport();
                 ScheduleTextRefresh(_gameOverPanel != null
                     ? _gameOverPanel.transform : null);
                 break;
@@ -1324,7 +1656,74 @@ public class UIManager : MonoBehaviour
     void StartGameFromHome()
     {
         if (_gm == null || (_menuRouter != null && !_menuRouter.IsHome)) return;
+        if (_briefingPanel != null && _briefingPanel.activeSelf) return;
+
+        AIShadowRunner shadow = AIShadowRunner.Instance;
+        int generation = shadow != null ? shadow.Generation : 0;
+        if (_briefingPanel != null
+            && EchoRunPresentation.ShouldShowContractBriefing(
+                generation, EchoDemoMode.AutoStartRequested))
+        {
+            PopulateBriefing(generation, shadow);
+            _briefingPanel.SetActive(true);
+            SelectForNavigation(_briefingStartBtn);
+            RefreshTextGeometry(_briefingPanel.transform);
+            return;
+        }
         _gm.StartGame();
+    }
+
+    void PopulateBriefing(int generation, AIShadowRunner shadow)
+    {
+        EchoBriefingViewData data = EchoRunPresentation.BuildBriefing(
+            generation, StyleTracker.GetSnapshot(),
+            shadow != null ? shadow.ContractPreview : null,
+            shadow != null ? shadow.EchoClarity : 1f,
+            shadow != null ? shadow.minimumJumpSamples : 2,
+            shadow != null ? shadow.minimumSlideSamples : 2);
+
+        if (_briefingTitle != null) _briefingTitle.text = data.title;
+        if (_briefingSubtitle != null) _briefingSubtitle.text = data.subtitle;
+        if (_briefingFootnote != null) _briefingFootnote.text = data.footnote;
+        SetButtonLabel(_briefingStartBtn, data.primaryAction);
+
+        int rowCount = data.rows != null ? data.rows.Length : 0;
+        for (int i = 0; i < _briefingRows.Length; i++)
+        {
+            bool active = i < rowCount;
+            if (_briefingRows[i] != null) _briefingRows[i].SetActive(active);
+            if (!active) continue;
+            EchoBriefingRow row = data.rows[i];
+            Sprite icon = EchoIconSet.Get(row.icon);
+            _briefingRowIcons[i].sprite = icon;
+            _briefingRowIcons[i].enabled = icon != null;
+            _briefingRowLabels[i].text = row.label;
+            _briefingRowValues[i].text = row.value;
+        }
+    }
+
+    void PopulateTrainingReport()
+    {
+        if (_reportGrid == null) return;
+        AIRunTelemetryData telemetry = AIRunTelemetry.FromJson(
+            EchoRunSaveSystem.GetLastRunTelemetryJson());
+        AITrainingReport report = AITrainingReportBuilder.FromTelemetry(telemetry);
+        EchoReportRow[] rows = EchoRunPresentation.BuildTrainingReportRows(report);
+
+        bool active = rows.Length > 0;
+        _reportGrid.SetActive(active);
+        if (!active) return;
+        for (int i = 0; i < _reportCells.Length; i++)
+        {
+            bool has = i < rows.Length;
+            _reportCells[i].SetActive(has);
+            if (!has) continue;
+            Sprite icon = EchoIconSet.Get(rows[i].icon);
+            _reportIcons[i].sprite = icon;
+            _reportIcons[i].enabled = icon != null;
+            _reportLabels[i].text = rows[i].label;
+            _reportValues[i].text = rows[i].value;
+        }
     }
 
     public static bool ShouldShowLandscapeGuard(
@@ -1488,6 +1887,61 @@ public class UIManager : MonoBehaviour
             new Vector2(portrait ? 0.78f : 0.62f, 0.12f),
             TouchButtonSize(portrait ? new Vector2(260f, 104f)
                 : new Vector2(180f, 56f), largeTargets, portrait));
+
+        if (_briefingCard != null)
+            _briefingCard.sizeDelta = portrait
+                ? new Vector2(760f, 700f)
+                : new Vector2(920f, 640f);
+        if (_phaseBannerRoot != null)
+            _phaseBannerRoot.sizeDelta = portrait
+                ? new Vector2(820f, 170f)
+                : new Vector2(920f, 150f);
+        LayoutReportGrid(portrait);
+    }
+
+    void LayoutReportGrid(bool portrait)
+    {
+        if (_reportGrid == null) return;
+        RectTransform gridRect = _reportGrid.GetComponent<RectTransform>();
+        int columns = portrait ? 2 : 3;
+        // Landscape keeps the roomy two-line cells; compact portrait packs
+        // label and value onto one line and drops the icons to fit the
+        // narrow result stack.
+        gridRect.sizeDelta = portrait
+            ? new Vector2(736f, 150f)
+            : new Vector2(1120f, 116f);
+        gridRect.anchoredPosition = new Vector2(0f, portrait ? -216f : -240f);
+        for (int i = 0; i < _reportCells.Length; i++)
+        {
+            if (_reportCells[i] == null) continue;
+            RectTransform cellRect =
+                _reportCells[i].GetComponent<RectTransform>();
+            int col = i % columns;
+            int row = i / columns;
+            cellRect.sizeDelta = portrait
+                ? new Vector2(360f, 44f)
+                : new Vector2(360f, 54f);
+            cellRect.anchoredPosition = new Vector2(col * 376f,
+                -row * (portrait ? 48f : 62f));
+            if (_reportIcons[i] != null)
+                _reportIcons[i].gameObject.SetActive(!portrait);
+            if (_reportLabels[i] != null)
+            {
+                RectTransform labelRect = _reportLabels[i].rectTransform;
+                if (portrait)
+                    PlaceMiddleLeft(labelRect, 14f, 0f, 104f, 24f);
+                else
+                    PlaceTopLeft(labelRect, 56f, -5f, 296f, 20f);
+            }
+            if (_reportValues[i] != null)
+            {
+                RectTransform valueRect = _reportValues[i].rectTransform;
+                if (portrait)
+                    PlaceMiddleLeft(valueRect, 122f, 0f, 230f, 26f);
+                else
+                    PlaceTopLeft(valueRect, 56f, -25f, 296f, 26f);
+            }
+        }
     }
 
     static void RefreshTextGeometry(Transform root)
