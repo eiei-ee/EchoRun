@@ -258,6 +258,25 @@ public static class EchoRunPresentation
                + " · " + EchoContractPolicy.ActionName(action);
     }
 
+    public static string BuildChoiceGroupChallenge(EchoChoiceGroup group)
+    {
+        if (group == null || group.options == null
+            || group.options.Length == 0)
+            return "";
+        bool hasJump = false;
+        bool hasSlide = false;
+        for (int i = 0; i < group.options.Length; i++)
+        {
+            hasJump |= group.options[i].obstacleType == ObstacleType.High;
+            hasSlide |= group.options[i].obstacleType == ObstacleType.Low;
+        }
+        string choices = hasJump && hasSlide
+            ? "跳跃 / 滑铲 / 改道"
+            : hasJump ? "跳跃 / 改道"
+                : hasSlide ? "滑铲 / 改道" : "改道";
+        return "下一选择：" + choices;
+    }
+
     private static string BuildPhaseInstruction(EchoDuelPhase phase,
         EchoContractData contract, string publicChallenge,
         string publicEvidence)

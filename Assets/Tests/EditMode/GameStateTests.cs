@@ -2639,7 +2639,8 @@ public class GameStateTests
         manager.obstaclePrefabs = new[] { low, high, barrier };
 
         Assert.IsTrue((bool)InvokePrivate(
-            manager, "SpawnObstacleAt", segment, 0, 5f, 0));
+            manager, "SpawnObstacleAt", segment, 0, 5f, 0,
+            1, 5f, 0, 0));
         Assert.AreEqual(1, segment.transform.childCount);
         Assert.AreEqual(-manager.laneDistance,
             segment.transform.GetChild(0).position.x, 0.0001f,

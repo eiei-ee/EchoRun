@@ -21,7 +21,8 @@ public class TrackManager : MonoBehaviour
     public GameObject turnLeftPrefab;
     public GameObject turnRightPrefab;
     [Range(0, 1)] public float turnChance = 0.15f;
-    public int minStraightBeforeTurn = 4;
+    public int minStraightBeforeTurn = 6;
+    public int maxStraightBeforeTurn = 12;
 
     [Header("Lanes")]
     public float laneDistance = 3f;
@@ -88,6 +89,8 @@ public class TrackManager : MonoBehaviour
 
     public TrackSegmentData CurrentTurnSegment { get; private set; }
     public int ActiveSegmentCount => _activeSegments.Count;
+    public int PlannedTurnCount { get; private set; }
+    public int MaximumPlannedStraightRun { get; private set; }
     public Vector3 ForwardDirection =>
         Quaternion.Euler(0, _spawnAngle, 0) * Vector3.forward;
 
@@ -330,6 +333,68 @@ public class TrackManager : MonoBehaviour
         return false;
     }
 
+    public bool TryGetUpcomingChoiceGroup(Vector3 position, Vector3 forward,
+        out EchoChoiceGroup group)
+    {
+        group = null;
+        Vector3 direction = forward.sqrMagnitude > 0.001f
+            ? forward.normalized : Vector3.forward;
+        int nearestGroupId = 0;
+        float nearestDistance = float.MaxValue;
+        for (int i = 0; i < _dynamicObjects.Count; i++)
+        {
+            GameObject instance = _dynamicObjects[i].instance;
+            if (instance == null || !instance.activeInHierarchy) continue;
+            Obstacle obstacle = instance.GetComponent<Obstacle>();
+            if (obstacle == null || obstacle.choiceGroupId == 0) continue;
+            float distance = Vector3.Dot(
+                instance.transform.position - position, direction);
+            if (distance <= 0.5f || distance > 40f
+                || distance >= nearestDistance)
+                continue;
+            nearestDistance = distance;
+            nearestGroupId = obstacle.choiceGroupId;
+        }
+        if (nearestGroupId == 0) return false;
+
+        var options = new List<ObstacleOpportunity>(2);
+        int phaseSequence = 0;
+        int planVersion = 0;
+        float routeDistance = 0f;
+        for (int i = 0; i < _dynamicObjects.Count; i++)
+        {
+            GameObject instance = _dynamicObjects[i].instance;
+            if (instance == null || !instance.activeInHierarchy) continue;
+            Obstacle obstacle = instance.GetComponent<Obstacle>();
+            if (obstacle == null
+                || obstacle.choiceGroupId != nearestGroupId)
+                continue;
+            phaseSequence = obstacle.phaseSequence;
+            planVersion = obstacle.planVersion;
+            routeDistance = obstacle.routeDistance;
+            options.Add(new ObstacleOpportunity
+            {
+                opportunityId = obstacle.opportunityId,
+                groupId = obstacle.choiceGroupId,
+                phaseSequence = obstacle.phaseSequence,
+                planVersion = obstacle.planVersion,
+                lane = obstacle.lane,
+                obstacleType = obstacle.type,
+                routeDistance = obstacle.routeDistance
+            });
+        }
+        group = new EchoChoiceGroup
+        {
+            groupId = nearestGroupId,
+            phaseSequence = phaseSequence,
+            planVersion = planVersion,
+            rowId = nearestGroupId,
+            routeDistance = routeDistance,
+            options = options.ToArray()
+        };
+        return options.Count > 0;
+    }
+
     public void GetTrackPoseAhead(Vector3 playerPosition, Vector3 playerForward,
         int playerLane, float targetLane, float distanceAhead,
         out Vector3 trackPosition, out Vector3 trackForward)
@@ -465,7 +530,9 @@ public class TrackManager : MonoBehaviour
             : 0f;
         bool isFinishSegment = courseDistance > _plannedDistance
                                && courseDistance <= _plannedDistance + segmentLength;
-        bool shouldTurn = canTurn && plan.shouldTurn && !isFinishSegment;
+        bool shouldTurn = ShouldTurn(canTurn, plan.shouldTurn,
+            isFinishSegment, _straightSegmentsSinceLastTurn,
+            minStraightBeforeTurn, maxStraightBeforeTurn);
 
         GameObject prefab;
         TrackSegmentType segType;
@@ -499,6 +566,8 @@ public class TrackManager : MonoBehaviour
         if (data == null) data = segment.AddComponent<TrackSegmentData>();
         data.segmentType = segType;
         data.routeDistance = _plannedDistance;
+        data.spawnOrigin = _spawnPosition;
+        data.spawnAngle = _spawnAngle;
 
         _activeSegments.Add(segment);
 
@@ -509,6 +578,8 @@ public class TrackManager : MonoBehaviour
                 SpawnObstaclesAndCoins(segment, segType, plan);
             _spawnPosition += ForwardDirection * segmentLength;
             _straightSegmentsSinceLastTurn++;
+            MaximumPlannedStraightRun = Mathf.Max(MaximumPlannedStraightRun,
+                _straightSegmentsSinceLastTurn);
         }
         else
         {
@@ -534,6 +605,7 @@ public class TrackManager : MonoBehaviour
             data.exitDirection = ForwardDirection;
             data.turnPointWorld = cornerPos;
             _straightSegmentsSinceLastTurn = 0;
+            PlannedTurnCount++;
 
             // Cache the newly spawned turn for fast lookup
             CurrentTurnSegment = data;
@@ -774,8 +846,9 @@ public class TrackManager : MonoBehaviour
             ? playerController.jumpHeight
             : 3f;
         bool prefabsReady = obstaclePrefabs != null && obstaclePrefabs.Length >= 3;
-        bool guaranteedContractRow = RequiresGuaranteedContractRow(
-            plan.echoContractType);
+        bool guaranteedContractRow = plan.echoChoiceGroup
+                                     || RequiresGuaranteedContractRow(
+                                         plan.echoContractType);
         bool shouldSpawnObstacles = prefabsReady
             && (guaranteedContractRow
                 ? _straightSegmentsSpawned > warmupSegments
@@ -964,7 +1037,8 @@ public class TrackManager : MonoBehaviour
        if (obstaclePrefabs == null || obstaclePrefabs.Length < 3) return 0;
 
        // How many lanes to block (1 or 2, never 3)
-        int blocked = difficulty > 0.5f ? 2 : 1;
+        int blocked = plan.echoChoiceGroup
+            ? 2 : difficulty > 0.5f ? 2 : 1;
         blocked = Mathf.Clamp(blocked, 1, Mathf.Clamp(maxBlockedLanes, 1, 2));
         int[] lanes = SelectContractBlockedLanes(
             safeLane, blocked, _laneObstacleDrought,
@@ -982,11 +1056,13 @@ public class TrackManager : MonoBehaviour
             // Full-height barriers were visually ambiguous and could create
             // jump sequences with no recoverable timing window. Lane changes
             // remain meaningful because every row still preserves a safe lane.
-            int type = SelectContractObstaclePrefabIndex(
-                plan.echoContractType, plan.echoTargetAction,
-                plan.echoContractType == EchoContractType.DisruptRhythm
-                    ? _rhythmContractRowsSpawned : _straightSegmentsSpawned,
-                difficulty, AIRunRandom.Value);
+            int type = plan.echoChoiceGroup
+                ? SelectChoiceObstaclePrefabIndex(plan.echoRowId, i)
+                : SelectContractObstaclePrefabIndex(
+                    plan.echoContractType, plan.echoTargetAction,
+                    plan.echoContractType == EchoContractType.DisruptRhythm
+                        ? _rhythmContractRowsSpawned : _straightSegmentsSpawned,
+                    difficulty, AIRunRandom.Value);
 
             float obstacleZ = obsZ + AIRunRandom.Range(-0.8f, 0.8f);
             Obstacle obstacleData = obstaclePrefabs[type].GetComponent<Obstacle>();
@@ -1003,7 +1079,8 @@ public class TrackManager : MonoBehaviour
             }
 
             if (SpawnObstacleAt(segment, lane, obstacleZ, type,
-                    choiceGroupId, groupRouteDistance))
+                    choiceGroupId, groupRouteDistance,
+                    plan.echoPhaseSequence, plan.echoPlanVersion))
             {
                 _laneObstacleDrought[lane] = 0;
                 spawnedObstacles.Add(new SpawnedObstacleInfo
@@ -1019,7 +1096,8 @@ public class TrackManager : MonoBehaviour
     }
 
     bool SpawnObstacleAt(GameObject segment, int lane, float z, int prefabIndex,
-        int choiceGroupId, float routeDistance)
+        int choiceGroupId, float routeDistance, int phaseSequence,
+        int planVersion)
     {
         if (obstaclePrefabs == null || prefabIndex < 0
             || prefabIndex >= obstaclePrefabs.Length || obstaclePrefabs[prefabIndex] == null)
@@ -1035,8 +1113,99 @@ public class TrackManager : MonoBehaviour
             ? instance.GetComponent<Obstacle>() : null;
         if (obstacle != null)
             obstacle.ConfigureOpportunity(_nextOpportunityId++, choiceGroupId,
-                0, 0, lane, routeDistance);
+                phaseSequence, planVersion, lane, routeDistance);
         return true;
+    }
+
+    public void ReplanFutureDuelRows(int phaseSequence,
+        float playerRouteDistance, float currentSpeed)
+    {
+        float lockDistance = Mathf.Max(30f, Mathf.Max(1f, currentSpeed) * 1.5f);
+        float cutoff = Mathf.Max(0f, playerRouteDistance) + lockDistance;
+        int firstIndex = -1;
+        for (int i = 0; i < _activeSegments.Count; i++)
+        {
+            TrackSegmentData data = _activeSegments[i]
+                .GetComponent<TrackSegmentData>();
+            if (data != null && data.routeDistance >= cutoff)
+            {
+                firstIndex = i;
+                break;
+            }
+        }
+        if (firstIndex < 0) return;
+
+        TrackSegmentData first = _activeSegments[firstIndex]
+            .GetComponent<TrackSegmentData>();
+        float replanDistance = first.routeDistance;
+        Vector3 replanOrigin = first.spawnOrigin;
+        float replanAngle = first.spawnAngle;
+        int removedStraights = 0;
+
+        for (int i = _activeSegments.Count - 1; i >= firstIndex; i--)
+        {
+            GameObject segment = _activeSegments[i];
+            for (int dynamicIndex = _dynamicObjects.Count - 1;
+                 dynamicIndex >= 0; dynamicIndex--)
+            {
+                DynamicEntry entry = _dynamicObjects[dynamicIndex];
+                if (entry.ownerSegment != segment) continue;
+                ReturnDynamicToPool(entry);
+                _dynamicObjects.RemoveAt(dynamicIndex);
+            }
+
+            TrackSegmentData data = segment.GetComponent<TrackSegmentData>();
+            if (data == null || data.segmentType == TrackSegmentType.Straight)
+            {
+                removedStraights++;
+                _straightPool.Enqueue(segment);
+            }
+            else if (data.segmentType == TrackSegmentType.TurnLeft)
+                _turnLeftPool.Enqueue(segment);
+            else
+                _turnRightPool.Enqueue(segment);
+            segment.SetActive(false);
+            _activeSegments.RemoveAt(i);
+        }
+
+        _spawnPosition = replanOrigin;
+        _spawnAngle = replanAngle;
+        _plannedDistance = replanDistance;
+        _straightSegmentsSpawned = Mathf.Max(0,
+            _straightSegmentsSpawned - removedStraights);
+        _rhythmContractRowsSpawned = 0;
+        _obstacleFreeSegments = 0;
+        _lastObstacleRouteDistance = float.NegativeInfinity;
+        for (int lane = 0; lane < _laneObstacleDrought.Length; lane++)
+            _laneObstacleDrought[lane] = 0;
+        RecalculateTopologyCounters();
+        _aiDirector?.InvalidatePlansAfter(replanDistance);
+        AIRunTelemetry.RecordEvent("echo_track_replan", phaseSequence, -1,
+            replanDistance, lockDistance);
+    }
+
+    private void RecalculateTopologyCounters()
+    {
+        PlannedTurnCount = 0;
+        MaximumPlannedStraightRun = 0;
+        int straightRun = 0;
+        for (int i = 0; i < _activeSegments.Count; i++)
+        {
+            TrackSegmentData data = _activeSegments[i]
+                .GetComponent<TrackSegmentData>();
+            if (data == null || data.segmentType == TrackSegmentType.Straight)
+            {
+                straightRun++;
+                MaximumPlannedStraightRun = Mathf.Max(
+                    MaximumPlannedStraightRun, straightRun);
+            }
+            else
+            {
+                PlannedTurnCount++;
+                straightRun = 0;
+            }
+        }
+        _straightSegmentsSinceLastTurn = straightRun;
     }
 
     public static bool ShouldSpawnObstacleRow(int straightSegmentsSpawned,
@@ -1129,6 +1298,23 @@ public class TrackManager : MonoBehaviour
         if (contractType == EchoContractType.DisruptRhythm)
             return Mathf.Abs(straightSegmentIndex) % 2 == 0 ? 1 : 0;
         return TrackSpawnRules.SelectObstaclePrefabIndex(difficulty, typeRoll);
+    }
+
+    public static int SelectChoiceObstaclePrefabIndex(int rowId,
+        int optionIndex)
+    {
+        return (Mathf.Abs(rowId) + Mathf.Abs(optionIndex)) % 2 == 0 ? 1 : 0;
+    }
+
+    public static bool ShouldTurn(bool canTurn, bool plannedTurn,
+        bool isFinishSegment, int straightCount, int minimumStraights,
+        int maximumStraights)
+    {
+        if (!canTurn || isFinishSegment) return false;
+        int minimum = Mathf.Max(1, minimumStraights);
+        int maximum = Mathf.Max(minimum, maximumStraights);
+        return straightCount >= maximum
+               || (straightCount >= minimum && plannedTurn);
     }
 
    GameObject SpawnDynamic(GameObject prefab, GameObject ownerSegment,

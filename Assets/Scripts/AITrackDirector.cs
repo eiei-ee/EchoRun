@@ -25,6 +25,11 @@ public struct AITrackPlan
     public EchoContractType echoContractType;
     public int echoChallengeLane;
     public ShadowAction echoTargetAction;
+    public bool echoChoiceGroup;
+    public EchoDuelPhase echoPhase;
+    public int echoPhaseSequence;
+    public int echoRowId;
+    public int echoPlanVersion;
 }
 
 // Online linear contextual bandit. Its weights are the runtime model and are
@@ -343,6 +348,23 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         CurrentShadowDirective = ShadowAIDirective.Neutral;
     }
 
+    public void InvalidatePlansAfter(float routeDistance)
+    {
+        float cutoff = Mathf.Max(0f, routeDistance);
+        if (_activeDecision != null
+            && _activeDecision.segmentStartDistance >= cutoff)
+            _activeDecision = null;
+        var kept = new Queue<PlannedDecision>();
+        while (_plannedDecisions.Count > 0)
+        {
+            PlannedDecision decision = _plannedDecisions.Dequeue();
+            if (decision.segmentStartDistance < cutoff)
+                kept.Enqueue(decision);
+        }
+        while (kept.Count > 0)
+            _plannedDecisions.Enqueue(kept.Dequeue());
+    }
+
     public void RecordLaneChange(int lane)
     {
         _laneChanges++;
@@ -653,14 +675,24 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
 
         EchoDuelPhase phase = contract.duelPhase == EchoDuelPhase.None
             ? EchoDuelPhase.Resistance : contract.duelPhase;
+        AIShadowRunner shadow = AIShadowRunner.Instance;
+        plan.echoPhase = phase;
+        plan.echoPhaseSequence = shadow != null
+            ? shadow.DuelPhaseSequence : 0;
+        plan.echoRowId = decisionCount;
+        plan.echoPlanVersion = plan.echoPhaseSequence;
         if (phase == EchoDuelPhase.Detection
             || phase == EchoDuelPhase.Reveal)
         {
             plan.echoContractType = EchoContractType.None;
-            plan.obstacleChance = Mathf.Min(plan.obstacleChance, 0.35f);
+            plan.echoChoiceGroup = phase == EchoDuelPhase.Detection;
+            plan.obstacleChance = phase == EchoDuelPhase.Detection
+                ? 1f : Mathf.Min(plan.obstacleChance, 0.35f);
             plan.coinChance = Mathf.Max(plan.coinChance, 0.78f);
-            plan.maxBlockedLanes = 1;
-            plan.shouldTurn = false;
+            plan.maxBlockedLanes = plan.echoChoiceGroup ? 2 : 1;
+            if (plan.echoChoiceGroup)
+                plan.safeLane = Mathf.Abs(
+                    plan.echoRowId + plan.echoPhaseSequence) % 3;
             return plan;
         }
 
@@ -673,13 +705,19 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             plan.obstacleChance = Mathf.Clamp(plan.obstacleChance, 0.42f, 0.58f);
             plan.coinChance = Mathf.Max(plan.coinChance, 0.82f);
             plan.maxBlockedLanes = 1;
-            plan.shouldTurn = false;
             return plan;
         }
 
         plan.echoContractType = contract.type;
         plan.echoTargetAction = contract.targetAction;
-        plan.shouldTurn = false;
+        plan.echoChoiceGroup = phase == EchoDuelPhase.Resistance
+                               || phase == EchoDuelPhase.Counterattack;
+        if (plan.echoChoiceGroup)
+        {
+            plan.maxBlockedLanes = 2;
+            plan.safeLane = Mathf.Abs(
+                plan.echoRowId + plan.echoPhaseSequence) % 3;
+        }
         if (phase == EchoDuelPhase.Counterattack)
         {
             plan.safeLane = Mathf.Abs(decisionCount + contract.generation) % 3;

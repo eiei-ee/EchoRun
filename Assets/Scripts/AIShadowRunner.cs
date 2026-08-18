@@ -58,6 +58,8 @@ public class AIShadowRunner : MonoBehaviour
         : HasActiveOpponent ? EchoDuelPhase.Detection : EchoDuelPhase.Calibration;
     public float DuelPhaseProgress => _duelFlow != null
         ? _duelFlow.PhaseProgress01 : 0f;
+    public int DuelPhaseSequence => _duelFlow != null
+        ? _duelFlow.PhaseSequence : 0;
     public string PublicPrediction => HasActiveOpponent
         ? _duelEvidence.BuildPredictionText(
             DuelPhase == EchoDuelPhase.Counterattack ? "新预判：" : "回声预判：")
@@ -70,6 +72,11 @@ public class AIShadowRunner : MonoBehaviour
         get
         {
             EchoContractData contract = ActiveContract;
+            if (TrackManager.Instance != null && _player != null
+                && TrackManager.Instance.TryGetUpcomingChoiceGroup(
+                    _player.transform.position, _player.ForwardDirection,
+                    out EchoChoiceGroup group))
+                return EchoRunPresentation.BuildChoiceGroupChallenge(group);
             bool usesVerticalObstacle = contract != null
                 && (contract.type == EchoContractType.ChangeVerticalHabit
                     || contract.type == EchoContractType.DisruptRhythm);
@@ -229,6 +236,9 @@ public class AIShadowRunner : MonoBehaviour
                     remainingSeconds, _contractEvaluator.Contract))
             {
                 _contractEvaluator.SetPhase(_duelFlow.Phase);
+                TrackManager.Instance?.ReplanFutureDuelRows(
+                    _duelFlow.PhaseSequence, _gameManager.Distance,
+                    _gameManager.CurrentSpeed);
                 AIRunTelemetry.RecordEvent("echo_duel_phase",
                     (int)_duelFlow.Phase, _player.CurrentLane,
                     _runTime, remainingSeconds);

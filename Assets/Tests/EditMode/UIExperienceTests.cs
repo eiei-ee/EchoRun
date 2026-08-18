@@ -224,6 +224,23 @@ public sealed class UIExperienceTests
     }
 
     [Test]
+    public void ChoiceGroupHudUsesTheSameJumpSlideAndRouteOptions()
+    {
+        var group = new EchoChoiceGroup
+        {
+            groupId = 7,
+            options = new[]
+            {
+                new ObstacleOpportunity { obstacleType = ObstacleType.High },
+                new ObstacleOpportunity { obstacleType = ObstacleType.Low }
+            }
+        };
+
+        Assert.AreEqual("下一选择：跳跃 / 滑铲 / 改道",
+            EchoRunPresentation.BuildChoiceGroupChallenge(group));
+    }
+
+    [Test]
     public void MenuRouterKeepsExactlyOneScreenAndHomeNavigationState()
     {
         GameObject root = new GameObject("MenuRouterTest");

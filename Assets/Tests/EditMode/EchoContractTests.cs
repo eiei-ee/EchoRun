@@ -224,6 +224,7 @@ public sealed class EchoContractTests
     {
         var plan = new AITrackPlan
         {
+            shouldTurn = true,
             safeLane = 1,
             obstacleChance = 0.2f,
             coinChance = 0.3f,
@@ -245,7 +246,9 @@ public sealed class EchoContractTests
         Assert.AreEqual(EchoContractType.ChangeVerticalHabit,
             changed.echoContractType);
         Assert.AreNotEqual(changed.safeLane, changed.echoChallengeLane);
-        Assert.IsFalse(changed.shouldTurn);
+        Assert.IsTrue(changed.shouldTurn,
+            "Contract content must not own track topology.");
+        Assert.IsTrue(changed.echoChoiceGroup);
         Assert.Contains(changed.echoChallengeLane, blocked);
         Assert.IsFalse(System.Array.Exists(blocked,
             lane => lane == changed.safeLane));
@@ -254,6 +257,58 @@ public sealed class EchoContractTests
             10, changed.difficulty, 0.9f));
         Assert.IsTrue(TrackManager.RequiresGuaranteedContractRow(
             changed.echoContractType));
+    }
+
+    [TestCase(EchoDuelPhase.Detection)]
+    [TestCase(EchoDuelPhase.Reveal)]
+    [TestCase(EchoDuelPhase.Rewrite)]
+    [TestCase(EchoDuelPhase.Resistance)]
+    [TestCase(EchoDuelPhase.Counterattack)]
+    [TestCase(EchoDuelPhase.Finale)]
+    public void ContractNeverSuppressesTopologyTurns(EchoDuelPhase phase)
+    {
+        var plan = new AITrackPlan
+        {
+            shouldTurn = true,
+            safeLane = 1,
+            obstacleChance = 0.5f,
+            coinChance = 0.5f,
+            maxBlockedLanes = 1
+        };
+        var contract = new EchoContractData
+        {
+            type = EchoContractType.ChangeVerticalHabit,
+            targetLane = 2,
+            targetAction = ShadowAction.Jump,
+            targetProgress = 3f,
+            duelPhase = phase
+        };
+
+        AITrackPlan changed = AITrackDirector.ApplyEchoContract(plan, contract, 2);
+
+        Assert.IsTrue(changed.shouldTurn,
+            phase + " must not flatten the entire run.");
+    }
+
+    [Test]
+    public void ChoiceRowsAlwaysContainJumpAndSlideOptions()
+    {
+        int first = TrackManager.SelectChoiceObstaclePrefabIndex(7, 0);
+        int second = TrackManager.SelectChoiceObstaclePrefabIndex(7, 1);
+
+        CollectionAssert.AreEquivalent(new[] { 0, 1 },
+            new[] { first, second });
+    }
+
+    [Test]
+    public void TopologyForcesTurnAfterTwelveStraights()
+    {
+        Assert.IsFalse(TrackManager.ShouldTurn(
+            true, false, false, 11, 6, 12));
+        Assert.IsTrue(TrackManager.ShouldTurn(
+            true, false, false, 12, 6, 12));
+        Assert.IsFalse(TrackManager.ShouldTurn(
+            true, true, true, 12, 6, 12));
     }
 
     [Test]
