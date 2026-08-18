@@ -1,0 +1,86 @@
+{
+  "kit": "EchoRun Environment Kit v1",
+  "pieces": [
+    {
+      "name": "Pylon_S",
+      "vertices": 654,
+      "triangles": 1276
+    },
+    {
+      "name": "Pylon_M",
+      "vertices": 654,
+      "triangles": 1276
+    },
+    {
+      "name": "Pylon_L",
+      "vertices": 654,
+      "triangles": 1276
+    },
+    {
+      "name": "PylonAccent_S",
+      "vertices": 654,
+      "triangles": 1276
+    },
+    {
+      "name": "PylonAccent_M",
+      "vertices": 654,
+      "triangles": 1276
+    },
+    {
+      "name": "PylonAccent_L",
+      "vertices": 654,
+      "triangles": 1276
+    },
+    {
+      "name": "Arch",
+      "vertices": 972,
+      "triangles": 1888
+    },
+    {
+      "name": "Halo",
+      "vertices": 668,
+      "triangles": 1312
+    },
+    {
+      "name": "HaloPylon",
+      "vertices": 290,
+      "triangles": 564
+    },
+    {
+      "name": "Totem_A",
+      "vertices": 514,
+      "triangles": 1004
+    },
+    {
+      "name": "Totem_B",
+      "vertices": 514,
+      "triangles": 1004
+    },
+    {
+      "name": "Island",
+      "vertices": 616,
+      "triangles": 1204
+    },
+    {
+      "name": "CityCard_A",
+      "vertices": 1680,
+      "triangles": 3240
+    },
+    {
+      "name": "CityCard_B",
+      "vertices": 1680,
+      "triangles": 3240
+    },
+    {
+      "name": "CityCard_C",
+      "vertices": 1456,
+      "triangles": 2808
+    }
+  ],
+  "total_vertices": 12314,
+  "total_triangles": 23920,
+  "blend": "/tmp/echowork/ArtSource/EnvironmentKit/EnvironmentKit_v1.blend",
+  "fbx_dir": "/tmp/echowork/Assets/Resources/Art/Kit",
+  "color_source": "FBX vertex colors (Color, alpha = glow mask)",
+  "preview": "/tmp/echowork/docs/ConceptArt/EnvironmentKit-v1.png"
+}

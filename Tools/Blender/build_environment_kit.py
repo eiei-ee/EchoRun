@@ -406,6 +406,15 @@ pieces.append(build_citycard("CityCard_A", ((0.0, 8.0, 14.0),), 1))
 pieces.append(build_citycard("CityCard_B", ((-2.2, 6.0, 12.0), (3.0, 4.5, 8.5)), 2))
 pieces.append(build_citycard("CityCard_C", ((0.0, 12.0, 9.0),), 3))
 
+def new_color_layer(mesh):
+    # Blender 3.2+ exposes color_attributes; older releases use the legacy
+    # vertex_colors collection. Both share the same per-loop data interface.
+    if hasattr(mesh, "color_attributes"):
+        return mesh.color_attributes.new(
+            name="Color", type="BYTE_COLOR", domain="CORNER")
+    return mesh.vertex_colors.new(name="Color")
+
+
 # Bake the shared vertex color convention into every piece: RGB from the
 # source material diffuse, alpha 1.0 on glow materials for the emissive
 # mask consumed by the EchoRun/VertexColor shader.
@@ -429,8 +438,7 @@ links.new(vertex_color.outputs["Alpha"], emission_strength.inputs[0])
 links.new(emission_strength.outputs[0], emission_strength_socket)
 
 for piece in pieces:
-    color_layer = piece.data.color_attributes.new(
-        name="Color", type="BYTE_COLOR", domain="CORNER")
+    color_layer = new_color_layer(piece.data)
     source_materials = list(piece.data.materials)
     for polygon in piece.data.polygons:
         source = source_materials[polygon.material_index]
@@ -474,14 +482,21 @@ LAYOUT = {
     "PylonAccent_S": (-4.5, 0.0), "PylonAccent_M": (-1.0, 0.0),
     "PylonAccent_L": (2.5, 0.0),
     "Arch": (-8.0, 10.0), "Halo": (5.0, 10.0), "HaloPylon": (8.5, 10.0),
-    "Totem_A": (-14.0, 20.0), "Totem_B": (-10.0, 20.0),
-    "CityCard_A": (-4.0, 20.0), "CityCard_B": (3.0, 20.0),
-    "CityCard_C": (10.0, 20.0),
-    "Island": (0.0, 34.0),
+    "Totem_A": (-14.0, 19.0), "Totem_B": (-10.0, 19.0),
+    "Island": (2.0, 22.0),
+    "CityCard_A": (-11.0, 36.0), "CityCard_B": (-1.0, 36.0),
+    "CityCard_C": (10.0, 36.0),
+}
+# Pieces face the in-game camera (Blender +Y), so the contact sheet shows
+# their backs unless rotated; turn the windowed and long pieces around.
+PREVIEW_YAW = {
+    "CityCard_A": 180.0, "CityCard_B": 180.0, "CityCard_C": 180.0,
+    "Island": 90.0,
 }
 for piece in pieces:
     x, y = LAYOUT[piece.name]
     piece.location = (x, y, 0.0)
+    piece.rotation_euler.z = math.radians(PREVIEW_YAW.get(piece.name, 0.0))
 
 # Halo reads better in the sheet when lifted to its in-game center height.
 bpy.data.objects["Halo"].location.z = 4.8
@@ -517,28 +532,14 @@ for light_name, location, energy, size in (
 camera_data = bpy.data.cameras.new("PreviewCamera")
 camera = bpy.data.objects.new("PreviewCamera", camera_data)
 bpy.context.collection.objects.link(camera)
-camera.location = (38, -26, 30)
-camera_data.lens = 52
-look_at(camera, (-1, 17, 3))
+camera.location = (44, -30, 34)
+camera_data.lens = 50
+look_at(camera, (-1, 18, 3))
 bpy.context.scene.camera = camera
 preview_objects.append(camera)
 
-scene = bpy.context.scene
-try:
-    scene.render.engine = "BLENDER_EEVEE_NEXT"
-except Exception:
-    scene.render.engine = "BLENDER_EEVEE"
-scene.render.resolution_x = 1600
-scene.render.resolution_y = 1100
-scene.render.resolution_percentage = 100
-scene.render.image_settings.file_format = "PNG"
-scene.render.filepath = PREVIEW_PATH
-try:
-    scene.view_settings.look = "AgX - Medium High Contrast"
-except Exception:
-    pass
-bpy.ops.render.render(write_still=True)
-
+# Persist the .blend source and stats before rendering so a headless GL
+# failure can never take the exported FBX files down with it.
 bpy.ops.wm.save_as_mainfile(filepath=BLEND_PATH)
 
 stats = {
@@ -568,3 +569,23 @@ with open(STATS_PATH, "w", encoding="utf-8") as handle:
 
 print("ECHO_ENVIRONMENT_KIT_BUILD_OK")
 print(json.dumps(stats, ensure_ascii=False))
+
+scene = bpy.context.scene
+try:
+    scene.render.engine = "BLENDER_EEVEE_NEXT"
+except Exception:
+    scene.render.engine = "BLENDER_EEVEE"
+scene.render.resolution_x = 1600
+scene.render.resolution_y = 1100
+scene.render.resolution_percentage = 100
+scene.render.image_settings.file_format = "PNG"
+scene.render.filepath = PREVIEW_PATH
+try:
+    scene.view_settings.look = "AgX - Medium High Contrast"
+except Exception:
+    pass
+try:
+    bpy.ops.render.render(write_still=True)
+    print("ECHO_ENVIRONMENT_KIT_PREVIEW_OK")
+except Exception as exc:
+    print("ECHO_ENVIRONMENT_KIT_PREVIEW_SKIPPED: " + str(exc))
