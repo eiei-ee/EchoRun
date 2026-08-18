@@ -160,12 +160,18 @@ public class WorldStyler : MonoBehaviour
 
     private void BuildStraightEnvironment(Transform parent, int seed)
     {
-        CreateCapsule("LeftIsland", parent, new Vector3(-11.2f, -1.28f, 0f),
-            new Vector3(3.1f, 9.7f, 0.82f), _deepStructureMaterial,
-            new Vector3(90f, 0f, 0f));
-        CreateCapsule("RightIsland", parent, new Vector3(11.2f, -1.28f, 0f),
-            new Vector3(3.1f, 9.7f, 0.82f), _deepStructureMaterial,
-            new Vector3(90f, 0f, 0f));
+        // The kit island is authored 20m long along Z, the same footprint as
+        // the fallback capsule, so identity scale fits a straight segment.
+        if (EchoEnvironmentKit.Spawn("Island", parent,
+            new Vector3(-11.2f, -1.28f, 0f)) == null)
+            CreateCapsule("LeftIsland", parent, new Vector3(-11.2f, -1.28f, 0f),
+                new Vector3(3.1f, 9.7f, 0.82f), _deepStructureMaterial,
+                new Vector3(90f, 0f, 0f));
+        if (EchoEnvironmentKit.Spawn("Island", parent,
+            new Vector3(11.2f, -1.28f, 0f)) == null)
+            CreateCapsule("RightIsland", parent, new Vector3(11.2f, -1.28f, 0f),
+                new Vector3(3.1f, 9.7f, 0.82f), _deepStructureMaterial,
+                new Vector3(90f, 0f, 0f));
 
         CreateBeam("LeftRail", parent, new Vector3(-7.35f, 0.24f, -9.7f),
             new Vector3(-7.35f, 0.24f, 9.7f), 0.09f, _cyanMaterial);
@@ -186,6 +192,24 @@ public class WorldStyler : MonoBehaviour
             BuildTransitHalos(parent);
         else
             BuildDataTotems(parent);
+
+        BuildBackdrop(parent, seed);
+    }
+
+    private void BuildBackdrop(Transform parent, int seed)
+    {
+        // Distant city silhouettes, kit-only on purpose: when the FBX pieces
+        // are absent nothing spawns and the skyline simply stays clean.
+        string[] cards = { "CityCard_A", "CityCard_B", "CityCard_C" };
+        for (int side = -1; side <= 1; side += 2)
+        {
+            int pick = Mathf.Abs(seed + (side > 0 ? 1 : 0)) % cards.Length;
+            float x = side * (26f + pick * 4f);
+            float z = -6f + ((Mathf.Abs(seed) >> 1) % 3) * 6f;
+            EchoEnvironmentKit.Spawn(cards[pick], parent,
+                new Vector3(x, -1.5f, z),
+                new Vector3(0f, side > 0 ? -8f : 8f, 0f), Vector3.one);
+        }
     }
 
     private void BuildStartDeck()
@@ -199,12 +223,27 @@ public class WorldStyler : MonoBehaviour
             new Vector3(-7.35f, 0.16f, 73f), 0.09f, _cyanMaterial);
         CreateBeam("LaunchRailR", deck.transform, new Vector3(7.35f, 0.16f, -5f),
             new Vector3(7.35f, 0.16f, 73f), 0.09f, _goldMaterial);
-        CreateCapsule("LaunchIslandL", deck.transform, new Vector3(-12f, -1.25f, 34f),
-            new Vector3(3.5f, 38f, 0.82f), _deepStructureMaterial,
-            new Vector3(90f, 0f, 0f));
-        CreateCapsule("LaunchIslandR", deck.transform, new Vector3(12f, -1.25f, 34f),
-            new Vector3(3.5f, 38f, 0.82f), _deepStructureMaterial,
-            new Vector3(90f, 0f, 0f));
+        // Deck islands reuse the 20m kit island stretched along Z to 76m.
+        Vector3 deckIslandScale = new Vector3(1.15f, 1f, 3.8f);
+        if (EchoEnvironmentKit.Spawn("Island", deck.transform,
+            new Vector3(-12f, -1.25f, 34f), Vector3.zero, deckIslandScale) == null)
+            CreateCapsule("LaunchIslandL", deck.transform, new Vector3(-12f, -1.25f, 34f),
+                new Vector3(3.5f, 38f, 0.82f), _deepStructureMaterial,
+                new Vector3(90f, 0f, 0f));
+        if (EchoEnvironmentKit.Spawn("Island", deck.transform,
+            new Vector3(12f, -1.25f, 34f), Vector3.zero, deckIslandScale) == null)
+            CreateCapsule("LaunchIslandR", deck.transform, new Vector3(12f, -1.25f, 34f),
+                new Vector3(3.5f, 38f, 0.82f), _deepStructureMaterial,
+                new Vector3(90f, 0f, 0f));
+
+        // The menu camera faces this deck, so the backdrop cards here carry
+        // the first impression; they silently no-op without the kit.
+        EchoEnvironmentKit.Spawn("CityCard_B", deck.transform,
+            new Vector3(-24f, -1.5f, 55f), new Vector3(0f, 10f, 0f),
+            Vector3.one * 1.3f);
+        EchoEnvironmentKit.Spawn("CityCard_C", deck.transform,
+            new Vector3(26f, -1.5f, 70f), new Vector3(0f, -12f, 0f),
+            Vector3.one * 1.5f);
 
         BuildSignalArch(deck.transform, 22f);
         for (int side = -1; side <= 1; side += 2)
@@ -218,10 +257,13 @@ public class WorldStyler : MonoBehaviour
     private void BuildTurnEnvironment(Transform parent, TrackSegmentType segmentType)
     {
         int direction = segmentType == TrackSegmentType.TurnRight ? 1 : -1;
-        CreateCapsule("CornerIsland", parent,
+        if (EchoEnvironmentKit.Spawn("Island", parent,
             new Vector3(-direction * 10.5f, -1.25f, 10f),
-            new Vector3(3f, 9.5f, 0.86f), _deepStructureMaterial,
-            new Vector3(90f, 0f, 0f));
+            Vector3.zero, new Vector3(1f, 1f, 0.95f)) == null)
+            CreateCapsule("CornerIsland", parent,
+                new Vector3(-direction * 10.5f, -1.25f, 10f),
+                new Vector3(3f, 9.5f, 0.86f), _deepStructureMaterial,
+                new Vector3(90f, 0f, 0f));
         BuildPylonAt(parent, -direction * 7.8f, 10f, 5.4f, true);
         CreateBeam("TurnEntryRail", parent,
             new Vector3(-direction * 7.35f, 0.22f, 0.25f),
@@ -241,6 +283,16 @@ public class WorldStyler : MonoBehaviour
 
     private void BuildPylonAt(Transform parent, float x, float z, float height, bool accent)
     {
+        // Kit pieces are authored at nominal heights (S 3.5 / M 6.0 / L 9.5)
+        // and scaled uniformly so the crown proportions survive.
+        string size = height < 4.5f ? "S" : height < 7.5f ? "M" : "L";
+        float nominal = size == "S" ? 3.5f : size == "M" ? 6f : 9.5f;
+        string piece = (accent ? "PylonAccent_" : "Pylon_") + size;
+        float kitScale = height / nominal;
+        if (EchoEnvironmentKit.Spawn(piece, parent, new Vector3(x, 0f, z),
+            Vector3.zero, Vector3.one * kitScale) != null)
+            return;
+
         CreateCylinder("PylonFoot", parent, new Vector3(x, 0.12f, z),
             new Vector3(0.72f, 0.18f, 0.72f), _deepStructureMaterial);
         CreateCylinder("PylonBody", parent, new Vector3(x, height * 0.48f, z),
@@ -255,6 +307,11 @@ public class WorldStyler : MonoBehaviour
 
     private void BuildSignalArch(Transform parent, float z)
     {
+        // The kit arch is authored at halfWidth 8.4 / height 6.2 to match the
+        // segmented fallback exactly, so gameplay sight lines never change.
+        if (EchoEnvironmentKit.Spawn("Arch", parent, new Vector3(0f, 0f, z)) != null)
+            return;
+
         const float halfWidth = 8.4f;
         const float height = 6.2f;
         const int segments = 7;
@@ -280,9 +337,18 @@ public class WorldStyler : MonoBehaviour
     {
         for (int side = -1; side <= 1; side += 2)
         {
+            Vector3 center = new Vector3(side * 12.2f, 4.8f, 0.5f);
+            // Kit halo is baked centered on its local origin; the support
+            // pylon is a separate ground-rooted piece.
+            if (EchoEnvironmentKit.Spawn("Halo", parent, center) != null)
+            {
+                EchoEnvironmentKit.Spawn("HaloPylon", parent,
+                    new Vector3(center.x, 0f, center.z + 0.25f));
+                continue;
+            }
+
             GameObject halo = new GameObject("TransitHalo");
             halo.transform.SetParent(parent, false);
-            Vector3 center = new Vector3(side * 12.2f, 4.8f, 0.5f);
             const int segments = 8;
             const float radius = 2.2f;
             for (int i = 0; i < segments; i++)
@@ -311,6 +377,15 @@ public class WorldStyler : MonoBehaviour
             for (int i = 0; i < 2; i++)
             {
                 float z = -4f + i * 9f;
+                // Totem_A / Totem_B are ground-rooted at the same heights as
+                // the primitive pair (4.4 / 6.4), so swap and continue.
+                string piece = i == 0 ? "Totem_A" : "Totem_B";
+                if (EchoEnvironmentKit.Spawn(piece, parent,
+                    new Vector3(side * 13.2f, 0f, z),
+                    new Vector3(0f, side * (12f + i * 7f), 0f),
+                    Vector3.one) != null)
+                    continue;
+
                 CreateCapsule("DataTotem", parent, new Vector3(side * 13.2f, 2.2f + i, z),
                     new Vector3(1.15f, 2.2f + i, 1.15f), _structureMaterial,
                     new Vector3(0f, side * (12f + i * 7f), 0f));
