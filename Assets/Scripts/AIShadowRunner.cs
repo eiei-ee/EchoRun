@@ -58,8 +58,31 @@ public class AIShadowRunner : MonoBehaviour
         : HasActiveOpponent ? EchoDuelPhase.Detection : EchoDuelPhase.Calibration;
     public float DuelPhaseProgress => _duelFlow != null
         ? _duelFlow.PhaseProgress01 : 0f;
-    public string PublicPrediction => _contractEvaluator != null
-        ? _contractEvaluator.BuildPredictionText() : "";
+    public string PublicPrediction => HasActiveOpponent
+        ? _duelEvidence.BuildPredictionText(
+            DuelPhase == EchoDuelPhase.Counterattack ? "新预判：" : "回声预判：")
+        : "";
+    public string PublicEvidence => HasActiveOpponent
+        ? _duelEvidence.BuildEvidenceText() : "";
+    public EchoPredictionSnapshot CurrentPrediction => _duelEvidence.Prediction;
+    public string PublicChallenge
+    {
+        get
+        {
+            EchoContractData contract = ActiveContract;
+            bool usesVerticalObstacle = contract != null
+                && (contract.type == EchoContractType.ChangeVerticalHabit
+                    || contract.type == EchoContractType.DisruptRhythm);
+            if (usesVerticalObstacle && TrackManager.Instance != null
+                && _player != null
+                && TrackManager.Instance.TryGetUpcomingObstacleInLane(
+                    _player.transform.position, _player.ForwardDirection,
+                    contract.targetLane, null, out _, out ObstacleType type,
+                    out _))
+                return ResolvePublicChallenge(contract, true, type);
+            return ResolvePublicChallenge(contract, false, ObstacleType.Low);
+        }
+    }
     public EchoContractData ActiveContract =>
         _contractEvaluator != null ? _contractEvaluator.Contract : null;
     public EchoContractData ContractPreview => _activeGeneration != null
@@ -155,6 +178,7 @@ public class AIShadowRunner : MonoBehaviour
     private readonly HashSet<int> _recordedPlayerDodgeIds = new HashSet<int>();
     private readonly ObstacleOpportunityTracker _opportunityTracker =
         new ObstacleOpportunityTracker();
+    private readonly EchoDuelEvidence _duelEvidence = new EchoDuelEvidence();
 
     void Awake()
     {
@@ -339,6 +363,9 @@ public class AIShadowRunner : MonoBehaviour
         }
         else if (action == ShadowAction.Jump || action == ShadowAction.Slide)
             styleProximity = 0f;
+        if (!matchedActionObstacle
+            && (action == ShadowAction.Jump || action == ShadowAction.Slide))
+            _duelEvidence.ObserveFreeAction(action);
         if (action == ShadowAction.Jump || action == ShadowAction.Slide)
             _opportunityTracker.MarkAction(action, laneBeforeAction);
         bool airLaneChange = _player != null && _player.IsJumping
@@ -391,7 +418,9 @@ public class AIShadowRunner : MonoBehaviour
     public bool RecordDodge(ObstacleType obstacleType, int obstacleId = 0,
         int playerLane = -1)
     {
-        _opportunityTracker.ResolveContact(obstacleId, true, out _);
+        if (_opportunityTracker.ResolveContact(obstacleId, true,
+                out ObstacleOpportunityResolution opportunity))
+            ObserveDuelOpportunity(opportunity);
         if (obstacleId != 0 && !_recordedPlayerDodgeIds.Add(obstacleId))
             return false;
         _runDodges++;
@@ -410,7 +439,9 @@ public class AIShadowRunner : MonoBehaviour
 
     public void RecordObstacleHit(int obstacleId = 0)
     {
-        _opportunityTracker.ResolveContact(obstacleId, false, out _);
+        if (_opportunityTracker.ResolveContact(obstacleId, false,
+                out ObstacleOpportunityResolution opportunity))
+            ObserveDuelOpportunity(opportunity);
         if (HasActiveOpponent && _contractEvaluator != null)
         {
             _contractEvaluator.RecordHit(
@@ -538,6 +569,7 @@ public class AIShadowRunner : MonoBehaviour
         _lastStyleDecision = ShadowAction.Keep;
         LastDecisionTrace = null;
         _opportunityTracker.Reset();
+        _duelEvidence.Reset();
         _recordedPlayerDodgeIds.Clear();
         _opponentStyle = null;
         _opponentPace = 0f;
@@ -1200,6 +1232,7 @@ public class AIShadowRunner : MonoBehaviour
                 found, distance, type, obstacleId, groupId,
                 detectionDistance, out ObstacleOpportunityResolution result))
         {
+            ObserveDuelOpportunity(result);
             bool usedRequiredAction = result.response == EchoResponseKind.Jump
                                       || result.response == EchoResponseKind.Slide;
             StyleTracker.RecordObstacleOpportunity(
@@ -1214,6 +1247,15 @@ public class AIShadowRunner : MonoBehaviour
                 AudioManager.Instance?.PlayDodgeObstacle();
             }
         }
+    }
+
+    private void ObserveDuelOpportunity(ObstacleOpportunityResolution result)
+    {
+        if (!HasActiveOpponent) return;
+        _duelEvidence.Observe(result);
+        AIRunTelemetry.RecordEvent("echo_choice_resolved",
+            (int)result.response, result.lane, result.groupId,
+            result.physicallySucceeded ? 1f : 0f);
     }
 
     private string BuildDuelStatus()
@@ -1302,6 +1344,20 @@ public class AIShadowRunner : MonoBehaviour
     public static ShadowAction RequiredActionForObstacle(ObstacleType obstacleType)
     {
         return AIShadowRules.RequiredActionForObstacle(obstacleType);
+    }
+
+    public static string ResolvePublicChallenge(EchoContractData contract,
+        bool hasUpcomingObstacle, ObstacleType upcomingType)
+    {
+        if (contract == null || contract.type == EchoContractType.None)
+            return "";
+        if (hasUpcomingObstacle)
+        {
+            string upcoming = EchoRunPresentation.BuildObstacleChallenge(
+                contract.targetLane, upcomingType);
+            if (!string.IsNullOrEmpty(upcoming)) return upcoming;
+        }
+        return "破解要求：" + EchoRunPresentation.BuildContractAction(contract);
     }
 
     public static bool CanStartVerticalAction(ShadowAction action,

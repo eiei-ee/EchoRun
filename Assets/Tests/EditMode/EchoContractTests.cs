@@ -61,6 +61,63 @@ public sealed class EchoContractTests
         Assert.IsTrue(contract.exploratory);
         StringAssert.StartsWith("AI探测：", contract.learnedTrait);
         StringAssert.DoesNotContain("AI识别：", contract.learnedTrait);
+        Assert.AreEqual(ShadowAction.Keep, contract.learnedAction);
+        Assert.AreEqual(ShadowAction.Keep, contract.predictionAction);
+    }
+
+    [Test]
+    public void RunEvidenceDoesNotInventJumpWhenPlayerOnlySlides()
+    {
+        var evidence = new EchoDuelEvidence();
+        for (int i = 0; i < 3; i++)
+            evidence.Observe(Resolved(EchoResponseKind.Slide, i + 1));
+
+        EchoPredictionSnapshot prediction = evidence.Prediction;
+        Assert.AreEqual(EchoEvidenceConclusion.Slide, prediction.conclusion);
+        Assert.AreEqual(EchoResponseKind.Slide, prediction.predictedResponse);
+        StringAssert.Contains("继续滑铲", evidence.BuildPredictionText());
+    }
+
+    [Test]
+    public void RunEvidenceReportsInsufficientWhenPlayerOnlyRuns()
+    {
+        var evidence = new EchoDuelEvidence();
+        for (int i = 0; i < 6; i++)
+            evidence.Observe(Resolved(EchoResponseKind.NoAction, i + 1));
+
+        Assert.AreEqual(EchoEvidenceConclusion.Insufficient,
+            evidence.Prediction.conclusion);
+        StringAssert.Contains("证据不足", evidence.BuildPredictionText());
+    }
+
+    [Test]
+    public void RunEvidenceKeepsBalancedActionsDistinctFromInsufficient()
+    {
+        var evidence = new EchoDuelEvidence();
+        evidence.Observe(Resolved(EchoResponseKind.Jump, 1));
+        evidence.Observe(Resolved(EchoResponseKind.Slide, 2));
+        evidence.Observe(Resolved(EchoResponseKind.Jump, 3));
+        evidence.Observe(Resolved(EchoResponseKind.Slide, 4));
+
+        Assert.AreEqual(EchoEvidenceConclusion.Balanced,
+            evidence.Prediction.conclusion);
+        StringAssert.Contains("行为均衡", evidence.BuildPredictionText());
+    }
+
+    private static ObstacleOpportunityResolution Resolved(
+        EchoResponseKind response, int groupId)
+    {
+        return new ObstacleOpportunityResolution
+        {
+            opportunityId = groupId,
+            groupId = groupId,
+            lane = 1,
+            obstacleType = response == EchoResponseKind.Jump
+                ? ObstacleType.High : ObstacleType.Low,
+            response = response,
+            physicallySucceeded = response != EchoResponseKind.NoAction,
+            passedInLane = true
+        };
     }
 
     [Test]

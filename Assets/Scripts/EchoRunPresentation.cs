@@ -124,7 +124,8 @@ public static class EchoRunPresentation
         int jumpSamples = 0, int slideSamples = 0,
         float calibrationProgress01 = 0f,
         EchoDuelPhase duelPhase = EchoDuelPhase.None,
-        float phaseProgress01 = 0f, string publicPrediction = "")
+        float phaseProgress01 = 0f, string publicPrediction = "",
+        string publicChallenge = "", string publicEvidence = "")
     {
         if (!hasOpponent || contract == null
             || contract.type == EchoContractType.None)
@@ -170,7 +171,8 @@ public static class EchoRunPresentation
         return new EchoDuelViewData
         {
             phase = EchoDuelFlow.PhaseName(phase),
-            contract = BuildContractAction(contract),
+            contract = BuildPhaseInstruction(
+                phase, contract, publicChallenge, publicEvidence),
             progress = BuildProgressText(contract, phase, phaseProgress01),
             progress01 = UsesPhaseProgress(phase)
                 ? Mathf.Clamp01(phaseProgress01) : contract.Progress01,
@@ -245,6 +247,32 @@ public static class EchoRunPresentation
             default:
                 return TrimPrefix(contract.title, "回声契约：");
         }
+    }
+
+    public static string BuildObstacleChallenge(int lane, ObstacleType obstacleType)
+    {
+        ShadowAction action = AIShadowRules.RequiredActionForObstacle(obstacleType);
+        if (action != ShadowAction.Jump && action != ShadowAction.Slide)
+            return "";
+        return "破解要求：前方" + EchoContractPolicy.LaneName(lane)
+               + " · " + EchoContractPolicy.ActionName(action);
+    }
+
+    private static string BuildPhaseInstruction(EchoDuelPhase phase,
+        EchoContractData contract, string publicChallenge,
+        string publicEvidence)
+    {
+        if (phase == EchoDuelPhase.Detection)
+            return string.IsNullOrEmpty(publicEvidence)
+                ? "当前阶段：收集本局证据" : publicEvidence;
+        if (phase == EchoDuelPhase.Reveal)
+            return "上一代画像：" + TrimPrefix(
+                contract.learnedTrait, "AI识别：");
+        if (phase == EchoDuelPhase.Rewrite)
+            return "当前阶段：自由改写跑法";
+        return string.IsNullOrEmpty(publicChallenge)
+            ? "破解要求：" + BuildContractAction(contract)
+            : publicChallenge;
     }
 
     private static string BuildFeedback(string feedback)

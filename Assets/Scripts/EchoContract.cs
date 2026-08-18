@@ -191,18 +191,15 @@ public static class EchoContractPolicy
         if (rhythmScore >= 0.12f)
             return CreateRhythmContract(style, generation);
 
-        // Sparse early data still yields a playable contract. The choice is
-        // deterministic and comes from the frozen style snapshot.
-        EchoContractData exploration;
-        if (generation % 3 == 1)
-            exploration = CreateVerticalContract(style, generation);
-        else if (generation % 3 == 2)
-            exploration = CreateRhythmContract(style, generation);
-        else
-            exploration = CreateLaneContract(style, generation);
+        // Sparse data may start a duel, but it must not invent a precise habit.
+        // The current attempt's balanced probes will produce the first public
+        // prediction instead of deriving one from the generation number.
+        EchoContractData exploration = CreateVerticalContract(style, generation);
         exploration.exploratory = true;
+        exploration.learnedAction = ShadowAction.Keep;
+        exploration.predictionAction = ShadowAction.Keep;
         exploration.learnedTrait = "AI探测：有效习惯样本不足";
-        exploration.ruleDescription = "本代用于验证你的反制选择；完成目标后才会形成明确画像。";
+        exploration.ruleDescription = "本局先用平衡探针收集证据；达到阈值后才公开具体预测。";
         return exploration;
     }
 

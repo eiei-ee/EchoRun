@@ -964,7 +964,9 @@ public class UIManager : MonoBehaviour
             shadow != null ? shadow.CalibrationProgress : 0f,
             shadow != null ? shadow.DuelPhase : EchoDuelPhase.Calibration,
             shadow != null ? shadow.DuelPhaseProgress : 0f,
-            shadow != null ? shadow.PublicPrediction : "");
+            shadow != null ? shadow.PublicPrediction : "",
+            shadow != null ? shadow.PublicChallenge : "",
+            shadow != null ? shadow.PublicEvidence : "");
 
         if (_contractText != null)
             _contractText.text = view.phase + " · " + view.contract;

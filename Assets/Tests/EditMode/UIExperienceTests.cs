@@ -125,7 +125,7 @@ public sealed class UIExperienceTests
 
         EchoDuelViewData leading = EchoRunPresentation.BuildDuel(
             true, contract, 2.75f, 2, 2);
-        Assert.AreEqual("右侧路线 · 滑铲躲避", leading.contract);
+        Assert.AreEqual("破解要求：右侧路线 · 滑铲躲避", leading.contract);
         Assert.AreEqual("稳定度 67%", leading.progress);
         Assert.AreEqual(2f / 3f, leading.progress01, 0.001f);
         Assert.AreEqual(EchoLeadState.Leading, leading.leadState);
@@ -160,6 +160,8 @@ public sealed class UIExperienceTests
             publicPrediction: "回声预判：你会继续依赖右侧路线");
 
         Assert.IsEmpty(detection.prediction);
+        Assert.AreEqual("当前阶段：收集本局证据", detection.contract);
+        StringAssert.StartsWith("上一代画像：", reveal.contract);
         Assert.AreEqual("回声预判：你会继续依赖右侧路线",
             reveal.prediction);
     }
@@ -178,6 +180,47 @@ public sealed class UIExperienceTests
             true, contract, 0f, 2, 2);
 
         StringAssert.Contains("下一次：跳跃", view.contract);
+    }
+
+    [Test]
+    public void DuelHudSeparatesPredictionFromTheActualUpcomingObstacle()
+    {
+        var contract = new EchoContractData
+        {
+            type = EchoContractType.ChangeVerticalHabit,
+            targetLane = 1,
+            targetAction = ShadowAction.Slide,
+            predictionAction = ShadowAction.Slide,
+            targetProgress = 3f,
+            duelPhase = EchoDuelPhase.Counterattack
+        };
+        string actualChallenge = AIShadowRunner.ResolvePublicChallenge(
+            contract, true, ObstacleType.High);
+
+        EchoDuelViewData view = EchoRunPresentation.BuildDuel(
+            true, contract, -3f, 2, 2,
+            duelPhase: EchoDuelPhase.Counterattack,
+            publicPrediction: "新预判：你会继续使用滑铲",
+            publicChallenge: actualChallenge);
+
+        Assert.AreEqual("破解要求：前方中间路线 · 跳跃", view.contract);
+        Assert.AreEqual("新预判：你会继续使用滑铲", view.prediction);
+    }
+
+    [Test]
+    public void ActualObstacleChallengeFallsBackForNonVerticalBarriers()
+    {
+        var contract = new EchoContractData
+        {
+            type = EchoContractType.ChangeVerticalHabit,
+            targetLane = 2,
+            targetAction = ShadowAction.Jump,
+            targetProgress = 3f
+        };
+
+        Assert.AreEqual("破解要求：右侧路线 · 跳跃躲避",
+            AIShadowRunner.ResolvePublicChallenge(
+                contract, true, ObstacleType.Barrier));
     }
 
     [Test]
