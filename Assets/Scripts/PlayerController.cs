@@ -550,7 +550,8 @@ public class PlayerController : MonoBehaviour
                obs.type, false);
            StyleTracker.RecordMistake();
            AITrackDirector.Instance?.RecordObstacleHit();
-           AIShadowRunner.Instance?.RecordObstacleHit();
+           AIShadowRunner.Instance?.RecordObstacleHit(
+               TrackManager.GetObstacleTrackingId(obs.gameObject));
            AudioManager.Instance?.PlayCollision();
            if (PowerUpController.Instance != null
                && PowerUpController.Instance.TryAbsorbCollision())

@@ -100,39 +100,61 @@ public class PlayerStyleTests
     }
 
     [Test]
-    public void SlideOpportunityCountsLaneChangeAsUnusedChoice()
+    public void OpportunityCountsLaneChangeAsOneGroupChoice()
     {
-        var tracker = new SlideOpportunityTracker();
+        var tracker = new ObstacleOpportunityTracker();
 
-        Assert.IsFalse(tracker.Update(1, false, true, 5f,
-            ObstacleType.Low, 101, 7f, out _));
+        Assert.IsFalse(tracker.Update(1, false, false, true, 5f,
+            ObstacleType.Low, 101, 11, 7f, out _));
         Assert.IsTrue(tracker.HasPending);
 
-        Assert.IsTrue(tracker.Update(0, false, false, 0f,
-            ObstacleType.Low, 0, 7f, out bool usedSlide));
-        Assert.IsFalse(usedSlide);
-        Assert.AreEqual(101, tracker.LastResolvedId);
-        Assert.IsFalse(tracker.LastResolvedByPass);
+        Assert.IsTrue(tracker.Update(0, false, false, false, 0f,
+            ObstacleType.Low, 0, 0, 7f,
+            out ObstacleOpportunityResolution result));
+        Assert.AreEqual(EchoResponseKind.RouteAvoid, result.response);
+        Assert.AreEqual(101, result.opportunityId);
+        Assert.AreEqual(11, result.groupId);
+        Assert.IsFalse(result.passedInLane);
         Assert.IsFalse(tracker.HasPending);
-        Assert.IsTrue(tracker.ResolvedIds.Contains(101));
+        Assert.IsTrue(tracker.ResolvedOpportunityIds.Contains(101));
     }
 
     [Test]
-    public void SlideOpportunityPreservesSlideMadeInsideItsWindow()
+    public void OpportunityPreservesCleanSlideMadeInsideItsWindow()
     {
-        var tracker = new SlideOpportunityTracker();
-        tracker.Update(1, false, true, 5f,
-            ObstacleType.Low, 202, 7f, out _);
+        var tracker = new ObstacleOpportunityTracker();
+        tracker.Update(1, false, false, true, 5f,
+            ObstacleType.Low, 202, 22, 7f, out _);
 
-        tracker.MarkSlide(1);
-        Assert.IsTrue(tracker.Update(1, true, false, 0f,
-            ObstacleType.Low, 0, 7f, out bool usedSlide));
+        tracker.MarkAction(ShadowAction.Slide, 1);
+        Assert.IsTrue(tracker.Update(1, false, true, false, 0f,
+            ObstacleType.Low, 0, 0, 7f,
+            out ObstacleOpportunityResolution result));
 
-        Assert.IsTrue(usedSlide);
-        Assert.AreEqual(202, tracker.LastResolvedId);
-        Assert.AreEqual(1, tracker.LastResolvedLane);
-        Assert.IsTrue(tracker.LastResolvedByPass);
-        Assert.IsTrue(tracker.ResolvedIds.Contains(202));
+        Assert.AreEqual(EchoResponseKind.Slide, result.response);
+        Assert.IsTrue(result.physicallySucceeded);
+        Assert.IsTrue(result.passedInLane);
+        Assert.IsTrue(tracker.ResolvedOpportunityIds.Contains(202));
+    }
+
+    [Test]
+    public void OpportunityPreservesCleanJumpAndDoesNotResolveGroupTwice()
+    {
+        var tracker = new ObstacleOpportunityTracker();
+        tracker.Update(2, false, false, true, 4f,
+            ObstacleType.High, 301, 33, 7f, out _);
+        tracker.MarkAction(ShadowAction.Jump, 2);
+
+        Assert.IsTrue(tracker.Update(2, true, false, false, 0f,
+            ObstacleType.High, 0, 0, 7f,
+            out ObstacleOpportunityResolution result));
+        Assert.AreEqual(EchoResponseKind.Jump, result.response);
+        Assert.IsTrue(result.physicallySucceeded);
+
+        Assert.IsFalse(tracker.Update(1, false, false, true, 3f,
+            ObstacleType.Low, 302, 33, 7f, out _),
+            "Another lane in the resolved row must not become a second choice.");
+        Assert.IsFalse(tracker.HasPending);
     }
 
     [Test]

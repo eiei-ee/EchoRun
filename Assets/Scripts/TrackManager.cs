@@ -76,6 +76,8 @@ public class TrackManager : MonoBehaviour
     private float _lastObstacleRouteDistance = float.NegativeInfinity;
     private int _straightSegmentsSinceLastTurn;
     private float _plannedDistance;
+    private int _nextOpportunityId = 1;
+    private int _nextChoiceGroupId = 1;
     private Transform _player;
     private AITrackDirector _aiDirector;
     private GameObject _finishMarker;
@@ -292,10 +294,40 @@ public class TrackManager : MonoBehaviour
     public static int GetObstacleTrackingId(GameObject obstacleInstance)
     {
         if (obstacleInstance == null) return 0;
+        Obstacle obstacle = obstacleInstance.GetComponent<Obstacle>();
+        if (obstacle != null && obstacle.opportunityId != 0)
+            return obstacle.opportunityId;
         Vector3 position = obstacleInstance.transform.position;
         return obstacleInstance.GetInstanceID()
                ^ Mathf.RoundToInt(position.x * 17f)
                ^ Mathf.RoundToInt(position.z * 31f);
+    }
+
+    public bool TryGetObstacleOpportunity(int opportunityId,
+        out ObstacleOpportunity opportunity)
+    {
+        opportunity = null;
+        if (opportunityId == 0) return false;
+        for (int i = 0; i < _dynamicObjects.Count; i++)
+        {
+            GameObject instance = _dynamicObjects[i].instance;
+            if (instance == null || !instance.activeInHierarchy) continue;
+            Obstacle obstacle = instance.GetComponent<Obstacle>();
+            if (obstacle == null || obstacle.opportunityId != opportunityId)
+                continue;
+            opportunity = new ObstacleOpportunity
+            {
+                opportunityId = obstacle.opportunityId,
+                groupId = obstacle.choiceGroupId,
+                phaseSequence = obstacle.phaseSequence,
+                planVersion = obstacle.planVersion,
+                lane = obstacle.lane,
+                obstacleType = obstacle.type,
+                routeDistance = obstacle.routeDistance
+            };
+            return true;
+        }
+        return false;
     }
 
     public void GetTrackPoseAhead(Vector3 playerPosition, Vector3 playerForward,
@@ -938,6 +970,10 @@ public class TrackManager : MonoBehaviour
             safeLane, blocked, _laneObstacleDrought,
             plan.echoContractType, echoChallengeLane);
         int spawned = 0;
+        int choiceGroupId = _nextChoiceGroupId++;
+        TrackSegmentData segmentData = segment.GetComponent<TrackSegmentData>();
+        float groupRouteDistance = (segmentData != null
+            ? segmentData.routeDistance : _plannedDistance) + obsZ;
 
        for (int i = 0; i < lanes.Length; i++)
        {
@@ -966,7 +1002,8 @@ public class TrackManager : MonoBehaviour
                     TrackSpawnRules.CoinSegmentMargin);
             }
 
-            if (SpawnObstacleAt(segment, lane, obstacleZ, type))
+            if (SpawnObstacleAt(segment, lane, obstacleZ, type,
+                    choiceGroupId, groupRouteDistance))
             {
                 _laneObstacleDrought[lane] = 0;
                 spawnedObstacles.Add(new SpawnedObstacleInfo
@@ -981,7 +1018,8 @@ public class TrackManager : MonoBehaviour
        return spawned;
     }
 
-    bool SpawnObstacleAt(GameObject segment, int lane, float z, int prefabIndex)
+    bool SpawnObstacleAt(GameObject segment, int lane, float z, int prefabIndex,
+        int choiceGroupId, float routeDistance)
     {
         if (obstaclePrefabs == null || prefabIndex < 0
             || prefabIndex >= obstaclePrefabs.Length || obstaclePrefabs[prefabIndex] == null)
@@ -991,7 +1029,13 @@ public class TrackManager : MonoBehaviour
         Vector3 lp = new Vector3(x, 1f, z);
         Vector3 wp = segment.transform.TransformPoint(lp);
         Quaternion rot = segment.transform.rotation;
-        SpawnDynamic(obstaclePrefabs[prefabIndex], segment, wp, rot);
+        GameObject instance = SpawnDynamic(
+            obstaclePrefabs[prefabIndex], segment, wp, rot);
+        Obstacle obstacle = instance != null
+            ? instance.GetComponent<Obstacle>() : null;
+        if (obstacle != null)
+            obstacle.ConfigureOpportunity(_nextOpportunityId++, choiceGroupId,
+                0, 0, lane, routeDistance);
         return true;
     }
 

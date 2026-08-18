@@ -153,8 +153,8 @@ public class AIShadowRunner : MonoBehaviour
     private readonly HashSet<int> _handledGhostObstacles = new HashSet<int>();
     private readonly HashSet<int> _reactedGhostObstacles = new HashSet<int>();
     private readonly HashSet<int> _recordedPlayerDodgeIds = new HashSet<int>();
-    private readonly SlideOpportunityTracker _slideOpportunityTracker =
-        new SlideOpportunityTracker();
+    private readonly ObstacleOpportunityTracker _opportunityTracker =
+        new ObstacleOpportunityTracker();
 
     void Awake()
     {
@@ -194,7 +194,7 @@ public class AIShadowRunner : MonoBehaviour
         if (!_runStarted) BeginRun();
         if (HasActiveOpponent && _ghost == null) CreateGhost();
 
-        TrackPlayerSlideOpportunity();
+        TrackPlayerObstacleOpportunity();
 
         _runTime += Time.deltaTime;
         if (HasActiveOpponent && _contractEvaluator != null)
@@ -339,8 +339,8 @@ public class AIShadowRunner : MonoBehaviour
         }
         else if (action == ShadowAction.Jump || action == ShadowAction.Slide)
             styleProximity = 0f;
-        if (action == ShadowAction.Slide)
-            _slideOpportunityTracker.MarkSlide(laneBeforeAction);
+        if (action == ShadowAction.Jump || action == ShadowAction.Slide)
+            _opportunityTracker.MarkAction(action, laneBeforeAction);
         bool airLaneChange = _player != null && _player.IsJumping
                              && (action == ShadowAction.Left
                                  || action == ShadowAction.Right);
@@ -391,6 +391,7 @@ public class AIShadowRunner : MonoBehaviour
     public bool RecordDodge(ObstacleType obstacleType, int obstacleId = 0,
         int playerLane = -1)
     {
+        _opportunityTracker.ResolveContact(obstacleId, true, out _);
         if (obstacleId != 0 && !_recordedPlayerDodgeIds.Add(obstacleId))
             return false;
         _runDodges++;
@@ -407,9 +408,9 @@ public class AIShadowRunner : MonoBehaviour
         return true;
     }
 
-    public void RecordObstacleHit()
+    public void RecordObstacleHit(int obstacleId = 0)
     {
-        ResolvePlayerSlideOpportunity();
+        _opportunityTracker.ResolveContact(obstacleId, false, out _);
         if (HasActiveOpponent && _contractEvaluator != null)
         {
             _contractEvaluator.RecordHit(
@@ -536,7 +537,7 @@ public class AIShadowRunner : MonoBehaviour
         _lastOpponentAction = -1;
         _lastStyleDecision = ShadowAction.Keep;
         LastDecisionTrace = null;
-        _slideOpportunityTracker.Reset();
+        _opportunityTracker.Reset();
         _recordedPlayerDodgeIds.Clear();
         _opponentStyle = null;
         _opponentPace = 0f;
@@ -1176,7 +1177,7 @@ public class AIShadowRunner : MonoBehaviour
             : ShadowAIDirective.Neutral;
     }
 
-    private void TrackPlayerSlideOpportunity()
+    private void TrackPlayerObstacleOpportunity()
     {
         if (_player == null || _gameManager == null
             || TrackManager.Instance == null)
@@ -1184,33 +1185,35 @@ public class AIShadowRunner : MonoBehaviour
 
         bool found = TrackManager.Instance.TryGetUpcomingObstacleInLane(
             _player.transform.position, _player.ForwardDirection,
-            _player.CurrentLane, _slideOpportunityTracker.ResolvedIds,
+            _player.CurrentLane, _opportunityTracker.ResolvedOpportunityIds,
             out float distance, out ObstacleType type, out int obstacleId);
+        int groupId = obstacleId;
+        if (found && TrackManager.Instance.TryGetObstacleOpportunity(
+                obstacleId, out ObstacleOpportunity opportunity))
+            groupId = opportunity.groupId;
         float detectionDistance = CalculateReactionDistance(
             _gameManager.CurrentSpeed,
-            Mathf.Max(0.2f, _player.slideDuration)) * 1.25f;
-        if (_slideOpportunityTracker.Update(
-                _player.CurrentLane, _player.IsSliding, found, distance,
-                type, obstacleId, detectionDistance, out bool usedSlide))
+            Mathf.Max(0.2f, Mathf.Max(_player.jumpDuration,
+                _player.slideDuration))) * 1.25f;
+        if (_opportunityTracker.Update(
+                _player.CurrentLane, _player.IsJumping, _player.IsSliding,
+                found, distance, type, obstacleId, groupId,
+                detectionDistance, out ObstacleOpportunityResolution result))
         {
-            StyleTracker.RecordObstacleOpportunity(ObstacleType.Low, usedSlide);
-            if (_slideOpportunityTracker.LastResolvedByPass && usedSlide
-                && RecordDodge(ObstacleType.Low,
-                    _slideOpportunityTracker.LastResolvedId,
-                    _slideOpportunityTracker.LastResolvedLane))
+            bool usedRequiredAction = result.response == EchoResponseKind.Jump
+                                      || result.response == EchoResponseKind.Slide;
+            StyleTracker.RecordObstacleOpportunity(
+                result.obstacleType, usedRequiredAction);
+            if (result.passedInLane && result.physicallySucceeded
+                && RecordDodge(result.obstacleType,
+                    result.opportunityId, result.lane))
             {
                 AIPlayerSkillEstimator.RecordObstacleOutcome(
-                    ObstacleType.Low, true);
+                    result.obstacleType, true);
                 AITrackDirector.Instance?.RecordDodge();
                 AudioManager.Instance?.PlayDodgeObstacle();
             }
         }
-    }
-
-    private void ResolvePlayerSlideOpportunity()
-    {
-        if (_slideOpportunityTracker.Resolve(out bool usedSlide))
-            StyleTracker.RecordObstacleOpportunity(ObstacleType.Low, usedSlide);
     }
 
     private string BuildDuelStatus()
