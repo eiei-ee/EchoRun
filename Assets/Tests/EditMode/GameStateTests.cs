@@ -1947,6 +1947,10 @@ public class GameStateTests
         Assert.IsTrue(arch != null || kitArch != null,
             "Either the authored kit arch or its primitive fallback must build.");
 
+        if (kitArch != null)
+            Assert.GreaterOrEqual(kitArch.localScale.x, 1.34f,
+                "The non-colliding arch wings must sit outside the lane projection.");
+
         if (arch != null)
         {
             Assert.IsNull(parent.transform.Find("ArchSignal"),
@@ -1967,7 +1971,7 @@ public class GameStateTests
                 else if (part.name == "ArcNode")
                 {
                     nodeCount++;
-                    Assert.GreaterOrEqual(Mathf.Abs(part.localPosition.x), 3.4f,
+                    Assert.GreaterOrEqual(Mathf.Abs(part.localPosition.x), 4.5f,
                         "No detached arch node may float inside the open skyline.");
                 }
             }

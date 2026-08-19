@@ -307,15 +307,18 @@ public class WorldStyler : MonoBehaviour
 
     private void BuildSignalArch(Transform parent, float z)
     {
-        // The kit arch is authored at halfWidth 8.4 / height 6.2 to match the
-        // segmented fallback exactly, so gameplay sight lines never change.
-        if (EchoEnvironmentKit.Spawn("Arch", parent, new Vector3(0f, 0f, z)) != null)
+        // This is scenery, not a gameplay obstacle. Keep its inner wings well
+        // outside the three lane projections so the silhouette cannot promise
+        // a collision that does not exist.
+        const float widthScale = 1.35f;
+        if (EchoEnvironmentKit.Spawn("Arch", parent, new Vector3(0f, 0f, z),
+                Vector3.zero, new Vector3(widthScale, 1f, 1f)) != null)
             return;
 
-        const float halfWidth = 8.4f;
+        const float halfWidth = 8.4f * widthScale;
         const float height = 6.2f;
         const int segments = 7;
-        const float openingHalfWidth = 3.4f;
+        const float openingHalfWidth = 3.4f * widthScale;
         BuildSegmentedArch("TransitArch", parent, z, halfWidth, height, segments,
             openingHalfWidth, _structureMaterial, _cyanMaterial, 0.23f);
 
