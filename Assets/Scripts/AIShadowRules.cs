@@ -1,5 +1,22 @@
 using UnityEngine;
 
+[System.Serializable]
+public sealed class EchoCalibrationStatus
+{
+    public int totalSamples;
+    public int minimumTotal;
+    public int activeSamples;
+    public int minimumActive;
+    public int categories;
+    public int minimumCategories;
+    public int jumpSamples;
+    public int minimumJump;
+    public int slideSamples;
+    public int minimumSlide;
+    public bool requirementsMet;
+    public string nextRequirement = "";
+}
+
 public static class AIShadowRules
 {
     public static bool CanAvoidObstacle(ObstacleType obstacleType,
@@ -83,6 +100,43 @@ public static class AIShadowRules
             : 1f;
         return Mathf.Min(totalProgress, activeProgress, categoryProgress,
             jumpProgress, slideProgress);
+    }
+
+    public static EchoCalibrationStatus BuildCalibrationStatus(
+        int totalSamples, int activeSamples, int[] actionCounts,
+        int minimumTotal, int minimumActive, int minimumCategories,
+        int minimumJumpSamples, int minimumSlideSamples)
+    {
+        var status = new EchoCalibrationStatus
+        {
+            totalSamples = Mathf.Max(0, totalSamples),
+            minimumTotal = Mathf.Max(1, minimumTotal),
+            activeSamples = Mathf.Max(0, activeSamples),
+            minimumActive = Mathf.Max(1, minimumActive),
+            categories = CountTrainedActionCategories(actionCounts),
+            minimumCategories = Mathf.Max(1, minimumCategories),
+            jumpSamples = GetActionCount(actionCounts, ShadowAction.Jump),
+            minimumJump = Mathf.Max(0, minimumJumpSamples),
+            slideSamples = GetActionCount(actionCounts, ShadowAction.Slide),
+            minimumSlide = Mathf.Max(0, minimumSlideSamples)
+        };
+        status.requirementsMet = HasCalibrationSamples(status.totalSamples,
+            status.activeSamples, actionCounts, status.minimumTotal,
+            status.minimumActive, status.minimumCategories,
+            status.minimumJump, status.minimumSlide);
+        if (status.totalSamples < status.minimumTotal)
+            status.nextRequirement = "继续跑动，补足总样本";
+        else if (status.activeSamples < status.minimumActive)
+            status.nextRequirement = "完成换道、跳跃或滑铲";
+        else if (status.categories < status.minimumCategories)
+            status.nextRequirement = "再完成一种不同动作";
+        else if (status.jumpSamples < status.minimumJump)
+            status.nextRequirement = "再完成跳跃";
+        else if (status.slideSamples < status.minimumSlide)
+            status.nextRequirement = "再完成滑铲";
+        else
+            status.nextRequirement = "数据已达标，跑到终点生成回声";
+        return status;
     }
 
     public static int CountTrainedActionCategories(int[] actionCounts)

@@ -125,7 +125,8 @@ public static class EchoRunPresentation
         float calibrationProgress01 = 0f,
         EchoDuelPhase duelPhase = EchoDuelPhase.None,
         float phaseProgress01 = 0f, string publicPrediction = "",
-        string publicChallenge = "", string publicEvidence = "")
+        string publicChallenge = "", string publicEvidence = "",
+        EchoCalibrationStatus calibrationStatus = null)
     {
         if (!hasOpponent || contract == null
             || contract.type == EchoContractType.None)
@@ -134,10 +135,9 @@ public static class EchoRunPresentation
             {
                 phase = "校准",
                 contract = "正在校准你的回声",
-                progress = "跳跃 " + Mathf.Min(jumpSamples, minimumJumpSamples)
-                           + "/" + minimumJumpSamples + " · 滑铲 "
-                           + Mathf.Min(slideSamples, minimumSlideSamples)
-                           + "/" + minimumSlideSamples,
+                progress = BuildCalibrationProgress(calibrationStatus,
+                    jumpSamples, slideSamples, minimumJumpSamples,
+                    minimumSlideSamples),
                 progress01 = Mathf.Clamp01(calibrationProgress01),
                 lead = "记录路线、动作与节奏",
                 leadState = EchoLeadState.Calibrating,
@@ -203,14 +203,20 @@ public static class EchoRunPresentation
             return "习惯暴露";
         if (phase == EchoDuelPhase.Resistance)
             return "反抗 " + contract.resistanceGroupsResolved + "/3 · 预测失效 "
-                   + contract.resistancePredictionMisses + "/2";
+                   + contract.resistancePredictionMisses + "/2 · 策略 "
+                   + CountResponseKinds(contract.resistanceDistinctResponseMask)
+                   + "/2";
         if (phase == EchoDuelPhase.Counterattack)
             return "反扑 " + contract.counterattackGroupsResolved
                    + "/4 · 预测失效 "
-                   + contract.counterattackPredictionMisses + "/3";
+                   + contract.counterattackPredictionMisses + "/3 · 策略 "
+                   + CountResponseKinds(contract.counterattackDistinctResponseMask)
+                   + "/2";
         if (phase == EchoDuelPhase.Rewrite)
             return (contract.contractBroken ? "契约已破解 · " : "契约未破解 · ")
-                   + "重写 " + Mathf.RoundToInt(phaseProgress01 * 100f) + "%";
+                   + (phaseProgress01 >= 0.999f
+                       ? "学习窗口完成，继续追逐"
+                       : "重写 " + Mathf.RoundToInt(phaseProgress01 * 100f) + "%");
         if (contract.completed) return "已破解";
         return "稳定度 " + Mathf.RoundToInt(contract.Progress01 * 100f) + "%";
     }
@@ -279,10 +285,38 @@ public static class EchoRunPresentation
             hasSlide |= group.options[i].obstacleType == ObstacleType.Low;
         }
         string choices = hasJump && hasSlide
-            ? "跳跃 / 滑铲 / 改道"
-            : hasJump ? "跳跃 / 改道"
-                : hasSlide ? "滑铲 / 改道" : "改道";
+            ? "跳跃 / 滑铲 / 走空路"
+            : hasJump ? "跳跃 / 走空路"
+                : hasSlide ? "滑铲 / 走空路" : "走空路";
         return "下一选择：" + choices;
+    }
+
+    private static string BuildCalibrationProgress(
+        EchoCalibrationStatus status, int jumpSamples, int slideSamples,
+        int minimumJumpSamples, int minimumSlideSamples)
+    {
+        if (status == null)
+            return "跳跃 " + Mathf.Min(jumpSamples, minimumJumpSamples)
+                   + "/" + minimumJumpSamples + " · 滑铲 "
+                   + Mathf.Min(slideSamples, minimumSlideSamples)
+                   + "/" + minimumSlideSamples;
+        return "样本 " + status.totalSamples + "/" + status.minimumTotal
+               + " · 有效 " + status.activeSamples + "/" + status.minimumActive
+               + " · 类型 " + status.categories + "/" + status.minimumCategories
+               + "\n跳跃 " + status.jumpSamples + "/" + status.minimumJump
+               + " · 滑铲 " + status.slideSamples + "/" + status.minimumSlide
+               + " · " + status.nextRequirement;
+    }
+
+    private static int CountResponseKinds(int mask)
+    {
+        int count = 0;
+        while (mask != 0)
+        {
+            count += mask & 1;
+            mask >>= 1;
+        }
+        return count;
     }
 
     private static string BuildPhaseInstruction(EchoDuelPhase phase,

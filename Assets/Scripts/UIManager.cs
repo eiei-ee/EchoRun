@@ -824,7 +824,7 @@ public class UIManager : MonoBehaviour
         _statsText.rectTransform.offsetMax = new Vector2(-12f, 0f);
 
         _hudContractPanel = CreateHudSurface("ContractSurface", _hudPanel.transform,
-            new Vector2(0.5f, 1f), new Vector2(700f, 92f),
+            new Vector2(0.5f, 1f), new Vector2(780f, 112f),
             new Vector2(0f, -18f), new Vector2(0.5f, 1f));
 
         _contractText = MakeText("Contract", _hudContractPanel.transform,
@@ -833,19 +833,23 @@ public class UIManager : MonoBehaviour
         _contractText.color = TextPrimary;
         RectTransform contractRect = _contractText.rectTransform;
         contractRect.anchorMin = new Vector2(0.04f, 0.46f);
-        contractRect.anchorMax = new Vector2(0.70f, 1f);
+        contractRect.anchorMax = new Vector2(0.34f, 1f);
         contractRect.offsetMin = Vector2.zero;
         contractRect.offsetMax = Vector2.zero;
 
         _contractProgressText = MakeText("ContractProgress",
-            _hudContractPanel.transform, "0 / 3", 25, TextAnchor.MiddleRight);
+            _hudContractPanel.transform, "0 / 3", 20, TextAnchor.MiddleRight);
         _contractProgressText.fontStyle = FontStyle.Bold;
         _contractProgressText.color = Primary;
         RectTransform progressTextRect = _contractProgressText.rectTransform;
-        progressTextRect.anchorMin = new Vector2(0.70f, 0.46f);
+        progressTextRect.anchorMin = new Vector2(0.34f, 0.46f);
         progressTextRect.anchorMax = new Vector2(0.96f, 1f);
         progressTextRect.offsetMin = Vector2.zero;
         progressTextRect.offsetMax = Vector2.zero;
+        _contractProgressText.resizeTextForBestFit = true;
+        _contractProgressText.resizeTextMinSize = 14;
+        _contractProgressText.resizeTextMaxSize = 20;
+        _contractProgressText.horizontalOverflow = HorizontalWrapMode.Wrap;
 
         _leadText = MakeText("Lead", _hudContractPanel.transform,
             "记录路线、动作与节奏", 21, TextAnchor.MiddleCenter);
@@ -966,7 +970,8 @@ public class UIManager : MonoBehaviour
             shadow != null ? shadow.DuelPhaseProgress : 0f,
             shadow != null ? shadow.PublicPrediction : "",
             shadow != null ? shadow.PublicChallenge : "",
-            shadow != null ? shadow.PublicEvidence : "");
+            shadow != null ? shadow.PublicEvidence : "",
+            shadow != null ? shadow.CalibrationStatus : null);
 
         if (_contractText != null)
             _contractText.text = view.phase + " · " + view.contract;
@@ -1830,8 +1835,8 @@ public class UIManager : MonoBehaviour
         {
             RectTransform contract = _hudContractPanel.GetComponent<RectTransform>();
             contract.sizeDelta = portrait
-                ? new Vector2(820f, 112f)
-                : new Vector2(700f, 92f);
+                ? new Vector2(900f, 132f)
+                : new Vector2(780f, 112f);
             contract.anchoredPosition = portrait
                 ? new Vector2(0f, -20f)
                 : new Vector2(0f, -18f);

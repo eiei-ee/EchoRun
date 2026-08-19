@@ -360,7 +360,10 @@ public class TrackManager : MonoBehaviour
         var options = new List<ObstacleOpportunity>(2);
         int phaseSequence = 0;
         int planVersion = 0;
-        float routeDistance = 0f;
+        float routeDistance = float.MaxValue;
+        float settleRouteDistance = 0f;
+        int clearLane = 0 + 1 + 2;
+        EchoChoiceGroupKind groupKind = EchoChoiceGroupKind.RegularObstacleRow;
         for (int i = 0; i < _dynamicObjects.Count; i++)
         {
             GameObject instance = _dynamicObjects[i].instance;
@@ -371,7 +374,11 @@ public class TrackManager : MonoBehaviour
                 continue;
             phaseSequence = obstacle.phaseSequence;
             planVersion = obstacle.planVersion;
-            routeDistance = obstacle.routeDistance;
+            groupKind = obstacle.groupKind;
+            routeDistance = Mathf.Min(routeDistance, obstacle.routeDistance);
+            settleRouteDistance = Mathf.Max(settleRouteDistance,
+                obstacle.routeDistance + 1.5f);
+            clearLane -= obstacle.lane;
             options.Add(new ObstacleOpportunity
             {
                 opportunityId = obstacle.opportunityId,
@@ -392,7 +399,11 @@ public class TrackManager : MonoBehaviour
             phaseSequence = phaseSequence,
             planVersion = planVersion,
             rowId = nearestGroupId,
+            groupKind = groupKind,
             routeDistance = routeDistance,
+            settleRouteDistance = settleRouteDistance,
+            clearLane = options.Count == 2
+                ? Mathf.Clamp(clearLane, 0, 2) : -1,
             prediction = new EchoPredictionSnapshot
             {
                 conclusion = ConclusionFor(
@@ -426,7 +437,8 @@ public class TrackManager : MonoBehaviour
             return EchoEvidenceConclusion.Jump;
         if (response == EchoResponseKind.Slide)
             return EchoEvidenceConclusion.Slide;
-        if (response == EchoResponseKind.RouteAvoid)
+        if (response == EchoResponseKind.RouteAvoid
+            || response == EchoResponseKind.ClearRoute)
             return EchoEvidenceConclusion.RouteAvoid;
         return EchoEvidenceConclusion.Insufficient;
     }
@@ -833,7 +845,8 @@ public class TrackManager : MonoBehaviour
         int maxCoins = plan.echoChoiceGroup ? 5
             : Mathf.Max(minCoins + 1, plan.maxCoinCount);
         if (plan.echoChoiceGroup
-            && plan.echoPredictedResponse == EchoResponseKind.RouteAvoid)
+            && (plan.echoPredictedResponse == EchoResponseKind.RouteAvoid
+                || plan.echoPredictedResponse == EchoResponseKind.ClearRoute))
         {
             minCoins = 8;
             maxCoins = 11;
@@ -1115,8 +1128,8 @@ public class TrackManager : MonoBehaviour
         int spawned = 0;
         int choiceGroupId = _nextChoiceGroupId++;
         TrackSegmentData segmentData = segment.GetComponent<TrackSegmentData>();
-        float groupRouteDistance = (segmentData != null
-            ? segmentData.routeDistance : _plannedDistance) + obsZ;
+        float segmentRouteDistance = segmentData != null
+            ? segmentData.routeDistance : _plannedDistance;
 
        for (int i = 0; i < lanes.Length; i++)
        {
@@ -1134,6 +1147,7 @@ public class TrackManager : MonoBehaviour
                     difficulty, AIRunRandom.Value);
 
             float obstacleZ = obsZ + AIRunRandom.Range(-0.8f, 0.8f);
+            float obstacleRouteDistance = segmentRouteDistance + obstacleZ;
             Obstacle obstacleData = obstaclePrefabs[type].GetComponent<Obstacle>();
             ObstacleType obstacleType = obstacleData != null
                 ? obstacleData.type
@@ -1148,7 +1162,7 @@ public class TrackManager : MonoBehaviour
             }
 
             if (SpawnObstacleAt(segment, lane, obstacleZ, type,
-                    choiceGroupId, groupRouteDistance,
+                    choiceGroupId, obstacleRouteDistance,
                     plan.echoPhaseSequence, plan.echoPlanVersion,
                     plan.echoPredictedResponse,
                     plan.echoPredictionConfidence))
@@ -1163,6 +1177,7 @@ public class TrackManager : MonoBehaviour
                 spawned++;
             }
        }
+       SetGroupKind(choiceGroupId, GroupKindFor(plan));
        return spawned;
     }
 
@@ -1188,6 +1203,34 @@ public class TrackManager : MonoBehaviour
                 phaseSequence, planVersion, lane, routeDistance,
                 predictedResponse, predictionConfidence);
         return true;
+    }
+
+    private void SetGroupKind(int choiceGroupId,
+        EchoChoiceGroupKind groupKind)
+    {
+        for (int i = 0; i < _dynamicObjects.Count; i++)
+        {
+            GameObject instance = _dynamicObjects[i].instance;
+            if (instance == null) continue;
+            Obstacle obstacle = instance.GetComponent<Obstacle>();
+            if (obstacle != null && obstacle.choiceGroupId == choiceGroupId)
+                obstacle.groupKind = groupKind;
+        }
+    }
+
+    private static EchoChoiceGroupKind GroupKindFor(AITrackPlan plan)
+    {
+        if (!plan.echoChoiceGroup)
+            return plan.echoPhase == EchoDuelPhase.Finale
+                ? EchoChoiceGroupKind.FinaleObstacle
+                : EchoChoiceGroupKind.RegularObstacleRow;
+        if (plan.echoPhase == EchoDuelPhase.Detection)
+            return EchoChoiceGroupKind.DetectionProbe;
+        if (plan.echoPhase == EchoDuelPhase.Resistance)
+            return EchoChoiceGroupKind.ResistanceChoice;
+        if (plan.echoPhase == EchoDuelPhase.Counterattack)
+            return EchoChoiceGroupKind.CounterattackChoice;
+        return EchoChoiceGroupKind.RegularObstacleRow;
     }
 
     public void ReplanFutureDuelRows(int phaseSequence,

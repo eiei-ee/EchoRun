@@ -9,6 +9,7 @@ public class Obstacle : MonoBehaviour
     public int choiceGroupId;
     public int phaseSequence;
     public int planVersion;
+    public EchoChoiceGroupKind groupKind;
     public int lane = -1;
     public float routeDistance;
     public EchoResponseKind predictedResponse;
@@ -17,12 +18,14 @@ public class Obstacle : MonoBehaviour
     public void ConfigureOpportunity(int newOpportunityId, int newGroupId,
         int newPhaseSequence, int newPlanVersion, int newLane,
         float newRouteDistance, EchoResponseKind newPredictedResponse,
-        float newPredictionConfidence)
+        float newPredictionConfidence,
+        EchoChoiceGroupKind newGroupKind = EchoChoiceGroupKind.RegularObstacleRow)
     {
         opportunityId = newOpportunityId;
         choiceGroupId = newGroupId;
         phaseSequence = newPhaseSequence;
         planVersion = newPlanVersion;
+        groupKind = newGroupKind;
         lane = Mathf.Clamp(newLane, 0, 2);
         routeDistance = Mathf.Max(0f, newRouteDistance);
         predictedResponse = newPredictedResponse;

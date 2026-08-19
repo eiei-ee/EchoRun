@@ -20,7 +20,8 @@ public enum EchoDuelPhase
 /// </summary>
 public sealed class EchoDuelFlow
 {
-    public const float DefaultDetectionDuration = 25f;
+    public const float DefaultDetectionDuration = 35f;
+    public const float MaximumDetectionDuration = 45f;
     public const float DefaultRevealDuration = 6f;
     public const float DefaultResistanceDuration = 30f;
     public const float DefaultCounterattackDuration = 40f;
@@ -72,9 +73,15 @@ public sealed class EchoDuelFlow
         switch (Phase)
         {
             case EchoDuelPhase.Detection:
-                if (PhaseElapsed >= DetectionDuration
-                    || (contract != null
-                        && contract.detectionGroupsResolved >= 6))
+                if ((PhaseElapsed >= DetectionDuration
+                     && contract != null
+                     && contract.detectionGroupsResolved >= 6
+                     && contract.detectionSuccessfulChoices >= 3)
+                    || PhaseElapsed >= (DetectionDuration
+                        < DefaultDetectionDuration
+                            ? DetectionDuration
+                            : Mathf.Max(DetectionDuration,
+                                MaximumDetectionDuration)))
                     next = EchoDuelPhase.Reveal;
                 break;
             case EchoDuelPhase.Reveal:

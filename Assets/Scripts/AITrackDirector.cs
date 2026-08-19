@@ -683,12 +683,12 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             ? shadow.DuelPhaseSequence : 0;
         plan.echoRowId = decisionCount;
         plan.echoPlanVersion = plan.echoPhaseSequence;
-        if (shadow != null && shadow.CurrentPrediction != null)
+        if (shadow != null && shadow.TrackPrediction != null)
         {
             plan.echoPredictedResponse =
-                shadow.CurrentPrediction.predictedResponse;
+                shadow.TrackPrediction.predictedResponse;
             plan.echoPredictionConfidence =
-                shadow.CurrentPrediction.confidence;
+                shadow.TrackPrediction.confidence;
         }
         if (phase == EchoDuelPhase.Detection
             || phase == EchoDuelPhase.Reveal)

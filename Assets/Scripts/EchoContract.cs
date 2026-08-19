@@ -12,7 +12,7 @@ public enum EchoContractType
 [Serializable]
 public sealed class EchoContractData
 {
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     public int version = CurrentVersion;
     public EchoContractType type;
@@ -34,10 +34,13 @@ public sealed class EchoContractData
     public bool completed;
     public bool contractBroken;
     public int detectionGroupsResolved;
+    public int detectionSuccessfulChoices;
     public int resistanceGroupsResolved;
     public int resistancePredictionMisses;
+    public int resistanceDistinctResponseMask;
     public int counterattackGroupsResolved;
     public int counterattackPredictionMisses;
+    public int counterattackDistinctResponseMask;
     public bool won;
     public bool exploratory;
     public int feedbackSequence;
@@ -113,14 +116,20 @@ public sealed class EchoContractData
             predictionAction = learnedAction;
         feedbackSequence = Mathf.Max(0, feedbackSequence);
         detectionGroupsResolved = Mathf.Max(0, detectionGroupsResolved);
+        detectionSuccessfulChoices = Mathf.Clamp(detectionSuccessfulChoices,
+            0, detectionGroupsResolved);
         resistanceGroupsResolved = Mathf.Max(0, resistanceGroupsResolved);
         resistancePredictionMisses = Mathf.Clamp(
             resistancePredictionMisses, 0, resistanceGroupsResolved);
+        resistanceDistinctResponseMask = Mathf.Max(0,
+            resistanceDistinctResponseMask);
         counterattackGroupsResolved = Mathf.Max(0,
             counterattackGroupsResolved);
         counterattackPredictionMisses = Mathf.Clamp(
             counterattackPredictionMisses, 0,
             counterattackGroupsResolved);
+        counterattackDistinctResponseMask = Mathf.Max(0,
+            counterattackDistinctResponseMask);
         title = title ?? "";
         learnedTrait = learnedTrait ?? "";
         ruleDescription = ruleDescription ?? "";
@@ -143,10 +152,13 @@ public sealed class EchoContractData
         reset.completed = false;
         reset.contractBroken = false;
         reset.detectionGroupsResolved = 0;
+        reset.detectionSuccessfulChoices = 0;
         reset.resistanceGroupsResolved = 0;
         reset.resistancePredictionMisses = 0;
+        reset.resistanceDistinctResponseMask = 0;
         reset.counterattackGroupsResolved = 0;
         reset.counterattackPredictionMisses = 0;
+        reset.counterattackDistinctResponseMask = 0;
         reset.won = false;
         reset.feedbackSequence = 0;
         reset.lastFeedback = "";
@@ -379,9 +391,9 @@ public sealed class EchoContractEvaluator
                 break;
             case EchoDuelPhase.Rewrite:
                 Contract.initialBreakCompleted =
-                    Contract.resistancePredictionMisses >= 2;
+                    HasBrokenResistance();
                 Contract.contractBroken =
-                    Contract.counterattackPredictionMisses >= 3;
+                    HasBrokenCounterattack();
                 Contract.completed = Contract.contractBroken;
                 SetFeedback(Contract.contractBroken
                     ? "契约已破解：本阶段行为将塑造下一代回声"
@@ -390,7 +402,7 @@ public sealed class EchoContractEvaluator
             case EchoDuelPhase.Finale:
                 SetFeedback(Contract.completed
                     ? "进入决胜：守住领先并完成终局组合"
-                    : "最终契约机会：在冲线前稳定新策略");
+                    : "进入决胜：契约未破解，只能争取距离领先");
                 break;
         }
     }
@@ -587,7 +599,7 @@ public sealed class EchoContractEvaluator
     {
         Contract.counterattackActive = true;
         Contract.initialBreakCompleted =
-            Contract.resistancePredictionMisses >= 2;
+            HasBrokenResistance();
         Contract.progress = 50f;
         SetFeedback("回声反扑：预测会在每个选择组生成时冻结");
     }
@@ -602,22 +614,28 @@ public sealed class EchoContractEvaluator
         bool predictionMissed = frozenPrediction != null
                                 && frozenPrediction.HasSpecificPrediction
                                 && result.physicallySucceeded
-                                && result.response
-                                != frozenPrediction.predictedResponse;
+                                && !EquivalentResponse(result.response,
+                                    frozenPrediction.predictedResponse);
         switch (Contract.duelPhase)
         {
             case EchoDuelPhase.Detection:
                 Contract.detectionGroupsResolved++;
+                if (result.physicallySucceeded)
+                    Contract.detectionSuccessfulChoices++;
                 SetFeedback("侦测样本已记录：" + ResponseName(result.response));
                 break;
             case EchoDuelPhase.Resistance:
                 Contract.resistanceGroupsResolved++;
                 if (predictionMissed)
+                {
                     Contract.resistancePredictionMisses++;
+                    Contract.resistanceDistinctResponseMask |=
+                        ResponseBit(result.response);
+                }
                 Contract.progress = Mathf.Clamp01(
                     Contract.resistanceGroupsResolved / 3f) * 50f;
                 Contract.initialBreakCompleted =
-                    Contract.resistancePredictionMisses >= 2;
+                    HasBrokenResistance();
                 ApplyChoiceLead(predictionMissed, currentSpeed);
                 SetFeedback(predictionMissed
                     ? "预测失效：反抗选择已记录"
@@ -626,11 +644,15 @@ public sealed class EchoContractEvaluator
             case EchoDuelPhase.Counterattack:
                 Contract.counterattackGroupsResolved++;
                 if (predictionMissed)
+                {
                     Contract.counterattackPredictionMisses++;
+                    Contract.counterattackDistinctResponseMask |=
+                        ResponseBit(result.response);
+                }
                 Contract.progress = 50f + Mathf.Clamp01(
                     Contract.counterattackGroupsResolved / 4f) * 50f;
                 Contract.contractBroken =
-                    Contract.counterattackPredictionMisses >= 3;
+                    HasBrokenCounterattack();
                 Contract.completed = Contract.contractBroken;
                 ApplyChoiceLead(predictionMissed, currentSpeed);
                 SetFeedback(predictionMissed
@@ -655,9 +677,52 @@ public sealed class EchoContractEvaluator
     {
         if (response == EchoResponseKind.Jump) return "跳跃";
         if (response == EchoResponseKind.Slide) return "滑铲";
-        if (response == EchoResponseKind.RouteAvoid) return "改道";
+        if (response == EchoResponseKind.RouteAvoid
+            || response == EchoResponseKind.ClearRoute) return "走空路";
         if (response == EchoResponseKind.Hit) return "碰撞";
         return "未响应";
+    }
+
+    private bool HasBrokenResistance()
+    {
+        return Contract.resistancePredictionMisses >= 2
+               && CountBits(Contract.resistanceDistinctResponseMask) >= 2;
+    }
+
+    private bool HasBrokenCounterattack()
+    {
+        return Contract.counterattackPredictionMisses >= 3
+               && CountBits(Contract.counterattackDistinctResponseMask) >= 2;
+    }
+
+    private static bool EquivalentResponse(EchoResponseKind left,
+        EchoResponseKind right)
+    {
+        bool leftClear = left == EchoResponseKind.ClearRoute
+                         || left == EchoResponseKind.RouteAvoid;
+        bool rightClear = right == EchoResponseKind.ClearRoute
+                          || right == EchoResponseKind.RouteAvoid;
+        return left == right || (leftClear && rightClear);
+    }
+
+    private static int ResponseBit(EchoResponseKind response)
+    {
+        if (response == EchoResponseKind.Jump) return 1;
+        if (response == EchoResponseKind.Slide) return 2;
+        if (response == EchoResponseKind.ClearRoute
+            || response == EchoResponseKind.RouteAvoid) return 4;
+        return 0;
+    }
+
+    private static int CountBits(int value)
+    {
+        int count = 0;
+        while (value != 0)
+        {
+            count += value & 1;
+            value >>= 1;
+        }
+        return count;
     }
 
     private bool CanChangeStability()

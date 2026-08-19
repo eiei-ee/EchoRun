@@ -32,7 +32,6 @@ public sealed class EchoPredictionSnapshot
 public sealed class EchoDuelEvidence
 {
     private const float StrongWeight = 2f;
-    private const float WeakWeight = 0.5f;
     private const int MinimumOpportunities = 3;
     private const float MinimumMargin = 1.5f;
 
@@ -46,6 +45,7 @@ public sealed class EchoDuelEvidence
     private int _noActionCount;
 
     public EchoPredictionSnapshot Prediction => BuildPrediction();
+    public int SuccessfulChoiceCount { get; private set; }
 
     public void Reset()
     {
@@ -57,6 +57,7 @@ public sealed class EchoDuelEvidence
         _slideCount = 0;
         _routeAvoidCount = 0;
         _noActionCount = 0;
+        SuccessfulChoiceCount = 0;
     }
 
     public void Observe(ObstacleOpportunityResolution result)
@@ -65,19 +66,26 @@ public sealed class EchoDuelEvidence
             || result.response == EchoResponseKind.None)
             return;
         _opportunityCount++;
+        bool successfulChoice = result.physicallySucceeded
+                                && (result.response == EchoResponseKind.Jump
+                                    || result.response == EchoResponseKind.Slide
+                                    || result.response == EchoResponseKind.ClearRoute
+                                    || result.response == EchoResponseKind.RouteAvoid);
+        if (successfulChoice) SuccessfulChoiceCount++;
         switch (result.response)
         {
             case EchoResponseKind.Jump:
                 _jumpCount++;
-                _jumpWeight += StrongWeight;
+                if (result.physicallySucceeded) _jumpWeight += StrongWeight;
                 break;
             case EchoResponseKind.Slide:
                 _slideCount++;
-                _slideWeight += StrongWeight;
+                if (result.physicallySucceeded) _slideWeight += StrongWeight;
                 break;
+            case EchoResponseKind.ClearRoute:
             case EchoResponseKind.RouteAvoid:
                 _routeAvoidCount++;
-                _routeWeight += StrongWeight;
+                if (result.physicallySucceeded) _routeWeight += StrongWeight;
                 break;
             case EchoResponseKind.NoAction:
             case EchoResponseKind.Hit:
@@ -88,14 +96,14 @@ public sealed class EchoDuelEvidence
 
     public void ObserveFreeAction(ShadowAction action)
     {
-        if (action == ShadowAction.Jump) _jumpWeight += WeakWeight;
-        else if (action == ShadowAction.Slide) _slideWeight += WeakWeight;
+        // Free actions still train the general style model. They deliberately
+        // do not affect duel evidence because no obstacle choice verified them.
     }
 
     public string BuildEvidenceText()
     {
         return "本局侦测：跳跃 " + _jumpCount + " · 滑铲 " + _slideCount
-               + " · 改道 " + _routeAvoidCount + " · 未响应 "
+               + " · 走空路 " + _routeAvoidCount + " · 未响应 "
                + _noActionCount;
     }
 
@@ -116,7 +124,7 @@ public sealed class EchoDuelEvidence
         string action = snapshot.conclusion == EchoEvidenceConclusion.Jump
             ? "继续跳跃"
             : snapshot.conclusion == EchoEvidenceConclusion.Slide
-                ? "继续滑铲" : "继续改道";
+                ? "继续滑铲" : "继续走空路";
         return prefix + action + " · "
                + Mathf.RoundToInt(snapshot.confidence * 100f) + "%";
     }
@@ -139,11 +147,11 @@ public sealed class EchoDuelEvidence
             second = Mathf.Max(top, _slideWeight);
             top = _routeWeight;
             conclusion = EchoEvidenceConclusion.RouteAvoid;
-            response = EchoResponseKind.RouteAvoid;
+            response = EchoResponseKind.ClearRoute;
         }
 
         float total = _jumpWeight + _slideWeight + _routeWeight;
-        if (_opportunityCount < MinimumOpportunities || top <= 0f)
+        if (SuccessfulChoiceCount < MinimumOpportunities || top <= 0f)
         {
             conclusion = EchoEvidenceConclusion.Insufficient;
             response = EchoResponseKind.None;

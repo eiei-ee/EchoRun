@@ -263,8 +263,11 @@ public sealed class AIShadowRuntimeTests
                 groupId = offset + i,
                 lane = 1,
                 obstacleType = ObstacleType.Low,
-                response = i == groupCount - 1 && !counterattack
-                    ? EchoResponseKind.Jump : EchoResponseKind.Slide,
+                response = i == 1
+                    ? EchoResponseKind.ClearRoute
+                    : i == groupCount - 1
+                        ? EchoResponseKind.Jump
+                        : EchoResponseKind.Slide,
                 physicallySucceeded = true,
                 passedInLane = true
             }, prediction, 10f);

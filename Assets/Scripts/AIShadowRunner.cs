@@ -50,6 +50,14 @@ public class AIShadowRunner : MonoBehaviour
             _profile.actionCounts, minimumTrainingSamples,
             minimumActiveTrainingSamples, minimumActionCategories,
             minimumJumpSamples, minimumSlideSamples);
+    public EchoCalibrationStatus CalibrationStatus =>
+        AIShadowRules.BuildCalibrationStatus(
+            _profile != null ? _profile.sampleCount : 0,
+            _profile != null ? _profile.activeSampleCount : 0,
+            _profile != null ? _profile.actionCounts : null,
+            minimumTrainingSamples, minimumActiveTrainingSamples,
+            minimumActionCategories, minimumJumpSamples,
+            minimumSlideSamples);
     public float EchoClarity => _activeGeneration != null
         ? Mathf.Clamp01(_activeGeneration.clarity)
         : _profile != null ? Mathf.Clamp01(_profile.clarity) : 0f;
@@ -66,6 +74,7 @@ public class AIShadowRunner : MonoBehaviour
     public string PublicEvidence => HasActiveOpponent
         ? _duelEvidence.BuildEvidenceText() : "";
     public EchoPredictionSnapshot CurrentPrediction => _duelEvidence.Prediction;
+    public EchoPredictionSnapshot TrackPrediction => BuildTrackPrediction();
     public string PublicChallenge
     {
         get
@@ -74,7 +83,9 @@ public class AIShadowRunner : MonoBehaviour
             if (TrackManager.Instance != null && _player != null
                 && TrackManager.Instance.TryGetUpcomingChoiceGroup(
                     _player.transform.position, _player.ForwardDirection,
-                    out EchoChoiceGroup group))
+                    out EchoChoiceGroup group)
+                && group.phaseSequence == DuelPhaseSequence
+                && IsCurrentDuelGroup(group.groupKind))
                 return EchoRunPresentation.BuildChoiceGroupChallenge(group);
             bool usesVerticalObstacle = contract != null
                 && (contract.type == EchoContractType.ChangeVerticalHabit
@@ -681,12 +692,9 @@ public class AIShadowRunner : MonoBehaviour
             PromotePendingGeneration(Generation + 1, nextClarity);
         }
         else if (!challengedOpponent && Generation <= 0
-                 && (completedCalibration || formedPartialEcho))
+                 && completedCalibration)
         {
-            float firstClarity = completedCalibration
-                ? 1f
-                : Mathf.Clamp(calibrationProgress, 0.25f, 0.85f);
-            PromotePendingGeneration(1, firstClarity);
+            PromotePendingGeneration(1, 1f);
         }
         _profile.weights = _policy.ExportWeights();
         if (TrackManager.Instance != null)
@@ -698,14 +706,9 @@ public class AIShadowRunner : MonoBehaviour
 
         if (!challengedOpponent && formedPartialEcho && !completedCalibration)
         {
-            EchoContractData nextContract = EchoContractPolicy.Create(
-                _activeGeneration.GetStyle(), Generation);
-            LastResult = "校准中断，但回声已经记住了你\n"
-                         + "回声清晰度 "
-                         + (EchoClarity * 100f).ToString("0") + "% · "
-                         + nextContract.learnedTrait + "\n"
-                         + "下一局将由模糊回声继续校准："
-                         + nextContract.title;
+            LastResult = "校准中断 · 样本已保留\n"
+                         + "尚未生成可挑战的回声；下一局继续完成校准，"
+                         + "到达终点后才会正式生成第一代回声";
         }
         else if (!reachedFinish)
         {
@@ -1234,47 +1237,25 @@ public class AIShadowRunner : MonoBehaviour
         bool hasChoiceGroup = TrackManager.Instance.TryGetUpcomingChoiceGroup(
             _player.transform.position, _player.ForwardDirection,
             out EchoChoiceGroup choiceGroup);
-        bool found = TrackManager.Instance.TryGetUpcomingObstacleInLane(
-            _player.transform.position, _player.ForwardDirection,
-            _player.CurrentLane, _opportunityTracker.ResolvedOpportunityIds,
-            out float distance, out ObstacleType type, out int obstacleId);
-        int groupId = obstacleId;
-        if (found && TrackManager.Instance.TryGetObstacleOpportunity(
-                obstacleId, out ObstacleOpportunity opportunity))
-            groupId = opportunity.groupId;
         float detectionDistance = CalculateReactionDistance(
             _gameManager.CurrentSpeed,
             Mathf.Max(0.2f, Mathf.Max(_player.jumpDuration,
                 _player.slideDuration))) * 1.25f;
-        bool currentLaneHasOption = false;
-        if (hasChoiceGroup && choiceGroup.options != null)
-        {
-            for (int i = 0; i < choiceGroup.options.Length; i++)
-                currentLaneHasOption |= choiceGroup.options[i].lane
-                                        == _player.CurrentLane;
-        }
-        ObstacleOpportunityResolution result;
-        bool resolved;
-        if (hasChoiceGroup && !currentLaneHasOption)
-            resolved = _opportunityTracker.UpdateClearRoute(
-                _player.CurrentLane, true,
-                Mathf.Max(0f, choiceGroup.routeDistance
-                              - _gameManager.Distance),
-                choiceGroup.groupId, detectionDistance,
-                out result);
-        else
-            resolved = _opportunityTracker.Update(
-                _player.CurrentLane, _player.IsJumping, _player.IsSliding,
-                found, distance, type, obstacleId, groupId,
-                detectionDistance, out result);
+        bool resolved = _opportunityTracker.UpdateGroup(
+            hasChoiceGroup ? choiceGroup : null,
+            _player.CurrentLane, _gameManager.Distance,
+            _player.IsJumping, _player.IsSliding, detectionDistance,
+            out ObstacleOpportunityResolution result);
         if (resolved)
         {
             ObserveDuelOpportunity(result);
             bool usedRequiredAction = result.response == EchoResponseKind.Jump
                                       || result.response == EchoResponseKind.Slide;
-            StyleTracker.RecordObstacleOpportunity(
-                result.obstacleType, usedRequiredAction);
-            if (result.passedInLane && result.physicallySucceeded
+            if (result.opportunityId != 0)
+                StyleTracker.RecordObstacleOpportunity(
+                    result.obstacleType, usedRequiredAction);
+            if (result.opportunityId != 0 && result.passedInLane
+                && result.physicallySucceeded
                 && RecordDodge(result.obstacleType,
                     result.opportunityId, result.lane))
             {
@@ -1288,9 +1269,28 @@ public class AIShadowRunner : MonoBehaviour
 
     private void ObserveDuelOpportunity(ObstacleOpportunityResolution result)
     {
-        if (!HasActiveOpponent) return;
-        EchoPredictionSnapshot frozenPrediction = _duelEvidence.Prediction;
-        _duelEvidence.Observe(result);
+        if (!HasActiveOpponent || result.phaseSequence != DuelPhaseSequence
+            || !IsCurrentDuelGroup(result.groupKind))
+        {
+            AIRunTelemetry.RecordEvent("echo_choice_ignored",
+                result.phaseSequence, (int)result.groupKind, result.groupId,
+                DuelPhaseSequence);
+            return;
+        }
+        EchoPredictionSnapshot frozenPrediction = new EchoPredictionSnapshot
+        {
+            conclusion = ConclusionForResponse(result.predictedResponse),
+            predictedResponse = result.predictedResponse,
+            confidence = result.predictionConfidence
+        };
+        if (ActiveContract.duelPhase == EchoDuelPhase.Detection
+            || ActiveContract.duelPhase == EchoDuelPhase.Counterattack)
+            _duelEvidence.Observe(result);
+        if (ActiveContract.duelPhase == EchoDuelPhase.Counterattack)
+            TrackManager.Instance?.ReplanFutureDuelRows(
+                DuelPhaseSequence,
+                _gameManager != null ? _gameManager.Distance : 0f,
+                _gameManager != null ? _gameManager.CurrentSpeed : 10f);
         if (_contractEvaluator != null)
             _contractEvaluator.RecordChoice(result, frozenPrediction,
                 _gameManager != null ? _gameManager.CurrentSpeed : 10f);
@@ -1302,6 +1302,58 @@ public class AIShadowRunner : MonoBehaviour
                 ? (int)frozenPrediction.predictedResponse : 0,
             result.lane, result.groupId,
             frozenPrediction != null ? frozenPrediction.confidence : 0f);
+    }
+
+    private bool IsCurrentDuelGroup(EchoChoiceGroupKind groupKind)
+    {
+        EchoDuelPhase phase = ActiveContract != null
+            ? ActiveContract.duelPhase : EchoDuelPhase.None;
+        if (phase == EchoDuelPhase.Detection)
+            return groupKind == EchoChoiceGroupKind.DetectionProbe;
+        if (phase == EchoDuelPhase.Resistance)
+            return groupKind == EchoChoiceGroupKind.ResistanceChoice;
+        if (phase == EchoDuelPhase.Counterattack)
+            return groupKind == EchoChoiceGroupKind.CounterattackChoice;
+        return false;
+    }
+
+    private EchoPredictionSnapshot BuildTrackPrediction()
+    {
+        EchoPredictionSnapshot observed = _duelEvidence.Prediction;
+        if (observed != null && observed.HasSpecificPrediction)
+            return observed;
+        EchoContractData contract = ActiveContract;
+        EchoResponseKind response = EchoResponseKind.Jump;
+        if (contract != null)
+        {
+            if (contract.type == EchoContractType.BreakLaneHabit)
+                response = EchoResponseKind.ClearRoute;
+            else if (contract.learnedAction == ShadowAction.Slide)
+                response = EchoResponseKind.Slide;
+            else if (contract.learnedAction == ShadowAction.Jump)
+                response = EchoResponseKind.Jump;
+        }
+        return new EchoPredictionSnapshot
+        {
+            conclusion = ConclusionForResponse(response),
+            predictedResponse = response,
+            confidence = 0.45f,
+            opportunityCount = observed != null
+                ? observed.opportunityCount : 0
+        };
+    }
+
+    private static EchoEvidenceConclusion ConclusionForResponse(
+        EchoResponseKind response)
+    {
+        if (response == EchoResponseKind.Jump)
+            return EchoEvidenceConclusion.Jump;
+        if (response == EchoResponseKind.Slide)
+            return EchoEvidenceConclusion.Slide;
+        if (response == EchoResponseKind.ClearRoute
+            || response == EchoResponseKind.RouteAvoid)
+            return EchoEvidenceConclusion.RouteAvoid;
+        return EchoEvidenceConclusion.Insufficient;
     }
 
     private int PhaseResolvedGroupCount(EchoDuelPhase phase)
@@ -1338,10 +1390,12 @@ public class AIShadowRunner : MonoBehaviour
             && TrackManager.Instance.TryGetUpcomingChoiceGroup(
                 _player.transform.position, _player.ForwardDirection,
                 out EchoChoiceGroup group)
+            && group.phaseSequence == DuelPhaseSequence
+            && IsCurrentDuelGroup(group.groupKind)
             && group.prediction != null)
             return EchoDuelEvidence.BuildPredictionText(
                 group.prediction, prefix);
-        return _duelEvidence.BuildPredictionText(prefix);
+        return EchoDuelEvidence.BuildPredictionText(TrackPrediction, prefix);
     }
 
     private string BuildDuelStatus()

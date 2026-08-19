@@ -91,6 +91,31 @@ public sealed class EchoContractTests
     }
 
     [Test]
+    public void FailedRowsDoNotCompleteThePredictionEvidenceThreshold()
+    {
+        var evidence = new EchoDuelEvidence();
+        evidence.Observe(Resolved(EchoResponseKind.Jump, 1));
+        evidence.Observe(Resolved(EchoResponseKind.Hit, 2));
+        evidence.Observe(Resolved(EchoResponseKind.NoAction, 3));
+
+        Assert.AreEqual(1, evidence.SuccessfulChoiceCount);
+        Assert.AreEqual(EchoEvidenceConclusion.Insufficient,
+            evidence.Prediction.conclusion);
+    }
+
+    [Test]
+    public void FreeActionsTrainStyleButDoNotCreateDuelPrediction()
+    {
+        var evidence = new EchoDuelEvidence();
+        for (int i = 0; i < 12; i++)
+            evidence.ObserveFreeAction(ShadowAction.Jump);
+
+        Assert.AreEqual(EchoEvidenceConclusion.Insufficient,
+            evidence.Prediction.conclusion);
+        Assert.AreEqual(0, evidence.SuccessfulChoiceCount);
+    }
+
+    [Test]
     public void RunEvidenceKeepsBalancedActionsDistinctFromInsufficient()
     {
         var evidence = new EchoDuelEvidence();
@@ -115,7 +140,8 @@ public sealed class EchoContractTests
             obstacleType = response == EchoResponseKind.Jump
                 ? ObstacleType.High : ObstacleType.Low,
             response = response,
-            physicallySucceeded = response != EchoResponseKind.NoAction,
+            physicallySucceeded = response != EchoResponseKind.NoAction
+                                  && response != EchoResponseKind.Hit,
             passedInLane = true
         };
     }
@@ -180,6 +206,48 @@ public sealed class EchoContractTests
             Prediction(EchoResponseKind.Jump)));
         Assert.AreEqual(1, evaluator.Contract.resistanceGroupsResolved);
         Assert.AreEqual(1, evaluator.Contract.resistancePredictionMisses);
+    }
+
+    [Test]
+    public void RepeatingOneCounterActionDoesNotBreakResistance()
+    {
+        var evaluator = new EchoContractEvaluator(new EchoContractData
+        {
+            type = EchoContractType.ChangeVerticalHabit,
+            targetProgress = 100f
+        });
+        evaluator.SetPhase(EchoDuelPhase.Resistance);
+        var predictsJump = Prediction(EchoResponseKind.Jump);
+
+        evaluator.RecordChoice(Resolved(EchoResponseKind.Slide, 301),
+            predictsJump);
+        evaluator.RecordChoice(Resolved(EchoResponseKind.Slide, 302),
+            predictsJump);
+        evaluator.RecordChoice(Resolved(EchoResponseKind.Slide, 303),
+            predictsJump);
+
+        Assert.AreEqual(3, evaluator.Contract.resistancePredictionMisses);
+        Assert.IsFalse(evaluator.Contract.initialBreakCompleted,
+            "Breaking the prediction requires two distinct successful strategies.");
+    }
+
+    [Test]
+    public void CalibrationStatusNamesTheMissingRequirement()
+    {
+        int[] actions = new int[5];
+        actions[(int)ShadowAction.Jump] = 2;
+        var status = AIShadowRules.BuildCalibrationStatus(
+            24, 6, actions, 24, 6, 2, 2, 2);
+
+        Assert.IsFalse(status.requirementsMet);
+        Assert.AreEqual(1, status.categories);
+        StringAssert.Contains("不同动作", status.nextRequirement);
+
+        actions[(int)ShadowAction.Slide] = 2;
+        status = AIShadowRules.BuildCalibrationStatus(
+            24, 6, actions, 24, 6, 2, 2, 2);
+        Assert.IsTrue(status.requirementsMet);
+        StringAssert.Contains("终点", status.nextRequirement);
     }
 
     [Test]

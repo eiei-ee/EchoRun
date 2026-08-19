@@ -100,75 +100,142 @@ public class PlayerStyleTests
     }
 
     [Test]
-    public void OpportunityCountsLaneChangeAsOneGroupChoice()
+    public void ChoiceGroupWaitsForFinalLaneBeforeSettling()
     {
         var tracker = new ObstacleOpportunityTracker();
+        EchoChoiceGroup group = ChoiceGroup(11, 100f, 0, 1);
 
-        Assert.IsFalse(tracker.Update(1, false, false, true, 5f,
-            ObstacleType.Low, 101, 11, 7f, out _));
+        Assert.IsFalse(tracker.UpdateGroup(group, 0, 95f,
+            false, false, 7f, out _));
         Assert.IsTrue(tracker.HasPending);
 
-        Assert.IsTrue(tracker.Update(0, false, false, false, 0f,
-            ObstacleType.Low, 0, 0, 7f,
+        Assert.IsFalse(tracker.UpdateGroup(group, 1, 99f,
+            false, false, 7f, out _),
+            "Changing lanes must not close the row before the chosen obstacle.");
+        tracker.MarkAction(ShadowAction.Slide, 1);
+        Assert.IsTrue(tracker.UpdateGroup(null, 1, 102f,
+            false, true, 7f,
             out ObstacleOpportunityResolution result));
-        Assert.AreEqual(EchoResponseKind.RouteAvoid, result.response);
-        Assert.AreEqual(101, result.opportunityId);
+        Assert.AreEqual(EchoResponseKind.Slide, result.response);
         Assert.AreEqual(11, result.groupId);
-        Assert.IsFalse(result.passedInLane);
+        Assert.AreEqual(0, result.entryLane);
+        Assert.AreEqual(1, result.finalLane);
+        Assert.IsTrue(result.laneChanged);
+        Assert.IsTrue(result.physicallySucceeded);
         Assert.IsFalse(tracker.HasPending);
-        Assert.IsTrue(tracker.ResolvedOpportunityIds.Contains(101));
     }
 
     [Test]
     public void OpportunityPreservesCleanSlideMadeInsideItsWindow()
     {
         var tracker = new ObstacleOpportunityTracker();
-        tracker.Update(1, false, false, true, 5f,
-            ObstacleType.Low, 202, 22, 7f, out _);
+        EchoChoiceGroup group = ChoiceGroup(22, 100f, 0, 1);
+        tracker.UpdateGroup(group, 1, 95f,
+            false, false, 7f, out _);
 
         tracker.MarkAction(ShadowAction.Slide, 1);
-        Assert.IsTrue(tracker.Update(1, false, true, false, 0f,
-            ObstacleType.Low, 0, 0, 7f,
+        Assert.IsTrue(tracker.UpdateGroup(null, 1, 102f,
+            false, true, 7f,
             out ObstacleOpportunityResolution result));
 
         Assert.AreEqual(EchoResponseKind.Slide, result.response);
         Assert.IsTrue(result.physicallySucceeded);
         Assert.IsTrue(result.passedInLane);
-        Assert.IsTrue(tracker.ResolvedOpportunityIds.Contains(202));
+        Assert.IsTrue(tracker.ResolvedOpportunityIds.Contains(222));
     }
 
     [Test]
     public void OpportunityPreservesCleanJumpAndDoesNotResolveGroupTwice()
     {
         var tracker = new ObstacleOpportunityTracker();
-        tracker.Update(2, false, false, true, 4f,
-            ObstacleType.High, 301, 33, 7f, out _);
+        EchoChoiceGroup group = ChoiceGroup(33, 100f, 2, 1);
+        tracker.UpdateGroup(group, 2, 96f,
+            false, false, 7f, out _);
         tracker.MarkAction(ShadowAction.Jump, 2);
 
-        Assert.IsTrue(tracker.Update(2, true, false, false, 0f,
-            ObstacleType.High, 0, 0, 7f,
+        Assert.IsTrue(tracker.UpdateGroup(null, 2, 102f,
+            true, false, 7f,
             out ObstacleOpportunityResolution result));
         Assert.AreEqual(EchoResponseKind.Jump, result.response);
         Assert.IsTrue(result.physicallySucceeded);
 
-        Assert.IsFalse(tracker.Update(1, false, false, true, 3f,
-            ObstacleType.Low, 302, 33, 7f, out _),
+        Assert.IsFalse(tracker.UpdateGroup(group, 1, 96f,
+            false, false, 7f, out _),
             "Another lane in the resolved row must not become a second choice.");
         Assert.IsFalse(tracker.HasPending);
     }
 
     [Test]
-    public void OpportunitySettlesClearLaneAsRouteAvoidance()
+    public void HoldingAnAlreadyClearLaneIsNotReportedAsLaneChange()
     {
         var tracker = new ObstacleOpportunityTracker();
-        Assert.IsFalse(tracker.UpdateClearRoute(
-            1, true, 5f, 44, 7f, out _));
-        Assert.IsTrue(tracker.UpdateClearRoute(
-            1, false, 0f, 0, 7f,
+        EchoChoiceGroup group = ChoiceGroup(44, 100f, 0, 2);
+        Assert.IsFalse(tracker.UpdateGroup(group, 1, 95f,
+            false, false, 7f, out _));
+        Assert.IsTrue(tracker.UpdateGroup(null, 1, 102f,
+            true, false, 7f,
             out ObstacleOpportunityResolution result));
-        Assert.AreEqual(EchoResponseKind.RouteAvoid, result.response);
+        Assert.AreEqual(EchoResponseKind.ClearRoute, result.response);
+        Assert.IsFalse(result.laneChanged);
+        Assert.AreEqual(1, result.entryLane);
+        Assert.AreEqual(1, result.finalLane);
         Assert.IsTrue(result.physicallySucceeded);
         Assert.AreEqual(44, result.groupId);
+    }
+
+    [Test]
+    public void MovingToClearLanePreservesLaneChangeSeparately()
+    {
+        var tracker = new ObstacleOpportunityTracker();
+        EchoChoiceGroup group = ChoiceGroup(45, 100f, 0, 1);
+        tracker.UpdateGroup(group, 0, 95f,
+            false, false, 7f, out _);
+
+        Assert.IsTrue(tracker.UpdateGroup(null, 2, 102f,
+            false, false, 7f,
+            out ObstacleOpportunityResolution result));
+        Assert.AreEqual(EchoResponseKind.ClearRoute, result.response);
+        Assert.IsTrue(result.laneChanged);
+        Assert.AreEqual(0, result.entryLane);
+        Assert.AreEqual(2, result.finalLane);
+    }
+
+    private static EchoChoiceGroup ChoiceGroup(int groupId,
+        float routeDistance, int highLane, int lowLane)
+    {
+        return new EchoChoiceGroup
+        {
+            groupId = groupId,
+            phaseSequence = 2,
+            planVersion = 2,
+            groupKind = EchoChoiceGroupKind.DetectionProbe,
+            routeDistance = routeDistance,
+            settleRouteDistance = routeDistance + 1f,
+            clearLane = 3 - highLane - lowLane,
+            options = new[]
+            {
+                new ObstacleOpportunity
+                {
+                    opportunityId = groupId * 10 + 1,
+                    groupId = groupId,
+                    phaseSequence = 2,
+                    planVersion = 2,
+                    lane = highLane,
+                    obstacleType = ObstacleType.High,
+                    routeDistance = routeDistance
+                },
+                new ObstacleOpportunity
+                {
+                    opportunityId = groupId * 10 + 2,
+                    groupId = groupId,
+                    phaseSequence = 2,
+                    planVersion = 2,
+                    lane = lowLane,
+                    obstacleType = ObstacleType.Low,
+                    routeDistance = routeDistance
+                }
+            }
+        };
     }
 
     [Test]

@@ -121,6 +121,7 @@ public sealed class UIExperienceTests
             targetProgress = 100f,
             resistanceGroupsResolved = 2,
             resistancePredictionMisses = 2,
+            resistanceDistinctResponseMask = 3,
             lastFeedback = "反制生效：动作正确",
             feedbackSequence = 7
         };
@@ -128,7 +129,7 @@ public sealed class UIExperienceTests
         EchoDuelViewData leading = EchoRunPresentation.BuildDuel(
             true, contract, 2.75f, 2, 2);
         Assert.AreEqual("破解要求：右侧路线 · 滑铲躲避", leading.contract);
-        Assert.AreEqual("反抗 2/3 · 预测失效 2/2", leading.progress);
+        Assert.AreEqual("反抗 2/3 · 预测失效 2/2 · 策略 2/2", leading.progress);
         Assert.AreEqual(1f / 3f, leading.progress01, 0.001f);
         Assert.AreEqual(EchoLeadState.Leading, leading.leadState);
         StringAssert.StartsWith("领先 +2.8m", leading.lead);
@@ -238,7 +239,7 @@ public sealed class UIExperienceTests
             }
         };
 
-        Assert.AreEqual("下一选择：跳跃 / 滑铲 / 改道",
+        Assert.AreEqual("下一选择：跳跃 / 滑铲 / 走空路",
             EchoRunPresentation.BuildChoiceGroupChallenge(group));
     }
 

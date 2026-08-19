@@ -8,9 +8,19 @@ public enum EchoResponseKind
     Jump,
     Slide,
     RouteAvoid,
+    ClearRoute,
     Hit,
     NoAction,
     Cancelled
+}
+
+public enum EchoChoiceGroupKind
+{
+    RegularObstacleRow,
+    DetectionProbe,
+    ResistanceChoice,
+    CounterattackChoice,
+    FinaleObstacle
 }
 
 [Serializable]
@@ -32,7 +42,10 @@ public sealed class EchoChoiceGroup
     public int phaseSequence;
     public int planVersion;
     public int rowId;
+    public EchoChoiceGroupKind groupKind;
     public float routeDistance;
+    public float settleRouteDistance;
+    public int clearLane = -1;
     public EchoPredictionSnapshot prediction;
     public ObstacleOpportunity[] options = Array.Empty<ObstacleOpportunity>();
 }
@@ -41,37 +54,50 @@ public struct ObstacleOpportunityResolution
 {
     public int opportunityId;
     public int groupId;
+    public int phaseSequence;
+    public int planVersion;
+    public EchoChoiceGroupKind groupKind;
     public int lane;
+    public int entryLane;
+    public int finalLane;
+    public bool laneChanged;
     public ObstacleType obstacleType;
+    public EchoResponseKind predictedResponse;
+    public float predictionConfidence;
     public EchoResponseKind response;
     public bool physicallySucceeded;
     public bool passedInLane;
 }
 
 /// <summary>
-/// Resolves one obstacle row exactly once after the player chooses a lane and
-/// passes its route position. It treats clean jumps and slides symmetrically.
+/// Resolves an entire obstacle row once, after the player has passed every
+/// option in that row. Lane changes update the eventual choice but never close
+/// the row early, so the action performed in the final lane remains observable.
 /// </summary>
 public sealed class ObstacleOpportunityTracker
 {
     private const int MaxRememberedGroups = 256;
     private readonly HashSet<int> _resolvedGroups = new HashSet<int>();
     private readonly Queue<int> _resolvedOrder = new Queue<int>();
-    private ObstacleOpportunity _pending;
-    private bool _usedJump;
-    private bool _usedSlide;
-    private bool _clearRoute;
+    private readonly bool[] _usedJumpByLane = new bool[3];
+    private readonly bool[] _usedSlideByLane = new bool[3];
+    private EchoChoiceGroup _pending;
+    private int _entryLane;
+    private int _currentLane;
 
     public bool HasPending => _pending != null;
-    public int PendingOpportunityId => HasPending ? _pending.opportunityId : 0;
+    public int PendingOpportunityId => HasPending
+        ? OpportunityForLane(_pending, _currentLane)?.opportunityId ?? 0
+        : 0;
     public ISet<int> ResolvedOpportunityIds { get; } = new HashSet<int>();
 
     public void Reset()
     {
         _pending = null;
-        _usedJump = false;
-        _usedSlide = false;
-        _clearRoute = false;
+        _entryLane = 0;
+        _currentLane = 0;
+        Array.Clear(_usedJumpByLane, 0, _usedJumpByLane.Length);
+        Array.Clear(_usedSlideByLane, 0, _usedSlideByLane.Length);
         _resolvedGroups.Clear();
         _resolvedOrder.Clear();
         ResolvedOpportunityIds.Clear();
@@ -79,144 +105,153 @@ public sealed class ObstacleOpportunityTracker
 
     public void MarkAction(ShadowAction action, int playerLane)
     {
-        if (!HasPending || Mathf.Clamp(playerLane, 0, 2) != _pending.lane)
-            return;
-        if (action == ShadowAction.Jump) _usedJump = true;
-        if (action == ShadowAction.Slide) _usedSlide = true;
+        if (!HasPending) return;
+        int lane = Mathf.Clamp(playerLane, 0, 2);
+        if (action == ShadowAction.Jump) _usedJumpByLane[lane] = true;
+        if (action == ShadowAction.Slide) _usedSlideByLane[lane] = true;
     }
 
-    public bool Update(int playerLane, bool isJumping, bool isSliding,
-        bool hasObstacle, float obstacleDistance, ObstacleType obstacleType,
-        int opportunityId, int groupId, float detectionDistance,
+    public bool UpdateGroup(EchoChoiceGroup group, int playerLane,
+        float playerRouteDistance, bool isJumping, bool isSliding,
+        float detectionDistance,
         out ObstacleOpportunityResolution resolution)
     {
         resolution = default;
         int lane = Mathf.Clamp(playerLane, 0, 2);
-        if (HasPending)
+        if (!HasPending)
         {
-            if (lane == _pending.lane)
-            {
-                _usedJump |= isJumping;
-                _usedSlide |= isSliding;
-            }
-            if (lane != _pending.lane)
-                return Resolve(EchoResponseKind.RouteAvoid, true, false,
-                    out resolution);
-            if (!hasObstacle || opportunityId != _pending.opportunityId)
-            {
-                EchoResponseKind response = ResponseForPending();
-                bool succeeded = RequiredActionFor(_pending.obstacleType)
-                                 == response;
-                return Resolve(response, succeeded, true, out resolution);
-            }
-            return false;
+            if (group == null || group.groupId == 0
+                || _resolvedGroups.Contains(group.groupId)
+                || group.routeDistance - playerRouteDistance
+                > Mathf.Max(0f, detectionDistance))
+                return false;
+            Arm(group, lane);
         }
 
-        if (!hasObstacle || opportunityId == 0
-            || ResolvedOpportunityIds.Contains(opportunityId)
-            || (groupId != 0 && _resolvedGroups.Contains(groupId))
-            || obstacleDistance > Mathf.Max(0f, detectionDistance)
-            || (obstacleType != ObstacleType.High
-                && obstacleType != ObstacleType.Low))
-            return false;
+        _currentLane = lane;
+        _usedJumpByLane[lane] |= isJumping;
+        _usedSlideByLane[lane] |= isSliding;
+        float settleDistance = _pending.settleRouteDistance > 0f
+            ? _pending.settleRouteDistance
+            : _pending.routeDistance + 1f;
+        if (playerRouteDistance < settleDistance) return false;
 
-        _pending = new ObstacleOpportunity
-        {
-            opportunityId = opportunityId,
-            groupId = groupId != 0 ? groupId : opportunityId,
-            lane = lane,
-            obstacleType = obstacleType
-        };
-        _usedJump = isJumping;
-        _usedSlide = isSliding;
-        _clearRoute = false;
-        return false;
-    }
-
-    public bool UpdateClearRoute(int playerLane, bool hasGroup,
-        float groupDistance, int groupId, float detectionDistance,
-        out ObstacleOpportunityResolution resolution)
-    {
-        resolution = default;
-        int lane = Mathf.Clamp(playerLane, 0, 2);
-        if (HasPending)
-        {
-            if (lane != _pending.lane)
-                return Resolve(EchoResponseKind.RouteAvoid, true, false,
-                    out resolution);
-            if (!hasGroup || groupId != _pending.groupId)
-                return Resolve(EchoResponseKind.RouteAvoid, true, true,
-                    out resolution);
-            return false;
-        }
-        if (!hasGroup || groupId == 0 || _resolvedGroups.Contains(groupId)
-            || groupDistance > Mathf.Max(0f, detectionDistance))
-            return false;
-        _pending = new ObstacleOpportunity
-        {
-            opportunityId = -Mathf.Abs(groupId),
-            groupId = groupId,
-            lane = lane,
-            obstacleType = ObstacleType.Barrier
-        };
-        _clearRoute = true;
-        return false;
+        ObstacleOpportunity option = OpportunityForLane(_pending, lane);
+        if (option == null)
+            return Resolve(null, EchoResponseKind.ClearRoute, true, false,
+                out resolution);
+        EchoResponseKind response = ResponseForLane(lane);
+        bool succeeded = RequiredActionFor(option.obstacleType) == response;
+        return Resolve(option, response, succeeded, true, out resolution);
     }
 
     public bool ResolveContact(int opportunityId, bool passed,
         out ObstacleOpportunityResolution resolution)
     {
         resolution = default;
-        if (!HasPending || opportunityId == 0
-            || opportunityId != _pending.opportunityId)
-            return false;
+        if (!HasPending || opportunityId == 0) return false;
+        ObstacleOpportunity option = FindOpportunity(_pending, opportunityId);
+        if (option == null) return false;
+        _currentLane = Mathf.Clamp(option.lane, 0, 2);
         EchoResponseKind response = passed
-            ? RequiredActionFor(_pending.obstacleType)
+            ? RequiredActionFor(option.obstacleType)
             : EchoResponseKind.Hit;
-        return Resolve(response, passed, passed, out resolution);
+        return Resolve(option, response, passed, passed, out resolution);
     }
 
     public bool Cancel(out ObstacleOpportunityResolution resolution)
     {
-        return Resolve(EchoResponseKind.Cancelled, false, false,
+        return Resolve(null, EchoResponseKind.Cancelled, false, false,
             out resolution);
     }
 
-    private EchoResponseKind ResponseForPending()
+    private void Arm(EchoChoiceGroup group, int lane)
     {
-        if (_clearRoute) return EchoResponseKind.RouteAvoid;
-        if (_usedJump) return EchoResponseKind.Jump;
-        if (_usedSlide) return EchoResponseKind.Slide;
+        _pending = group;
+        _entryLane = lane;
+        _currentLane = lane;
+        Array.Clear(_usedJumpByLane, 0, _usedJumpByLane.Length);
+        Array.Clear(_usedSlideByLane, 0, _usedSlideByLane.Length);
+    }
+
+    private EchoResponseKind ResponseForLane(int lane)
+    {
+        if (_usedJumpByLane[lane]) return EchoResponseKind.Jump;
+        if (_usedSlideByLane[lane]) return EchoResponseKind.Slide;
         return EchoResponseKind.NoAction;
     }
 
-    private bool Resolve(EchoResponseKind response, bool succeeded,
-        bool passedInLane, out ObstacleOpportunityResolution resolution)
+    private bool Resolve(ObstacleOpportunity option,
+        EchoResponseKind response, bool succeeded, bool passedInLane,
+        out ObstacleOpportunityResolution resolution)
     {
         resolution = default;
         if (!HasPending) return false;
+        int finalLane = Mathf.Clamp(_currentLane, 0, 2);
         resolution = new ObstacleOpportunityResolution
         {
-            opportunityId = _pending.opportunityId,
+            opportunityId = option != null ? option.opportunityId : 0,
             groupId = _pending.groupId,
-            lane = _pending.lane,
-            obstacleType = _pending.obstacleType,
+            phaseSequence = _pending.phaseSequence,
+            planVersion = _pending.planVersion,
+            groupKind = _pending.groupKind,
+            lane = finalLane,
+            entryLane = _entryLane,
+            finalLane = finalLane,
+            laneChanged = _entryLane != finalLane,
+            obstacleType = option != null
+                ? option.obstacleType : ObstacleType.Barrier,
+            predictedResponse = _pending.prediction != null
+                ? _pending.prediction.predictedResponse
+                : EchoResponseKind.None,
+            predictionConfidence = _pending.prediction != null
+                ? _pending.prediction.confidence : 0f,
             response = response,
             physicallySucceeded = succeeded,
             passedInLane = passedInLane
         };
-        ResolvedOpportunityIds.Add(_pending.opportunityId);
-        if (_resolvedGroups.Add(_pending.groupId))
+        if (_pending.options != null)
         {
-            _resolvedOrder.Enqueue(_pending.groupId);
-            while (_resolvedOrder.Count > MaxRememberedGroups)
-                _resolvedGroups.Remove(_resolvedOrder.Dequeue());
+            for (int i = 0; i < _pending.options.Length; i++)
+                if (_pending.options[i] != null
+                    && _pending.options[i].opportunityId != 0)
+                    ResolvedOpportunityIds.Add(
+                        _pending.options[i].opportunityId);
         }
+        RememberResolvedGroup(_pending.groupId);
         _pending = null;
-        _usedJump = false;
-        _usedSlide = false;
-        _clearRoute = false;
+        Array.Clear(_usedJumpByLane, 0, _usedJumpByLane.Length);
+        Array.Clear(_usedSlideByLane, 0, _usedSlideByLane.Length);
         return true;
+    }
+
+    private void RememberResolvedGroup(int groupId)
+    {
+        if (!_resolvedGroups.Add(groupId)) return;
+        _resolvedOrder.Enqueue(groupId);
+        while (_resolvedOrder.Count > MaxRememberedGroups)
+            _resolvedGroups.Remove(_resolvedOrder.Dequeue());
+    }
+
+    private static ObstacleOpportunity OpportunityForLane(
+        EchoChoiceGroup group, int lane)
+    {
+        if (group?.options == null) return null;
+        for (int i = 0; i < group.options.Length; i++)
+            if (group.options[i] != null && group.options[i].lane == lane)
+                return group.options[i];
+        return null;
+    }
+
+    private static ObstacleOpportunity FindOpportunity(
+        EchoChoiceGroup group, int opportunityId)
+    {
+        if (group?.options == null) return null;
+        for (int i = 0; i < group.options.Length; i++)
+            if (group.options[i] != null
+                && group.options[i].opportunityId == opportunityId)
+                return group.options[i];
+        return null;
     }
 
     private static EchoResponseKind RequiredActionFor(ObstacleType type)
