@@ -56,9 +56,9 @@ public sealed class PowerUpShopUI : MonoBehaviour
 
     private void Build(Transform parent)
     {
-        Button launcherButton = RuntimePanelFactory.Button("PowerUpLauncher", parent,
-            "补给舱", new Vector2(0.50f, 0.12f), new Vector2(180f, 56f),
-            RuntimePanelFactory.Raised, 26);
+        Button launcherButton = RuntimePanelFactory.NavigationButton(
+            "PowerUpLauncher", parent, "补给舱", "SUPPLY", "shard",
+            new Vector2(0.145f, 0.095f), new Vector2(150f, 88f));
         launcherButton.onClick.AddListener(Open);
         _launcher = launcherButton.gameObject;
 
@@ -258,8 +258,10 @@ public sealed class PowerUpShopUI : MonoBehaviour
         if (_launcher != null)
         {
             RuntimePanelFactory.Place(_launcher.GetComponent<RectTransform>(),
-                new Vector2(0.50f, 0.12f),
-                launcherSize,
+                portrait ? new Vector2(0.38f, 0.08f)
+                    : new Vector2(0.145f, 0.095f),
+                portrait ? new Vector2(180f, 104f)
+                    : new Vector2(150f, 88f),
                 Vector2.zero);
         }
         if (_closeButton != null)

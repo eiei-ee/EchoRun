@@ -89,7 +89,7 @@ public sealed class UIExperienceTests
         EchoMenuViewData calibration = EchoRunPresentation.BuildMenu(
             0, new PlayerStyleData(), 2, 3);
 
-        Assert.AreEqual("首次回声校准", calibration.generation);
+        Assert.AreEqual("首次校准 · 回声尚未形成", calibration.generation);
         StringAssert.Contains("跳跃 2 次", calibration.objective);
         StringAssert.Contains("滑铲 3 次", calibration.objective);
         Assert.AreEqual("开始校准", calibration.primaryAction);
@@ -101,12 +101,22 @@ public sealed class UIExperienceTests
 
         EchoMenuViewData challenge = EchoRunPresentation.BuildMenu(
             4, new PlayerStyleData(), 2, 3);
-        Assert.AreEqual("第 4 代回声", challenge.generation);
-        Assert.AreEqual("挑战第 4 代回声", challenge.primaryAction);
+        Assert.AreEqual("第 04 代回声 · 已就绪", challenge.generation);
+        Assert.AreEqual("挑战第 04 代回声", challenge.primaryAction);
         Assert.IsNotEmpty(challenge.learned);
         StringAssert.DoesNotContain("AI识别：", challenge.learned);
+        StringAssert.DoesNotContain("回声契约：", challenge.rule);
         StringAssert.DoesNotContain("权重", challenge.rule);
         StringAssert.DoesNotContain("置信", challenge.rule);
+    }
+
+    [Test]
+    public void MenuMemoryCorridorBackgroundIsBundled()
+    {
+        Texture2D background = Resources.Load<Texture2D>(
+            "Art/Menu/MemoryCorridorMenu");
+        Assert.IsNotNull(background);
+        Assert.Greater(background.width, background.height);
     }
 
     [Test]
@@ -321,7 +331,8 @@ public sealed class UIExperienceTests
         Font font = Resources.Load<Font>("Fonts/EchoRunSansSC-Regular");
         Assert.IsNotNull(font);
         const string copy =
-            "首次回声校准挑战契约补给舱跑者外观库存装备领先落后已破解"
+            "影迹你的过去正在追上首次校准回声尚未形成挑战契约补给舱"
+            + "回声档案跑者外观库存装备领先落后已破解"
             + "设置音乐音量音效画面帧率辅助显示选择配色立即预览并保存"
             + "大字高对比减少动态返回百分比补充";
         foreach (char character in copy)

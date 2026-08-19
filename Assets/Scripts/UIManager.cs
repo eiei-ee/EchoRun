@@ -19,8 +19,12 @@ public class UIManager : MonoBehaviour
 
     // ── Menu ──
     GameObject _menuPanel;
+    RawImage _menuBackground;
+    RectTransform _menuLeftVeil;
     Button _startBtn, _settingsBtn, _characterBtn;
+    Text _menuTitleText, _menuEnglishText, _menuTaglineText;
     Text _menuGenerationText, _menuLearnedText, _menuRuleText, _menuObjectiveText;
+    RectTransform _menuLearnedCard, _menuRuleCard;
 
     // ── Settings (sub-panel of menu) ──
     GameObject _settingsPanel;
@@ -127,6 +131,7 @@ public class UIManager : MonoBehaviour
 
     void Start()
     {
+        EnsureDesktopWindowFitsDisplay();
         if (_gm == null) _gm = GameManager.Instance;
         if (_gm == null) return;
         _menuRouter.Initialize(_gm);
@@ -312,79 +317,169 @@ public class UIManager : MonoBehaviour
 
     void CreateMenuPanel()
     {
-        _menuPanel = NewPanel("MenuPanel", WithAlpha(Backdrop, 0.56f));
-        AddMenuGrid(_menuPanel.transform);
+        _menuPanel = NewPanel("MenuPanel", Color.clear);
+        CreateMenuBackground();
 
-        Text protocol = MakeText("Protocol", _menuPanel.transform,
-            "ADAPTIVE RIVAL PROTOCOL  //  07", 16, TextAnchor.MiddleCenter);
-        protocol.color = Primary;
-        protocol.fontStyle = FontStyle.Bold;
-        AnchorText(protocol.GetComponent<RectTransform>(), 0.5f, 0.87f, 620, 30);
+        GameObject veil = new GameObject("LeftReadabilityVeil", typeof(Image));
+        veil.transform.SetParent(_menuPanel.transform, false);
+        Image veilImage = veil.GetComponent<Image>();
+        veilImage.color = WithAlpha(Ink, 0.18f);
+        veilImage.raycastTarget = false;
+        _menuLeftVeil = veil.GetComponent<RectTransform>();
+        _menuLeftVeil.anchorMin = Vector2.zero;
+        _menuLeftVeil.anchorMax = new Vector2(0.44f, 1f);
+        _menuLeftVeil.offsetMin = Vector2.zero;
+        _menuLeftVeil.offsetMax = Vector2.zero;
 
-        Text title = MakeText("Title", _menuPanel.transform, "ECHO//RUN",
-            EchoRunUITheme.TypeHero, TextAnchor.MiddleCenter);
-        if (_titleFont != null) title.font = _titleFont;
-        title.color = TextPrimary;
-        title.fontStyle = FontStyle.Bold;
-        AddShadow(title.gameObject, WithAlpha(Ink, 0.9f));
-        // Cyan halo in two diagonal directions reads as a neon glow around
-        // the wordmark without any texture assets.
-        Outline glowA = title.gameObject.AddComponent<Outline>();
-        glowA.effectColor = WithAlpha(Primary, 0.40f);
-        glowA.effectDistance = new Vector2(2.2f, -2.2f);
-        Outline glowB = title.gameObject.AddComponent<Outline>();
-        glowB.effectColor = WithAlpha(Primary, 0.40f);
-        glowB.effectDistance = new Vector2(-2.2f, 2.2f);
-        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.76f, 760, 92);
+        _menuTitleText = MakeText("Title", _menuPanel.transform, "影迹",
+            EchoRunUITheme.TypeHero, TextAnchor.MiddleLeft);
+        _menuTitleText.color = TextPrimary;
+        _menuTitleText.fontStyle = FontStyle.Bold;
+        AddShadow(_menuTitleText.gameObject, WithAlpha(PrimaryStrong, 0.85f));
+        AnchorText(_menuTitleText.rectTransform, 0.19f, 0.82f, 590f, 92f);
 
-        Text subtitle = MakeText("Subtitle", _menuPanel.transform,
-            "回声竞速实验", 22, TextAnchor.MiddleCenter);
-        subtitle.color = Reward;
-        AnchorText(subtitle.GetComponent<RectTransform>(), 0.5f, 0.69f, 420, 36);
+        _menuEnglishText = MakeText("EnglishTitle", _menuPanel.transform,
+            "E C H O // R U N", 24, TextAnchor.MiddleLeft);
+        if (_titleFont != null) _menuEnglishText.font = _titleFont;
+        _menuEnglishText.color = TextPrimary;
+        _menuEnglishText.fontStyle = FontStyle.Bold;
+        AnchorText(_menuEnglishText.rectTransform, 0.19f, 0.735f, 590f, 38f);
+
+        _menuTaglineText = MakeText("Tagline", _menuPanel.transform,
+            "你的过去，正在追上你", 27, TextAnchor.MiddleLeft);
+        _menuTaglineText.color = Primary;
+        AnchorText(_menuTaglineText.rectTransform, 0.19f, 0.66f, 590f, 42f);
 
         _menuGenerationText = MakeText("EchoGeneration", _menuPanel.transform,
-            "首次回声校准", 32, TextAnchor.MiddleLeft);
+            "首次校准 · 回声尚未形成", 29, TextAnchor.MiddleLeft);
         _menuGenerationText.color = Primary;
         _menuGenerationText.fontStyle = FontStyle.Bold;
-        AnchorText(_menuGenerationText.rectTransform, 0.5f, 0.57f, 840, 48);
+        AnchorText(_menuGenerationText.rectTransform, 0.19f, 0.555f, 590f, 46f);
 
-        _menuLearnedText = MakeBriefLine("EchoLearned", "它将学习：路线、动作与节奏",
-            0.505f, TextPrimary);
-        _menuRuleText = MakeBriefLine("EchoRule", "本轮规则：完成校准后生成第 1 代回声",
-            0.445f, TextPrimary);
-        _menuObjectiveText = MakeBriefLine("EchoObjective", "挑战目标：完成一次校准跑局",
-            0.385f, Reward);
+        _menuLearnedText = MakeMenuFact("EchoLearned",
+            "等待采样：路线、动作与节奏", "echo", 0.455f,
+            Primary, out _menuLearnedCard);
+        _menuRuleText = MakeMenuFact("EchoRule",
+            "校准目标：完成跳跃与滑铲采样", "contract", 0.375f,
+            Reward, out _menuRuleCard);
 
-        _startBtn = MakeButton("StartBtn", _menuPanel.transform, "启动校准", 28,
-            new Vector2(0.5f, 0.255f), new Vector2(520, 78),
+        _startBtn = MakeButton("StartBtn", _menuPanel.transform, "开始校准", 27,
+            new Vector2(0.19f, 0.255f), new Vector2(560f, 82f),
             Primary, Primary, Ink);
         _startBtn.onClick.AddListener(StartGameFromHome);
 
-        _settingsBtn = MakeButton("SettingsBtn", _menuPanel.transform, "设置", 24,
-            new Vector2(0.62f, 0.12f), new Vector2(180, 56),
-            WithAlpha(SurfaceRaised, 0.96f), TextMuted);
+        _settingsBtn = RuntimePanelFactory.NavigationButton(
+            "SettingsBtn", _menuPanel.transform, "设置", "SETTINGS", "stability",
+            new Vector2(0.325f, 0.095f), new Vector2(150f, 88f));
         _settingsBtn.onClick.AddListener(ShowSettings);
 
-        _characterBtn = MakeButton("CharacterBtn", _menuPanel.transform, "跑者", 24,
-            new Vector2(0.38f, 0.12f), new Vector2(180, 56),
-            WithAlpha(SurfaceRaised, 0.96f), TextMuted);
+        _characterBtn = RuntimePanelFactory.NavigationButton(
+            "CharacterBtn", _menuPanel.transform, "跑者", "RUNNER", "pace",
+            new Vector2(0.055f, 0.095f), new Vector2(150f, 88f));
         _characterBtn.onClick.AddListener(ShowCharacter);
 
         _menuPanel.SetActive(false);
     }
 
-    Text MakeBriefLine(string name, string content, float anchorY, Color color)
+    void CreateMenuBackground()
     {
-        Text line = MakeText(name, _menuPanel.transform, content, 24,
+        GameObject background = new GameObject("MemoryCorridorBackground",
+            typeof(RawImage));
+        background.transform.SetParent(_menuPanel.transform, false);
+        _menuBackground = background.GetComponent<RawImage>();
+        _menuBackground.texture = Resources.Load<Texture2D>(
+            "Art/Menu/MemoryCorridorMenu");
+        _menuBackground.color = _menuBackground.texture != null
+            ? Color.white : Backdrop;
+        _menuBackground.raycastTarget = false;
+        Stretch(_menuBackground.rectTransform);
+        _menuBackground.transform.SetAsFirstSibling();
+        FitMenuBackground();
+    }
+
+    Text MakeMenuFact(string name, string content, string iconName,
+        float anchorY, Color accent, out RectTransform cardRect)
+    {
+        GameObject card = new GameObject(name + "Card", typeof(Image));
+        card.transform.SetParent(_menuPanel.transform, false);
+        Image cardImage = card.GetComponent<Image>();
+        cardImage.color = WithAlpha(Surface, 0.72f);
+        cardImage.raycastTarget = false;
+        ApplyRounded(cardImage);
+        cardRect = card.GetComponent<RectTransform>();
+        cardRect.anchorMin = new Vector2(0.19f, anchorY);
+        cardRect.anchorMax = cardRect.anchorMin;
+        cardRect.sizeDelta = new Vector2(560f, 58f);
+        cardRect.anchoredPosition = Vector2.zero;
+
+        GameObject iconObject = new GameObject("Icon", typeof(Image));
+        iconObject.transform.SetParent(card.transform, false);
+        Image icon = iconObject.GetComponent<Image>();
+        icon.sprite = EchoIconSet.Get(iconName);
+        icon.preserveAspect = true;
+        icon.color = accent;
+        icon.raycastTarget = false;
+        RectTransform iconRect = icon.rectTransform;
+        iconRect.anchorMin = new Vector2(0f, 0.5f);
+        iconRect.anchorMax = iconRect.anchorMin;
+        iconRect.pivot = new Vector2(0f, 0.5f);
+        iconRect.sizeDelta = new Vector2(34f, 34f);
+        iconRect.anchoredPosition = new Vector2(18f, 0f);
+
+        Text line = MakeText(name, card.transform, content, 22,
             TextAnchor.MiddleLeft);
-        line.color = color;
-        line.horizontalOverflow = HorizontalWrapMode.Wrap;
-        line.verticalOverflow = VerticalWrapMode.Truncate;
+        line.color = TextPrimary;
         line.resizeTextForBestFit = true;
-        line.resizeTextMinSize = 19;
-        line.resizeTextMaxSize = 24;
-        AnchorText(line.rectTransform, 0.5f, anchorY, 840, 54);
+        line.resizeTextMinSize = 17;
+        line.resizeTextMaxSize = 22;
+        RectTransform lineRect = line.rectTransform;
+        lineRect.anchorMin = Vector2.zero;
+        lineRect.anchorMax = Vector2.one;
+        lineRect.offsetMin = new Vector2(68f, 7f);
+        lineRect.offsetMax = new Vector2(-16f, -7f);
         return line;
+    }
+
+    void FitMenuBackground()
+    {
+        if (_menuBackground == null || _menuBackground.texture == null
+            || Screen.width <= 0 || Screen.height <= 0) return;
+        float assetAspect = (float)_menuBackground.texture.width
+                            / _menuBackground.texture.height;
+        float screenAspect = (float)Screen.width / Screen.height;
+        if (screenAspect > assetAspect)
+        {
+            float visibleHeight = assetAspect / screenAspect;
+            _menuBackground.uvRect = new Rect(0f,
+                (1f - visibleHeight) * 0.5f, 1f, visibleHeight);
+        }
+        else
+        {
+            float visibleWidth = screenAspect / assetAspect;
+            _menuBackground.uvRect = new Rect(
+                (1f - visibleWidth) * 0.5f, 0f, visibleWidth, 1f);
+        }
+    }
+
+    static void EnsureDesktopWindowFitsDisplay()
+    {
+#if UNITY_STANDALONE_WIN && !UNITY_EDITOR
+        int systemWidth = Display.main.systemWidth;
+        int systemHeight = Display.main.systemHeight;
+        if (systemWidth <= 0 || systemHeight <= 0) return;
+        if (Screen.width <= systemWidth && Screen.height <= systemHeight) return;
+
+        int maxWidth = Mathf.Max(960, systemWidth - 80);
+        int maxHeight = Mathf.Max(540, systemHeight - 140);
+        int width = Mathf.Min(1600, maxWidth);
+        int height = Mathf.RoundToInt(width * 9f / 16f);
+        if (height > maxHeight)
+        {
+            height = maxHeight;
+            width = Mathf.RoundToInt(height * 16f / 9f);
+        }
+        Screen.SetResolution(width, height, FullScreenMode.Windowed);
+#endif
     }
 
     // ═══════════════════════════════════════════════════
@@ -1654,12 +1749,14 @@ public class UIManager : MonoBehaviour
             _menuGenerationText.text = view.generation;
         if (_menuLearnedText != null)
             _menuLearnedText.text = generation > 0
-                ? "它学会了：" + view.learned
-                : view.learned;
+                ? "它记住了：" + view.learned
+                : "等待采样：" + view.learned;
         if (_menuRuleText != null)
-            _menuRuleText.text = "本轮规则：" + view.rule;
+            _menuRuleText.text = generation > 0
+                ? "本轮契约：" + view.rule
+                : "校准目标：" + view.objective;
         if (_menuObjectiveText != null)
-            _menuObjectiveText.text = "挑战目标：" + view.objective;
+            _menuObjectiveText.text = view.objective;
         SetButtonLabel(_startBtn, view.primaryAction);
     }
 
@@ -1786,6 +1883,7 @@ public class UIManager : MonoBehaviour
         bool portrait = UILayoutRules.IsCompactPortrait(
             Screen.width, Screen.height);
         bool largeTargets = UsesTouchLayout() || portrait;
+        FitMenuBackground();
         if (_canvasScaler != null)
             _canvasScaler.referenceResolution = UILayoutRules.GetReferenceResolution(
                 Screen.width, Screen.height);
@@ -1870,9 +1968,11 @@ public class UIManager : MonoBehaviour
         }
         if (_startBtn != null)
         {
-            RectTransform start = _startBtn.GetComponent<RectTransform>();
-            start.sizeDelta = UILayoutRules.GetPrimaryActionSize(
-                Screen.width, Screen.height, UsesTouchLayout());
+            SetButtonLayout(_startBtn,
+                new Vector2(portrait ? 0.5f : 0.19f,
+                    portrait ? 0.245f : 0.255f),
+                UILayoutRules.GetPrimaryActionSize(
+                    Screen.width, Screen.height, UsesTouchLayout()));
         }
         SetButtonSize(_pauseBtn, largeTargets
             ? new Vector2(104f, 104f)
@@ -1889,14 +1989,7 @@ public class UIManager : MonoBehaviour
         if (_shadowResultText != null)
             _shadowResultText.rectTransform.sizeDelta =
                 UILayoutRules.GetResultTextSize(Screen.width, Screen.height);
-        SetButtonLayout(_characterBtn,
-            new Vector2(portrait ? 0.22f : 0.38f, 0.12f),
-            TouchButtonSize(portrait ? new Vector2(260f, 104f)
-                : new Vector2(180f, 56f), largeTargets, portrait));
-        SetButtonLayout(_settingsBtn,
-            new Vector2(portrait ? 0.78f : 0.62f, 0.12f),
-            TouchButtonSize(portrait ? new Vector2(260f, 104f)
-                : new Vector2(180f, 56f), largeTargets, portrait));
+        LayoutMenu(portrait);
 
         if (_briefingCard != null)
             _briefingCard.sizeDelta = portrait
@@ -1907,6 +2000,54 @@ public class UIManager : MonoBehaviour
                 ? new Vector2(820f, 170f)
                 : new Vector2(920f, 150f);
         LayoutReportGrid(portrait);
+    }
+
+    void LayoutMenu(bool portrait)
+    {
+        float contentX = portrait ? 0.5f : 0.19f;
+        float contentWidth = portrait ? 820f : 590f;
+        if (_menuLeftVeil != null)
+        {
+            _menuLeftVeil.anchorMax = new Vector2(portrait ? 1f : 0.44f, 1f);
+            _menuLeftVeil.offsetMin = Vector2.zero;
+            _menuLeftVeil.offsetMax = Vector2.zero;
+        }
+        if (_menuTitleText != null)
+            AnchorText(_menuTitleText.rectTransform, contentX,
+                portrait ? 0.84f : 0.82f, contentWidth,
+                portrait ? 148f : 128f);
+        if (_menuEnglishText != null)
+            AnchorText(_menuEnglishText.rectTransform, contentX,
+                portrait ? 0.765f : 0.735f, contentWidth, 38f);
+        if (_menuTaglineText != null)
+            AnchorText(_menuTaglineText.rectTransform, contentX,
+                portrait ? 0.70f : 0.66f, contentWidth, 42f);
+        if (_menuGenerationText != null)
+            AnchorText(_menuGenerationText.rectTransform, contentX,
+                portrait ? 0.60f : 0.555f, contentWidth, 48f);
+        LayoutMenuFact(_menuLearnedCard, contentX,
+            portrait ? 0.505f : 0.455f, portrait ? 760f : 560f);
+        LayoutMenuFact(_menuRuleCard, contentX,
+            portrait ? 0.425f : 0.375f, portrait ? 760f : 560f);
+
+        SetButtonLayout(_characterBtn,
+            portrait ? new Vector2(0.14f, 0.08f)
+                : new Vector2(0.055f, 0.095f),
+            portrait ? new Vector2(180f, 104f) : new Vector2(150f, 88f));
+        SetButtonLayout(_settingsBtn,
+            portrait ? new Vector2(0.86f, 0.08f)
+                : new Vector2(0.325f, 0.095f),
+            portrait ? new Vector2(180f, 104f) : new Vector2(150f, 88f));
+    }
+
+    static void LayoutMenuFact(RectTransform rect, float anchorX,
+        float anchorY, float width)
+    {
+        if (rect == null) return;
+        rect.anchorMin = new Vector2(anchorX, anchorY);
+        rect.anchorMax = rect.anchorMin;
+        rect.sizeDelta = new Vector2(width, 58f);
+        rect.anchoredPosition = Vector2.zero;
     }
 
     void LayoutReportGrid(bool portrait)

@@ -70,6 +70,52 @@ public static class RuntimePanelFactory
         return button;
     }
 
+    public static Button NavigationButton(string name, Transform parent,
+        string label, string caption, string iconName, Vector2 anchor,
+        Vector2 size)
+    {
+        if (UsesTouchLayout()) size.y = Mathf.Max(size.y, 104f);
+        GameObject go = PanelObject(name, parent, anchor, size,
+            EchoRunUITheme.WithAlpha(EchoRunUITheme.Surface, 0.78f));
+        Button button = go.AddComponent<Button>();
+
+        Sprite sprite = EchoIconSet.Get(iconName);
+        if (sprite != null)
+        {
+            GameObject iconObject = new GameObject("Icon", typeof(Image));
+            iconObject.transform.SetParent(go.transform, false);
+            Image icon = iconObject.GetComponent<Image>();
+            icon.sprite = sprite;
+            icon.preserveAspect = true;
+            icon.color = EchoRunUITheme.TextPrimary;
+            icon.raycastTarget = false;
+            Place(icon.rectTransform, new Vector2(0.5f, 0.68f),
+                new Vector2(32f, 32f), Vector2.zero);
+        }
+
+        Text title = Text("Label", go.transform, label, 19,
+            TextAnchor.MiddleCenter, TextPrimary);
+        title.fontStyle = FontStyle.Bold;
+        Place(title.rectTransform, new Vector2(0.5f, 0.34f),
+            new Vector2(size.x - 12f, 26f), Vector2.zero);
+
+        Text sub = Text("Caption", go.transform, caption, 10,
+            TextAnchor.MiddleCenter, TextMuted);
+        Place(sub.rectTransform, new Vector2(0.5f, 0.13f),
+            new Vector2(size.x - 10f, 18f), Vector2.zero);
+
+        ColorBlock states = button.colors;
+        states.normalColor = Color.white;
+        states.highlightedColor = new Color(1.08f, 1.08f, 1.08f, 1f);
+        states.pressedColor = new Color(0.74f, 0.84f, 0.89f, 1f);
+        states.selectedColor = states.highlightedColor;
+        states.disabledColor = new Color(0.48f, 0.52f, 0.56f, 0.75f);
+        states.fadeDuration = 0.08f;
+        button.colors = states;
+        button.onClick.AddListener(() => AudioManager.Instance?.PlayUIClick());
+        return button;
+    }
+
     public static void Place(RectTransform rect, Vector2 anchor, Vector2 size,
         Vector2 offset)
     {

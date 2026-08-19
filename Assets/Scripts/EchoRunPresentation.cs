@@ -91,9 +91,9 @@ public static class EchoRunPresentation
         {
             return new EchoMenuViewData
             {
-                generation = "首次回声校准",
-                learned = "跑一局，让回声学习你的路线、动作与节奏",
-                rule = "校准完成后会生成第 1 代回声",
+                generation = "首次校准 · 回声尚未形成",
+                learned = "路线、动作与节奏等待采样",
+                rule = "完成校准后生成第 01 代回声",
                 objective = "至少跳跃 " + minimumJumpSamples
                             + " 次并滑铲 " + minimumSlideSamples + " 次",
                 primaryAction = "开始校准"
@@ -103,18 +103,17 @@ public static class EchoRunPresentation
         EchoContractData contract = contractPreview != null
             ? contractPreview.ResetForRun()
             : EchoContractPolicy.Create(style, generation);
+        string status = echoClarity < 0.995f
+            ? " · 清晰度 "
+              + Mathf.RoundToInt(Mathf.Clamp01(echoClarity) * 100f) + "%"
+            : " · 已就绪";
         return new EchoMenuViewData
         {
-            generation = "第 " + generation + " 代回声"
-                         + (echoClarity < 0.995f
-                             ? " · 清晰度 "
-                               + Mathf.RoundToInt(Mathf.Clamp01(echoClarity)
-                                                  * 100f) + "%"
-                             : ""),
+            generation = "第 " + generation.ToString("D2") + " 代回声" + status,
             learned = TrimPrefix(contract.learnedTrait, "AI识别："),
-            rule = contract.ruleDescription,
+            rule = TrimPrefix(contract.title, "回声契约："),
             objective = contract.objective,
-            primaryAction = "挑战第 " + generation + " 代回声"
+            primaryAction = "挑战第 " + generation.ToString("D2") + " 代回声"
         };
     }
 

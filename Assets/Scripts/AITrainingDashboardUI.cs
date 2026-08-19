@@ -96,14 +96,14 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         bool compactPortrait = UILayoutRules.IsCompactPortrait(
             Screen.width, Screen.height);
         Vector2 launcherAnchor = compactPortrait
-            ? new Vector2(0.78f, 0.94f)
-            : new Vector2(0.90f, 0.91f);
+            ? new Vector2(0.62f, 0.08f)
+            : new Vector2(0.235f, 0.095f);
         Vector2 launcherSize = compactPortrait
-            ? new Vector2(260f, 96f)
-            : new Vector2(220f, 58f);
-        Button launcher = RuntimePanelFactory.Button("AITrainingLauncher", parent,
-            "回声报告", launcherAnchor, launcherSize,
-            RuntimePanelFactory.Raised, compactPortrait ? 30 : 26);
+            ? new Vector2(180f, 104f)
+            : new Vector2(150f, 88f);
+        Button launcher = RuntimePanelFactory.NavigationButton(
+            "AITrainingLauncher", parent, "回声档案", "ARCHIVE", "echo",
+            launcherAnchor, launcherSize);
         launcher.onClick.AddListener(Open);
         _launcher = launcher.gameObject;
 
@@ -114,7 +114,7 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
             RuntimePanelFactory.Panel);
         _panelRect = _panel.GetComponent<RectTransform>();
         Text title = RuntimePanelFactory.Text("Title", _panel.transform,
-            "回声报告", compactPortrait ? 44 : 40, TextAnchor.MiddleLeft,
+            "回声档案", compactPortrait ? 44 : 40, TextAnchor.MiddleLeft,
             RuntimePanelFactory.TextPrimary);
         _titleRect = title.rectTransform;
         title.rectTransform.pivot = new Vector2(0f, 0.5f);
@@ -312,11 +312,10 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         if (_launcher != null)
         {
             RuntimePanelFactory.Place(_launcher.GetComponent<RectTransform>(),
-                portrait ? new Vector2(0.78f, 0.94f) : new Vector2(0.90f, 0.91f),
-                launcherSize, Vector2.zero);
-            Text launcherLabel = _launcher.GetComponentInChildren<Text>();
-            if (launcherLabel != null) launcherLabel.fontSize = portrait ? 30 : 26;
-            SetButtonBaseFont(_launcher.GetComponent<Button>(), portrait ? 30 : 26);
+                portrait ? new Vector2(0.62f, 0.08f)
+                    : new Vector2(0.235f, 0.095f),
+                portrait ? new Vector2(180f, 104f)
+                    : new Vector2(150f, 88f), Vector2.zero);
         }
         _panelRect.sizeDelta = portrait
             ? new Vector2(900f, 1500f)

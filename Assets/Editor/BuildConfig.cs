@@ -799,9 +799,9 @@ public class BuildConfig
             NamedBuildTarget.Standalone, Il2CppCompilerConfiguration.Release);
         PlayerSettings.SetManagedStrippingLevel(
             NamedBuildTarget.Standalone, ManagedStrippingLevel.Medium);
-        PlayerSettings.defaultScreenWidth = 1920;
-        PlayerSettings.defaultScreenHeight = 1080;
-        PlayerSettings.fullScreenMode = FullScreenMode.FullScreenWindow;
+        PlayerSettings.defaultScreenWidth = 1600;
+        PlayerSettings.defaultScreenHeight = 900;
+        PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
         PlayerSettings.resizableWindow = true;
         PlayerSettings.runInBackground = true;
         QualitySettings.SetQualityLevel(3, true);
