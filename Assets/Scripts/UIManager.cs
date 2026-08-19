@@ -3,6 +3,8 @@ using UnityEngine.UI;
 
 public class UIManager : MonoBehaviour
 {
+    public const float GameOverBackdropAlpha = 0.78f;
+
     private static readonly Color Backdrop = EchoRunUITheme.Backdrop;
     private static readonly Color Surface = EchoRunUITheme.Surface;
     private static readonly Color SurfaceRaised = EchoRunUITheme.SurfaceRaised;
@@ -1107,7 +1109,8 @@ public class UIManager : MonoBehaviour
 
     void CreateGameOverPanel()
     {
-        _gameOverPanel = NewPanel("GameOverPanel", WithAlpha(Backdrop, 0.94f));
+        _gameOverPanel = NewPanel("GameOverPanel",
+            WithAlpha(Backdrop, GameOverBackdropAlpha));
 
         Text title = MakeText("GOTitle", _gameOverPanel.transform, "Game Over", 68, TextAnchor.MiddleCenter);
         title.color = Danger;

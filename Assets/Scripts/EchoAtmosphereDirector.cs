@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Duel-phase atmosphere. Each echo duel phase gets its own light, fog,
@@ -55,12 +56,33 @@ public sealed class EchoAtmosphereDirector : MonoBehaviour
     private bool _dirty;
     private Light _keyLight;
     private Material _skybox;
+    private int _baselineCaptureDelayFrames;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void InstallSceneLoadHook()
+    {
+        SceneManager.sceneLoaded -= HandleSceneLoaded;
+        SceneManager.sceneLoaded += HandleSceneLoaded;
+    }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeInstance()
     {
-        if (FindObjectOfType<EchoAtmosphereDirector>() != null) return;
-        new GameObject("EchoAtmosphereDirector")
+        EnsureInstanceForScene();
+    }
+
+    private static void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        EchoAtmosphereDirector director = EnsureInstanceForScene();
+        director.PrepareForSceneBaseline();
+    }
+
+    private static EchoAtmosphereDirector EnsureInstanceForScene()
+    {
+        EchoAtmosphereDirector existing =
+            FindObjectOfType<EchoAtmosphereDirector>();
+        if (existing != null) return existing;
+        return new GameObject("EchoAtmosphereDirector")
             .AddComponent<EchoAtmosphereDirector>();
     }
 
@@ -68,16 +90,23 @@ public sealed class EchoAtmosphereDirector : MonoBehaviour
     {
         if (Instance != null && Instance != this)
         {
-            Destroy(this);
+            Destroy(gameObject);
             return;
         }
         Instance = this;
+        DontDestroyOnLoad(gameObject);
+        PrepareForSceneBaseline();
     }
 
     void LateUpdate()
     {
         if (!_baselineCaptured)
         {
+            if (_baselineCaptureDelayFrames > 0)
+            {
+                _baselineCaptureDelayFrames--;
+                return;
+            }
             CaptureBaseline();
             _baselineCaptured = true;
         }
@@ -110,6 +139,16 @@ public sealed class EchoAtmosphereDirector : MonoBehaviour
             ApplyCurrent();
             _dirty = false;
         }
+    }
+
+    private void PrepareForSceneBaseline()
+    {
+        _baselineCaptured = false;
+        _baselineCaptureDelayFrames = 1;
+        _dirty = false;
+        _keyLight = null;
+        _skybox = null;
+        CurrentMood = EchoAtmosphereMood.Neutral;
     }
 
     private EchoAtmosphereMood ResolveMood()

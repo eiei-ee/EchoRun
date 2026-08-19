@@ -244,6 +244,14 @@ public sealed class CompetitionDemoTests
         }
     }
 
+    [Test]
+    public void GameOverBackdropKeepsVictoryAndDefeatGradesVisible()
+    {
+        Assert.GreaterOrEqual(UIManager.GameOverBackdropAlpha, 0.70f);
+        Assert.LessOrEqual(UIManager.GameOverBackdropAlpha, 0.82f,
+            "The full-screen result overlay must not hide the atmosphere grade.");
+    }
+
     // ---------- EchoEnvironmentKit + WorldStyler fallback ----------
 
     [Test]

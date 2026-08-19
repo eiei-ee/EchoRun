@@ -19,8 +19,11 @@ public sealed class AIShadowRuntimeTests
 
         GameManager gameManager = GameManager.Instance;
         AIShadowRunner runner = AIShadowRunner.Instance;
+        EchoAtmosphereDirector atmosphereBeforeRestart =
+            EchoAtmosphereDirector.Instance;
         Assert.IsNotNull(gameManager);
         Assert.IsNotNull(runner);
+        Assert.IsNotNull(atmosphereBeforeRestart);
 
         runner.ResetTraining();
         StyleTracker.ResetTraining();
@@ -57,6 +60,14 @@ public sealed class AIShadowRuntimeTests
         Assert.IsTrue(runner.HasActiveOpponent);
         Assert.IsNotNull(runner.ActiveContract);
         StringAssert.Contains("回声契约", runner.CurrentStatus);
+        for (int frame = 0; frame < 10; frame++) yield return null;
+        Assert.IsNotNull(EchoAtmosphereDirector.Instance,
+            "The duel atmosphere director disappeared after Restart reloaded the scene.");
+        Assert.AreSame(atmosphereBeforeRestart, EchoAtmosphereDirector.Instance,
+            "Restart must retain the persistent atmosphere director instead of losing phase state ownership.");
+        Assert.AreEqual(EchoAtmosphereMood.Detection,
+            EchoAtmosphereDirector.Instance.CurrentMood,
+            "The first duel phase must restore its cold-blue atmosphere after scene reload.");
 
         EchoContractEvaluator evaluator =
             (EchoContractEvaluator)GetField(runner, "_contractEvaluator");
