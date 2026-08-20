@@ -123,6 +123,27 @@ public class VisualFoundationTests
             Is.InRange(0.95f, 1.05f));
     }
 
+    [Test]
+    public void RoadMaterialCarriesAtlasAndHighQualityKeywords()
+    {
+        EchoRoadVisualController controller = CreateController();
+        Material material = controller.SharedRoadMaterial;
+        Assert.NotNull(material);
+        Assert.AreEqual("EchoRun/Road", material.shader.name);
+        Assert.NotNull(material.GetTexture("_RoadAtlas"));
+        Assert.NotNull(material.GetTexture("_NormalMap"));
+
+        controller.ApplyQuality(VisualQuality.Low);
+        Assert.IsFalse(material.IsKeywordEnabled("_ECHO_NORMALMAP"));
+        Assert.IsFalse(material.IsKeywordEnabled("_ECHO_FAKE_REFLECTION"));
+        Assert.IsFalse(material.IsKeywordEnabled("_ECHO_WET_SURFACE"));
+
+        controller.ApplyQuality(VisualQuality.High);
+        Assert.IsTrue(material.IsKeywordEnabled("_ECHO_NORMALMAP"));
+        Assert.IsTrue(material.IsKeywordEnabled("_ECHO_FAKE_REFLECTION"));
+        Assert.IsTrue(material.IsKeywordEnabled("_ECHO_WET_SURFACE"));
+    }
+
     private EchoRoadVisualController CreateController()
     {
         _controllerObject = new GameObject("EchoRoadVisualController_Test");

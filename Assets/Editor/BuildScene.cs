@@ -861,6 +861,21 @@ public class BuildScene
 
         if (material.HasProperty("_Color"))
             material.SetColor("_Color", new Color(0.045f, 0.065f, 0.095f, 1f));
+        Texture2D atlas = AssetDatabase.LoadAssetAtPath<Texture2D>(
+            "Assets/Art/Road/EchoRoadAtlas.png");
+        Texture2D normal = AssetDatabase.LoadAssetAtPath<Texture2D>(
+            "Assets/Art/Road/EchoRoadNormal.png");
+        if (atlas != null && material.HasProperty("_RoadAtlas"))
+            material.SetTexture("_RoadAtlas", atlas);
+        if (normal != null && material.HasProperty("_NormalMap"))
+            material.SetTexture("_NormalMap", normal);
+        if (material.HasProperty("_LaneColor"))
+            material.SetColor("_LaneColor", new Color(0.08f, 0.72f, 0.92f, 1f));
+        if (material.HasProperty("_EdgeColor"))
+            material.SetColor("_EdgeColor", new Color(0.035f, 0.34f, 0.48f, 1f));
+        if (material.HasProperty("_Wetness")) material.SetFloat("_Wetness", 0.72f);
+        if (material.HasProperty("_ReflectionStrength"))
+            material.SetFloat("_ReflectionStrength", 0.18f);
         material.enableInstancing = true;
         EditorUtility.SetDirty(material);
         return material;
