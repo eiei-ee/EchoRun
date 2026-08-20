@@ -95,16 +95,33 @@ public class WorldStyler : MonoBehaviour
 
     public void DecorateSegment(GameObject segment, TrackSegmentType segmentType)
     {
-        if (segment == null || segment.transform.Find("EchoEnvironment") != null)
-            return;
-
-        GameObject environment = new GameObject("EchoEnvironment");
-        environment.transform.SetParent(segment.transform, false);
-
-        if (segmentType == TrackSegmentType.Straight)
-            BuildStraightEnvironment(environment.transform, segment.GetInstanceID());
+        if (segment == null) return;
+        Transform existing = segment.transform.Find("EchoEnvironment");
+        GameObject environment;
+        EchoEnvironmentVariantSet variantSet;
+        if (existing == null)
+        {
+            environment = new GameObject("EchoEnvironment");
+            environment.transform.SetParent(segment.transform, false);
+            variantSet = environment.AddComponent<EchoEnvironmentVariantSet>();
+            if (segmentType == TrackSegmentType.Straight)
+                BuildStraightEnvironment(environment.transform, variantSet);
+            else
+                BuildTurnEnvironment(environment.transform, segmentType, variantSet);
+        }
         else
-            BuildTurnEnvironment(environment.transform, segmentType);
+        {
+            environment = existing.gameObject;
+            variantSet = environment.GetComponent<EchoEnvironmentVariantSet>();
+        }
+
+        if (variantSet == null) return;
+        TrackSegmentData data = segment.GetComponent<TrackSegmentData>();
+        float routeDistance = data != null ? data.routeDistance : 0f;
+        int runSeed = GameManager.Instance != null
+            ? GameManager.Instance.RunSeed : 0;
+        variantSet.ApplyQuality(VisualQualityController.Current);
+        variantSet.SelectFor(runSeed, routeDistance);
     }
 
     private void ConfigureAtmosphere()
@@ -173,34 +190,39 @@ public class WorldStyler : MonoBehaviour
             new Color(0.94f, 0.68f, 0.24f), new Color(0.48f, 0.19f, 0.015f), 0.52f, 0.72f);
     }
 
-    private void BuildStraightEnvironment(Transform parent, int seed)
+    private void BuildStraightEnvironment(Transform parent,
+        EchoEnvironmentVariantSet variantSet)
     {
-        CreateCapsule("LeftIsland", parent, new Vector3(-11.2f, -1.28f, 0f),
+        GameObject common = new GameObject("Common");
+        common.transform.SetParent(parent, false);
+        CreateCapsule("LeftIsland", common.transform, new Vector3(-11.2f, -1.28f, 0f),
             new Vector3(3.1f, 9.7f, 0.82f), _deepStructureMaterial,
             new Vector3(90f, 0f, 0f));
-        CreateCapsule("RightIsland", parent, new Vector3(11.2f, -1.28f, 0f),
+        CreateCapsule("RightIsland", common.transform, new Vector3(11.2f, -1.28f, 0f),
             new Vector3(3.1f, 9.7f, 0.82f), _deepStructureMaterial,
             new Vector3(90f, 0f, 0f));
-
-        CreateBeam("LeftRail", parent, new Vector3(-7.35f, 0.24f, -9.7f),
+        CreateBeam("LeftRail", common.transform, new Vector3(-7.35f, 0.24f, -9.7f),
             new Vector3(-7.35f, 0.24f, 9.7f), 0.09f, _cyanMaterial);
-        CreateBeam("RightRail", parent, new Vector3(7.35f, 0.24f, -9.7f),
+        CreateBeam("RightRail", common.transform, new Vector3(7.35f, 0.24f, -9.7f),
             new Vector3(7.35f, 0.24f, 9.7f), 0.09f, _cyanMaterial);
 
-        int variant = Mathf.Abs(seed) % 3;
-        for (int side = -1; side <= 1; side += 2)
-        {
-            float z = ((variant + (side > 0 ? 1 : 0)) % 2 == 0) ? -5.5f : 5.5f;
-            float height = 3.2f + ((variant + (side > 0 ? 1 : 0)) % 3) * 1.35f;
-            BuildPylon(parent, side, z, height, variant == 2);
-        }
+        GameObject visualVariants = new GameObject("VisualVariants");
+        visualVariants.transform.SetParent(parent, false);
+        GameObject equipment = CreateVariant("Variant_A_Equipment",
+            visualVariants.transform);
+        BuildEquipmentAndPipes(equipment.transform);
+        GameObject signalArch = CreateVariant("Variant_B_SignalArch",
+            visualVariants.transform);
+        BuildSignalArch(signalArch.transform, 5.5f);
+        GameObject silhouettes = CreateVariant("Variant_C_Silhouettes",
+            visualVariants.transform);
+        BuildFarSilhouettes(silhouettes.transform, false);
 
-        if (variant == 0)
-            BuildSignalArch(parent, 6.5f);
-        else if (variant == 1)
-            BuildTransitHalos(parent);
-        else
-            BuildDataTotems(parent);
+        GameObject highQualityOnly = new GameObject("HighQualityOnly");
+        highQualityOnly.transform.SetParent(parent, false);
+        BuildFarSilhouettes(highQualityOnly.transform, true);
+        variantSet.Initialize(new[] { equipment, signalArch, silhouettes },
+            highQualityOnly);
     }
 
     private void BuildStartDeck()
@@ -233,22 +255,128 @@ public class WorldStyler : MonoBehaviour
         }
     }
 
-    private void BuildTurnEnvironment(Transform parent, TrackSegmentType segmentType)
+    private void BuildTurnEnvironment(Transform parent,
+        TrackSegmentType segmentType, EchoEnvironmentVariantSet variantSet)
     {
         int direction = segmentType == TrackSegmentType.TurnRight ? 1 : -1;
-        CreateCapsule("CornerIsland", parent,
+        GameObject common = new GameObject("Common");
+        common.transform.SetParent(parent, false);
+        CreateCapsule("CornerIsland", common.transform,
             new Vector3(-direction * 10.5f, -1.25f, 10f),
             new Vector3(3f, 9.5f, 0.86f), _deepStructureMaterial,
             new Vector3(90f, 0f, 0f));
-        BuildPylonAt(parent, -direction * 7.8f, 10f, 5.4f, true);
-        CreateBeam("TurnEntryRail", parent,
+        CreateBeam("TurnEntryRail", common.transform,
             new Vector3(-direction * 7.35f, 0.22f, 0.25f),
             new Vector3(-direction * 7.35f, 0.22f, 13.75f),
             0.09f, _cyanMaterial);
-        CreateBeam("TurnExitRail", parent,
+        CreateBeam("TurnExitRail", common.transform,
             new Vector3(0.25f, 0.22f, 17.35f),
             new Vector3(direction * 13.75f, 0.22f, 17.35f),
             0.09f, _goldMaterial);
+
+        GameObject visualVariants = new GameObject("VisualVariants");
+        visualVariants.transform.SetParent(parent, false);
+        GameObject equipment = CreateVariant("Variant_A_CornerEquipment",
+            visualVariants.transform);
+        BuildPylonAt(equipment.transform, -direction * 7.8f, 10f, 5.4f, true);
+        BuildCornerEquipment(equipment.transform, direction);
+        GameObject signal = CreateVariant("Variant_B_CornerSignal",
+            visualVariants.transform);
+        BuildTurnSignal(signal.transform, direction);
+
+        GameObject highQualityOnly = new GameObject("HighQualityOnly");
+        highQualityOnly.transform.SetParent(parent, false);
+        BuildCornerSilhouette(highQualityOnly.transform, direction);
+        variantSet.Initialize(new[] { equipment, signal }, highQualityOnly);
+    }
+
+    private static GameObject CreateVariant(string name, Transform parent)
+    {
+        GameObject variant = new GameObject(name);
+        variant.transform.SetParent(parent, false);
+        return variant;
+    }
+
+    private void BuildEquipmentAndPipes(Transform parent)
+    {
+        for (int side = -1; side <= 1; side += 2)
+        {
+            float x = side * 10.4f;
+            CreateCube("EquipmentBase", parent, new Vector3(x, 0.20f, -2.8f),
+                new Vector3(3.2f, 0.42f, 5.4f), _deepStructureMaterial);
+            CreateCylinder("PressureTank", parent, new Vector3(x, 1.1f, -3.5f),
+                new Vector3(0.72f, 1.25f, 0.72f), _structureMaterial,
+                new Vector3(0f, 0f, 90f));
+            CreateBeam("Pipeline", parent,
+                new Vector3(side * 8.4f, 0.72f, -6.4f),
+                new Vector3(side * 12.6f, 0.72f, 4.8f),
+                0.18f, _structureMaterial);
+            CreateCapsule("PipeSignal", parent,
+                new Vector3(side * 8.7f, 0.78f, 1.8f),
+                new Vector3(0.18f, 0.08f, 0.08f),
+                side > 0 ? _coralMaterial : _cyanMaterial,
+                new Vector3(0f, 0f, 90f));
+        }
+    }
+
+    private void BuildFarSilhouettes(Transform parent, bool secondRow)
+    {
+        float xDistance = secondRow ? 20.5f : 16.2f;
+        float depth = secondRow ? 5.0f : 3.2f;
+        float heightScale = secondRow ? 1.2f : 1f;
+        for (int side = -1; side <= 1; side += 2)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                float z = -7.2f + i * 7.0f;
+                float height = (4.8f + ((i + (side > 0 ? 1 : 0)) % 3) * 2.1f)
+                               * heightScale;
+                CreateCube("SilhouetteBlock", parent,
+                    new Vector3(side * (xDistance + i * 0.8f), height * 0.5f - 0.8f, z),
+                    new Vector3(4.4f, height, depth), _deepStructureMaterial);
+                if (!secondRow)
+                {
+                    CreateCube("SignalSlit", parent,
+                        new Vector3(side * (xDistance - 2.24f * side),
+                            height * 0.62f, z - depth * 0.51f),
+                        new Vector3(0.10f, height * 0.24f, 0.08f),
+                        i == 1 ? _coralMaterial : _cyanMaterial);
+                }
+            }
+        }
+    }
+
+    private void BuildCornerEquipment(Transform parent, int direction)
+    {
+        float x = -direction * 10.6f;
+        CreateCube("CornerDeviceBase", parent, new Vector3(x, 0.18f, 10f),
+            new Vector3(4.2f, 0.36f, 4.2f), _deepStructureMaterial);
+        CreateCylinder("CornerRotor", parent, new Vector3(x, 1.15f, 10f),
+            new Vector3(1.15f, 0.26f, 1.15f), _structureMaterial,
+            new Vector3(90f, 0f, 0f));
+        CreateCylinder("CornerRotorCore", parent, new Vector3(x, 1.15f, 9.7f),
+            new Vector3(0.46f, 0.30f, 0.46f), _coralMaterial,
+            new Vector3(90f, 0f, 0f));
+    }
+
+    private void BuildTurnSignal(Transform parent, int direction)
+    {
+        BuildPylonAt(parent, -direction * 8.8f, 13.5f, 4.8f, false);
+        CreateBeam("TurnSignalSpan", parent,
+            new Vector3(-direction * 8.8f, 4.6f, 13.5f),
+            new Vector3(direction * 3.2f, 4.6f, 17.2f),
+            0.20f, _structureMaterial);
+        CreateBeam("TurnSignalLight", parent,
+            new Vector3(-direction * 5.6f, 4.48f, 14.5f),
+            new Vector3(direction * 1.8f, 4.48f, 16.8f),
+            0.055f, _cyanMaterial);
+    }
+
+    private void BuildCornerSilhouette(Transform parent, int direction)
+    {
+        float x = -direction * 18.5f;
+        CreateCube("CornerSilhouette", parent, new Vector3(x, 4.8f, 11f),
+            new Vector3(7.5f, 11.2f, 7.2f), _deepStructureMaterial);
     }
 
     private void BuildPylon(Transform parent, int side, float z, float height, bool accent)
