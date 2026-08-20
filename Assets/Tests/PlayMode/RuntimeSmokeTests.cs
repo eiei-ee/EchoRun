@@ -318,6 +318,13 @@ public sealed class RuntimeSmokeTests
         Assert.IsTrue(marker.gameObject.activeInHierarchy);
         Assert.GreaterOrEqual(marker.GetComponentsInChildren<Renderer>().Length, 10);
         Assert.IsNotNull(marker.Find("ProtocolCore"));
+        Light[] finishLights = marker.GetComponentsInChildren<Light>(true);
+        Assert.AreEqual(2, finishLights.Length);
+        foreach (Light finishLight in finishLights)
+        {
+            Assert.LessOrEqual(finishLight.range, 6f);
+            Assert.AreEqual(LightShadows.None, finishLight.shadows);
+        }
         foreach (Collider collider in marker.GetComponentsInChildren<Collider>())
             Assert.IsFalse(collider.enabled,
                 "The visual finish marker must never collide with the runner.");

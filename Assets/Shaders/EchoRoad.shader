@@ -38,6 +38,7 @@ Shader "EchoRun/Road"
             #pragma shader_feature_local _ECHO_NORMALMAP
             #pragma shader_feature_local _ECHO_FAKE_REFLECTION
             #pragma shader_feature_local _ECHO_WET_SURFACE
+            #pragma shader_feature_local _ECHO_PLANAR_REFLECTION
 
             #include "UnityCG.cginc"
             #include "Lighting.cginc"
@@ -61,6 +62,9 @@ Shader "EchoRun/Road"
             fixed4 _EchoPhaseTint;
             half _EchoPhaseIntensity;
             half _EchoPhaseCoral;
+            sampler2D _EchoPlanarReflectionTex;
+            float4x4 _EchoReflectionVP;
+            half _EchoPlanarReflectionStrength;
 
             struct appdata
             {
@@ -80,6 +84,7 @@ Shader "EchoRun/Road"
                 half3 worldTangent : TEXCOORD3;
                 half3 worldBinormal : TEXCOORD4;
                 UNITY_FOG_COORDS(5)
+                float4 reflectionPosition : TEXCOORD6;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -106,6 +111,8 @@ Shader "EchoRun/Road"
                 o.worldTangent = UnityObjectToWorldDir(v.tangent.xyz);
                 half tangentSign = v.tangent.w * unity_WorldTransformParams.w;
                 o.worldBinormal = cross(o.worldNormal, o.worldTangent) * tangentSign;
+                o.reflectionPosition = mul(_EchoReflectionVP,
+                    float4(o.worldPos, 1.0));
                 UNITY_TRANSFER_FOG(o, o.vertex);
                 return o;
             }
@@ -177,6 +184,19 @@ Shader "EchoRun/Road"
                         - saturate(dot(normalDirection, viewDirection)), 4.0h);
                     surface += reflection * (_ReflectionStrength
                         * (0.18h + fresnel * 0.82h) * _Wetness);
+                #endif
+
+                #if defined(_ECHO_PLANAR_REFLECTION)
+                    float2 reflectionUv = i.reflectionPosition.xy
+                        / max(0.001h, i.reflectionPosition.w) * 0.5h + 0.5h;
+                    half inside = step(0.0h, reflectionUv.x)
+                        * step(reflectionUv.x, 1.0h)
+                        * step(0.0h, reflectionUv.y)
+                        * step(reflectionUv.y, 1.0h);
+                    fixed3 planar = tex2D(_EchoPlanarReflectionTex,
+                        reflectionUv).rgb;
+                    surface += planar * _EchoPlanarReflectionStrength
+                        * inside * _Wetness;
                 #endif
 
                 fixed3 phaseTint = lerp(fixed3(1, 1, 1),

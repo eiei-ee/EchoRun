@@ -109,6 +109,16 @@ public sealed class EchoRoadVisualController : MonoBehaviour
         SetKeyword("_ECHO_NORMALMAP", quality == VisualQuality.High);
         SetKeyword("_ECHO_FAKE_REFLECTION", quality == VisualQuality.High);
         SetKeyword("_ECHO_WET_SURFACE", quality == VisualQuality.High);
+        if (quality == VisualQuality.Low)
+            SetKeyword("_ECHO_PLANAR_REFLECTION", false);
+    }
+
+    public void ApplyPlanarReflection(bool enabled)
+    {
+        EnsureMaterial();
+        if (_sharedRoadMaterial == null) return;
+        SetKeyword("_ECHO_PLANAR_REFLECTION",
+            enabled && VisualQualityController.Current == VisualQuality.High);
     }
 
     public void ApplyPhaseTint(Color tint, float intensity)

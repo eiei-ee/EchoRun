@@ -80,6 +80,7 @@ public class TrackManager : MonoBehaviour
     private AITrackDirector _aiDirector;
     private GameObject _finishMarker;
     private Material _finishMarkerMaterial;
+    private Light[] _finishMarkerLights;
 
     private const float SEGMENT_CHECK_MULT = 1.5f;
     private const float SEGMENT_RECYCLE_MULT = 5f;
@@ -543,6 +544,17 @@ public class TrackManager : MonoBehaviour
             && _finishMarkerMaterial.HasProperty("_GateProgress"))
             _finishMarkerMaterial.SetFloat("_GateProgress",
                 Mathf.Clamp01(1f - remaining / visibleDistance));
+        bool enableFinishLights = remaining <= 12f
+                                  && VisualQualityController.Current
+                                  == VisualQuality.High
+                                  && PostFxController.SupportsHighFx(
+                                      Application.platform);
+        if (_finishMarkerLights != null)
+        {
+            for (int i = 0; i < _finishMarkerLights.Length; i++)
+                if (_finishMarkerLights[i] != null)
+                    _finishMarkerLights[i].enabled = enableFinishLights;
+        }
         PlayerController controller = _player.GetComponent<PlayerController>();
         Vector3 forward = controller != null
             ? controller.ForwardDirection
@@ -596,7 +608,29 @@ public class TrackManager : MonoBehaviour
             new Vector3(0f, 4.18f, -0.42f), new Vector3(1.15f, 1.15f, 0.42f), 2f);
         CreateFinishMarkerPart("CoreSpine", PrimitiveType.Cube,
             new Vector3(0f, 3.18f, -0.20f), new Vector3(0.16f, 1.45f, 0.16f), 2f);
+        _finishMarkerLights = new[]
+        {
+            CreateFinishPointLight("FinishLightLeft",
+                new Vector3(-3.6f, 2.4f, -0.6f)),
+            CreateFinishPointLight("FinishLightRight",
+                new Vector3(3.6f, 2.4f, -0.6f))
+        };
         _finishMarker.SetActive(false);
+    }
+
+    private Light CreateFinishPointLight(string name, Vector3 localPosition)
+    {
+        GameObject lightObject = new GameObject(name);
+        lightObject.transform.SetParent(_finishMarker.transform, false);
+        lightObject.transform.localPosition = localPosition;
+        Light point = lightObject.AddComponent<Light>();
+        point.type = LightType.Point;
+        point.range = 5.5f;
+        point.intensity = 0.58f;
+        point.color = new Color(0.18f, 0.82f, 1f);
+        point.shadows = LightShadows.None;
+        point.enabled = false;
+        return point;
     }
 
     private void CreateFinishMarkerPart(string name, PrimitiveType primitive,
