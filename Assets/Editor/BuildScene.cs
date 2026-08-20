@@ -779,9 +779,8 @@ public class BuildScene
         groundCol.center = Vector3.zero;
         groundCol.size = new Vector3(9f, 0.2f, 20f);
 
-        Material gm = CreateMaterial("TrackGroundMat", new Color(0.11f, 0.15f, 0.19f),
-            Color.black, 0.25f, 0.58f);
-        if (gm != null) ground.GetComponent<MeshRenderer>().material = gm;
+        Material gm = GetOrCreateSharedRoadMaterial();
+        if (gm != null) ground.GetComponent<MeshRenderer>().sharedMaterial = gm;
 
         // Lane markers
         for (int i = 0; i < 3; i++)
@@ -805,8 +804,7 @@ public class BuildScene
             Object.DestroyImmediate(line.GetComponent<Collider>());
         }
 
-        Material seamMat = CreateMaterial("TrackSeamMat", new Color(0.58f, 0.18f, 0.2f),
-            new Color(0.2f, 0.015f, 0.01f), 0.12f, 0.55f);
+        Material seamMat = gm;
         for (int z = -8; z <= 8; z += 4)
         {
             GameObject seam = CreatePrefabPart("DataSeam", PrimitiveType.Cube, seg.transform,
@@ -820,14 +818,86 @@ public class BuildScene
 
     static void CreateTurnSegmentPrefabs()
     {
-        Material trackMat = CreateMaterial("TrackGroundMat_Turn", new Color(0.11f, 0.15f, 0.19f),
-            Color.black, 0.25f, 0.58f);
+        Material trackMat = GetOrCreateSharedRoadMaterial();
         Material lineMat = CreateMaterial("LaneLineMat_Turn", new Color(0.86f, 0.56f, 0.16f),
             new Color(0.36f, 0.12f, 0.01f), 0.48f, 0.7f);
         int groundLayer = LayerMask.NameToLayer("Ground");
 
         CreateTurnPrefab("Assets/Prefabs/TurnSegment_Right.prefab", "TurnSegment_Right", 1, trackMat, lineMat, groundLayer);
         CreateTurnPrefab("Assets/Prefabs/TurnSegment_Left.prefab", "TurnSegment_Left", -1, trackMat, lineMat, groundLayer);
+    }
+
+    public static void EnsureSharedRoadMaterialAsset()
+    {
+        Material material = GetOrCreateSharedRoadMaterial();
+        BindExistingRoadPrefabs(material);
+        AssetDatabase.SaveAssets();
+    }
+
+    private static Material GetOrCreateSharedRoadMaterial()
+    {
+        const string path = "Assets/Resources/Materials/EchoRoad.mat";
+        EnsureFolder("Assets/Resources");
+        EnsureFolder("Assets/Resources/Materials");
+
+        Shader shader = Shader.Find("EchoRun/Road");
+        if (shader == null)
+        {
+            Debug.LogError("EchoRun/Road shader is missing.");
+            return null;
+        }
+
+        Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (material == null)
+        {
+            material = new Material(shader) { name = "EchoRoad" };
+            AssetDatabase.CreateAsset(material, path);
+        }
+        else if (material.shader != shader)
+        {
+            material.shader = shader;
+        }
+
+        if (material.HasProperty("_Color"))
+            material.SetColor("_Color", new Color(0.045f, 0.065f, 0.095f, 1f));
+        material.enableInstancing = true;
+        EditorUtility.SetDirty(material);
+        return material;
+    }
+
+    private static void BindExistingRoadPrefabs(Material material)
+    {
+        if (material == null) return;
+        string[] paths =
+        {
+            "Assets/Prefabs/TrackSegment.prefab",
+            "Assets/Prefabs/TurnSegment_Left.prefab",
+            "Assets/Prefabs/TurnSegment_Right.prefab"
+        };
+        for (int i = 0; i < paths.Length; i++)
+        {
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(paths[i]) == null)
+                continue;
+            GameObject root = PrefabUtility.LoadPrefabContents(paths[i]);
+            try
+            {
+                Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+                for (int r = 0; r < renderers.Length; r++)
+                {
+                    string rendererName = renderers[r].name;
+                    if (rendererName == "GroundPlane"
+                        || rendererName == "EntryStrip"
+                        || rendererName == "ExitStrip"
+                        || rendererName.Contains("Seam"))
+                        renderers[r].sharedMaterial = material;
+                }
+                PrefabUtility.SaveAsPrefabAsset(root, paths[i]);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
+        }
     }
 
     static void CreateTurnPrefab(string path, string name, int turnDir, Material trackMat, Material lineMat, int groundLayer)
@@ -848,7 +918,7 @@ public class BuildScene
         BoxCollider entryCol = entry.AddComponent<BoxCollider>();
         entryCol.center = Vector3.zero;
         entryCol.size = new Vector3(9f, 0.3f, 20f);
-        if (trackMat != null) entry.GetComponent<MeshRenderer>().material = trackMat;
+        if (trackMat != null) entry.GetComponent<MeshRenderer>().sharedMaterial = trackMat;
 
         // Exit strip: full 20 units in exit direction, starting from corner
         GameObject exitStrip = GameObject.CreatePrimitive(PrimitiveType.Plane);
@@ -862,7 +932,7 @@ public class BuildScene
         BoxCollider exitCol = exitStrip.AddComponent<BoxCollider>();
         exitCol.center = Vector3.zero;
         exitCol.size = new Vector3(9f, 0.3f, 20f);
-        if (trackMat != null) exitStrip.GetComponent<MeshRenderer>().material = trackMat;
+        if (trackMat != null) exitStrip.GetComponent<MeshRenderer>().sharedMaterial = trackMat;
 
         // Lane markers on entry strip
         for (int i = 0; i < 3; i++)

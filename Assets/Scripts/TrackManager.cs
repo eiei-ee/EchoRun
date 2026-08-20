@@ -387,6 +387,7 @@ public class TrackManager : MonoBehaviour
    void InitializePools()
    {
        EnsureProceduralAssets();
+       EchoRoadVisualController roadVisuals = EchoRoadVisualController.Instance;
 
        if (trackSegmentPrefab != null)
         {
@@ -394,6 +395,7 @@ public class TrackManager : MonoBehaviour
             for (int i = 0; i < straightPoolSize; i++)
             {
                 GameObject seg = Instantiate(trackSegmentPrefab, Vector3.zero, Quaternion.identity, transform);
+                roadVisuals.ApplyToTrackSegment(seg, RoadSurfaceRole.Main);
                 seg.SetActive(false);
                 _straightPool.Enqueue(seg);
             }
@@ -403,6 +405,7 @@ public class TrackManager : MonoBehaviour
             for (int i = 0; i < 2; i++)
             {
                 GameObject seg = Instantiate(turnLeftPrefab, Vector3.zero, Quaternion.identity, transform);
+                roadVisuals.ApplyToTrackSegment(seg, RoadSurfaceRole.Turn);
                 seg.SetActive(false);
                 _turnLeftPool.Enqueue(seg);
             }
@@ -412,6 +415,7 @@ public class TrackManager : MonoBehaviour
             for (int i = 0; i < 2; i++)
             {
                 GameObject seg = Instantiate(turnRightPrefab, Vector3.zero, Quaternion.identity, transform);
+                roadVisuals.ApplyToTrackSegment(seg, RoadSurfaceRole.Turn);
                 seg.SetActive(false);
                 _turnRightPool.Enqueue(seg);
             }
@@ -461,6 +465,10 @@ public class TrackManager : MonoBehaviour
 
         segment.transform.position = _spawnPosition;
         segment.transform.rotation = Quaternion.Euler(0, _spawnAngle, 0);
+        EchoRoadVisualController.Instance.ApplyToTrackSegment(segment,
+            segType == TrackSegmentType.Straight
+                ? RoadSurfaceRole.Main
+                : RoadSurfaceRole.Turn);
         segment.SetActive(true);
 
         TrackSegmentData data = segment.GetComponent<TrackSegmentData>();
@@ -1163,10 +1171,6 @@ public class TrackManager : MonoBehaviour
 
    void EnsureProceduralAssets()
    {
-        Shader sh = Shader.Find("Standard");
-        if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
-        if (sh == null) sh = Shader.Find("Mobile/Diffuse");
-
        int groundLayer = LayerMask.NameToLayer("Ground");
        if (groundLayer < 0) groundLayer = 0;
 
@@ -1218,31 +1222,13 @@ public class TrackManager : MonoBehaviour
         int layer = LayerMask.NameToLayer("Ground");
         if (layer < 0) layer = segment.layer;
 
-        Material material = null;
-        Renderer[] existingRenderers = segment.GetComponentsInChildren<Renderer>(true);
-        for (int i = 0; i < existingRenderers.Length; i++)
-        {
-            if (existingRenderers[i].sharedMaterial == null) continue;
-            material = existingRenderers[i].sharedMaterial;
-            break;
-        }
-
-        if (material == null)
-        {
-            Shader shader = Shader.Find("Standard");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Mobile/Diffuse");
-            if (shader != null)
-                material = MakeMatteRoadMaterial(shader);
-        }
-
         GameObject coverage = new GameObject("RuntimeTurnCoverage");
         coverage.layer = layer;
         coverage.transform.SetParent(segment.transform, false);
 
         CreateTurnSurface("EntryCoverage", coverage.transform,
             new Vector3(0f, -0.15f, segmentLength * 0.5f),
-            Quaternion.identity, new Vector3(15f, 0.3f, segmentLength), layer, material);
+            Quaternion.identity, new Vector3(15f, 0.3f, segmentLength), layer);
         // Exit strip fills only the gap between the turn and the following
         // straight. Extending it under that straight creates coplanar overlap,
         // which z-fights across the entire first road block after every turn.
@@ -1254,11 +1240,11 @@ public class TrackManager : MonoBehaviour
             new Vector3(turnDirection * exitCenterX, -0.15f,
                 segmentLength * 0.5f),
             Quaternion.Euler(0f, 90f, 0f),
-            new Vector3(15f, 0.3f, exitLength), layer, material);
+            new Vector3(15f, 0.3f, exitLength), layer);
     }
 
     static void CreateTurnSurface(string name, Transform parent, Vector3 localPosition,
-        Quaternion localRotation, Vector3 localScale, int layer, Material material)
+        Quaternion localRotation, Vector3 localScale, int layer)
     {
         GameObject surface = GameObject.CreatePrimitive(PrimitiveType.Cube);
         surface.name = name;
@@ -1267,28 +1253,13 @@ public class TrackManager : MonoBehaviour
         surface.transform.localPosition = localPosition;
         surface.transform.localRotation = localRotation;
         surface.transform.localScale = localScale;
-        if (material != null)
-            surface.GetComponent<MeshRenderer>().sharedMaterial = material;
-    }
-
-    // Road surfaces must be matte: the Standard shader's default smoothness
-    // picks up specular + skybox reflections, which flicker as white light
-    // at segment seams in the WebGL/minigame renderer.
-    static Material MakeMatteRoadMaterial(Shader shader)
-    {
-        Material material = new Material(shader) { color = new Color(0.25f, 0.28f, 0.35f) };
-        if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0f);
-        if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0f);
-        if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
-        return material;
+        EchoRoadVisualController.Instance.ApplyTo(
+            surface.GetComponent<MeshRenderer>(),
+            RoadSurfaceRole.RuntimeFallback);
     }
 
     GameObject CreateProcTrackRoot(string name, int layer)
     {
-        Shader sh = Shader.Find("Standard");
-        if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
-        if (sh == null) sh = Shader.Find("Mobile/Diffuse");
-
         GameObject root = new GameObject(name);
         root.layer = layer;
 
@@ -1298,8 +1269,9 @@ public class TrackManager : MonoBehaviour
         surface.transform.SetParent(root.transform, false);
         surface.transform.localPosition = new Vector3(0f, -0.15f, 0f);
         surface.transform.localScale = new Vector3(9f, 0.3f, 20f);
-        if (sh != null)
-            surface.GetComponent<MeshRenderer>().material = MakeMatteRoadMaterial(sh);
+        EchoRoadVisualController.Instance.ApplyTo(
+            surface.GetComponent<MeshRenderer>(),
+            RoadSurfaceRole.RuntimeFallback);
 
         root.SetActive(false);
         root.transform.SetParent(transform);

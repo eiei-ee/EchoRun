@@ -2,6 +2,12 @@ using UnityEngine;
 
 public class WorldStyler : MonoBehaviour
 {
+    public const float StructureMetallic = 0.16f;
+    public const float StructureSmoothness = 0.30f;
+    public const float HighFillLightIntensity = 0.27f;
+    public const float HighReflectionIntensity = 0.24f;
+    public const float KeyLightIntensity = 1.02f;
+
     public static WorldStyler Instance { get; private set; }
 
     private Material _structureMaterial;
@@ -10,6 +16,7 @@ public class WorldStyler : MonoBehaviour
     private Material _coralMaterial;
     private Material _goldMaterial;
     private Material _skyMaterial;
+    private Light _fillLight;
     private Vector2Int _lastCameraScreenSize;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -30,6 +37,7 @@ public class WorldStyler : MonoBehaviour
         Instance = this;
         BuildPalette();
         ConfigureAtmosphere();
+        VisualQualityController.Changed += ApplyVisualQuality;
     }
 
     void Start()
@@ -41,7 +49,8 @@ public class WorldStyler : MonoBehaviour
         GameObject floor = GameObject.Find("Plane");
         Renderer floorRenderer = floor != null ? floor.GetComponent<Renderer>() : null;
         if (floorRenderer != null)
-            floorRenderer.sharedMaterial = _deepStructureMaterial;
+            EchoRoadVisualController.Instance.ApplyTo(
+                floorRenderer, RoadSurfaceRole.StartDeck);
 
         BuildStartDeck();
         StyleCharacter();
@@ -106,10 +115,10 @@ public class WorldStyler : MonoBehaviour
         RenderSettings.fogStartDistance = 52f;
         RenderSettings.fogEndDistance = 130f;
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
-        RenderSettings.ambientSkyColor = new Color(0.28f, 0.38f, 0.52f);
-        RenderSettings.ambientEquatorColor = new Color(0.12f, 0.19f, 0.28f);
-        RenderSettings.ambientGroundColor = new Color(0.03f, 0.05f, 0.08f);
-        RenderSettings.reflectionIntensity = 0.35f;
+        RenderSettings.ambientSkyColor = new Color(0.16f, 0.23f, 0.34f);
+        RenderSettings.ambientEquatorColor = new Color(0.075f, 0.12f, 0.19f);
+        RenderSettings.ambientGroundColor = new Color(0.02f, 0.035f, 0.06f);
+        ApplyVisualQuality(VisualQualityController.Current);
 
         Material skyAsset = Resources.Load<Material>("Art/EchoSky");
         if (skyAsset != null)
@@ -128,28 +137,34 @@ public class WorldStyler : MonoBehaviour
         Light key = FindObjectOfType<Light>();
         if (key != null)
         {
-            key.intensity = 1.12f;
+            key.intensity = KeyLightIntensity;
             key.color = new Color(1f, 0.93f, 0.84f);
             key.shadows = LightShadows.Soft;
         }
 
-        if (GameObject.Find("EchoFillLight") != null) return;
-        GameObject fillObject = new GameObject("EchoFillLight");
-        fillObject.transform.SetParent(transform, false);
-        fillObject.transform.rotation = Quaternion.Euler(38f, 145f, 0f);
-        Light fill = fillObject.AddComponent<Light>();
-        fill.type = LightType.Directional;
-        fill.intensity = 0.42f;
-        fill.color = new Color(0.34f, 0.69f, 0.96f);
-        fill.shadows = LightShadows.None;
+        GameObject fillObject = GameObject.Find("EchoFillLight");
+        if (fillObject == null)
+        {
+            fillObject = new GameObject("EchoFillLight");
+            fillObject.transform.SetParent(transform, false);
+            fillObject.transform.rotation = Quaternion.Euler(38f, 145f, 0f);
+        }
+        _fillLight = fillObject.GetComponent<Light>();
+        if (_fillLight == null) _fillLight = fillObject.AddComponent<Light>();
+        _fillLight.type = LightType.Directional;
+        _fillLight.color = new Color(0.34f, 0.69f, 0.96f);
+        _fillLight.shadows = LightShadows.None;
+        ApplyVisualQuality(VisualQualityController.Current);
     }
 
     private void BuildPalette()
     {
         _structureMaterial = MakeMaterial("EchoStructure",
-            new Color(0.22f, 0.29f, 0.39f), new Color(0.010f, 0.020f, 0.035f), 0.52f, 0.70f);
+            new Color(0.11f, 0.16f, 0.24f), new Color(0.006f, 0.014f, 0.028f),
+            StructureMetallic, StructureSmoothness);
         _deepStructureMaterial = MakeMaterial("EchoDepth",
-            new Color(0.055f, 0.09f, 0.15f), new Color(0.005f, 0.012f, 0.024f), 0.28f, 0.48f);
+            new Color(0.035f, 0.06f, 0.105f), new Color(0.003f, 0.008f, 0.018f),
+            0.10f, 0.27f);
         _cyanMaterial = MakeMaterial("EchoCyan",
             new Color(0.22f, 0.84f, 1.00f), new Color(0.020f, 0.34f, 0.56f), 0.24f, 0.68f);
         _coralMaterial = MakeMaterial("EchoCoral",
@@ -193,8 +208,11 @@ public class WorldStyler : MonoBehaviour
         if (GameObject.Find("EchoStartDeck") != null) return;
 
         GameObject deck = new GameObject("EchoStartDeck");
-        CreateCube("LaunchRoad", deck.transform, new Vector3(0f, -0.22f, 34f),
+        GameObject launchRoad = CreateCube("LaunchRoad", deck.transform,
+            new Vector3(0f, -0.22f, 34f),
             new Vector3(15f, 0.28f, 78f), _structureMaterial);
+        EchoRoadVisualController.Instance.ApplyTo(
+            launchRoad.GetComponent<Renderer>(), RoadSurfaceRole.StartDeck);
         CreateBeam("LaunchRailL", deck.transform, new Vector3(-7.35f, 0.16f, -5f),
             new Vector3(-7.35f, 0.16f, 73f), 0.09f, _cyanMaterial);
         CreateBeam("LaunchRailR", deck.transform, new Vector3(7.35f, 0.16f, -5f),
@@ -583,8 +601,20 @@ public class WorldStyler : MonoBehaviour
         return material;
     }
 
+    private void ApplyVisualQuality(VisualQuality quality)
+    {
+        bool high = quality == VisualQuality.High;
+        RenderSettings.reflectionIntensity = high
+            ? HighReflectionIntensity
+            : 0.18f;
+        if (_fillLight == null) return;
+        _fillLight.enabled = high;
+        _fillLight.intensity = high ? HighFillLightIntensity : 0f;
+    }
+
     void OnDestroy()
     {
+        VisualQualityController.Changed -= ApplyVisualQuality;
         if (_skyMaterial != null) Destroy(_skyMaterial);
         if (Instance == this) Instance = null;
     }
