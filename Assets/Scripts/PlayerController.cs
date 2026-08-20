@@ -389,7 +389,10 @@ public class PlayerController : MonoBehaviour
         Coin coin = other.GetComponent<Coin>();
         if (coin != null)
         {
-            _gm.AddCoins(1);
+            if (coin.IsEchoContractMarker)
+                _gm.AddContractMarker();
+            else
+                _gm.AddCoins(1);
             AITrackDirector.Instance?.RecordCoin();
             AIShadowRunner.Instance?.RecordCoin(coin.IsEchoContractMarker);
             AudioManager.Instance?.PlayCoin();

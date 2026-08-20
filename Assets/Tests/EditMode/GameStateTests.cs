@@ -33,6 +33,7 @@ public class GameStateTests
         manager.BuffName = "Shield";
         manager.BuffTimeRemaining = 5f;
         manager.AddCoins(3);
+        manager.AddContractMarker();
         GameManager.SetNextRunSeed(424242);
 
         manager.StartGame();
@@ -41,6 +42,7 @@ public class GameStateTests
         Assert.AreEqual(manager.startSpeed, manager.CurrentSpeed);
         Assert.AreEqual(0, manager.Score);
         Assert.AreEqual(0, manager.Coins);
+        Assert.AreEqual(0, manager.ContractMarkerCount);
         Assert.AreEqual(0f, manager.Distance);
         Assert.IsNull(manager.BuffName);
         Assert.AreEqual(0f, manager.BuffTimeRemaining);
@@ -50,6 +52,22 @@ public class GameStateTests
         Assert.AreEqual(manager.CourseDistance, manager.RemainingDistance);
         Assert.AreEqual(RunEndReason.None, manager.LastEndReason);
         Assert.IsTrue(AIRunTelemetry.IsRecording);
+    }
+
+    [Test]
+    public void ContractMarkersAreCountedSeparatelyFromOrdinaryCoins()
+    {
+        GameManager manager = Create<GameManager>("GameManager");
+        int observedMarkerCount = -1;
+        manager.OnContractMarkerChanged.AddListener(
+            value => observedMarkerCount = value);
+
+        manager.AddCoins(1);
+        manager.AddContractMarker();
+
+        Assert.AreEqual(1, manager.Coins);
+        Assert.AreEqual(1, manager.ContractMarkerCount);
+        Assert.AreEqual(1, observedMarkerCount);
     }
 
     [Test]
@@ -93,6 +111,20 @@ public class GameStateTests
 
         Assert.IsFalse(manager.TryRecoverFromCollision());
         Assert.AreEqual(2, manager.CollisionStrikes);
+    }
+
+    [Test]
+    public void CollisionRecoveryExposesSyncCountAndDuration()
+    {
+        GameManager manager = Create<GameManager>("GameManager");
+        manager.StartGame();
+
+        Assert.AreEqual(2, manager.SyncRemaining);
+        Assert.AreEqual(1.25f, manager.CollisionRecoveryDuration);
+        Assert.IsTrue(manager.TryRecoverFromCollision());
+        Assert.AreEqual(1, manager.SyncRemaining);
+        Assert.AreEqual(manager.CollisionRecoveryDuration,
+            manager.CollisionRecoveryTimeRemaining);
     }
 
     [TestCase(RunEndReason.Collision, true, false, 3, "重新挑战")]

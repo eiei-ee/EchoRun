@@ -37,7 +37,11 @@ public class GameManager : MonoBehaviour
     public RunEndReason LastEndReason { get; private set; }
     public int CollisionStrikes { get; private set; }
     public int MaximumCollisionStrikes => 2;
+    public int SyncRemaining => Mathf.Max(0,
+        MaximumCollisionStrikes - CollisionStrikes);
+    public float CollisionRecoveryDuration => 1.25f;
     public float CollisionRecoveryTimeRemaining { get; private set; }
+    public int ContractMarkerCount { get; private set; }
 
     [Header("Buff (runtime)")]
     public float BuffTimeRemaining;
@@ -46,6 +50,7 @@ public class GameManager : MonoBehaviour
     public UnityEvent<GameState> OnStateChanged = new UnityEvent<GameState>();
     public UnityEvent<int> OnScoreChanged = new UnityEvent<int>();
     public UnityEvent<int> OnCoinsChanged = new UnityEvent<int>();
+    public UnityEvent<int> OnContractMarkerChanged = new UnityEvent<int>();
     public UnityEvent<int> OnBankedCoinsChanged = new UnityEvent<int>();
     public UnityEvent<float> OnDistanceChanged = new UnityEvent<float>();
 
@@ -245,6 +250,7 @@ public class GameManager : MonoBehaviour
         CurrentSpeed = Mathf.Min(maxSpeed, startSpeed + turboBonus);
         Score = 0;
         Coins = 0;
+        ContractMarkerCount = 0;
         Distance = 0;
         _distanceTraveled = 0;
         _lastBaseScore = 0;
@@ -270,6 +276,7 @@ public class GameManager : MonoBehaviour
         OnStateChanged.Invoke(State);
         OnScoreChanged.Invoke(0);
         OnCoinsChanged.Invoke(0);
+        OnContractMarkerChanged.Invoke(0);
         OnDistanceChanged.Invoke(0);
         InputManager.Instance?.ClearInput();
         AudioManager.Instance?.StartFootsteps();
@@ -330,7 +337,7 @@ public class GameManager : MonoBehaviour
         if (CollisionStrikes >= MaximumCollisionStrikes) return false;
 
         CurrentSpeed = Mathf.Max(startSpeed * 0.75f, CurrentSpeed * 0.55f);
-        CollisionRecoveryTimeRemaining = 1.25f;
+        CollisionRecoveryTimeRemaining = CollisionRecoveryDuration;
         InputManager.Instance?.ClearInput();
         AIRunTelemetry.RecordEvent("player_collision_recovery",
             CollisionStrikes, -1, CurrentSpeed, CollisionRecoveryTimeRemaining);
@@ -384,6 +391,12 @@ public class GameManager : MonoBehaviour
     {
         Coins += amount;
         OnCoinsChanged.Invoke(Coins);
+    }
+
+    public void AddContractMarker()
+    {
+        ContractMarkerCount++;
+        OnContractMarkerChanged.Invoke(ContractMarkerCount);
     }
 
     public bool TryPurchasePowerUp(PowerUpId id)
