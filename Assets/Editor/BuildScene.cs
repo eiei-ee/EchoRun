@@ -41,6 +41,7 @@ public class BuildScene
         CreateTrackSegmentPrefab();
         CreateTurnSegmentPrefabs();
         ConfigureTrackManager();
+        EchoHudPrefabBuilder.Build();
         CreateUICanvas();
 
        AssetDatabase.SaveAssets();

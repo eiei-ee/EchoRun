@@ -46,6 +46,8 @@ public class UIManager : MonoBehaviour
     GameObject _buffGroup;
     Text _buffText;
     Button _pauseBtn;
+    EchoHudView _echoHudView;
+    EchoHudPresenter _echoHudPresenter;
     GameObject _controlHint;
     Text _controlHintText;
     GameObject _landscapeGuard;
@@ -740,6 +742,28 @@ public class UIManager : MonoBehaviour
 
     void CreateHUDPanel()
     {
+        GameObject hudPrefab = Resources.Load<GameObject>("UI/EchoHud");
+        if (hudPrefab != null)
+        {
+            _hudPanel = Instantiate(hudPrefab,
+                _safeAreaRoot != null ? _safeAreaRoot : transform, false);
+            _hudPanel.name = "EchoHud";
+            _echoHudView = _hudPanel.GetComponent<EchoHudView>();
+            _echoHudPresenter = _hudPanel.GetComponent<EchoHudPresenter>();
+            if (_echoHudPresenter == null)
+                _echoHudPresenter = _hudPanel.AddComponent<EchoHudPresenter>();
+            if (_echoHudView != null)
+            {
+                _echoHudPresenter.Initialize(_echoHudView, _gm);
+                _pauseBtn = _echoHudView.PauseButton;
+                _hudPanel.SetActive(false);
+                return;
+            }
+            Destroy(_hudPanel);
+            _hudPanel = null;
+            _echoHudPresenter = null;
+        }
+
         _hudPanel = new GameObject("HudPanel", typeof(RectTransform));
         _hudPanel.transform.SetParent(
             _safeAreaRoot != null ? _safeAreaRoot : transform, false);
@@ -878,6 +902,12 @@ public class UIManager : MonoBehaviour
 
     void RefreshDuelHud(bool forceFeedback = false)
     {
+        if (_echoHudPresenter != null)
+        {
+            _echoHudPresenter.Refresh(forceFeedback);
+            return;
+        }
+
         AIShadowRunner shadow = AIShadowRunner.Instance;
         EchoDuelViewData view = EchoRunPresentation.BuildDuel(
             shadow != null && shadow.HasActiveOpponent,
@@ -1135,6 +1165,7 @@ public class UIManager : MonoBehaviour
             case GameState.Playing:
                 if (_hudPanel != null) _hudPanel.SetActive(true);
                 SelectForNavigation(null);
+                if (_echoHudPresenter != null) _echoHudPresenter.ResetRun();
                 _lastDuelFeedbackSequence = -1;
                 _nextDuelRefresh = 0f;
                 RefreshDuelHud();
