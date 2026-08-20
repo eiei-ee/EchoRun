@@ -539,6 +539,10 @@ public class TrackManager : MonoBehaviour
         }
 
         EnsureFinishMarker();
+        if (_finishMarkerMaterial != null
+            && _finishMarkerMaterial.HasProperty("_GateProgress"))
+            _finishMarkerMaterial.SetFloat("_GateProgress",
+                Mathf.Clamp01(1f - remaining / visibleDistance));
         PlayerController controller = _player.GetComponent<PlayerController>();
         Vector3 forward = controller != null
             ? controller.ForwardDirection
@@ -558,33 +562,47 @@ public class TrackManager : MonoBehaviour
 
         _finishMarker = new GameObject("FinishMarker");
         _finishMarker.transform.SetParent(transform, false);
-        Shader shader = Shader.Find("Unlit/Color");
+        Shader shader = Shader.Find("EchoRun/FinishGate");
+        if (shader == null) shader = Shader.Find("Unlit/Color");
         if (shader == null) shader = Shader.Find("Standard");
         if (shader == null) shader = Shader.Find("Mobile/Diffuse");
         if (shader != null)
         {
             _finishMarkerMaterial = new Material(shader)
             {
-                name = "EchoFinishMarker_Runtime",
-                color = new Color(0.05f, 0.95f, 1f, 1f)
+                name = "EchoFinishMarker_Runtime"
             };
+            if (_finishMarkerMaterial.HasProperty("_Color"))
+                _finishMarkerMaterial.color = new Color(0.05f, 0.95f, 1f, 1f);
         }
 
-        CreateFinishMarkerPart("LeftPillar",
-            new Vector3(-5.1f, 2.1f, 0f), new Vector3(0.35f, 4.2f, 0.35f));
-        CreateFinishMarkerPart("RightPillar",
-            new Vector3(5.1f, 2.1f, 0f), new Vector3(0.35f, 4.2f, 0.35f));
-        CreateFinishMarkerPart("TopBeam",
-            new Vector3(0f, 4.2f, 0f), new Vector3(10.55f, 0.35f, 0.35f));
-        CreateFinishMarkerPart("FinishBand",
-            new Vector3(0f, 3.45f, 0f), new Vector3(7.2f, 0.75f, 0.12f));
+        CreateFinishMarkerPart("LeftPillar", PrimitiveType.Cube,
+            new Vector3(-5.1f, 2.1f, 0f), new Vector3(0.42f, 4.2f, 0.58f), 0f);
+        CreateFinishMarkerPart("RightPillar", PrimitiveType.Cube,
+            new Vector3(5.1f, 2.1f, 0f), new Vector3(0.42f, 4.2f, 0.58f), 0f);
+        CreateFinishMarkerPart("TopBeam", PrimitiveType.Cube,
+            new Vector3(0f, 4.2f, 0f), new Vector3(10.55f, 0.42f, 0.58f), 0f);
+        CreateFinishMarkerPart("LeftSignal", PrimitiveType.Cube,
+            new Vector3(-4.92f, 2.1f, -0.34f), new Vector3(0.10f, 3.3f, 0.08f), 1f);
+        CreateFinishMarkerPart("RightSignal", PrimitiveType.Cube,
+            new Vector3(4.92f, 2.1f, -0.34f), new Vector3(0.10f, 3.3f, 0.08f), 1f);
+        CreateFinishMarkerPart("LaneSignalLeft", PrimitiveType.Cube,
+            new Vector3(-3f, 3.42f, 0f), new Vector3(2.6f, 0.16f, 0.18f), 1f);
+        CreateFinishMarkerPart("LaneSignalCenter", PrimitiveType.Cube,
+            new Vector3(0f, 3.42f, 0f), new Vector3(2.6f, 0.16f, 0.18f), 1f);
+        CreateFinishMarkerPart("LaneSignalRight", PrimitiveType.Cube,
+            new Vector3(3f, 3.42f, 0f), new Vector3(2.6f, 0.16f, 0.18f), 1f);
+        CreateFinishMarkerPart("ProtocolCore", PrimitiveType.Sphere,
+            new Vector3(0f, 4.18f, -0.42f), new Vector3(1.15f, 1.15f, 0.42f), 2f);
+        CreateFinishMarkerPart("CoreSpine", PrimitiveType.Cube,
+            new Vector3(0f, 3.18f, -0.20f), new Vector3(0.16f, 1.45f, 0.16f), 2f);
         _finishMarker.SetActive(false);
     }
 
-    private void CreateFinishMarkerPart(string name, Vector3 localPosition,
-        Vector3 localScale)
+    private void CreateFinishMarkerPart(string name, PrimitiveType primitive,
+        Vector3 localPosition, Vector3 localScale, float role)
     {
-        GameObject part = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        GameObject part = GameObject.CreatePrimitive(primitive);
         part.name = name;
         part.transform.SetParent(_finishMarker.transform, false);
         part.transform.localPosition = localPosition;
@@ -597,7 +615,12 @@ public class TrackManager : MonoBehaviour
         }
         Renderer renderer = part.GetComponent<Renderer>();
         if (renderer != null && _finishMarkerMaterial != null)
+        {
             renderer.sharedMaterial = _finishMarkerMaterial;
+            var properties = new MaterialPropertyBlock();
+            properties.SetFloat("_GateRole", role);
+            renderer.SetPropertyBlock(properties);
+        }
     }
 
     private void SetFinishMarkerActive(bool active)

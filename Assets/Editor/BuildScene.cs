@@ -38,6 +38,7 @@ public class BuildScene
         CreateLighting();
         CreateCoinPrefab();
         CreateObstaclePrefab();
+        EchoGameplayArtBuilder.Build();
         CreateTrackSegmentPrefab();
         CreateTurnSegmentPrefabs();
         ConfigureTrackManager();

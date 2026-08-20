@@ -75,5 +75,7 @@ public class Coin : MonoBehaviour
     public void ConfigureEchoContractMarker(bool isMarker)
     {
         IsEchoContractMarker = isMarker;
+        EchoCoinVisual visual = GetComponentInChildren<EchoCoinVisual>(true);
+        if (visual != null) visual.SetContractMarker(isMarker);
     }
 }

@@ -205,6 +205,8 @@ public class WorldStyler : MonoBehaviour
             new Vector3(-7.35f, 0.24f, 9.7f), 0.09f, _cyanMaterial);
         CreateBeam("RightRail", common.transform, new Vector3(7.35f, 0.24f, -9.7f),
             new Vector3(7.35f, 0.24f, 9.7f), 0.09f, _cyanMaterial);
+        BuildMiddleBuildings(common.transform);
+        BuildGroundBollards(common.transform);
 
         GameObject visualVariants = new GameObject("VisualVariants");
         visualVariants.transform.SetParent(parent, false);
@@ -273,6 +275,7 @@ public class WorldStyler : MonoBehaviour
             new Vector3(0.25f, 0.22f, 17.35f),
             new Vector3(direction * 13.75f, 0.22f, 17.35f),
             0.09f, _goldMaterial);
+        BuildCornerIslandDetails(common.transform, direction);
 
         GameObject visualVariants = new GameObject("VisualVariants");
         visualVariants.transform.SetParent(parent, false);
@@ -379,6 +382,56 @@ public class WorldStyler : MonoBehaviour
             new Vector3(7.5f, 11.2f, 7.2f), _deepStructureMaterial);
     }
 
+    private void BuildMiddleBuildings(Transform parent)
+    {
+        for (int side = -1; side <= 1; side += 2)
+        {
+            for (int i = 0; i < 2; i++)
+            {
+                float z = -5.6f + i * 11.2f;
+                float height = 3.8f + i * 1.8f + (side > 0 ? 0.8f : 0f);
+                CreateCube("MidStructure", parent,
+                    new Vector3(side * 13.6f, height * 0.5f - 0.7f, z),
+                    new Vector3(3.0f, height, 3.8f), _structureMaterial);
+                CreateCube("MidSignal", parent,
+                    new Vector3(side * 12.07f,
+                        height * 0.58f, z - 1.94f),
+                    new Vector3(0.08f, height * 0.28f, 0.06f),
+                    i == 0 ? _cyanMaterial : _goldMaterial);
+            }
+        }
+    }
+
+    private void BuildGroundBollards(Transform parent)
+    {
+        for (int side = -1; side <= 1; side += 2)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                float z = -7f + i * 7f;
+                CreateCylinder("GroundBollard", parent,
+                    new Vector3(side * 8.15f, 0.36f, z),
+                    new Vector3(0.15f, 0.36f, 0.15f), _deepStructureMaterial);
+                CreateCapsule("BollardSignal", parent,
+                    new Vector3(side * 8.15f, 0.72f, z - 0.02f),
+                    new Vector3(0.13f, 0.08f, 0.13f),
+                    i == 2 ? _coralMaterial : _cyanMaterial);
+            }
+        }
+    }
+
+    private void BuildCornerIslandDetails(Transform parent, int direction)
+    {
+        float x = -direction * 10.5f;
+        CreateCylinder("CornerIslandCore", parent,
+            new Vector3(x, 0.16f, 10f),
+            new Vector3(1.6f, 0.18f, 1.6f), _structureMaterial);
+        CreateBeam("CornerIslandSignal", parent,
+            new Vector3(x - direction * 1.4f, 0.42f, 7.5f),
+            new Vector3(x + direction * 1.4f, 0.42f, 12.5f),
+            0.08f, _coralMaterial);
+    }
+
     private void BuildPylon(Transform parent, int side, float z, float height, bool accent)
     {
         float x = side * (11.4f + (Mathf.Abs(z) < 1f ? 0.8f : 0f));
@@ -473,16 +526,11 @@ public class WorldStyler : MonoBehaviour
         DisableRenderers(coin);
         GameObject visual = new GameObject("StreamlinedVisual");
         visual.transform.SetParent(coin.transform, false);
-
-        // Three intersecting meshes create a complete double-sided token without
-        // multiplying the renderer count along long coin trails.
-        CreateCylinder("TokenRim", visual.transform, Vector3.zero,
-            new Vector3(0.84f, 0.11f, 0.84f), _goldMaterial,
-            new Vector3(90f, 0f, 0f));
-        CreateSphere("TokenInset", visual.transform, Vector3.zero,
-            new Vector3(0.62f, 0.62f, 0.27f), _deepStructureMaterial);
-        CreateSphere("EnergyCore", visual.transform, Vector3.zero,
-            new Vector3(0.27f, 0.27f, 0.32f), _cyanMaterial);
+        EchoCoinVisual coinVisual = visual.AddComponent<EchoCoinVisual>();
+        coinVisual.Initialize();
+        Coin coinData = coin.GetComponent<Coin>();
+        coinVisual.SetContractMarker(coinData != null
+            && coinData.IsEchoContractMarker);
     }
 
     public void StyleObstacle(GameObject obstacle)
@@ -507,6 +555,12 @@ public class WorldStyler : MonoBehaviour
         {
             BuildLaneBulkhead(visual.transform);
         }
+
+        GameObject highQualityOnly = new GameObject("HighQualityOnly");
+        highQualityOnly.transform.SetParent(visual.transform, false);
+        BuildObstacleHighDetails(highQualityOnly.transform, data.type);
+        EchoQualityGate qualityGate = visual.AddComponent<EchoQualityGate>();
+        qualityGate.Initialize(highQualityOnly);
     }
 
     private void BuildSlideDrone(Transform parent)
@@ -574,6 +628,29 @@ public class WorldStyler : MonoBehaviour
             center + new Vector3(0.72f, 0f, -0.65f),
             new Vector3(0.10f, 0.72f, 0.045f), _goldMaterial,
             new Vector3(0f, 0f, 18f));
+    }
+
+    private void BuildObstacleHighDetails(Transform parent, ObstacleType type)
+    {
+        if (type == ObstacleType.Low)
+        {
+            CreateCube("ScannerHighlight", parent,
+                new Vector3(0f, 1.18f, -0.64f),
+                new Vector3(1.7f, 0.06f, 0.035f), _goldMaterial);
+        }
+        else if (type == ObstacleType.High)
+        {
+            CreateCapsule("HurdleHighlight", parent,
+                new Vector3(0f, -0.30f, -0.57f),
+                new Vector3(0.055f, 1.1f, 0.035f), _cyanMaterial,
+                new Vector3(0f, 0f, 90f));
+        }
+        else
+        {
+            CreateCapsule("GateRipple", parent,
+                new Vector3(0f, 0.25f, -0.76f),
+                new Vector3(0.08f, 0.98f, 0.035f), _coralMaterial);
+        }
     }
 
     private void StyleCharacter()
@@ -732,6 +809,7 @@ public class WorldStyler : MonoBehaviour
     private void ApplyVisualQuality(VisualQuality quality)
     {
         bool high = quality == VisualQuality.High;
+        Shader.SetGlobalFloat("_EchoVisualHigh", high ? 1f : 0f);
         RenderSettings.reflectionIntensity = high
             ? HighReflectionIntensity
             : 0.18f;

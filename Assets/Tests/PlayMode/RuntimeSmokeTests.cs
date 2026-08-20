@@ -54,11 +54,13 @@ public sealed class RuntimeSmokeTests
 
             Transform coinVisual = coin.transform.Find("StreamlinedVisual");
             Assert.IsNotNull(coinVisual);
-            Assert.IsNotNull(coinVisual.Find("TokenRim"));
-            Assert.IsNotNull(coinVisual.Find("TokenInset"));
-            Assert.IsNotNull(coinVisual.Find("EnergyCore"));
-            Assert.AreEqual(3, coinVisual.childCount,
-                "Coin trails must keep the lightweight three-renderer style.");
+            Assert.IsNotNull(coinVisual.GetComponent<EchoCoinVisual>());
+            Assert.AreEqual(1,
+                coinVisual.GetComponentsInChildren<Renderer>(true).Length,
+                "Coin trails must use one combined renderer.");
+            MeshFilter coinMesh = coinVisual.GetComponent<MeshFilter>();
+            Assert.IsNotNull(coinMesh);
+            Assert.IsNotNull(coinMesh.sharedMesh);
             Assert.AreSame(coinCollider, coin.GetComponent<BoxCollider>());
             Assert.IsTrue(coinCollider.isTrigger);
 
@@ -314,7 +316,8 @@ public sealed class RuntimeSmokeTests
         Transform marker = track.transform.Find("FinishMarker");
         Assert.IsNotNull(marker);
         Assert.IsTrue(marker.gameObject.activeInHierarchy);
-        Assert.AreEqual(4, marker.GetComponentsInChildren<Renderer>().Length);
+        Assert.GreaterOrEqual(marker.GetComponentsInChildren<Renderer>().Length, 10);
+        Assert.IsNotNull(marker.Find("ProtocolCore"));
         foreach (Collider collider in marker.GetComponentsInChildren<Collider>())
             Assert.IsFalse(collider.enabled,
                 "The visual finish marker must never collide with the runner.");
