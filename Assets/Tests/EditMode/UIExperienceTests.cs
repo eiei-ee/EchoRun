@@ -2,6 +2,7 @@ using NUnit.Framework;
 using System;
 using System.IO;
 using System.Security.Cryptography;
+using UnityEditor;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
@@ -117,6 +118,18 @@ public sealed class UIExperienceTests
             "Art/Menu/MemoryCorridorMenu");
         Assert.IsNotNull(background);
         Assert.Greater(background.width, background.height);
+        Assert.GreaterOrEqual(background.width, 1600);
+        Assert.GreaterOrEqual(background.height, 900);
+
+        TextureImporter importer = AssetImporter.GetAtPath(
+            "Assets/Resources/Art/Menu/MemoryCorridorMenu.png")
+            as TextureImporter;
+        Assert.IsNotNull(importer);
+        Assert.IsFalse(importer.mipmapEnabled,
+            "Full-screen UI art must not soften through mipmaps.");
+        Assert.AreEqual(TextureImporterNPOTScale.None, importer.npotScale);
+        Assert.AreEqual(TextureImporterCompression.Uncompressed,
+            importer.textureCompression);
     }
 
     [Test]

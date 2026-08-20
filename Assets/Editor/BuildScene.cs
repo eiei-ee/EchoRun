@@ -23,11 +23,14 @@ public class BuildScene
 
         EnsureFolder("Assets/Prefabs");
         EnsureFolder("Assets/Prefabs/Materials");
+        EnsureFolder("Assets/Resources/Materials");
         RemoveMissingScriptsFromScene();
         CleanupRuntimeUI();
 
         CreateCharacterMaterials();
         CreateSkyMaterial();
+        CreateRuntimeKitMaterial();
+        ConfigureMenuBackgroundTexture();
         EnsureMainCamera();
         CreatePlayer();
         CreateGroundPlane();
@@ -397,6 +400,52 @@ public class BuildScene
         material.SetFloat("_Exposure", 0.52f);
         material.SetFloat("_Rotation", 0f);
         EditorUtility.SetDirty(material);
+    }
+
+    static void CreateRuntimeKitMaterial()
+    {
+        const string path =
+            "Assets/Resources/Materials/EchoKitVertexColor.mat";
+        Shader shader = Shader.Find(EchoEnvironmentKit.VertexColorShaderName);
+        if (shader == null)
+            throw new System.InvalidOperationException(
+                "Required environment shader is unavailable: "
+                + EchoEnvironmentKit.VertexColorShaderName);
+
+        Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (material == null)
+        {
+            material = new Material(shader) { name = "EchoKitVertexColor" };
+            AssetDatabase.CreateAsset(material, path);
+        }
+        else
+        {
+            material.shader = shader;
+        }
+        material.SetColor("_BaseTint", new Color(0.075f, 0.11f, 0.15f, 1f));
+        material.SetColor("_EmissionTint", new Color(0.10f, 0.52f, 0.78f, 1f));
+        material.SetFloat("_TintStrength", 0.97f);
+        material.SetFloat("_EmissionStrength", 0.38f);
+        EditorUtility.SetDirty(material);
+    }
+
+    static void ConfigureMenuBackgroundTexture()
+    {
+        const string path =
+            "Assets/Resources/Art/Menu/MemoryCorridorMenu.png";
+        TextureImporter importer = AssetImporter.GetAtPath(path)
+            as TextureImporter;
+        if (importer == null) return;
+
+        importer.textureType = TextureImporterType.Default;
+        importer.sRGBTexture = true;
+        importer.mipmapEnabled = false;
+        importer.npotScale = TextureImporterNPOTScale.None;
+        importer.textureCompression = TextureImporterCompression.Uncompressed;
+        importer.compressionQuality = 100;
+        importer.maxTextureSize = 4096;
+        importer.filterMode = FilterMode.Bilinear;
+        importer.SaveAndReimport();
     }
 
     // ── scene objects ──────────────────────────────────

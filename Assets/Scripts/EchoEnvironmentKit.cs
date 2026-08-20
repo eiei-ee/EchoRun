@@ -73,12 +73,17 @@ public static class EchoEnvironmentKit
     {
         if (_sharedMaterial == null)
         {
-            Shader shader = Shader.Find(VertexColorShaderName);
-            if (shader == null) return;
-            _sharedMaterial = new Material(shader)
+            Material authored = Resources.Load<Material>(
+                "Materials/EchoKitVertexColor");
+            if (authored != null)
+                _sharedMaterial = Object.Instantiate(authored);
+            else
             {
-                name = "EchoKit_VertexColor"
-            };
+                Shader shader = Shader.Find(VertexColorShaderName);
+                if (shader == null) return;
+                _sharedMaterial = new Material(shader);
+            }
+            _sharedMaterial.name = "EchoKit_VertexColor_Runtime";
         }
 
         Renderer[] renderers =

@@ -20,6 +20,12 @@ public sealed class RuntimeSmokeTests
         Assert.IsNotNull(Resources.Load<AudioClip>("Audio/collision"));
         Assert.IsNotNull(Resources.Load<AudioClip>("Audio/coin"));
         Assert.IsNotNull(Resources.Load<AudioClip>("Audio/ui_click"));
+        Material kitMaterial = Resources.Load<Material>(
+            "Materials/EchoKitVertexColor");
+        Assert.IsNotNull(kitMaterial,
+            "The environment shader must be referenced by a bundled material so player builds cannot strip it.");
+        Assert.AreEqual(EchoEnvironmentKit.VertexColorShaderName,
+            kitMaterial.shader.name);
         Assert.AreEqual(4, GameBalanceConfig.Current.powerUps.Length);
     }
 
