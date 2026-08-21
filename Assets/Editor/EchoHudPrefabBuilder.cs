@@ -121,7 +121,7 @@ public static class EchoHudPrefabBuilder
             new Vector2(0.5f, 0.5f));
 
         GameObject meterGroup = Panel("MeterGroup", dynamicLayer.transform,
-            new Vector2(0.5f, 0.62f), new Vector2(520f, 34f), Vector2.zero,
+            new Vector2(0.5f, 0.855f), new Vector2(520f, 34f), Vector2.zero,
             new Vector2(0.5f, 0.5f), Backdrop);
         Text meterLabel = TextStretch("MeterLabel", meterGroup.transform,
             "稳定度", 16, TextAnchor.MiddleLeft, TextMuted,

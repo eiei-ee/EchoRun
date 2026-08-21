@@ -60,6 +60,20 @@ public class EchoHudPrefabTests
         Assert.IsTrue(Find("HudDynamicCanvas/Prediction").activeSelf);
     }
 
+    [Test]
+    public void PhaseMeterStaysAboveTheRunnerFocusZone()
+    {
+        GameObject prefab = Resources.Load<GameObject>("UI/EchoHud");
+        _instance = Object.Instantiate(prefab);
+
+        RectTransform meter = Find("HudDynamicCanvas/MeterGroup")
+            .GetComponent<RectTransform>();
+        Assert.NotNull(meter);
+        Assert.GreaterOrEqual(meter.anchorMin.y, 0.82f,
+            "The phase meter must stay above the runner and obstacle sightline.");
+        Assert.AreEqual(meter.anchorMin, meter.anchorMax);
+    }
+
     private GameObject Find(string path)
     {
         Transform target = _instance.transform.Find(path);

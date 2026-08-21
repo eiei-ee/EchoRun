@@ -2,6 +2,7 @@ using NUnit.Framework;
 using System;
 using System.IO;
 using System.Security.Cryptography;
+using UnityEditor;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
@@ -107,6 +108,26 @@ public sealed class UIExperienceTests
         StringAssert.DoesNotContain("AI识别：", challenge.learned);
         StringAssert.DoesNotContain("权重", challenge.rule);
         StringAssert.DoesNotContain("置信", challenge.rule);
+    }
+
+    [Test]
+    public void MenuMemoryCorridorBackgroundIsBundledAtFullQuality()
+    {
+        const string path =
+            "Assets/Resources/Art/Menu/MemoryCorridorMenu.png";
+        Texture2D background = Resources.Load<Texture2D>(
+            "Art/Menu/MemoryCorridorMenu");
+        Assert.IsNotNull(background);
+        Assert.GreaterOrEqual(background.width, 1600);
+        Assert.GreaterOrEqual(background.height, 900);
+
+        TextureImporter importer = AssetImporter.GetAtPath(path)
+            as TextureImporter;
+        Assert.IsNotNull(importer);
+        Assert.IsFalse(importer.mipmapEnabled);
+        Assert.AreEqual(TextureImporterNPOTScale.None, importer.npotScale);
+        Assert.AreEqual(TextureImporterCompression.Uncompressed,
+            importer.textureCompression);
     }
 
     [Test]

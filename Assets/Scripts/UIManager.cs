@@ -17,7 +17,10 @@ public class UIManager : MonoBehaviour
 
     // ── Menu ──
     GameObject _menuPanel;
+    RawImage _menuBackground;
+    RectTransform _menuReadabilityVeil;
     Button _startBtn, _settingsBtn, _characterBtn;
+    Text _menuProtocolText, _menuTitleText, _menuEnglishText, _menuTaglineText;
     Text _menuGenerationText, _menuLearnedText, _menuRuleText, _menuObjectiveText;
 
     // ── Settings (sub-panel of menu) ──
@@ -255,56 +258,105 @@ public class UIManager : MonoBehaviour
 
     void CreateMenuPanel()
     {
-        _menuPanel = NewPanel("MenuPanel", WithAlpha(Backdrop, 0.56f));
-        AddMenuGrid(_menuPanel.transform);
+        _menuPanel = NewPanel("MenuPanel", Color.clear);
+        CreateMenuBackground();
 
-        Text protocol = MakeText("Protocol", _menuPanel.transform,
+        GameObject veil = new GameObject("MenuReadabilityVeil", typeof(Image));
+        veil.transform.SetParent(_menuPanel.transform, false);
+        Image veilImage = veil.GetComponent<Image>();
+        veilImage.color = WithAlpha(Ink, 0.48f);
+        veilImage.raycastTarget = false;
+        _menuReadabilityVeil = veil.GetComponent<RectTransform>();
+
+        _menuProtocolText = MakeText("Protocol", _menuPanel.transform,
             "ADAPTIVE RIVAL PROTOCOL  //  07", 16, TextAnchor.MiddleCenter);
-        protocol.color = Primary;
-        protocol.fontStyle = FontStyle.Bold;
-        AnchorText(protocol.GetComponent<RectTransform>(), 0.5f, 0.87f, 620, 30);
+        _menuProtocolText.color = Primary;
+        _menuProtocolText.fontStyle = FontStyle.Bold;
 
-        Text title = MakeText("Title", _menuPanel.transform, "ECHO//RUN", 76, TextAnchor.MiddleCenter);
-        if (_titleFont != null) title.font = _titleFont;
-        title.color = TextPrimary;
-        title.fontStyle = FontStyle.Bold;
-        AddShadow(title.gameObject, WithAlpha(Ink, 0.9f));
-        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.76f, 760, 92);
+        _menuTitleText = MakeText("Title", _menuPanel.transform, "影迹",
+            76, TextAnchor.MiddleLeft);
+        _menuTitleText.color = TextPrimary;
+        _menuTitleText.fontStyle = FontStyle.Bold;
+        _menuTitleText.horizontalOverflow = HorizontalWrapMode.Overflow;
+        _menuTitleText.verticalOverflow = VerticalWrapMode.Overflow;
+        AddShadow(_menuTitleText.gameObject, WithAlpha(PrimaryStrong, 0.85f));
 
-        Text subtitle = MakeText("Subtitle", _menuPanel.transform,
-            "回声竞速实验", 22, TextAnchor.MiddleCenter);
-        subtitle.color = Reward;
-        AnchorText(subtitle.GetComponent<RectTransform>(), 0.5f, 0.69f, 420, 36);
+        _menuEnglishText = MakeText("EnglishTitle", _menuPanel.transform,
+            "E C H O // R U N", 23, TextAnchor.MiddleLeft);
+        if (_titleFont != null) _menuEnglishText.font = _titleFont;
+        _menuEnglishText.color = TextPrimary;
+        _menuEnglishText.fontStyle = FontStyle.Bold;
+
+        _menuTaglineText = MakeText("Tagline", _menuPanel.transform,
+            "《影迹》——你的过去，正在追上你", 25, TextAnchor.MiddleLeft);
+        _menuTaglineText.color = Primary;
 
         _menuGenerationText = MakeText("EchoGeneration", _menuPanel.transform,
-            "首次回声校准", 32, TextAnchor.MiddleLeft);
+            "首次校准 · 回声尚未形成", 30, TextAnchor.MiddleLeft);
         _menuGenerationText.color = Primary;
         _menuGenerationText.fontStyle = FontStyle.Bold;
-        AnchorText(_menuGenerationText.rectTransform, 0.5f, 0.57f, 840, 48);
 
-        _menuLearnedText = MakeBriefLine("EchoLearned", "它将学习：路线、动作与节奏",
-            0.505f, TextPrimary);
-        _menuRuleText = MakeBriefLine("EchoRule", "本轮规则：完成校准后生成第 1 代回声",
-            0.445f, TextPrimary);
-        _menuObjectiveText = MakeBriefLine("EchoObjective", "挑战目标：完成一次校准跑局",
-            0.385f, Reward);
+        _menuLearnedText = MakeBriefLine("EchoLearned",
+            "等待采样：路线、动作与节奏", 0f, TextPrimary);
+        _menuRuleText = MakeBriefLine("EchoRule",
+            "校准目标：完成跳跃与滑铲采样", 0f, TextPrimary);
+        _menuObjectiveText = MakeBriefLine("EchoObjective",
+            "挑战目标：完成一次校准跑局", 0f, Reward);
 
-        _startBtn = MakeButton("StartBtn", _menuPanel.transform, "启动校准", 28,
-            new Vector2(0.5f, 0.255f), new Vector2(520, 78),
+        _startBtn = MakeButton("StartBtn", _menuPanel.transform, "开始校准", 28,
+            new Vector2(0.19f, 0.245f), new Vector2(520f, 78f),
             Primary, Primary, Ink);
         _startBtn.onClick.AddListener(StartGameFromHome);
 
         _settingsBtn = MakeButton("SettingsBtn", _menuPanel.transform, "设置", 24,
-            new Vector2(0.62f, 0.12f), new Vector2(180, 56),
+            new Vector2(0.28f, 0.095f), new Vector2(180f, 56f),
             WithAlpha(SurfaceRaised, 0.96f), TextMuted);
         _settingsBtn.onClick.AddListener(ShowSettings);
 
         _characterBtn = MakeButton("CharacterBtn", _menuPanel.transform, "跑者", 24,
-            new Vector2(0.38f, 0.12f), new Vector2(180, 56),
+            new Vector2(0.10f, 0.095f), new Vector2(180f, 56f),
             WithAlpha(SurfaceRaised, 0.96f), TextMuted);
         _characterBtn.onClick.AddListener(ShowCharacter);
 
+        LayoutMenu(false, false);
         _menuPanel.SetActive(false);
+    }
+
+    void CreateMenuBackground()
+    {
+        GameObject background = new GameObject("MemoryCorridorBackground",
+            typeof(RawImage));
+        background.transform.SetParent(_menuPanel.transform, false);
+        _menuBackground = background.GetComponent<RawImage>();
+        _menuBackground.texture = Resources.Load<Texture2D>(
+            "Art/Menu/MemoryCorridorMenu");
+        _menuBackground.color = _menuBackground.texture != null
+            ? Color.white : Backdrop;
+        _menuBackground.raycastTarget = false;
+        Stretch(_menuBackground.rectTransform);
+        _menuBackground.transform.SetAsFirstSibling();
+        FitMenuBackground();
+    }
+
+    void FitMenuBackground()
+    {
+        if (_menuBackground == null || _menuBackground.texture == null
+            || Screen.width <= 0 || Screen.height <= 0) return;
+        float assetAspect = (float)_menuBackground.texture.width
+                            / _menuBackground.texture.height;
+        float screenAspect = (float)Screen.width / Screen.height;
+        if (screenAspect > assetAspect)
+        {
+            float visibleHeight = assetAspect / screenAspect;
+            _menuBackground.uvRect = new Rect(0f,
+                (1f - visibleHeight) * 0.5f, 1f, visibleHeight);
+        }
+        else
+        {
+            float visibleWidth = screenAspect / assetAspect;
+            _menuBackground.uvRect = new Rect(
+                (1f - visibleWidth) * 0.5f, 0f, visibleWidth, 1f);
+        }
     }
 
     Text MakeBriefLine(string name, string content, float anchorY, Color color)
@@ -319,6 +371,57 @@ public class UIManager : MonoBehaviour
         line.resizeTextMaxSize = 24;
         AnchorText(line.rectTransform, 0.5f, anchorY, 840, 54);
         return line;
+    }
+
+    void LayoutMenu(bool portrait, bool largeTargets)
+    {
+        float x = portrait ? 0.5f : 0.19f;
+        float width = portrait ? 820f : 620f;
+        if (_menuReadabilityVeil != null)
+        {
+            _menuReadabilityVeil.anchorMin = Vector2.zero;
+            _menuReadabilityVeil.anchorMax = new Vector2(
+                portrait ? 1f : 0.47f, 1f);
+            _menuReadabilityVeil.offsetMin = Vector2.zero;
+            _menuReadabilityVeil.offsetMax = Vector2.zero;
+        }
+        if (_menuProtocolText != null)
+            AnchorText(_menuProtocolText.rectTransform, x,
+                portrait ? 0.92f : 0.90f, width, 30f);
+        if (_menuTitleText != null)
+            AnchorText(_menuTitleText.rectTransform, x,
+                portrait ? 0.84f : 0.81f, width, portrait ? 148f : 128f);
+        if (_menuEnglishText != null)
+            AnchorText(_menuEnglishText.rectTransform, x,
+                portrait ? 0.775f : 0.725f, width, 38f);
+        if (_menuTaglineText != null)
+            AnchorText(_menuTaglineText.rectTransform, x,
+                portrait ? 0.715f : 0.665f, width, 42f);
+        if (_menuGenerationText != null)
+            AnchorText(_menuGenerationText.rectTransform, x,
+                portrait ? 0.625f : 0.565f, width, 48f);
+        if (_menuLearnedText != null)
+            AnchorText(_menuLearnedText.rectTransform, x,
+                portrait ? 0.545f : 0.495f, width, 54f);
+        if (_menuRuleText != null)
+            AnchorText(_menuRuleText.rectTransform, x,
+                portrait ? 0.475f : 0.425f, width, 54f);
+        if (_menuObjectiveText != null)
+            AnchorText(_menuObjectiveText.rectTransform, x,
+                portrait ? 0.405f : 0.355f, width, 54f);
+
+        SetButtonLayout(_startBtn,
+            new Vector2(x, portrait ? 0.285f : 0.235f),
+            UILayoutRules.GetPrimaryActionSize(
+                Screen.width, Screen.height, UsesTouchLayout()));
+        SetButtonLayout(_characterBtn,
+            new Vector2(portrait ? 0.22f : 0.10f, 0.095f),
+            TouchButtonSize(portrait ? new Vector2(260f, 104f)
+                : new Vector2(180f, 56f), largeTargets, portrait));
+        SetButtonLayout(_settingsBtn,
+            new Vector2(portrait ? 0.78f : 0.28f, 0.095f),
+            TouchButtonSize(portrait ? new Vector2(260f, 104f)
+                : new Vector2(180f, 56f), largeTargets, portrait));
     }
 
     // ═══════════════════════════════════════════════════
@@ -1343,12 +1446,16 @@ public class UIManager : MonoBehaviour
             _menuGenerationText.text = view.generation;
         if (_menuLearnedText != null)
             _menuLearnedText.text = generation > 0
-                ? "它学会了：" + view.learned
-                : view.learned;
+                ? "它记住了：" + view.learned
+                : "等待采样：" + view.learned;
         if (_menuRuleText != null)
-            _menuRuleText.text = "本轮规则：" + view.rule;
+            _menuRuleText.text = generation > 0
+                ? "本轮契约：" + view.rule
+                : "校准目标：" + view.objective;
         if (_menuObjectiveText != null)
-            _menuObjectiveText.text = "挑战目标：" + view.objective;
+            _menuObjectiveText.text = generation > 0
+                ? "挑战目标：" + view.objective
+                : "完成校准后生成第 1 代回声";
         SetButtonLabel(_startBtn, view.primaryAction);
     }
 
@@ -1408,6 +1515,7 @@ public class UIManager : MonoBehaviour
         bool portrait = UILayoutRules.IsCompactPortrait(
             Screen.width, Screen.height);
         bool largeTargets = UsesTouchLayout() || portrait;
+        FitMenuBackground();
         if (_canvasScaler != null)
             _canvasScaler.referenceResolution = UILayoutRules.GetReferenceResolution(
                 Screen.width, Screen.height);
@@ -1490,12 +1598,6 @@ public class UIManager : MonoBehaviour
                 ? new Vector2(880f, 104f)
                 : new Vector2(760f, 64f);
         }
-        if (_startBtn != null)
-        {
-            RectTransform start = _startBtn.GetComponent<RectTransform>();
-            start.sizeDelta = UILayoutRules.GetPrimaryActionSize(
-                Screen.width, Screen.height, UsesTouchLayout());
-        }
         SetButtonSize(_pauseBtn, largeTargets
             ? new Vector2(104f, 104f)
             : new Vector2(48f, 48f));
@@ -1511,14 +1613,7 @@ public class UIManager : MonoBehaviour
         if (_shadowResultText != null)
             _shadowResultText.rectTransform.sizeDelta =
                 UILayoutRules.GetResultTextSize(Screen.width, Screen.height);
-        SetButtonLayout(_characterBtn,
-            new Vector2(portrait ? 0.22f : 0.38f, 0.12f),
-            TouchButtonSize(portrait ? new Vector2(260f, 104f)
-                : new Vector2(180f, 56f), largeTargets, portrait));
-        SetButtonLayout(_settingsBtn,
-            new Vector2(portrait ? 0.78f : 0.62f, 0.12f),
-            TouchButtonSize(portrait ? new Vector2(260f, 104f)
-                : new Vector2(180f, 56f), largeTargets, portrait));
+        LayoutMenu(portrait, largeTargets);
     }
 
     static void RefreshTextGeometry(Transform root)

@@ -258,7 +258,9 @@ public sealed class PowerUpShopUI : MonoBehaviour
         if (_launcher != null)
         {
             RuntimePanelFactory.Place(_launcher.GetComponent<RectTransform>(),
-                new Vector2(0.50f, 0.12f),
+                portrait
+                    ? new Vector2(0.50f, 0.095f)
+                    : new Vector2(0.19f, 0.095f),
                 launcherSize,
                 Vector2.zero);
         }

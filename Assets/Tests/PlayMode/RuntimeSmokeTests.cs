@@ -20,6 +20,11 @@ public sealed class RuntimeSmokeTests
         Assert.IsNotNull(Resources.Load<AudioClip>("Audio/collision"));
         Assert.IsNotNull(Resources.Load<AudioClip>("Audio/coin"));
         Assert.IsNotNull(Resources.Load<AudioClip>("Audio/ui_click"));
+        Material shaderRetention = Resources.Load<Material>(
+            "Materials/EchoKitVertexColor");
+        Assert.IsNotNull(shaderRetention,
+            "The runtime vertex-color shader must be retained by a bundled material.");
+        Assert.AreEqual("EchoRun/VertexColor", shaderRetention.shader.name);
         Assert.AreEqual(4, GameBalanceConfig.Current.powerUps.Length);
     }
 
@@ -351,6 +356,24 @@ public sealed class RuntimeSmokeTests
         Assert.IsNotNull(home);
         Assert.Greater(launcher.transform.GetSiblingIndex(), home.GetSiblingIndex(),
             "The report launcher must remain clickable above the home surface.");
+    }
+
+    [UnityTest]
+    public IEnumerator SupplyLauncherJoinsTheLandscapeHomeActions()
+    {
+        yield return null;
+        yield return null;
+
+        if (UILayoutRules.IsCompactPortrait(Screen.width, Screen.height))
+            Assert.Ignore("Landscape launcher placement is not used in portrait.");
+
+        PowerUpShopUI shop = Object.FindObjectOfType<PowerUpShopUI>();
+        Assert.IsNotNull(shop);
+        GameObject launcher = GetPrivateObject(shop, "_launcher");
+        Assert.IsNotNull(launcher);
+        RectTransform rect = launcher.GetComponent<RectTransform>();
+        Assert.AreEqual(0.19f, rect.anchorMin.x, 0.001f);
+        Assert.AreEqual(0.095f, rect.anchorMin.y, 0.001f);
     }
 
     [UnityTest]
