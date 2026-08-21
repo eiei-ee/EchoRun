@@ -426,7 +426,7 @@ public class BuildConfig
 
         BuildReport report = BuildPipeline.BuildPlayer(
             GetScenePaths(), outputPath, BuildTarget.StandaloneWindows64,
-            BuildOptions.CompressWithLz4HC);
+            BuildOptions.CompressWithLz4HC | BuildOptions.CleanBuildCache);
         EnsureBuildSucceeded(report, "Windows 64-bit");
         Debug.Log($"Windows build complete: {outputPath}");
     }

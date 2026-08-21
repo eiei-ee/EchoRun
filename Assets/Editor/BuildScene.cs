@@ -44,6 +44,7 @@ public class BuildScene
         EchoGameplayArtBuilder.Build();
         CreateTrackSegmentPrefab();
         CreateTurnSegmentPrefabs();
+        BakeEnvironmentVariants();
         ConfigureTrackManager();
         EchoHudPrefabBuilder.Build();
         CreateUICanvas();
@@ -872,6 +873,105 @@ public class BuildScene
 
         CreateTurnPrefab("Assets/Prefabs/TurnSegment_Right.prefab", "TurnSegment_Right", 1, trackMat, lineMat, groundLayer);
         CreateTurnPrefab("Assets/Prefabs/TurnSegment_Left.prefab", "TurnSegment_Left", -1, trackMat, lineMat, groundLayer);
+    }
+
+    [MenuItem("Tools/EchoRun/Bake Environment Variants")]
+    public static void BakeEnvironmentVariants()
+    {
+        DetectRenderPipeline();
+        EnsureFolder("Assets/Prefabs");
+        EnsureFolder("Assets/Prefabs/Materials");
+
+        Material[] palette =
+        {
+            CreateMaterial("EchoStructure", new Color(0.11f, 0.16f, 0.24f),
+                new Color(0.006f, 0.014f, 0.028f),
+                WorldStyler.StructureMetallic, WorldStyler.StructureSmoothness),
+            CreateMaterial("EchoDepth", new Color(0.035f, 0.06f, 0.105f),
+                new Color(0.003f, 0.008f, 0.018f), 0.10f, 0.27f),
+            CreateMaterial("EchoCyan", new Color(0.22f, 0.84f, 1.00f),
+                new Color(0.020f, 0.34f, 0.56f), 0.24f, 0.68f),
+            CreateMaterial("EchoCoral", new Color(1.00f, 0.40f, 0.35f),
+                new Color(0.58f, 0.060f, 0.028f), 0.14f, 0.50f),
+            CreateMaterial("EchoGold", new Color(0.94f, 0.68f, 0.24f),
+                new Color(0.48f, 0.19f, 0.015f), 0.52f, 0.72f)
+        };
+
+        GameObject temporaryStyler = null;
+        WorldStyler styler = Object.FindObjectOfType<WorldStyler>();
+        if (styler == null)
+        {
+            temporaryStyler = new GameObject("WorldStyler_EnvironmentBake");
+            styler = temporaryStyler.AddComponent<WorldStyler>();
+        }
+
+        try
+        {
+            BakeEnvironmentVariantPrefab(styler,
+                "Assets/Prefabs/TrackSegment.prefab", TrackSegmentType.Straight,
+                palette);
+            BakeEnvironmentVariantPrefab(styler,
+                "Assets/Prefabs/TurnSegment_Left.prefab", TrackSegmentType.TurnLeft,
+                palette);
+            BakeEnvironmentVariantPrefab(styler,
+                "Assets/Prefabs/TurnSegment_Right.prefab", TrackSegmentType.TurnRight,
+                palette);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            Debug.Log("Baked prehung environment variants into all road prefabs.");
+        }
+        finally
+        {
+            if (temporaryStyler != null)
+                Object.DestroyImmediate(temporaryStyler);
+        }
+    }
+
+    private static void BakeEnvironmentVariantPrefab(WorldStyler styler,
+        string path, TrackSegmentType segmentType, Material[] palette)
+    {
+        if (AssetDatabase.LoadAssetAtPath<GameObject>(path) == null)
+        {
+            Debug.LogError("Cannot bake missing road prefab: " + path);
+            return;
+        }
+
+        GameObject root = PrefabUtility.LoadPrefabContents(path);
+        try
+        {
+            Transform previous = root.transform.Find("EchoEnvironment");
+            if (previous != null)
+                Object.DestroyImmediate(previous.gameObject);
+            if (root.GetComponent<TrackSegmentData>() == null)
+                root.AddComponent<TrackSegmentData>();
+
+            styler.DecorateSegment(root, segmentType);
+            Transform environment = root.transform.Find("EchoEnvironment");
+            if (environment == null)
+                throw new System.InvalidOperationException(
+                    "Environment bake failed for " + path);
+
+            Renderer[] renderers = environment.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Material runtimeMaterial = renderers[i].sharedMaterial;
+                if (runtimeMaterial == null) continue;
+                for (int p = 0; p < palette.Length; p++)
+                {
+                    if (palette[p] != null && palette[p].name == runtimeMaterial.name)
+                    {
+                        renderers[i].sharedMaterial = palette[p];
+                        break;
+                    }
+                }
+            }
+
+            PrefabUtility.SaveAsPrefabAsset(root, path);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
     }
 
     public static void EnsureSharedRoadMaterialAsset()

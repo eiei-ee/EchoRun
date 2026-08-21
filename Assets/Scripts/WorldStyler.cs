@@ -35,7 +35,7 @@ public class WorldStyler : MonoBehaviour
         }
 
         Instance = this;
-        BuildPalette();
+        EnsurePalette();
         ConfigureAtmosphere();
         VisualQualityController.Changed += ApplyVisualQuality;
     }
@@ -96,6 +96,7 @@ public class WorldStyler : MonoBehaviour
     public void DecorateSegment(GameObject segment, TrackSegmentType segmentType)
     {
         if (segment == null) return;
+        EnsurePalette();
         Transform existing = segment.transform.Find("EchoEnvironment");
         GameObject environment;
         EchoEnvironmentVariantSet variantSet;
@@ -174,8 +175,9 @@ public class WorldStyler : MonoBehaviour
         ApplyVisualQuality(VisualQualityController.Current);
     }
 
-    private void BuildPalette()
+    private void EnsurePalette()
     {
+        if (_structureMaterial != null) return;
         _structureMaterial = MakeMaterial("EchoStructure",
             new Color(0.11f, 0.16f, 0.24f), new Color(0.006f, 0.014f, 0.028f),
             StructureMetallic, StructureSmoothness);

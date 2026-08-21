@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -23,6 +24,39 @@ public class EnvironmentVariantTests
         Assert.That(first, Is.InRange(0, 2));
         Assert.AreEqual(-1,
             EchoEnvironmentVariantSet.SelectVariantIndex(73421, 80f, 0));
+    }
+
+    [TestCase("Assets/Prefabs/TrackSegment.prefab", 3)]
+    [TestCase("Assets/Prefabs/TurnSegment_Left.prefab", 2)]
+    [TestCase("Assets/Prefabs/TurnSegment_Right.prefab", 2)]
+    public void RoadPrefabsPrehangExclusiveEnvironmentVariants(
+        string prefabPath, int expectedVariants)
+    {
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+        Assert.NotNull(prefab, prefabPath);
+        Transform environment = prefab.transform.Find("EchoEnvironment");
+        Assert.NotNull(environment,
+            prefabPath + " must prehang its pooled visual environment.");
+        Assert.NotNull(environment.Find("Common"));
+        Assert.NotNull(environment.Find("HighQualityOnly"));
+        Transform variants = environment.Find("VisualVariants");
+        Assert.NotNull(variants);
+        Assert.AreEqual(expectedVariants, variants.childCount);
+        Assert.NotNull(environment.GetComponent<EchoEnvironmentVariantSet>());
+        Assert.AreEqual(0,
+            environment.GetComponentsInChildren<Collider>(true).Length);
+        Renderer[] renderers =
+            environment.GetComponentsInChildren<Renderer>(true);
+        Assert.Greater(renderers.Length, 0);
+        foreach (Renderer renderer in renderers)
+        {
+            foreach (Material material in renderer.sharedMaterials)
+            {
+                Assert.NotNull(material, renderer.name);
+                Assert.IsTrue(AssetDatabase.Contains(material),
+                    renderer.name + " must use a persistent material asset.");
+            }
+        }
     }
 
     [Test]
