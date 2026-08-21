@@ -11,6 +11,8 @@ public class CameraFollow : MonoBehaviour
    private float _invSmoothSpeed;
     private Vector3 _shakeOffset;
     private float _shakeTimer;
+    private float _groundedTargetY;
+    private bool _hasGroundedTargetY;
 
     void Start()
     {
@@ -18,6 +20,8 @@ public class CameraFollow : MonoBehaviour
         if (target != null)
         {
            _pc = target.GetComponent<PlayerController>();
+           _groundedTargetY = target.position.y;
+           _hasGroundedTargetY = true;
        }
     }
 
@@ -48,18 +52,33 @@ public class CameraFollow : MonoBehaviour
        if (_pc == null && target != null)
            _pc = target.GetComponent<PlayerController>();
 
+        bool isJumping = _pc != null && _pc.IsJumping;
+        if (!_hasGroundedTargetY || !isJumping)
+        {
+            _groundedTargetY = target.position.y;
+            _hasGroundedTargetY = true;
+        }
+        Vector3 followAnchor = ResolveFollowAnchor(
+            target.position, isJumping, _groundedTargetY);
+
         Vector3 forward = _pc != null ? _pc.ForwardDirection : Vector3.forward;
         Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
 
         Vector3 worldOffset = forward * offset.z + Vector3.up * offset.y + right * offset.x;
-        Vector3 targetPos = target.position + worldOffset;
+        Vector3 targetPos = followAnchor + worldOffset;
         transform.position = Vector3.SmoothDamp(transform.position, targetPos, ref _velocity, _invSmoothSpeed);
         transform.position += _shakeOffset;
 
         // Look at player center (above the track), not model center (below the track)
-        Vector3 lookPoint = target.position;
-        Vector3 lookTarget = lookPoint + forward * 5f;
+        Vector3 lookTarget = followAnchor + forward * 5f;
         Quaternion targetRot = Quaternion.LookRotation(lookTarget - transform.position);
         transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * smoothSpeed);
+    }
+
+    public static Vector3 ResolveFollowAnchor(
+        Vector3 targetPosition, bool isJumping, float groundedY)
+    {
+        if (isJumping) targetPosition.y = groundedY;
+        return targetPosition;
     }
 }

@@ -351,10 +351,10 @@ public sealed class UIExperienceTests
         Assert.AreEqual(56f, UILayoutRules.EnsureTouchButtonSize(
             new Vector2(180f, 56f), false, false).y);
         Assert.AreEqual(62f, WorldStyler.GetCameraFieldOfView(true));
-        Assert.AreEqual(52f, WorldStyler.GetCameraFieldOfView(false));
+        Assert.AreEqual(56f, WorldStyler.GetCameraFieldOfView(false));
         Assert.AreEqual(new Vector3(0f, 4.35f, -8f),
             WorldStyler.GetCameraOffset(true));
-        Assert.AreEqual(new Vector3(0f, 3.8f, -6.75f),
+        Assert.AreEqual(new Vector3(0f, 4.6f, -8.2f),
             WorldStyler.GetCameraOffset(false));
     }
 

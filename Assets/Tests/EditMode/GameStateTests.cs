@@ -1199,6 +1199,12 @@ public class GameStateTests
         Assert.IsNotNull(runState);
         Assert.IsNotNull(jumpState);
         Assert.IsNotNull(slideState);
+        Assert.AreEqual(
+            "Assets/Animations/HumanMotion/HumanRunForwards.fbx",
+            AssetDatabase.GetAssetPath(runState.motion),
+            "The release controller must keep the accepted Run clip.");
+        Assert.AreEqual(1f, runState.speed, 0.0001f,
+            "The accepted Run clip must not receive a second speed multiplier.");
         Assert.AreEqual(slide, slideState.motion);
         Assert.IsTrue(idleState.iKOnFeet,
             "Idle Foot IK must keep the player's feet planted on the track.");
@@ -2344,6 +2350,37 @@ public class GameStateTests
         Assert.AreEqual(0f, PlayerController.EvaluateJumpArc(0f), 0.0001f);
         Assert.AreEqual(1f, PlayerController.EvaluateJumpArc(0.5f), 0.0001f);
         Assert.AreEqual(0f, PlayerController.EvaluateJumpArc(1f), 0.0001f);
+    }
+
+    [Test]
+    public void PlayerLandingUsesContinuousVelocityInsteadOfPositionTeleport()
+    {
+        MethodInfo method = typeof(PlayerController).GetMethod(
+            "CalculateVerticalCorrectionVelocity",
+            BindingFlags.Public | BindingFlags.Static);
+        Assert.IsNotNull(method);
+        float velocity = (float)method.Invoke(null,
+            new object[] { 1.42f, 1f, 0.02f });
+        Assert.AreEqual(1f, 1.42f + velocity * 0.02f, 0.0001f);
+
+        string source = System.IO.File.ReadAllText(
+            "Assets/Scripts/PlayerController.cs");
+        StringAssert.DoesNotContain("_rb.position = landedPosition", source);
+    }
+
+    [Test]
+    public void CameraFollowIgnoresAirborneHeightButKeepsPlanarMotion()
+    {
+        MethodInfo method = typeof(CameraFollow).GetMethod(
+            "ResolveFollowAnchor", BindingFlags.Public | BindingFlags.Static);
+        Assert.IsNotNull(method);
+        Vector3 airborne = (Vector3)method.Invoke(null,
+            new object[] { new Vector3(2f, 4f, 12f), true, 1f });
+        Vector3 grounded = (Vector3)method.Invoke(null,
+            new object[] { new Vector3(2f, 1.1f, 12f), false, 1f });
+
+        Assert.AreEqual(new Vector3(2f, 1f, 12f), airborne);
+        Assert.AreEqual(new Vector3(2f, 1.1f, 12f), grounded);
     }
 
     [Test]

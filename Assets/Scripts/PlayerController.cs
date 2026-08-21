@@ -197,16 +197,11 @@ public class PlayerController : MonoBehaviour
             float progress = Mathf.Clamp01(_jumpTimer / Mathf.Max(0.01f, jumpDuration));
             float targetHeight = EvaluateJumpArc(progress) * jumpHeight;
             float targetY = _jumpGroundY + targetHeight;
-            vel.y = (targetY - _rb.position.y) / Time.fixedDeltaTime;
+            vel.y = CalculateVerticalCorrectionVelocity(
+                _rb.position.y, targetY, Time.fixedDeltaTime);
 
             if (progress >= 1f)
-            {
                 IsJumping = false;
-                Vector3 landedPosition = _rb.position;
-                landedPosition.y = _jumpGroundY;
-                _rb.position = landedPosition;
-                vel.y = 0;
-            }
         }
 
         _rb.velocity = vel;
@@ -664,6 +659,12 @@ public class PlayerController : MonoBehaviour
    {
        float t = Mathf.Clamp01(progress);
        return 4f * t * (1f - t);
+   }
+
+   public static float CalculateVerticalCorrectionVelocity(
+       float currentY, float targetY, float fixedDeltaTime)
+   {
+       return (targetY - currentY) / Mathf.Max(0.0001f, fixedDeltaTime);
    }
 
    public static Vector3 CalculatePlanarVelocity(Vector3 forward,
