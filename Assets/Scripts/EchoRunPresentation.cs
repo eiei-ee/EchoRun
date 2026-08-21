@@ -387,6 +387,14 @@ public static class EchoRunPresentation
         {
             case EchoHudMode.Detection: return "复现中";
             case EchoHudMode.Reveal: return BuildShortPrediction(contract);
+            case EchoHudMode.Counterattack:
+                if (contract.type == EchoContractType.BreakLaneHabit)
+                {
+                    int lane = contract.predictionLane >= 0
+                        ? contract.predictionLane : contract.learnedLane;
+                    return "避开" + EchoContractPolicy.LaneName(lane);
+                }
+                return BuildShortDirective(contract);
             case EchoHudMode.Rewrite: return "记录中";
             case EchoHudMode.FinaleClean: return "";
             case EchoHudMode.FinaleContract: return "最后机会";

@@ -3,7 +3,7 @@
 public class PlayerController : MonoBehaviour
 {
     [Header("Lanes")]
-    public float laneDistance = 3f;
+    public float laneDistance = TrackGeometryStandards.LaneSpacing;
     public float laneSwitchSpeed = 20f;
 
     [Header("Jump")]

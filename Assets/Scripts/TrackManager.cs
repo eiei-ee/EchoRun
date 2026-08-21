@@ -24,7 +24,7 @@ public class TrackManager : MonoBehaviour
     public int minStraightBeforeTurn = 4;
 
     [Header("Lanes")]
-    public float laneDistance = 3f;
+    public float laneDistance = TrackGeometryStandards.LaneSpacing;
 
     [Header("Obstacles & Coins")]
     public GameObject[] obstaclePrefabs;
@@ -1295,11 +1295,13 @@ public class TrackManager : MonoBehaviour
 
         CreateTurnSurface("EntryCoverage", coverage.transform,
             new Vector3(0f, -0.15f, segmentLength * 0.5f),
-            Quaternion.identity, new Vector3(15f, 0.3f, segmentLength), layer);
+            Quaternion.identity,
+            new Vector3(TrackGeometryStandards.VisualRoadWidth, 0.3f,
+                segmentLength), layer);
         // Exit strip fills only the gap between the turn and the following
         // straight. Extending it under that straight creates coplanar overlap,
         // which z-fights across the entire first road block after every turn.
-        const float roadHalfWidth = 7.5f;
+        const float roadHalfWidth = TrackGeometryStandards.VisualRoadHalfWidth;
         float nextStraightNearEdge = segmentLength * 0.5f;
         float exitLength = nextStraightNearEdge - roadHalfWidth;
         float exitCenterX = roadHalfWidth + exitLength * 0.5f;
@@ -1307,7 +1309,8 @@ public class TrackManager : MonoBehaviour
             new Vector3(turnDirection * exitCenterX, -0.15f,
                 segmentLength * 0.5f),
             Quaternion.Euler(0f, 90f, 0f),
-            new Vector3(15f, 0.3f, exitLength), layer);
+            new Vector3(TrackGeometryStandards.VisualRoadWidth, 0.3f,
+                exitLength), layer);
     }
 
     static void CreateTurnSurface(string name, Transform parent, Vector3 localPosition,
@@ -1320,6 +1323,12 @@ public class TrackManager : MonoBehaviour
         surface.transform.localPosition = localPosition;
         surface.transform.localRotation = localRotation;
         surface.transform.localScale = localScale;
+        BoxCollider collider = surface.GetComponent<BoxCollider>();
+        if (collider != null)
+        {
+            collider.size = new Vector3(
+                TrackGeometryStandards.WalkableWidth / localScale.x, 1f, 1f);
+        }
         EchoRoadVisualController.Instance.ApplyTo(
             surface.GetComponent<MeshRenderer>(),
             RoadSurfaceRole.RuntimeFallback);
@@ -1335,7 +1344,15 @@ public class TrackManager : MonoBehaviour
         surface.layer = layer;
         surface.transform.SetParent(root.transform, false);
         surface.transform.localPosition = new Vector3(0f, -0.15f, 0f);
-        surface.transform.localScale = new Vector3(9f, 0.3f, 20f);
+        surface.transform.localScale = new Vector3(
+            TrackGeometryStandards.VisualRoadWidth, 0.3f, segmentLength);
+        BoxCollider collider = surface.GetComponent<BoxCollider>();
+        if (collider != null)
+        {
+            collider.size = new Vector3(
+                TrackGeometryStandards.WalkableWidth
+                / TrackGeometryStandards.VisualRoadWidth, 1f, 1f);
+        }
         EchoRoadVisualController.Instance.ApplyTo(
             surface.GetComponent<MeshRenderer>(),
             RoadSurfaceRole.RuntimeFallback);

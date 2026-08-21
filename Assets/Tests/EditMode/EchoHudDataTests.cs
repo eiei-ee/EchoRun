@@ -93,6 +93,22 @@ public class EchoHudDataTests
         Assert.IsFalse(actionView.showContractMarkers);
     }
 
+    [Test]
+    public void LaneCounterattackTellsPlayerToAvoidThePredictedLane()
+    {
+        EchoContractData contract = Contract(0.55f, false);
+        contract.targetLane = 2;
+        contract.predictionLane = 2;
+        contract.initialBreakCompleted = true;
+        contract.counterattackActive = true;
+
+        EchoHudViewData view = EchoRunPresentation.BuildHud(true, contract, 0f,
+            2, 2, 2, 2, 1f, EchoDuelPhase.Counterattack);
+
+        Assert.AreEqual("避开右侧路线", view.directiveShort);
+        Assert.AreEqual("预判右侧路线", view.predictionShort);
+    }
+
     private static EchoHudViewData BuildFinale(EchoContractData contract)
     {
         return EchoRunPresentation.BuildHud(true, contract, 0f, 2, 2, 2, 2,

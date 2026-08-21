@@ -203,10 +203,14 @@ public class WorldStyler : MonoBehaviour
         CreateCapsule("RightIsland", common.transform, new Vector3(11.2f, -1.28f, 0f),
             new Vector3(3.1f, 9.7f, 0.82f), _deepStructureMaterial,
             new Vector3(90f, 0f, 0f));
-        CreateBeam("LeftRail", common.transform, new Vector3(-7.35f, 0.24f, -9.7f),
-            new Vector3(-7.35f, 0.24f, 9.7f), 0.09f, _cyanMaterial);
-        CreateBeam("RightRail", common.transform, new Vector3(7.35f, 0.24f, -9.7f),
-            new Vector3(7.35f, 0.24f, 9.7f), 0.09f, _cyanMaterial);
+        CreateBeam("LeftRail", common.transform,
+            new Vector3(-TrackGeometryStandards.EdgeRailOffset, 0.24f, -9.7f),
+            new Vector3(-TrackGeometryStandards.EdgeRailOffset, 0.24f, 9.7f),
+            0.09f, _cyanMaterial);
+        CreateBeam("RightRail", common.transform,
+            new Vector3(TrackGeometryStandards.EdgeRailOffset, 0.24f, -9.7f),
+            new Vector3(TrackGeometryStandards.EdgeRailOffset, 0.24f, 9.7f),
+            0.09f, _cyanMaterial);
         BuildMiddleBuildings(common.transform);
         BuildGroundBollards(common.transform);
 
@@ -236,13 +240,25 @@ public class WorldStyler : MonoBehaviour
         GameObject deck = new GameObject("EchoStartDeck");
         GameObject launchRoad = CreateCube("LaunchRoad", deck.transform,
             new Vector3(0f, -0.22f, 34f),
-            new Vector3(15f, 0.28f, 78f), _structureMaterial);
+            new Vector3(TrackGeometryStandards.VisualRoadWidth, 0.28f, 78f),
+            _structureMaterial);
+        BoxCollider launchCollider = launchRoad.GetComponent<BoxCollider>();
+        if (launchCollider != null)
+        {
+            launchCollider.size = new Vector3(
+                TrackGeometryStandards.WalkableWidth
+                / TrackGeometryStandards.VisualRoadWidth, 1f, 1f);
+        }
         EchoRoadVisualController.Instance.ApplyTo(
             launchRoad.GetComponent<Renderer>(), RoadSurfaceRole.StartDeck);
-        CreateBeam("LaunchRailL", deck.transform, new Vector3(-7.35f, 0.16f, -5f),
-            new Vector3(-7.35f, 0.16f, 73f), 0.09f, _cyanMaterial);
-        CreateBeam("LaunchRailR", deck.transform, new Vector3(7.35f, 0.16f, -5f),
-            new Vector3(7.35f, 0.16f, 73f), 0.09f, _goldMaterial);
+        CreateBeam("LaunchRailL", deck.transform,
+            new Vector3(-TrackGeometryStandards.EdgeRailOffset, 0.16f, -5f),
+            new Vector3(-TrackGeometryStandards.EdgeRailOffset, 0.16f, 73f),
+            0.09f, _cyanMaterial);
+        CreateBeam("LaunchRailR", deck.transform,
+            new Vector3(TrackGeometryStandards.EdgeRailOffset, 0.16f, -5f),
+            new Vector3(TrackGeometryStandards.EdgeRailOffset, 0.16f, 73f),
+            0.09f, _goldMaterial);
         CreateCapsule("LaunchIslandL", deck.transform, new Vector3(-12f, -1.25f, 34f),
             new Vector3(3.5f, 38f, 0.82f), _deepStructureMaterial,
             new Vector3(90f, 0f, 0f));
@@ -270,12 +286,16 @@ public class WorldStyler : MonoBehaviour
             new Vector3(3f, 9.5f, 0.86f), _deepStructureMaterial,
             new Vector3(90f, 0f, 0f));
         CreateBeam("TurnEntryRail", common.transform,
-            new Vector3(-direction * 7.35f, 0.22f, 0.25f),
-            new Vector3(-direction * 7.35f, 0.22f, 13.75f),
+            new Vector3(-direction * TrackGeometryStandards.EdgeRailOffset,
+                0.22f, 0.25f),
+            new Vector3(-direction * TrackGeometryStandards.EdgeRailOffset,
+                0.22f, 13.75f),
             0.09f, _cyanMaterial);
         CreateBeam("TurnExitRail", common.transform,
-            new Vector3(0.25f, 0.22f, 17.35f),
-            new Vector3(direction * 13.75f, 0.22f, 17.35f),
+            new Vector3(0.25f, 0.22f,
+                10f + TrackGeometryStandards.EdgeRailOffset),
+            new Vector3(direction * 13.75f, 0.22f,
+                10f + TrackGeometryStandards.EdgeRailOffset),
             0.09f, _goldMaterial);
         BuildCornerIslandDetails(common.transform, direction);
 
