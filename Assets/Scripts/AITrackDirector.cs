@@ -660,7 +660,6 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             plan.obstacleChance = Mathf.Min(plan.obstacleChance, 0.35f);
             plan.coinChance = Mathf.Max(plan.coinChance, 0.78f);
             plan.maxBlockedLanes = 1;
-            plan.shouldTurn = false;
             return plan;
         }
 
@@ -673,13 +672,11 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             plan.obstacleChance = Mathf.Clamp(plan.obstacleChance, 0.42f, 0.58f);
             plan.coinChance = Mathf.Max(plan.coinChance, 0.82f);
             plan.maxBlockedLanes = 1;
-            plan.shouldTurn = false;
             return plan;
         }
 
         plan.echoContractType = contract.type;
         plan.echoTargetAction = contract.targetAction;
-        plan.shouldTurn = false;
         if (phase == EchoDuelPhase.Counterattack)
         {
             plan.safeLane = Mathf.Abs(decisionCount + contract.generation) % 3;

@@ -53,6 +53,33 @@ public class VisualEnhancementTests
     }
 
     [Test]
+    public void SixDuelPhasesUseVisiblyDistinctColorSignals()
+    {
+        EchoDuelPhase[] phases =
+        {
+            EchoDuelPhase.Detection,
+            EchoDuelPhase.Reveal,
+            EchoDuelPhase.Resistance,
+            EchoDuelPhase.Counterattack,
+            EchoDuelPhase.Rewrite,
+            EchoDuelPhase.Finale
+        };
+        for (int i = 0; i < phases.Length; i++)
+        {
+            EchoPhaseVisualStyle style = EchoPhaseVisualController.StyleFor(phases[i]);
+            Assert.GreaterOrEqual(style.intensity, 0.22f, phases[i].ToString());
+            for (int j = 0; j < i; j++)
+            {
+                Color previous = EchoPhaseVisualController.StyleFor(phases[j]).tint;
+                Assert.Greater(Vector3.Distance(
+                    new Vector3(style.tint.r, style.tint.g, style.tint.b),
+                    new Vector3(previous.r, previous.g, previous.b)), 0.18f,
+                    phases[j] + " and " + phases[i]);
+            }
+        }
+    }
+
+    [Test]
     public void RoadPlanarReflectionRemainsOptionalAndLowForcesItOff()
     {
         _roadObject = new GameObject("EchoRoadVisualController_EnhancementTest");

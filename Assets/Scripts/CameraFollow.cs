@@ -78,7 +78,8 @@ public class CameraFollow : MonoBehaviour
     public static Vector3 ResolveFollowAnchor(
         Vector3 targetPosition, bool isJumping, float groundedY)
     {
-        if (isJumping) targetPosition.y = groundedY;
+        if (isJumping)
+            targetPosition.y = Mathf.Lerp(groundedY, targetPosition.y, 0.35f);
         return targetPosition;
     }
 }

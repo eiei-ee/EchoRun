@@ -58,6 +58,8 @@ Shader "Hidden/EchoRun/PostFx"
             half _VignetteEnabled;
             half _EchoPhaseBloomBoost;
             half _EchoPhaseContrast;
+            fixed4 _EchoPhaseTint;
+            half _EchoPhaseIntensity;
 
             fixed4 fragComposite(v2f_img i) : SV_Target
             {
@@ -73,6 +75,11 @@ Shader "Hidden/EchoRun/PostFx"
                     saturate(luminance));
                 graded = (graded - 0.5h) * (1.035h + _EchoPhaseContrast) + 0.5h;
                 source = lerp(source, graded, _GradingEnabled * 0.55h);
+                fixed3 phaseMultiplier = fixed3(0.55h, 0.55h, 0.55h)
+                    + max(_EchoPhaseTint.rgb,
+                        fixed3(0.001h, 0.001h, 0.001h)) * 0.90h;
+                source = lerp(source, source * phaseMultiplier,
+                    saturate(_EchoPhaseIntensity) * 0.18h);
 
                 float2 centered = i.uv * 2.0h - 1.0h;
                 half vignette = smoothstep(1.18h, 0.36h, dot(centered, centered));

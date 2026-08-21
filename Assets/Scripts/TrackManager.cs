@@ -438,7 +438,9 @@ public class TrackManager : MonoBehaviour
             : 0f;
         bool isFinishSegment = courseDistance > _plannedDistance
                                && courseDistance <= _plannedDistance + segmentLength;
-        bool shouldTurn = canTurn && plan.shouldTurn && !isFinishSegment;
+        bool shouldTurn = ShouldSpawnTurn(canTurn, plan.shouldTurn,
+                              _straightSegmentsSinceLastTurn)
+                          && !isFinishSegment;
 
         GameObject prefab;
         TrackSegmentType segType;
@@ -520,6 +522,14 @@ public class TrackManager : MonoBehaviour
         AIRunTelemetry.RecordEvent("track_segment", (int)segType,
             plan.safeLane, plan.difficulty, plan.obstacleChance);
         _plannedDistance += segmentLength;
+    }
+
+    public static bool ShouldSpawnTurn(bool canTurn, bool planShouldTurn,
+        int straightSegmentsSinceLastTurn)
+    {
+        const int maxStraightSegments = 7;
+        return canTurn && (planShouldTurn
+                           || straightSegmentsSinceLastTurn >= maxStraightSegments);
     }
 
     private void UpdateFinishMarker()

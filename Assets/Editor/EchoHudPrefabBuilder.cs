@@ -106,19 +106,19 @@ public static class EchoHudPrefabBuilder
             Vector2.zero, Vector2.one);
 
         Text announcement = TextElement("Announcement", dynamicLayer.transform,
-            "回声侦测", 30, TextAnchor.MiddleCenter, TextPrimary,
-            new Vector2(0.5f, 0.78f), new Vector2(520f, 56f), Vector2.zero,
-            new Vector2(0.5f, 0.5f));
+            "回声侦测", 18, TextAnchor.MiddleLeft, TextPrimary,
+            new Vector2(0f, 1f), new Vector2(360f, 30f),
+            new Vector2(18f, -78f), new Vector2(0f, 1f));
         OutlineText(announcement);
         Text directive = TextElement("Directive", dynamicLayer.transform,
-            "复现中", 30, TextAnchor.MiddleCenter, TextPrimary,
-            new Vector2(0.5f, 0.72f), new Vector2(620f, 58f), Vector2.zero,
-            new Vector2(0.5f, 0.5f));
+            "复现中", 22, TextAnchor.MiddleLeft, TextPrimary,
+            new Vector2(0f, 1f), new Vector2(480f, 40f),
+            new Vector2(18f, -110f), new Vector2(0f, 1f));
         OutlineText(directive);
         Text prediction = TextElement("Prediction", dynamicLayer.transform,
-            "预判右路", 19, TextAnchor.MiddleCenter, Coral,
-            new Vector2(0.5f, 0.675f), new Vector2(420f, 38f), Vector2.zero,
-            new Vector2(0.5f, 0.5f));
+            "预判右路", 16, TextAnchor.MiddleLeft, Coral,
+            new Vector2(0f, 1f), new Vector2(420f, 28f),
+            new Vector2(18f, -146f), new Vector2(0f, 1f));
 
         GameObject meterGroup = Panel("MeterGroup", dynamicLayer.transform,
             new Vector2(0.5f, 0.855f), new Vector2(520f, 34f), Vector2.zero,
@@ -143,9 +143,10 @@ public static class EchoHudPrefabBuilder
             "", 18, TextAnchor.MiddleLeft, Cyan,
             new Vector2(0.05f, 0f), new Vector2(0.95f, 1f));
 
-        Text feedback = TextElement("Feedback", dynamicLayer.transform, "", 24,
-            TextAnchor.MiddleCenter, Cyan, new Vector2(0.5f, 0.54f),
-            new Vector2(650f, 48f), Vector2.zero, new Vector2(0.5f, 0.5f));
+        Text feedback = TextElement("Feedback", dynamicLayer.transform, "", 18,
+            TextAnchor.MiddleLeft, Cyan, new Vector2(0f, 1f),
+            new Vector2(520f, 34f), new Vector2(18f, -180f),
+            new Vector2(0f, 1f));
         OutlineText(feedback);
 
         Button pause = ButtonElement("PauseButton", dynamicLayer.transform, "Ⅱ",

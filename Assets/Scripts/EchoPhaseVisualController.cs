@@ -67,17 +67,17 @@ public sealed class EchoPhaseVisualController : MonoBehaviour
         switch (phase)
         {
             case EchoDuelPhase.Detection:
-                return Make(new Color(0.18f, 0.55f, 0.76f), 0.08f, 0f, 0f, 0f);
+                return Make(new Color(0.18f, 0.48f, 0.78f), 0.24f, 0f, 0f, 0f);
             case EchoDuelPhase.Reveal:
-                return Make(new Color(0.20f, 0.82f, 1f), 0.28f, 0.08f, 0.02f, 0.01f);
+                return Make(new Color(0.08f, 0.88f, 1f), 0.38f, 0.06f, 0.02f, 0.01f);
             case EchoDuelPhase.Resistance:
-                return Make(new Color(0.12f, 0.76f, 1f), 0.34f, 0.10f, 0.01f, 0.01f);
+                return Make(new Color(0.50f, 0.28f, 0.96f), 0.44f, 0.08f, 0.02f, 0.015f);
             case EchoDuelPhase.Counterattack:
-                return Make(new Color(0.95f, 0.30f, 0.26f), 0.42f, 0.62f, 0.03f, 0.02f);
+                return Make(new Color(1f, 0.20f, 0.12f), 0.50f, 0.70f, 0.04f, 0.025f);
             case EchoDuelPhase.Rewrite:
-                return Make(new Color(0.28f, 0.92f, 0.82f), 0.38f, 0.20f, 0.02f, 0.015f);
+                return Make(new Color(0.06f, 0.94f, 0.54f), 0.46f, 0.16f, 0.03f, 0.02f);
             case EchoDuelPhase.Finale:
-                return Make(new Color(0.72f, 0.24f, 0.32f), 0.52f, 0.78f, 0.08f, 0.045f);
+                return Make(new Color(1f, 0.55f, 0.08f), 0.55f, 0.88f, 0.08f, 0.045f);
             case EchoDuelPhase.Finished:
                 return Make(new Color(0.16f, 0.62f, 0.78f), 0.12f, 0f, 0f, 0f);
             default:

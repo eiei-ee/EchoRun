@@ -2369,7 +2369,7 @@ public class GameStateTests
     }
 
     [Test]
-    public void CameraFollowIgnoresAirborneHeightButKeepsPlanarMotion()
+    public void CameraFollowPartiallyTracksAirborneHeightAndKeepsPlanarMotion()
     {
         MethodInfo method = typeof(CameraFollow).GetMethod(
             "ResolveFollowAnchor", BindingFlags.Public | BindingFlags.Static);
@@ -2379,8 +2379,19 @@ public class GameStateTests
         Vector3 grounded = (Vector3)method.Invoke(null,
             new object[] { new Vector3(2f, 1.1f, 12f), false, 1f });
 
-        Assert.AreEqual(new Vector3(2f, 1f, 12f), airborne);
+        Assert.AreEqual(new Vector3(2f, 2.05f, 12f), airborne);
         Assert.AreEqual(new Vector3(2f, 1.1f, 12f), grounded);
+    }
+
+    [TestCase(false, false, 7, false)]
+    [TestCase(true, false, 6, false)]
+    [TestCase(true, false, 7, true)]
+    [TestCase(true, true, 4, true)]
+    public void TrackCannotRemainStraightPastTheVisualRhythmLimit(
+        bool canTurn, bool planShouldTurn, int straights, bool expected)
+    {
+        Assert.AreEqual(expected, TrackManager.ShouldSpawnTurn(
+            canTurn, planShouldTurn, straights));
     }
 
     [Test]

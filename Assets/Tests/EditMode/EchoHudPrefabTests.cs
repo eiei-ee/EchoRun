@@ -74,6 +74,27 @@ public class EchoHudPrefabTests
         Assert.AreEqual(meter.anchorMin, meter.anchorMax);
     }
 
+    [Test]
+    public void DynamicCopyStaysAtTheLeftEdgeOutsideTheRunnerSightline()
+    {
+        GameObject prefab = Resources.Load<GameObject>("UI/EchoHud");
+        _instance = Object.Instantiate(prefab);
+
+        string[] paths =
+        {
+            "HudDynamicCanvas/Announcement",
+            "HudDynamicCanvas/Directive",
+            "HudDynamicCanvas/Prediction",
+            "HudDynamicCanvas/Feedback"
+        };
+        for (int i = 0; i < paths.Length; i++)
+        {
+            RectTransform rect = Find(paths[i]).GetComponent<RectTransform>();
+            Assert.LessOrEqual(rect.anchorMax.x, 0.05f, paths[i]);
+            Assert.AreEqual(0f, rect.pivot.x, 0.0001f, paths[i]);
+        }
+    }
+
     private GameObject Find(string path)
     {
         Transform target = _instance.transform.Find(path);

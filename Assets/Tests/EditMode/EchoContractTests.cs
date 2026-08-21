@@ -170,7 +170,8 @@ public sealed class EchoContractTests
             safeLane = 1,
             obstacleChance = 0.2f,
             coinChance = 0.3f,
-            maxBlockedLanes = 1
+            maxBlockedLanes = 1,
+            shouldTurn = true
         };
         var contract = new EchoContractData
         {
@@ -188,7 +189,8 @@ public sealed class EchoContractTests
         Assert.AreEqual(EchoContractType.ChangeVerticalHabit,
             changed.echoContractType);
         Assert.AreNotEqual(changed.safeLane, changed.echoChallengeLane);
-        Assert.IsFalse(changed.shouldTurn);
+        Assert.IsTrue(changed.shouldTurn,
+            "Echo contracts must not flatten an already planned turn.");
         Assert.Contains(changed.echoChallengeLane, blocked);
         Assert.IsFalse(System.Array.Exists(blocked,
             lane => lane == changed.safeLane));

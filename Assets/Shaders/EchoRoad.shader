@@ -199,13 +199,15 @@ Shader "EchoRun/Road"
                         * inside * _Wetness;
                 #endif
 
-                fixed3 phaseTint = lerp(fixed3(1, 1, 1),
-                    max(_EchoPhaseTint.rgb, fixed3(0.001, 0.001, 0.001)),
-                    saturate(_EchoPhaseIntensity) * 0.18h);
-                surface *= phaseTint;
-                emission = lerp(emission,
-                    emission + fixed3(1.0h, 0.16h, 0.08h) * centerGuide * 0.12h,
-                    saturate(_EchoPhaseCoral));
+                half phaseBlend = saturate(_EchoPhaseIntensity) * 0.72h;
+                fixed3 phaseMultiplier = fixed3(0.50h, 0.50h, 0.50h)
+                    + max(_EchoPhaseTint.rgb, fixed3(0.001h, 0.001h, 0.001h))
+                    * 0.90h;
+                surface = lerp(surface, surface * phaseMultiplier, phaseBlend);
+                emission = lerp(emission, emission * phaseMultiplier,
+                    phaseBlend * 0.90h);
+                emission += fixed3(1.0h, 0.12h, 0.06h) * centerGuide
+                    * saturate(_EchoPhaseCoral) * 0.30h;
 
                 surface += _Color.rgb * saturate(_RoadStartDeckBoost) * 0.10h;
                 surface += _LaneColor.rgb * saturate(_RoadSafeLaneHint) * 0.025h;
