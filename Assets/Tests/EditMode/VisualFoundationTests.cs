@@ -124,6 +124,28 @@ public class VisualFoundationTests
     }
 
     [Test]
+    public void RuntimeSkyKeepsCityPanoramaAndBlendsItsWrapBoundary()
+    {
+        Material material = WorldStyler.CreateSeamlessSkyMaterial();
+        try
+        {
+            Assert.NotNull(material);
+            Assert.NotNull(material.shader);
+            Assert.AreEqual(WorldStyler.SeamlessSkyShaderName,
+                material.shader.name);
+            Assert.AreNotEqual("Skybox/Panoramic", material.shader.name);
+            Assert.AreNotEqual("Skybox/Procedural", material.shader.name);
+            Assert.NotNull(material.GetTexture("_MainTex"));
+            Assert.That(material.GetFloat("_SeamBlend"),
+                Is.InRange(0.001f, 0.10f));
+        }
+        finally
+        {
+            if (material != null) Object.DestroyImmediate(material);
+        }
+    }
+
+    [Test]
     public void RoadMaterialCarriesAtlasAndHighQualityKeywords()
     {
         EchoRoadVisualController controller = CreateController();

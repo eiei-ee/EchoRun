@@ -2,6 +2,7 @@ using UnityEngine;
 
 public class WorldStyler : MonoBehaviour
 {
+    public const string SeamlessSkyShaderName = "EchoRun/SeamlessPanoramicSky";
     public const float StructureMetallic = 0.16f;
     public const float StructureSmoothness = 0.30f;
     public const float HighFillLightIntensity = 0.27f;
@@ -138,16 +139,36 @@ public class WorldStyler : MonoBehaviour
         RenderSettings.ambientGroundColor = new Color(0.02f, 0.035f, 0.06f);
         ApplyVisualQuality(VisualQualityController.Current);
 
-        Material skyAsset = Resources.Load<Material>("Art/EchoSky");
-        if (skyAsset != null)
-        {
-            _skyMaterial = new Material(skyAsset) { name = "EchoSky_Runtime" };
-            if (_skyMaterial.HasProperty("_Exposure"))
-                _skyMaterial.SetFloat("_Exposure", 0.42f);
-            if (_skyMaterial.HasProperty("_Tint"))
-                _skyMaterial.SetColor("_Tint", new Color(0.50f, 0.64f, 0.82f, 1f));
-            RenderSettings.skybox = _skyMaterial;
-        }
+        _skyMaterial = CreateSeamlessSkyMaterial();
+        if (_skyMaterial != null) RenderSettings.skybox = _skyMaterial;
+    }
+
+    public static Material CreateSeamlessSkyMaterial()
+    {
+        Material source = Resources.Load<Material>("Art/EchoSky");
+        Material material = source != null && source.shader != null &&
+            source.shader.name == SeamlessSkyShaderName
+            ? new Material(source)
+            : CreateSkyMaterialFromTexture();
+        if (material == null) return null;
+
+        material.name = "EchoSky_Seamless_Runtime";
+        material.SetColor("_Tint", new Color(0.56f, 0.65f, 0.74f, 1f));
+        material.SetFloat("_Exposure", 0.52f);
+        material.SetFloat("_Rotation", 0f);
+        material.SetFloat("_SeamBlend", 0.07f);
+        return material;
+    }
+
+    private static Material CreateSkyMaterialFromTexture()
+    {
+        Shader shader = Shader.Find(SeamlessSkyShaderName);
+        Texture2D texture = Resources.Load<Texture2D>("Art/EchoSky");
+        if (shader == null || texture == null) return null;
+
+        Material material = new Material(shader);
+        material.SetTexture("_MainTex", texture);
+        return material;
     }
 
     private void ConfigureLighting()

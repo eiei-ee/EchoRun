@@ -380,10 +380,10 @@ public class BuildScene
         const string texturePath = "Assets/Resources/Art/EchoSky.png";
         const string materialPath = "Assets/Resources/Art/EchoSky.mat";
         Texture2D texture = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
-        Shader shader = Shader.Find("Skybox/Panoramic");
+        Shader shader = Shader.Find(WorldStyler.SeamlessSkyShaderName);
         if (texture == null || shader == null)
         {
-            Debug.LogWarning("Echo sky texture or panoramic shader is unavailable.");
+            Debug.LogWarning("Echo sky texture or seamless panoramic shader is unavailable.");
             return;
         }
 
@@ -402,7 +402,15 @@ public class BuildScene
         material.SetColor("_Tint", new Color(0.56f, 0.65f, 0.74f));
         material.SetFloat("_Exposure", 0.52f);
         material.SetFloat("_Rotation", 0f);
+        material.SetFloat("_SeamBlend", 0.07f);
         EditorUtility.SetDirty(material);
+    }
+
+    public static void EnsureSkyMaterialAsset()
+    {
+        CreateSkyMaterial();
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
     }
 
     static void CreateShaderRetentionMaterial()
