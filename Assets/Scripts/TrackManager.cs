@@ -643,8 +643,13 @@ public class TrackManager : MonoBehaviour
             phaseOverride = shadow.DuelPhase;
         }
 
+        int encounterStep = _aiDirector != null
+            ? _aiDirector.ResolveEchoEncounterStepForRoute(
+                phaseOverride, segmentRouteDistance, segmentLength,
+                plan.echoEncounterStep)
+            : plan.echoEncounterStep;
         return AITrackDirector.ApplyEchoContract(plan, contract,
-            plan.echoEncounterStep, phaseOverride);
+            encounterStep, phaseOverride);
     }
 
     public static bool ShouldSpawnTurn(bool canTurn, bool planShouldTurn,
@@ -1358,11 +1363,49 @@ public class TrackManager : MonoBehaviour
                               == EchoEncounterKind.FinaleCounterHabit
                               || plan.echoEncounterKind
                               == EchoEncounterKind.FinaleFreeChoice;
-        bool marker = laneContract && isScoredChoice;
-        int predictedMin = plan.echoEncounterKind
-                           == EchoEncounterKind.RewriteChoice ? 3 : 8;
-        int predictedMax = plan.echoEncounterKind
-                           == EchoEncounterKind.RewriteChoice ? 4 : 10;
+        bool marker = laneContract
+                      && (isScoredChoice
+                          || plan.echoEncounterKind
+                          == EchoEncounterKind.RewriteChoice);
+        int predictedMin = 8;
+        int predictedMax = 10;
+        int safeMin = 3;
+        int safeMax = 4;
+        int riskMin = 8;
+        int riskMax = 10;
+        switch (plan.echoEncounterKind)
+        {
+            case EchoEncounterKind.RewriteChoice:
+                predictedMin = 3;
+                predictedMax = 4;
+                safeMin = 3;
+                safeMax = 4;
+                riskMin = 6;
+                riskMax = 8;
+                break;
+            case EchoEncounterKind.FinaleOldHabit:
+                predictedMin = 9;
+                predictedMax = 11;
+                safeMin = 4;
+                safeMax = 5;
+                riskMin = 7;
+                riskMax = 9;
+                break;
+            case EchoEncounterKind.FinaleCounterHabit:
+                predictedMin = 7;
+                predictedMax = 9;
+                riskMin = 10;
+                riskMax = 12;
+                break;
+            case EchoEncounterKind.FinaleFreeChoice:
+                predictedMin = 6;
+                predictedMax = 8;
+                safeMin = 4;
+                safeMax = 5;
+                riskMin = 10;
+                riskMax = 12;
+                break;
+        }
         return new[]
         {
             new EchoEncounterLaneChoice
@@ -1375,15 +1418,15 @@ public class TrackManager : MonoBehaviour
             new EchoEncounterLaneChoice
             {
                 lane = Mathf.Clamp(plan.echoSafeChoiceLane, 0, 2),
-                minCoinCount = 3,
-                maxCoinCount = 4,
+                minCoinCount = safeMin,
+                maxCoinCount = safeMax,
                 echoContractMarker = marker
             },
             new EchoEncounterLaneChoice
             {
                 lane = Mathf.Clamp(plan.echoRiskChoiceLane, 0, 2),
-                minCoinCount = 8,
-                maxCoinCount = 10,
+                minCoinCount = riskMin,
+                maxCoinCount = riskMax,
                 echoContractMarker = marker
             }
         };
@@ -1400,8 +1443,13 @@ public class TrackManager : MonoBehaviour
         }
 
         int safe = Mathf.Clamp(plan.echoSafeChoiceLane, 0, 2);
+        bool oldActionHabit = plan.echoEncounterKind
+                              == EchoEncounterKind.FinaleOldHabit
+                              && plan.echoEncounterContractType
+                              != EchoContractType.BreakLaneHabit;
         int primary = plan.echoEncounterKind
                       == EchoEncounterKind.DetectionEvidence
+                      || oldActionHabit
             ? Mathf.Clamp(plan.echoPredictedLane, 0, 2)
             : Mathf.Clamp(plan.echoRiskChoiceLane, 0, 2);
         if (primary == safe) primary = (safe + 1) % 3;

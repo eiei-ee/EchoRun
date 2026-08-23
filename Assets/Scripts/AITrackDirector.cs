@@ -210,6 +210,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
     public string CurrentStatus { get; private set; } = "AI导演 · 等待开局";
     public EchoDuelPhase ScheduledEchoPhase { get; private set; }
     public float ScheduledEchoBoundary { get; private set; } = -1f;
+    public float ScheduledEchoRouteLength { get; private set; }
     public float CurrentLaneIncentiveCenter
     {
         get
@@ -238,6 +239,9 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
     private readonly Queue<PlannedDecision> _plannedDecisions =
         new Queue<PlannedDecision>();
     private PlannedDecision _activeDecision;
+    private EchoDuelPhase _activeEchoPhase;
+    private float _activeEchoPhaseBoundary = -1f;
+    private float _activeEchoPhaseRouteLength;
 
     private sealed class PlannedDecision
     {
@@ -410,14 +414,62 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
 
     public void ScheduleEchoPhase(EchoDuelPhase phase, float routeBoundary)
     {
+        ScheduleEchoPhase(phase, routeBoundary, 0f);
+    }
+
+    public void ScheduleEchoPhase(EchoDuelPhase phase, float routeBoundary,
+        float routeLength)
+    {
         if (phase == EchoDuelPhase.None) return;
         ScheduledEchoPhase = phase;
         ScheduledEchoBoundary = Mathf.Max(0f, routeBoundary);
+        ScheduledEchoRouteLength = Mathf.Max(0f, routeLength);
     }
 
     public void CommitScheduledEchoPhase(EchoDuelPhase phase)
     {
-        if (ScheduledEchoPhase == phase) ClearScheduledEchoPhase();
+        if (ScheduledEchoPhase != phase) return;
+        _activeEchoPhase = phase;
+        _activeEchoPhaseBoundary = ScheduledEchoBoundary;
+        _activeEchoPhaseRouteLength = ScheduledEchoRouteLength;
+        ClearScheduledEchoPhase();
+    }
+
+    public int ResolveEchoEncounterStepForRoute(EchoDuelPhase phase,
+        float segmentRouteDistance, float segmentLength, int fallbackStep)
+    {
+        if (phase != EchoDuelPhase.Finale)
+            return Mathf.Max(0, fallbackStep);
+
+        float boundary = -1f;
+        float routeLength = 0f;
+        if (ScheduledEchoPhase == EchoDuelPhase.Finale)
+        {
+            boundary = ScheduledEchoBoundary;
+            routeLength = ScheduledEchoRouteLength;
+        }
+        else if (_activeEchoPhase == EchoDuelPhase.Finale)
+        {
+            boundary = _activeEchoPhaseBoundary;
+            routeLength = _activeEchoPhaseRouteLength;
+        }
+
+        if (boundary < 0f || routeLength <= 0f)
+            return PositiveModulo(fallbackStep, 3);
+        float segmentCenter = Mathf.Max(0f, segmentRouteDistance)
+                              + Mathf.Max(1f, segmentLength) * 0.5f;
+        return FinaleSectionForRoute(
+            segmentCenter, boundary, routeLength);
+    }
+
+    public static int FinaleSectionForRoute(float routeDistance,
+        float phaseBoundary, float phaseRouteLength)
+    {
+        float length = Mathf.Max(1f, phaseRouteLength);
+        float progress = Mathf.Clamp01(
+            (Mathf.Max(0f, routeDistance) - Mathf.Max(0f, phaseBoundary))
+            / length);
+        return Mathf.Clamp(Mathf.FloorToInt(progress * 3f), 0, 2);
     }
 
     public void RecordLaneChange(int lane)
@@ -476,6 +528,9 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         _decisionCount = 0;
         _lastPlannedHitCount = 0;
         _lastHitDistance = float.NegativeInfinity;
+        _activeEchoPhase = EchoDuelPhase.None;
+        _activeEchoPhaseBoundary = -1f;
+        _activeEchoPhaseRouteLength = 0f;
         ClearScheduledEchoPhase();
         _laneChanges = _jumps = _slides = _coins = _dodges = _hits = 0;
         _laneVisits[0] = 0;
@@ -504,8 +559,15 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
 
     private void OnGameStateChanged(GameState state)
     {
-        if (state == GameState.Playing && _decisionCount == 0)
-            CurrentStatus = "AI导演 · 正在观察";
+        if (state == GameState.Playing)
+        {
+            _activeEchoPhase = EchoDuelPhase.None;
+            _activeEchoPhaseBoundary = -1f;
+            _activeEchoPhaseRouteLength = 0f;
+            ClearScheduledEchoPhase();
+            if (_decisionCount == 0)
+                CurrentStatus = "AI导演 · 正在观察";
+        }
         else if (state == GameState.GameOver)
         {
             float distance = _gameManager != null ? _gameManager.Distance : 0f;
@@ -793,10 +855,33 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         }
         else if (phase == EchoDuelPhase.Finale)
         {
-            plan.difficulty = Mathf.Max(plan.difficulty, 0.78f);
-            plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.84f);
-            plan.coinChance = Mathf.Max(plan.coinChance, 0.72f);
-            plan.maxBlockedLanes = 2;
+            switch (plan.echoEncounterKind)
+            {
+                case EchoEncounterKind.FinaleOldHabit:
+                    // The old route is deliberately tempting and readable.
+                    // Only the aggressive counter route carries an obstacle.
+                    plan.difficulty = Mathf.Clamp(plan.difficulty, 0.58f, 0.7f);
+                    plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.76f);
+                    plan.coinChance = Mathf.Max(plan.coinChance, 0.9f);
+                    plan.maxBlockedLanes = 1;
+                    break;
+                case EchoEncounterKind.FinaleCounterHabit:
+                    // The echo attacks both its new prediction and the greedy
+                    // route, leaving one deterministic escape route.
+                    plan.difficulty = Mathf.Max(plan.difficulty, 0.84f);
+                    plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.92f);
+                    plan.coinChance = Mathf.Max(plan.coinChance, 0.78f);
+                    plan.maxBlockedLanes = 2;
+                    break;
+                default:
+                    // Free choice keeps two readable lanes open and puts the
+                    // largest distance reward behind one explicit action test.
+                    plan.difficulty = Mathf.Clamp(plan.difficulty, 0.68f, 0.82f);
+                    plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.82f);
+                    plan.coinChance = Mathf.Max(plan.coinChance, 0.84f);
+                    plan.maxBlockedLanes = 1;
+                    break;
+            }
         }
         else
         {
@@ -962,6 +1047,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
     {
         ScheduledEchoPhase = EchoDuelPhase.None;
         ScheduledEchoBoundary = -1f;
+        ScheduledEchoRouteLength = 0f;
     }
 
     public static ShadowAIDirective BuildShadowDirective(

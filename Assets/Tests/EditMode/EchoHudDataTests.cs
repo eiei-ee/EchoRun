@@ -166,6 +166,19 @@ public class EchoHudDataTests
         Assert.AreEqual(0.5f, view.displayedMeter01);
     }
 
+    [Test]
+    public void FinaleHudNamesTheCurrentAuthoredSection()
+    {
+        EchoHudViewData view = EchoRunPresentation.BuildHud(
+            true, Contract(1f, true), 0f, 2, 2,
+            duelPhase: EchoDuelPhase.Finale,
+            finaleSegmentSummary: "第二段 · 反制策略锁定");
+
+        Assert.AreEqual(EchoHudMode.FinaleClean, view.mode);
+        Assert.AreEqual("第二段 · 反制策略锁定",
+            view.directiveShort);
+    }
+
     private static EchoHudViewData BuildFinale(EchoContractData contract)
     {
         return EchoRunPresentation.BuildHud(true, contract, 0f, 2, 2, 2, 2,

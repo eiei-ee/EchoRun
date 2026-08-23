@@ -133,7 +133,8 @@ public static class EchoRunPresentation
         int contractMarkerCount = 0, bool showBuff = false,
         string buffText = "", bool phaseTransitionPending = false,
         EchoDuelPhase pendingPhase = EchoDuelPhase.None,
-        string rewriteStyleSummary = "")
+        string rewriteStyleSummary = "",
+        string finaleSegmentSummary = "")
     {
         bool calibrating = !hasOpponent || contract == null
                            || contract.type == EchoContractType.None;
@@ -206,7 +207,8 @@ public static class EchoRunPresentation
             directiveShort = phaseTransitionPending
                 && pendingPhase != EchoDuelPhase.None
                 ? "前方同步：" + EchoDuelFlow.PhaseName(pendingPhase)
-                : DirectiveFor(mode, contract, rewriteStyleSummary),
+                : DirectiveFor(mode, contract, rewriteStyleSummary,
+                    finaleSegmentSummary),
             predictionShort = showPrediction
                 ? BuildShortPrediction(contract) : "",
             leadMeters = playerLead,
@@ -396,7 +398,8 @@ public static class EchoRunPresentation
     }
 
     private static string DirectiveFor(EchoHudMode mode,
-        EchoContractData contract, string rewriteStyleSummary)
+        EchoContractData contract, string rewriteStyleSummary,
+        string finaleSegmentSummary)
     {
         switch (mode)
         {
@@ -407,8 +410,13 @@ public static class EchoRunPresentation
             case EchoHudMode.Rewrite:
                 return string.IsNullOrEmpty(rewriteStyleSummary)
                     ? "记录有效选择" : rewriteStyleSummary;
-            case EchoHudMode.FinaleClean: return "";
-            case EchoHudMode.FinaleContract: return "最后机会";
+            case EchoHudMode.FinaleClean:
+                return string.IsNullOrEmpty(finaleSegmentSummary)
+                    ? "守住领先 · 完成决胜" : finaleSegmentSummary;
+            case EchoHudMode.FinaleContract:
+                return string.IsNullOrEmpty(finaleSegmentSummary)
+                    ? "最后机会"
+                    : finaleSegmentSummary + " · 最后机会";
             case EchoHudMode.FinaleFailed: return "契约锁定 · 完成追逐";
             default: return "";
         }

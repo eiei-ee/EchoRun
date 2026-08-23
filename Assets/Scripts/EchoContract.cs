@@ -348,6 +348,7 @@ public sealed class EchoContractEvaluator
 
     private float _learnedLaneFeedbackTimer;
     private float _lastLaneMarkerDistance = float.NegativeInfinity;
+    private float _lastFinaleMarkerDistance = float.NegativeInfinity;
     private const float LaneMarkerSpacingSeconds = 4.5f;
     private const float CorrectLeadSeconds = 0.35f;
     private const float MistakeLeadSeconds = 0.2f;
@@ -509,6 +510,46 @@ public sealed class EchoContractEvaluator
         }
         else SetFeedback("预测失效：你主动选择了非习惯路线");
         CompleteIfReady();
+    }
+
+    public void RecordFinaleRouteChoice(int lane, int predictedLane,
+        int safeLane, int riskLane, float routeDistance,
+        float currentSpeed = 10f)
+    {
+        if (Contract.type == EchoContractType.None
+            || Contract.duelPhase != EchoDuelPhase.Finale
+            || !Contract.completed || Contract.duelFailed
+            || ScoringSuspended)
+            return;
+
+        int selected = Mathf.Clamp(lane, 0, 2);
+        int predicted = Mathf.Clamp(predictedLane, 0, 2);
+        int safe = Mathf.Clamp(safeLane, 0, 2);
+        int risk = Mathf.Clamp(riskLane, 0, 2);
+        if (selected != predicted && selected != safe && selected != risk)
+            return;
+
+        float spacing = EchoTimeRules.MinimumSpacingDistance(
+            LaneMarkerSpacingSeconds, currentSpeed);
+        if (!float.IsNegativeInfinity(_lastFinaleMarkerDistance)
+            && routeDistance - _lastFinaleMarkerDistance < spacing)
+            return;
+        _lastFinaleMarkerDistance = routeDistance;
+
+        if (selected == predicted)
+        {
+            AddShadowLead(0.3f, currentSpeed);
+            SetFeedback("旧预测命中：高价值路线让回声获得推进");
+        }
+        else if (selected == risk)
+        {
+            AddPlayerLead(0.4f, currentSpeed);
+            SetFeedback("激进决胜：你用高风险路线抢回距离");
+        }
+        else
+        {
+            SetFeedback("安全决胜：你放弃追赶收益并守住当前距离");
+        }
     }
 
     public void RecordDodge(ObstacleType obstacleType, int playerLane = -1,

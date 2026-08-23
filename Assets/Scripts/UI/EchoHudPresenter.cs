@@ -41,8 +41,11 @@ public sealed class EchoHudPresenter : MonoBehaviour
         string rewriteStyleSummary = shadow != null
                                      && shadow.DuelPhase
                                      == EchoDuelPhase.Rewrite
-            ? EchoContractPolicy.BuildStyleSummary(StyleTracker.GetSnapshot())
-            : "";
+            ? shadow.RewriteStyleSummary : "";
+        string finaleSegmentSummary = shadow != null
+                                      && shadow.DuelPhase
+                                      == EchoDuelPhase.Finale
+            ? shadow.FinaleSegmentSummary : "";
 
         EchoHudViewData data = EchoRunPresentation.BuildHud(
             shadow != null && shadow.HasActiveOpponent,
@@ -66,7 +69,7 @@ public sealed class EchoHudPresenter : MonoBehaviour
             showBuff, buffText,
             shadow != null && shadow.DuelTransitionPending,
             shadow != null ? shadow.PendingDuelPhase : EchoDuelPhase.None,
-            rewriteStyleSummary);
+            rewriteStyleSummary, finaleSegmentSummary);
 
         if (!_hasMode || data.mode != _lastMode)
         {

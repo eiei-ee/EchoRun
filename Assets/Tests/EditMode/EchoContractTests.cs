@@ -593,6 +593,240 @@ public sealed class EchoContractTests
     }
 
     [Test]
+    public void FinaleRouteWindowIsSplitIntoThreeStableSections()
+    {
+        Assert.AreEqual(0, AITrackDirector.FinaleSectionForRoute(
+            100f, 100f, 300f));
+        Assert.AreEqual(0, AITrackDirector.FinaleSectionForRoute(
+            199f, 100f, 300f));
+        Assert.AreEqual(1, AITrackDirector.FinaleSectionForRoute(
+            201f, 100f, 300f));
+        Assert.AreEqual(2, AITrackDirector.FinaleSectionForRoute(
+            301f, 100f, 300f));
+        Assert.AreEqual(2, AITrackDirector.FinaleSectionForRoute(
+            450f, 100f, 300f));
+    }
+
+    [Test]
+    public void FinaleStructuresUseDifferentPressureAndRewardTradeoffs()
+    {
+        var contract = new EchoContractData
+        {
+            type = EchoContractType.BreakLaneHabit,
+            learnedLane = 2,
+            targetLane = 0,
+            predictionLane = 1,
+            targetProgress = 100f
+        };
+        var baseline = new AITrackPlan
+        {
+            difficulty = 0.8f,
+            obstacleChance = 0.7f,
+            coinChance = 0.7f,
+            safeLane = 1,
+            maxBlockedLanes = 2
+        };
+
+        AITrackPlan oldHabit = AITrackDirector.ApplyEchoContract(
+            baseline, contract, 0, EchoDuelPhase.Finale);
+        AITrackPlan counterHabit = AITrackDirector.ApplyEchoContract(
+            baseline, contract, 1, EchoDuelPhase.Finale);
+        AITrackPlan freeChoice = AITrackDirector.ApplyEchoContract(
+            baseline, contract, 2, EchoDuelPhase.Finale);
+
+        Assert.AreEqual(1, oldHabit.maxBlockedLanes);
+        Assert.AreEqual(2, counterHabit.maxBlockedLanes);
+        Assert.AreEqual(1, freeChoice.maxBlockedLanes);
+        Assert.AreEqual(1, TrackManager.SelectEchoEncounterBlockedLanes(
+            oldHabit, new[] { 0, 0, 0 }).Length);
+        Assert.AreEqual(2, TrackManager.SelectEchoEncounterBlockedLanes(
+            counterHabit, new[] { 0, 0, 0 }).Length);
+        Assert.AreEqual(1, TrackManager.SelectEchoEncounterBlockedLanes(
+            freeChoice, new[] { 0, 0, 0 }).Length);
+
+        EchoEncounterLaneChoice[] oldRewards =
+            TrackManager.BuildEchoEncounterLaneChoices(oldHabit);
+        EchoEncounterLaneChoice[] counterRewards =
+            TrackManager.BuildEchoEncounterLaneChoices(counterHabit);
+        EchoEncounterLaneChoice[] freeRewards =
+            TrackManager.BuildEchoEncounterLaneChoices(freeChoice);
+        Assert.Greater(oldRewards[0].minCoinCount,
+            oldRewards[1].minCoinCount,
+            "The familiar route must be the visible old-habit temptation.");
+        Assert.Greater(counterRewards[2].minCoinCount,
+            counterRewards[0].minCoinCount,
+            "The aggressive counter route must pay more than the predicted route.");
+        Assert.Greater(freeRewards[2].minCoinCount,
+            freeRewards[0].minCoinCount,
+            "The free-choice risk route must carry the largest catch-up reward.");
+    }
+
+    [Test]
+    public void OldHabitActionFinaleActuallyReplaysTheLearnedAction()
+    {
+        var contract = new EchoContractData
+        {
+            type = EchoContractType.ChangeVerticalHabit,
+            learnedAction = ShadowAction.Slide,
+            predictionAction = ShadowAction.Jump,
+            targetAction = ShadowAction.Jump,
+            targetLane = 0,
+            targetProgress = 100f
+        };
+        AITrackPlan plan = AITrackDirector.ApplyEchoContract(
+            new AITrackPlan { difficulty = 0.8f, maxBlockedLanes = 2 },
+            contract, 0, EchoDuelPhase.Finale);
+
+        int[] blocked = TrackManager.SelectEchoEncounterBlockedLanes(
+            plan, new[] { 0, 0, 0 });
+        Assert.AreEqual(1, blocked.Length);
+        Assert.AreEqual(plan.echoPredictedLane, blocked[0]);
+        Assert.AreEqual(0, TrackManager.SelectEchoEncounterObstaclePrefabIndex(
+            plan, blocked[0], 0, 0.8f, 0.5f),
+            "The first finale section must replay the learned slide habit.");
+    }
+
+    [Test]
+    public void RewriteProfileRewardsEffectiveVarietyInsteadOfInputSpam()
+    {
+        var style = new PlayerStyleData();
+        var spam = new EchoRewriteTracker();
+        spam.RecordRouteChoice(1, 0f);
+        spam.RecordRouteChoice(1, 20f);
+        spam.RecordRouteChoice(1, 40f);
+        spam.RecordRouteChoice(1, 60f);
+        spam.RecordVerticalAction(ShadowAction.Jump, false, 1f);
+        spam.RecordVerticalAction(ShadowAction.Slide, false, 3f);
+        EchoRewriteSnapshot spamSnapshot = spam.BuildSnapshot(style);
+        Assert.AreEqual(1f, spamSnapshot.writeStrength, 0.001f);
+        Assert.AreEqual(0, spamSnapshot.effectiveVerticalActions);
+
+        var varied = new EchoRewriteTracker();
+        varied.RecordRouteChoice(0, 0f);
+        varied.RecordRouteChoice(1, 20f);
+        varied.RecordRouteChoice(2, 40f);
+        varied.RecordRouteChoice(0, 60f);
+        varied.RecordVerticalAction(ShadowAction.Jump, true, 1f);
+        varied.RecordVerticalAction(ShadowAction.Slide, true, 2f);
+        varied.RecordVerticalAction(ShadowAction.Jump, true, 5f);
+        varied.RecordVerticalAction(ShadowAction.Slide, true, 6f);
+        for (int i = 0; i < 4; i++)
+            varied.RecordSuccessfulExecution();
+
+        EchoRewriteSnapshot strong = varied.BuildSnapshot(style);
+        Assert.Greater(strong.routeVariation01, 0.9f);
+        Assert.Greater(strong.actionMix01, 0.9f);
+        Assert.Greater(strong.rhythmNovelty01, 0.6f);
+        Assert.Greater(strong.writeStrength, 1.8f);
+        Assert.LessOrEqual(strong.writeStrength, 2f);
+
+        varied.RecordMistake();
+        EchoRewriteSnapshot afterHit = varied.BuildSnapshot(style);
+        Assert.Less(afterHit.execution01, strong.execution01);
+        Assert.Less(afterHit.writeStrength, strong.writeStrength);
+    }
+
+    [Test]
+    public void RewriteMultiplierOnlyAppliesToEffectiveSamples()
+    {
+        Assert.AreEqual(1f, AIShadowRunner.ResolveRewriteLearningWeight(
+            true, false, 1.9f));
+        Assert.AreEqual(1f, AIShadowRunner.ResolveRewriteLearningWeight(
+            false, true, 1.9f));
+        Assert.AreEqual(1.9f, AIShadowRunner.ResolveRewriteLearningWeight(
+            true, true, 1.9f), 0.001f);
+        Assert.AreEqual(2f, AIShadowRunner.ResolveRewriteLearningWeight(
+            true, true, 3f), 0.001f);
+    }
+
+    [Test]
+    public void RewriteSnapshotFreezesTheNextGenerationStyle()
+    {
+        var style = new PlayerStyleData
+        {
+            lanePreference = 0.7f,
+            laneSamples = 12
+        };
+        var tracker = new EchoRewriteTracker();
+        tracker.RecordRouteChoice(0, 10f);
+        EchoRewriteSnapshot snapshot = tracker.BuildSnapshot(style);
+        EchoRewriteSnapshot clone = snapshot.Clone();
+
+        style.lanePreference = -0.9f;
+        snapshot.styleJson = "{}";
+
+        Assert.AreEqual(0.7f, clone.GetStyle().lanePreference, 0.001f);
+        Assert.AreEqual(clone.BuildProfileSummary(),
+            clone.Clone().BuildProfileSummary());
+    }
+
+    [Test]
+    public void LaneRewriteAndFinaleChoicesAlwaysCarryEffectiveMarkers()
+    {
+        var contract = new EchoContractData
+        {
+            type = EchoContractType.BreakLaneHabit,
+            learnedLane = 2,
+            targetLane = 0,
+            predictionLane = 1,
+            targetProgress = 100f
+        };
+        var baseline = new AITrackPlan { maxBlockedLanes = 2 };
+
+        foreach (EchoDuelPhase phase in new[]
+                 {
+                     EchoDuelPhase.Rewrite,
+                     EchoDuelPhase.Finale
+                 })
+        {
+            AITrackPlan plan = AITrackDirector.ApplyEchoContract(
+                baseline, contract, phase == EchoDuelPhase.Rewrite ? 0 : 2,
+                phase);
+            EchoEncounterLaneChoice[] choices =
+                TrackManager.BuildEchoEncounterLaneChoices(plan);
+            Assert.AreEqual(3, choices.Length);
+            Assert.IsTrue(choices[0].echoContractMarker);
+            Assert.IsTrue(choices[1].echoContractMarker);
+            Assert.IsTrue(choices[2].echoContractMarker);
+        }
+    }
+
+    [Test]
+    public void CompletedLaneFinaleMarkersStillChangeTheRaceLead()
+    {
+        EchoContractData CreateCompletedContract()
+        {
+            return new EchoContractData
+            {
+                type = EchoContractType.BreakLaneHabit,
+                targetProgress = 100f,
+                progress = 100f,
+                completed = true,
+                duelPhase = EchoDuelPhase.Finale
+            };
+        }
+
+        var predicted = new EchoContractEvaluator(CreateCompletedContract());
+        predicted.RecordFinaleRouteChoice(2, 2, 1, 0, 100f, 10f);
+        Assert.Greater(predicted.Contract.shadowProgressBonus, 0f);
+        Assert.AreEqual(0f, predicted.Contract.playerProgressBonus);
+
+        var aggressive = new EchoContractEvaluator(CreateCompletedContract());
+        aggressive.RecordFinaleRouteChoice(0, 2, 1, 0, 100f, 10f);
+        Assert.Greater(aggressive.Contract.playerProgressBonus, 0f);
+        Assert.AreEqual(0f, aggressive.Contract.shadowProgressBonus);
+    }
+
+    [Test]
+    public void PhaseGateLeadUsesPreparedContentNotTheLongRoadShell()
+    {
+        Assert.AreEqual(3f, AIShadowRunner.CalculatePhaseGateLeadSeconds(
+            0f, 60f, 20f), 0.001f);
+        Assert.AreEqual(0f, AIShadowRunner.CalculatePhaseGateLeadSeconds(
+            80f, 60f, 20f), 0.001f);
+    }
+
+    [Test]
     public void LaneContractKeepsItsPromisedTargetLaneSafe()
     {
         Assert.AreEqual(2, TrackManager.ChooseContractSafeLane(
