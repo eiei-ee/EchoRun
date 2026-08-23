@@ -85,6 +85,33 @@ public class EnvironmentVariantTests
     }
 
     [Test]
+    public void ExistingBakedEnvironmentRemapsToRuntimePhasePalette()
+    {
+        WorldStyler styler = CreateStyler();
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+            "Assets/Prefabs/TrackSegment.prefab");
+        Assert.NotNull(prefab);
+        _segment = Object.Instantiate(prefab);
+
+        styler.DecorateSegment(_segment, TrackSegmentType.Straight);
+        Transform environment = _segment.transform.Find("EchoEnvironment");
+        Assert.NotNull(environment);
+        Renderer[] renderers =
+            environment.GetComponentsInChildren<Renderer>(true);
+        Assert.Greater(renderers.Length, 0);
+        foreach (Renderer renderer in renderers)
+        {
+            foreach (Material material in renderer.sharedMaterials)
+            {
+                Assert.NotNull(material, renderer.name);
+                Assert.IsFalse(AssetDatabase.Contains(material),
+                    renderer.name + " must use the runtime phase palette.");
+                StringAssert.StartsWith("Echo", material.name);
+            }
+        }
+    }
+
+    [Test]
     public void StraightSegmentUsesAuthoredDistrictsInEveryVariantAndNoBoxSkyline()
     {
         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(

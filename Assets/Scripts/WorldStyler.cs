@@ -1,5 +1,26 @@
 using UnityEngine;
 
+public struct EchoWorldPhasePalette
+{
+    public Color fog;
+    public Color ambientSky;
+    public Color ambientEquator;
+    public Color ambientGround;
+    public Color skyTint;
+    public Color keyLight;
+    public Color fillLight;
+    public Color structure;
+    public Color structureEmission;
+    public Color depth;
+    public Color depthEmission;
+    public Color cyan;
+    public Color cyanEmission;
+    public Color coral;
+    public Color coralEmission;
+    public Color gold;
+    public Color goldEmission;
+}
+
 public class WorldStyler : MonoBehaviour
 {
     public const string SeamlessSkyShaderName = "EchoRun/SeamlessPanoramicSky";
@@ -15,6 +36,24 @@ public class WorldStyler : MonoBehaviour
     public const string MegacityDistrictBResourcePath =
         "Art/Environment/EchoMegacityDistrictB";
 
+    private static readonly Color BaseFog = new Color(0.055f, 0.105f, 0.17f);
+    private static readonly Color BaseAmbientSky = new Color(0.16f, 0.23f, 0.34f);
+    private static readonly Color BaseAmbientEquator = new Color(0.075f, 0.12f, 0.19f);
+    private static readonly Color BaseAmbientGround = new Color(0.02f, 0.035f, 0.06f);
+    private static readonly Color BaseSkyTint = new Color(0.52f, 0.60f, 0.70f, 1f);
+    private static readonly Color BaseKeyLight = new Color(1f, 0.93f, 0.84f);
+    private static readonly Color BaseFillLight = new Color(0.34f, 0.69f, 0.96f);
+    private static readonly Color BaseStructure = new Color(0.14f, 0.20f, 0.29f);
+    private static readonly Color BaseStructureEmission = new Color(0.008f, 0.018f, 0.034f);
+    private static readonly Color BaseDepth = new Color(0.055f, 0.085f, 0.14f);
+    private static readonly Color BaseDepthEmission = new Color(0.004f, 0.010f, 0.020f);
+    private static readonly Color BaseCyan = new Color(0.22f, 0.84f, 1.00f);
+    private static readonly Color BaseCyanEmission = new Color(0.020f, 0.34f, 0.56f);
+    private static readonly Color BaseCoral = new Color(1.00f, 0.40f, 0.35f);
+    private static readonly Color BaseCoralEmission = new Color(0.58f, 0.060f, 0.028f);
+    private static readonly Color BaseGold = new Color(0.94f, 0.68f, 0.24f);
+    private static readonly Color BaseGoldEmission = new Color(0.48f, 0.19f, 0.015f);
+
     public static WorldStyler Instance { get; private set; }
 
     private Material _structureMaterial;
@@ -26,6 +65,7 @@ public class WorldStyler : MonoBehaviour
     private GameObject _sideEnergyStationPrefab;
     private GameObject _megacityDistrictAPrefab;
     private GameObject _megacityDistrictBPrefab;
+    private Light _keyLight;
     private Light _fillLight;
     private Vector2Int _lastCameraScreenSize;
 
@@ -126,6 +166,7 @@ public class WorldStyler : MonoBehaviour
             variantSet = environment.GetComponent<EchoEnvironmentVariantSet>();
         }
 
+        RemapEnvironmentPalette(environment);
         if (variantSet == null) return;
         TrackSegmentData data = segment.GetComponent<TrackSegmentData>();
         float routeDistance = data != null ? data.routeDistance : 0f;
@@ -139,13 +180,13 @@ public class WorldStyler : MonoBehaviour
     {
         RenderSettings.fog = true;
         RenderSettings.fogMode = FogMode.Linear;
-        RenderSettings.fogColor = new Color(0.055f, 0.105f, 0.17f);
+        RenderSettings.fogColor = BaseFog;
         RenderSettings.fogStartDistance = 52f;
         RenderSettings.fogEndDistance = 130f;
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
-        RenderSettings.ambientSkyColor = new Color(0.16f, 0.23f, 0.34f);
-        RenderSettings.ambientEquatorColor = new Color(0.075f, 0.12f, 0.19f);
-        RenderSettings.ambientGroundColor = new Color(0.02f, 0.035f, 0.06f);
+        RenderSettings.ambientSkyColor = BaseAmbientSky;
+        RenderSettings.ambientEquatorColor = BaseAmbientEquator;
+        RenderSettings.ambientGroundColor = BaseAmbientGround;
         ApplyVisualQuality(VisualQualityController.Current);
 
         _skyMaterial = CreateSeamlessSkyMaterial();
@@ -162,7 +203,7 @@ public class WorldStyler : MonoBehaviour
         if (material == null) return null;
 
         material.name = "EchoSky_Seamless_Runtime";
-        material.SetColor("_Tint", new Color(0.52f, 0.60f, 0.70f, 1f));
+        material.SetColor("_Tint", BaseSkyTint);
         material.SetFloat("_Exposure", 0.54f);
         material.SetFloat("_Rotation", 0f);
         material.SetFloat("_SeamBlend", 0.07f);
@@ -183,12 +224,12 @@ public class WorldStyler : MonoBehaviour
 
     private void ConfigureLighting()
     {
-        Light key = FindObjectOfType<Light>();
-        if (key != null)
+        _keyLight = FindObjectOfType<Light>();
+        if (_keyLight != null)
         {
-            key.intensity = KeyLightIntensity;
-            key.color = new Color(1f, 0.93f, 0.84f);
-            key.shadows = LightShadows.Soft;
+            _keyLight.intensity = KeyLightIntensity;
+            _keyLight.color = BaseKeyLight;
+            _keyLight.shadows = LightShadows.Soft;
         }
 
         GameObject fillObject = GameObject.Find("EchoFillLight");
@@ -201,7 +242,7 @@ public class WorldStyler : MonoBehaviour
         _fillLight = fillObject.GetComponent<Light>();
         if (_fillLight == null) _fillLight = fillObject.AddComponent<Light>();
         _fillLight.type = LightType.Directional;
-        _fillLight.color = new Color(0.34f, 0.69f, 0.96f);
+        _fillLight.color = BaseFillLight;
         _fillLight.shadows = LightShadows.None;
         ApplyVisualQuality(VisualQualityController.Current);
     }
@@ -413,6 +454,133 @@ public class WorldStyler : MonoBehaviour
         district.transform.localRotation = Quaternion.Euler(
             0f, side > 0 ? -90f : 90f, 0f);
         district.transform.localScale = Vector3.one * scale;
+    }
+
+    private void RemapEnvironmentPalette(GameObject root)
+    {
+        Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+        for (int rendererIndex = 0; rendererIndex < renderers.Length; rendererIndex++)
+        {
+            Renderer renderer = renderers[rendererIndex];
+            Material[] materials = renderer.sharedMaterials;
+            bool changed = false;
+            for (int materialIndex = 0; materialIndex < materials.Length; materialIndex++)
+            {
+                Material replacement = ResolvePaletteMaterial(materials[materialIndex]);
+                if (replacement == null || replacement == materials[materialIndex]) continue;
+                materials[materialIndex] = replacement;
+                changed = true;
+            }
+            if (changed) renderer.sharedMaterials = materials;
+        }
+    }
+
+    private Material ResolvePaletteMaterial(Material material)
+    {
+        if (material == null) return null;
+        string materialName = material.name;
+        if (materialName.IndexOf("Cyan", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            return _cyanMaterial;
+        if (materialName.IndexOf("Coral", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            return _coralMaterial;
+        if (materialName.IndexOf("Gold", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            return _goldMaterial;
+        if (materialName.IndexOf("Depth", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            return _deepStructureMaterial;
+        if (materialName.IndexOf("Structure", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            return _structureMaterial;
+        return null;
+    }
+
+    public void ApplyPhaseVisualStyle(EchoPhaseVisualStyle style)
+    {
+        EnsurePalette();
+        EchoWorldPhasePalette palette = BuildPhasePalette(style);
+        RenderSettings.fogColor = palette.fog;
+        RenderSettings.ambientSkyColor = palette.ambientSky;
+        RenderSettings.ambientEquatorColor = palette.ambientEquator;
+        RenderSettings.ambientGroundColor = palette.ambientGround;
+        if (_skyMaterial != null && _skyMaterial.HasProperty("_Tint"))
+            _skyMaterial.SetColor("_Tint", palette.skyTint);
+        if (_keyLight != null) _keyLight.color = palette.keyLight;
+        if (_fillLight != null) _fillLight.color = palette.fillLight;
+
+        ApplyMaterialColors(_structureMaterial, palette.structure,
+            palette.structureEmission);
+        ApplyMaterialColors(_deepStructureMaterial, palette.depth,
+            palette.depthEmission);
+        ApplyMaterialColors(_cyanMaterial, palette.cyan,
+            palette.cyanEmission);
+        ApplyMaterialColors(_coralMaterial, palette.coral,
+            palette.coralEmission);
+        ApplyMaterialColors(_goldMaterial, palette.gold,
+            palette.goldEmission);
+    }
+
+    public static EchoWorldPhasePalette BuildPhasePalette(
+        EchoPhaseVisualStyle style)
+    {
+        float intensity = Mathf.Clamp01(style.intensity);
+        float coralBoost = Mathf.Clamp01(style.coral);
+        return new EchoWorldPhasePalette
+        {
+            fog = PhaseHue(BaseFog, style.tint, intensity * 0.72f),
+            ambientSky = PhaseHue(BaseAmbientSky, style.tint, intensity * 0.62f),
+            ambientEquator = PhaseHue(BaseAmbientEquator, style.tint,
+                intensity * 0.58f),
+            ambientGround = PhaseHue(BaseAmbientGround, style.tint,
+                intensity * 0.48f),
+            skyTint = PhaseHue(BaseSkyTint, style.tint, intensity * 0.58f),
+            keyLight = PhaseHue(BaseKeyLight, style.tint, intensity * 0.14f),
+            fillLight = PhaseHue(BaseFillLight, style.tint, intensity * 0.72f),
+            structure = PhaseHue(BaseStructure, style.tint, intensity * 0.42f),
+            structureEmission = PhaseEmission(BaseStructureEmission,
+                style.tint, intensity * 0.58f, 1f),
+            depth = PhaseHue(BaseDepth, style.tint, intensity * 0.36f),
+            depthEmission = PhaseEmission(BaseDepthEmission, style.tint,
+                intensity * 0.52f, 1f),
+            cyan = PhaseHue(BaseCyan, style.tint, intensity * 0.72f),
+            cyanEmission = PhaseEmission(BaseCyanEmission, style.tint,
+                intensity * 0.82f, 1.08f),
+            coral = PhaseHue(BaseCoral, style.tint, intensity * 0.58f),
+            coralEmission = PhaseEmission(BaseCoralEmission, style.tint,
+                intensity * 0.72f, 1f + coralBoost * 0.34f),
+            gold = PhaseHue(BaseGold, style.tint, intensity * 0.62f),
+            goldEmission = PhaseEmission(BaseGoldEmission, style.tint,
+                intensity * 0.74f, 1f + coralBoost * 0.12f)
+        };
+    }
+
+    private static Color PhaseHue(Color baseColor, Color phaseTint,
+        float weight)
+    {
+        float peak = Mathf.Max(0.001f, baseColor.maxColorComponent);
+        float phasePeak = Mathf.Max(0.001f, phaseTint.maxColorComponent);
+        Color matchedHue = phaseTint * (peak / phasePeak);
+        matchedHue.a = baseColor.a;
+        return Color.Lerp(baseColor, matchedHue, Mathf.Clamp01(weight));
+    }
+
+    private static Color PhaseEmission(Color baseColor, Color phaseTint,
+        float weight, float boost)
+    {
+        Color shifted = PhaseHue(baseColor, phaseTint, weight) * boost;
+        shifted.a = 1f;
+        return shifted;
+    }
+
+    private static void ApplyMaterialColors(Material material, Color color,
+        Color emission)
+    {
+        if (material == null) return;
+        material.color = color;
+        if (material.HasProperty("_BaseColor"))
+            material.SetColor("_BaseColor", color);
+        if (material.HasProperty("_EmissionColor"))
+        {
+            material.EnableKeyword("_EMISSION");
+            material.SetColor("_EmissionColor", emission);
+        }
     }
 
     private void BuildGroundBollards(Transform parent)
@@ -835,6 +1003,18 @@ public class WorldStyler : MonoBehaviour
     {
         VisualQualityController.Changed -= ApplyVisualQuality;
         if (_skyMaterial != null) Destroy(_skyMaterial);
+        DestroyPaletteMaterial(_structureMaterial);
+        DestroyPaletteMaterial(_deepStructureMaterial);
+        DestroyPaletteMaterial(_cyanMaterial);
+        DestroyPaletteMaterial(_coralMaterial);
+        DestroyPaletteMaterial(_goldMaterial);
         if (Instance == this) Instance = null;
+    }
+
+    private static void DestroyPaletteMaterial(Material material)
+    {
+        if (material == null) return;
+        if (Application.isPlaying) Destroy(material);
+        else DestroyImmediate(material);
     }
 }

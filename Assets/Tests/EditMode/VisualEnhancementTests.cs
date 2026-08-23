@@ -80,6 +80,44 @@ public class VisualEnhancementTests
     }
 
     [Test]
+    public void SixDuelPhasesAlsoDriveDistinctWorldAndCityPalettes()
+    {
+        EchoDuelPhase[] phases =
+        {
+            EchoDuelPhase.Detection,
+            EchoDuelPhase.Reveal,
+            EchoDuelPhase.Resistance,
+            EchoDuelPhase.Counterattack,
+            EchoDuelPhase.Rewrite,
+            EchoDuelPhase.Finale
+        };
+        for (int i = 0; i < phases.Length; i++)
+        {
+            EchoWorldPhasePalette palette = WorldStyler.BuildPhasePalette(
+                EchoPhaseVisualController.StyleFor(phases[i]));
+            Assert.AreEqual(1f, palette.skyTint.a, 0.0001f);
+            Assert.Greater(palette.cyanEmission.maxColorComponent, 0.25f);
+            for (int j = 0; j < i; j++)
+            {
+                EchoWorldPhasePalette previous = WorldStyler.BuildPhasePalette(
+                    EchoPhaseVisualController.StyleFor(phases[j]));
+                Assert.Greater(ColorDistance(palette.skyTint,
+                    previous.skyTint), 0.025f,
+                    phases[j] + " and " + phases[i] + " sky");
+                Assert.Greater(ColorDistance(palette.cyanEmission,
+                    previous.cyanEmission), 0.035f,
+                    phases[j] + " and " + phases[i] + " city signals");
+            }
+        }
+    }
+
+    private static float ColorDistance(Color a, Color b)
+    {
+        return Vector3.Distance(new Vector3(a.r, a.g, a.b),
+            new Vector3(b.r, b.g, b.b));
+    }
+
+    [Test]
     public void RoadPlanarReflectionRemainsOptionalAndLowForcesItOff()
     {
         _roadObject = new GameObject("EchoRoadVisualController_EnhancementTest");

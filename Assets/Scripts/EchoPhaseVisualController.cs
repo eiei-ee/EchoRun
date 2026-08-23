@@ -105,6 +105,8 @@ public sealed class EchoPhaseVisualController : MonoBehaviour
         Shader.SetGlobalFloat("_EchoPhaseCoral", style.coral);
         Shader.SetGlobalFloat("_EchoPhaseBloomBoost", style.bloomBoost);
         Shader.SetGlobalFloat("_EchoPhaseContrast", style.contrast);
+        if (WorldStyler.Instance != null)
+            WorldStyler.Instance.ApplyPhaseVisualStyle(style);
     }
 
     private void OnDestroy()
