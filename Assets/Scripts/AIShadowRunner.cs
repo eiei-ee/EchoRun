@@ -58,6 +58,11 @@ public class AIShadowRunner : MonoBehaviour
         : HasActiveOpponent ? EchoDuelPhase.Detection : EchoDuelPhase.Calibration;
     public float DuelPhaseProgress => _duelFlow != null
         ? _duelFlow.PhaseProgress01 : 0f;
+    public bool DuelTransitionPending => _duelFlow != null
+                                         && _duelFlow.TransitionPending;
+    public EchoDuelPhase PendingDuelPhase => _duelFlow != null
+        ? _duelFlow.PendingPhase : EchoDuelPhase.None;
+    public float PendingDuelBoundary => _pendingDuelBoundary;
     public string PublicPrediction => _contractEvaluator != null
         ? _contractEvaluator.BuildPredictionText() : "";
     public EchoContractData ActiveContract =>
@@ -132,6 +137,7 @@ public class AIShadowRunner : MonoBehaviour
     private float _appliedContractPlayerBonus;
     private float _appliedContractShadowBonus;
     private float _runTime;
+    private float _pendingDuelBoundary = -1f;
     private float _decisionTimer;
     private float _keepSampleTimer;
     private float _ghostJumpTimer;
@@ -199,15 +205,20 @@ public class AIShadowRunner : MonoBehaviour
         _runTime += Time.deltaTime;
         if (HasActiveOpponent && _contractEvaluator != null)
         {
+            CommitPendingDuelTransitionIfReady();
             float remainingSeconds = EchoTimeRules.EstimateRemainingSeconds(
                 _gameManager.RemainingDistance, _gameManager.CurrentSpeed);
+            TrackManager track = TrackManager.Instance;
+            float phaseGateLeadSeconds = track != null
+                ? Mathf.Max(0f, track.PlannedRouteDistance
+                                 - _gameManager.Distance)
+                  / Mathf.Max(1f, _gameManager.CurrentSpeed)
+                : 0f;
             if (_duelFlow != null && _duelFlow.Tick(Time.deltaTime,
-                    remainingSeconds, _contractEvaluator.Contract))
+                    remainingSeconds, _contractEvaluator.Contract,
+                    phaseGateLeadSeconds))
             {
-                _contractEvaluator.SetPhase(_duelFlow.Phase);
-                AIRunTelemetry.RecordEvent("echo_duel_phase",
-                    (int)_duelFlow.Phase, _player.CurrentLane,
-                    _runTime, remainingSeconds);
+                BeginPendingDuelTransition(remainingSeconds);
             }
             SyncRhythmTarget();
             _contractEvaluator.TickLane(_player.CurrentLane, Time.deltaTime,
@@ -473,6 +484,8 @@ public class AIShadowRunner : MonoBehaviour
         _opponentStyle = null;
         _opponentPace = 0f;
         _contractEvaluator = null;
+        _duelFlow = null;
+        _pendingDuelBoundary = -1f;
         LastDecisionTrace = null;
         _runStarted = false;
         _runFinalized = false;
@@ -502,6 +515,7 @@ public class AIShadowRunner : MonoBehaviour
         _runStarted = true;
         _runFinalized = false;
         _runTime = 0f;
+        _pendingDuelBoundary = -1f;
         _runUsedTurboStart = PowerUpController.Instance != null
                              && PowerUpController.Instance.ActivePowerUp
                              == PowerUpId.TurboStart;
@@ -575,6 +589,72 @@ public class AIShadowRunner : MonoBehaviour
             CurrentStatus = "AI影子 · 校准中 0%";
             SetGhostActive(false);
         }
+    }
+
+    private void BeginPendingDuelTransition(float remainingSeconds)
+    {
+        if (_duelFlow == null || !_duelFlow.TransitionPending
+            || _contractEvaluator == null)
+            return;
+
+        float distance = _gameManager != null
+            ? _gameManager.Distance : _playerPhysicalProgress;
+        TrackManager track = TrackManager.Instance;
+        _pendingDuelBoundary = track != null
+            ? track.GetPreparedPhaseBoundary(distance)
+            : TrackManager.NextRouteBoundary(distance, 20f);
+        _contractEvaluator.SetScoringSuspended(
+            ShouldSuspendContractScoringAtGate(_duelFlow.Phase));
+        AITrackDirector.Instance?.ScheduleEchoPhase(
+            _duelFlow.PendingPhase, _pendingDuelBoundary);
+        AIRunTelemetry.RecordEvent("echo_duel_phase_pending",
+            (int)_duelFlow.PendingPhase,
+            _player != null ? _player.CurrentLane : -1,
+            _pendingDuelBoundary, remainingSeconds);
+    }
+
+    public static bool ShouldSuspendContractScoringAtGate(
+        EchoDuelPhase currentPhase)
+    {
+        return currentPhase == EchoDuelPhase.Resistance
+               || currentPhase == EchoDuelPhase.Counterattack
+               || currentPhase == EchoDuelPhase.Finale;
+    }
+
+    private void CommitPendingDuelTransitionIfReady()
+    {
+        if (_duelFlow == null || !_duelFlow.TransitionPending
+            || _contractEvaluator == null || _gameManager == null
+            || _gameManager.Distance + 0.01f < _pendingDuelBoundary)
+            return;
+
+        EchoDuelPhase next = _duelFlow.PendingPhase;
+        EchoDuelPhase failurePhase = _duelFlow.PendingFailurePhase;
+        bool failed = _duelFlow.PendingTransitionFailed;
+        if (failed) _contractEvaluator.LockForFinale(failurePhase);
+        if (!_duelFlow.CommitPendingTransition()) return;
+
+        _contractEvaluator.SetPhase(next);
+        _contractEvaluator.SetScoringSuspended(false);
+        AITrackDirector.Instance?.CommitScheduledEchoPhase(next);
+        _pendingDuelBoundary = -1f;
+
+        if (next == EchoDuelPhase.Rewrite)
+        {
+            _gameManager.ScheduleCourseFinishAfter(
+                _duelFlow.RewriteDuration + _duelFlow.FinaleDuration);
+        }
+        else if (next == EchoDuelPhase.Finale)
+        {
+            _gameManager.ScheduleCourseFinishAfter(_duelFlow.FinaleDuration);
+        }
+
+        float remainingSeconds = EchoTimeRules.EstimateRemainingSeconds(
+            _gameManager.RemainingDistance, _gameManager.CurrentSpeed);
+        AIRunTelemetry.RecordEvent("echo_duel_phase",
+            (int)next, _player != null ? _player.CurrentLane : -1,
+            _runTime, remainingSeconds);
+        CurrentStatus = _contractEvaluator.BuildHudText();
     }
 
     private void FinishRun()

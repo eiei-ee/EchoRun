@@ -20,15 +20,19 @@ public enum EchoDuelPhase
 /// </summary>
 public sealed class EchoDuelFlow
 {
-    public const float DefaultDetectionDuration = 20f;
-    public const float DefaultRevealDuration = 8f;
-    public const float DefaultRewriteDuration = 32f;
+    public const float DefaultDetectionDuration = 12f;
+    public const float DefaultRevealDuration = 4f;
+    public const float DefaultRewriteDuration = 24f;
     public const float DefaultFinaleDuration = 25f;
 
     public EchoDuelPhase Phase { get; private set; }
     public float PhaseElapsed { get; private set; }
     public float RunElapsed { get; private set; }
     public int PhaseSequence { get; private set; }
+    public bool TransitionPending => PendingPhase != EchoDuelPhase.None;
+    public EchoDuelPhase PendingPhase { get; private set; }
+    public bool PendingTransitionFailed { get; private set; }
+    public EchoDuelPhase PendingFailurePhase { get; private set; }
 
     public float DetectionDuration { get; }
     public float RevealDuration { get; }
@@ -54,50 +58,68 @@ public sealed class EchoDuelFlow
     }
 
     public bool Tick(float deltaTime, float estimatedRemainingSeconds,
-        EchoContractData contract)
+        EchoContractData contract, float phaseGateLeadSeconds = 0f)
     {
         float dt = Mathf.Max(0f, deltaTime);
+        float gateLead = Mathf.Max(0f, phaseGateLeadSeconds);
         RunElapsed += dt;
         PhaseElapsed += dt;
+        if (TransitionPending) return false;
 
         EchoDuelPhase next = Phase;
+        EchoDuelPhase failurePhase = EchoDuelPhase.None;
         switch (Phase)
         {
             case EchoDuelPhase.Detection:
-                if (PhaseElapsed >= DetectionDuration)
+                if (PhaseElapsed + gateLead >= DetectionDuration)
                     next = EchoDuelPhase.Reveal;
                 break;
             case EchoDuelPhase.Reveal:
-                if (PhaseElapsed >= RevealDuration)
+                if (PhaseElapsed + gateLead >= RevealDuration)
                     next = EchoDuelPhase.Resistance;
                 break;
             case EchoDuelPhase.Resistance:
                 if (contract != null && contract.initialBreakCompleted)
                     next = EchoDuelPhase.Counterattack;
                 else if (ShouldEnterFinale(estimatedRemainingSeconds))
+                {
                     next = EchoDuelPhase.Finale;
+                    failurePhase = EchoDuelPhase.Resistance;
+                }
                 break;
             case EchoDuelPhase.Counterattack:
                 if (contract != null && contract.completed)
                     next = EchoDuelPhase.Rewrite;
                 else if (ShouldEnterFinale(estimatedRemainingSeconds))
+                {
                     next = EchoDuelPhase.Finale;
+                    failurePhase = EchoDuelPhase.Counterattack;
+                }
                 break;
             case EchoDuelPhase.Rewrite:
-                // Rewrite remains the long pursuit phase. Only its opening
-                // window receives boosted learning; the finale is reserved for
-                // the configured final seconds instead of consuming half a run.
-                if (ShouldEnterFinale(estimatedRemainingSeconds))
+                if (PhaseElapsed + gateLead >= RewriteDuration)
                     next = EchoDuelPhase.Finale;
                 break;
         }
 
-        return TransitionTo(next);
+        return RequestTransition(next, failurePhase);
     }
 
     public bool TransitionTo(EchoDuelPhase next)
     {
         if (next == EchoDuelPhase.None || next == Phase) return false;
+        ClearPendingTransition();
+        Phase = next;
+        PhaseElapsed = 0f;
+        PhaseSequence++;
+        return true;
+    }
+
+    public bool CommitPendingTransition()
+    {
+        if (!TransitionPending) return false;
+        EchoDuelPhase next = PendingPhase;
+        ClearPendingTransition();
         Phase = next;
         PhaseElapsed = 0f;
         PhaseSequence++;
@@ -126,6 +148,23 @@ public sealed class EchoDuelFlow
     {
         return estimatedRemainingSeconds >= 0f
                && estimatedRemainingSeconds <= FinaleDuration;
+    }
+
+    private bool RequestTransition(EchoDuelPhase next,
+        EchoDuelPhase failurePhase)
+    {
+        if (next == EchoDuelPhase.None || next == Phase) return false;
+        PendingPhase = next;
+        PendingFailurePhase = failurePhase;
+        PendingTransitionFailed = failurePhase != EchoDuelPhase.None;
+        return true;
+    }
+
+    private void ClearPendingTransition()
+    {
+        PendingPhase = EchoDuelPhase.None;
+        PendingFailurePhase = EchoDuelPhase.None;
+        PendingTransitionFailed = false;
     }
 
     public static string PhaseName(EchoDuelPhase phase)

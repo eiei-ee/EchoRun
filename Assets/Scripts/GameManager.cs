@@ -449,6 +449,25 @@ public class GameManager : MonoBehaviour
             : Mathf.Max(calibration, challengeDistance);
     }
 
+    public float ScheduleCourseFinishAfter(float seconds)
+    {
+        if (State != GameState.Playing) return CourseDistance;
+        float window = Mathf.Max(0f, seconds);
+        CourseDistance = CalculateScheduledCourseDistance(
+            Distance, CurrentSpeed, maxSpeed, speedIncreaseRate, window);
+        CourseTargetDuration = RunElapsed + window;
+        return CourseDistance;
+    }
+
+    public static float CalculateScheduledCourseDistance(float currentDistance,
+        float currentSpeed, float maximumSpeed, float acceleration,
+        float seconds)
+    {
+        return Mathf.Max(0f, currentDistance)
+               + EchoTimeRules.DistanceForAcceleratingRun(currentSpeed,
+                   maximumSpeed, acceleration, seconds);
+    }
+
     public static float SelectCourseDuration(int generation,
         float calibrationDuration, float challengeDuration)
     {

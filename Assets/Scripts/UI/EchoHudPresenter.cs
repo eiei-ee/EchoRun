@@ -38,6 +38,11 @@ public sealed class EchoHudPresenter : MonoBehaviour
                 ? string.Format("{0} {1:F1}s", _gameManager.BuffName ?? "Buff",
                     _gameManager.BuffTimeRemaining)
                 : "";
+        string rewriteStyleSummary = shadow != null
+                                     && shadow.DuelPhase
+                                     == EchoDuelPhase.Rewrite
+            ? EchoContractPolicy.BuildStyleSummary(StyleTracker.GetSnapshot())
+            : "";
 
         EchoHudViewData data = EchoRunPresentation.BuildHud(
             shadow != null && shadow.HasActiveOpponent,
@@ -58,7 +63,10 @@ public sealed class EchoHudPresenter : MonoBehaviour
                 ? _gameManager.CollisionRecoveryDuration : 1.25f,
             _gameManager != null ? _gameManager.RemainingDistance : 0f,
             _gameManager != null ? _gameManager.ContractMarkerCount : 0,
-            showBuff, buffText);
+            showBuff, buffText,
+            shadow != null && shadow.DuelTransitionPending,
+            shadow != null ? shadow.PendingDuelPhase : EchoDuelPhase.None,
+            rewriteStyleSummary);
 
         if (!_hasMode || data.mode != _lastMode)
         {

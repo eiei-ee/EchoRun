@@ -17,7 +17,8 @@ public enum EchoHudMode
     Counterattack,
     Rewrite,
     FinaleClean,
-    FinaleContract
+    FinaleContract,
+    FinaleFailed
 }
 
 public enum EchoHudMeterKind
@@ -55,6 +56,8 @@ public struct EchoHudViewData
     public bool showContractMarkers;
 
     public bool showPrediction;
+    public bool phaseTransitionPending;
+    public EchoDuelPhase pendingPhase;
     public bool showBuff;
     public string buffText;
 }
@@ -128,7 +131,9 @@ public static class EchoRunPresentation
         int syncRemaining = 2, float recoverySeconds = 0f,
         float recoveryDuration = 1.25f, float remainingDistance = 0f,
         int contractMarkerCount = 0, bool showBuff = false,
-        string buffText = "")
+        string buffText = "", bool phaseTransitionPending = false,
+        EchoDuelPhase pendingPhase = EchoDuelPhase.None,
+        string rewriteStyleSummary = "")
     {
         bool calibrating = !hasOpponent || contract == null
                            || contract.type == EchoContractType.None;
@@ -171,9 +176,12 @@ public static class EchoRunPresentation
             : contract.duelPhase != EchoDuelPhase.None
                 ? contract.duelPhase
                 : EchoDuelPhase.Resistance;
+        bool finaleFailed = phase == EchoDuelPhase.Finale
+                            && contract.duelFailed;
         bool finaleNeedsContract = phase == EchoDuelPhase.Finale
-                                   && !contract.completed;
-        EchoHudMode mode = ResolveHudMode(phase, finaleNeedsContract);
+                                   && !contract.completed && !finaleFailed;
+        EchoHudMode mode = ResolveHudMode(phase, finaleNeedsContract,
+            finaleFailed);
         EchoHudMeterKind meterKind = ResolveMeterKind(mode);
         float displayed = meterKind == EchoHudMeterKind.Phase
             ? phaseProgress
@@ -195,7 +203,10 @@ public static class EchoRunPresentation
             contractStability01 = stability,
             displayedMeter01 = displayed,
             announcement = AnnouncementFor(mode),
-            directiveShort = DirectiveFor(mode, contract),
+            directiveShort = phaseTransitionPending
+                && pendingPhase != EchoDuelPhase.None
+                ? "前方同步：" + EchoDuelFlow.PhaseName(pendingPhase)
+                : DirectiveFor(mode, contract, rewriteStyleSummary),
             predictionShort = showPrediction
                 ? BuildShortPrediction(contract) : "",
             leadMeters = playerLead,
@@ -209,6 +220,8 @@ public static class EchoRunPresentation
             showContractMarkers = contract.type
                                   == EchoContractType.BreakLaneHabit,
             showPrediction = showPrediction,
+            phaseTransitionPending = phaseTransitionPending,
+            pendingPhase = pendingPhase,
             showBuff = showBuff,
             buffText = buffText ?? ""
         };
@@ -302,7 +315,7 @@ public static class EchoRunPresentation
         return new EchoDuelViewData
         {
             phase = EchoDuelFlow.PhaseName(phase),
-            contract = BuildContractAction(contract),
+            contract = ContractStatusFor(contract, phase),
             progress = BuildProgressText(contract, phase, phaseProgress01),
             progress01 = hud.displayedMeter01,
             lead = lead,
@@ -317,7 +330,7 @@ public static class EchoRunPresentation
     }
 
     private static EchoHudMode ResolveHudMode(EchoDuelPhase phase,
-        bool finaleNeedsContract)
+        bool finaleNeedsContract, bool finaleFailed)
     {
         switch (phase)
         {
@@ -326,6 +339,7 @@ public static class EchoRunPresentation
             case EchoDuelPhase.Counterattack: return EchoHudMode.Counterattack;
             case EchoDuelPhase.Rewrite: return EchoHudMode.Rewrite;
             case EchoDuelPhase.Finale:
+                if (finaleFailed) return EchoHudMode.FinaleFailed;
                 return finaleNeedsContract
                     ? EchoHudMode.FinaleContract
                     : EchoHudMode.FinaleClean;
@@ -376,29 +390,27 @@ public static class EchoRunPresentation
             case EchoHudMode.Rewrite: return "回声重写";
             case EchoHudMode.FinaleClean:
             case EchoHudMode.FinaleContract: return "回声决胜";
+            case EchoHudMode.FinaleFailed: return "契约锁定 · 回声决胜";
             default: return "回声校准";
         }
     }
 
     private static string DirectiveFor(EchoHudMode mode,
-        EchoContractData contract)
+        EchoContractData contract, string rewriteStyleSummary)
     {
         switch (mode)
         {
             case EchoHudMode.Detection: return "复现中";
-            case EchoHudMode.Reveal: return BuildShortPrediction(contract);
-            case EchoHudMode.Counterattack:
-                if (contract.type == EchoContractType.BreakLaneHabit)
-                {
-                    int lane = contract.predictionLane >= 0
-                        ? contract.predictionLane : contract.learnedLane;
-                    return "避开" + EchoContractPolicy.LaneName(lane);
-                }
-                return BuildShortDirective(contract);
-            case EchoHudMode.Rewrite: return "记录中";
+            case EchoHudMode.Reveal: return "AI公开下注";
+            case EchoHudMode.Resistance: return "打破旧习惯";
+            case EchoHudMode.Counterattack: return "让新预判失效";
+            case EchoHudMode.Rewrite:
+                return string.IsNullOrEmpty(rewriteStyleSummary)
+                    ? "记录有效选择" : rewriteStyleSummary;
             case EchoHudMode.FinaleClean: return "";
             case EchoHudMode.FinaleContract: return "最后机会";
-            default: return BuildShortDirective(contract);
+            case EchoHudMode.FinaleFailed: return "契约锁定 · 完成追逐";
+            default: return "";
         }
     }
 
@@ -411,6 +423,7 @@ public static class EchoRunPresentation
     private static string BuildProgressText(EchoContractData contract,
         EchoDuelPhase phase, float phaseProgress01)
     {
+        if (contract.duelFailed) return "契约锁定";
         if (phase == EchoDuelPhase.Detection)
             return "复现 " + Mathf.RoundToInt(phaseProgress01 * 100f) + "%";
         if (phase == EchoDuelPhase.Reveal)
@@ -425,8 +438,19 @@ public static class EchoRunPresentation
     {
         return phase == EchoDuelPhase.Reveal
                || phase == EchoDuelPhase.Resistance
-               || phase == EchoDuelPhase.Counterattack
-               || phase == EchoDuelPhase.Finale;
+               || phase == EchoDuelPhase.Counterattack;
+    }
+
+    private static string ContractStatusFor(EchoContractData contract,
+        EchoDuelPhase phase)
+    {
+        if (contract.duelFailed) return "契约已锁定 · 完成追逐";
+        if (phase == EchoDuelPhase.Detection) return "AI正在复现旧习惯";
+        if (phase == EchoDuelPhase.Rewrite) return "AI正在记录新策略";
+        if (phase == EchoDuelPhase.Finale) return "守住领先 · 完成决胜";
+        if (phase == EchoDuelPhase.Counterattack)
+            return "AI已学习你的反制 · 让新预判失效";
+        return "AI预测已公开 · 打破旧习惯";
     }
 
     private static string BuildPublicPrediction(EchoContractData contract)

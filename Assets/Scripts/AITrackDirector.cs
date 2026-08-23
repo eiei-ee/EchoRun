@@ -11,6 +11,53 @@ public enum AIDirectorIntent
     RecordPush
 }
 
+public enum EchoEncounterKind
+{
+    None,
+    DetectionEvidence,
+    RevealChoice,
+    ResistanceTest,
+    CounterTest,
+    RewriteChoice,
+    FinaleOldHabit,
+    FinaleCounterHabit,
+    FinaleFreeChoice
+}
+
+public enum EchoObstaclePattern
+{
+    Standard,
+    RiskOnly,
+    PairedAligned,
+    PredictedThenRisk,
+    RiskThenPredicted
+}
+
+public static class EchoObstaclePatternRules
+{
+    public static EchoObstaclePattern PatternForStep(int step)
+    {
+        switch (PositiveModulo(step, 4))
+        {
+            case 0: return EchoObstaclePattern.RiskOnly;
+            case 1: return EchoObstaclePattern.PairedAligned;
+            case 2: return EchoObstaclePattern.PredictedThenRisk;
+            default: return EchoObstaclePattern.RiskThenPredicted;
+        }
+    }
+
+    public static int SpacingBandForStep(int step)
+    {
+        return PositiveModulo(step, 3);
+    }
+
+    private static int PositiveModulo(int value, int modulo)
+    {
+        int result = value % modulo;
+        return result < 0 ? result + modulo : result;
+    }
+}
+
 public struct AITrackPlan
 {
     public AIDirectorIntent intent;
@@ -25,6 +72,16 @@ public struct AITrackPlan
     public EchoContractType echoContractType;
     public int echoChallengeLane;
     public ShadowAction echoTargetAction;
+    public EchoEncounterKind echoEncounterKind;
+    public EchoContractType echoEncounterContractType;
+    public int echoEncounterStep;
+    public int echoPredictedLane;
+    public int echoSafeChoiceLane;
+    public int echoRiskChoiceLane;
+    public ShadowAction echoPredictedAction;
+    public EchoObstaclePattern echoObstaclePattern;
+    public int echoObstacleSpacingBand;
+    public int echoObstacleLayoutStep;
 }
 
 // Online linear contextual bandit. Its weights are the runtime model and are
@@ -151,6 +208,8 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
     public ShadowAIDirective CurrentShadowDirective { get; private set; }
         = ShadowAIDirective.Neutral;
     public string CurrentStatus { get; private set; } = "AI导演 · 等待开局";
+    public EchoDuelPhase ScheduledEchoPhase { get; private set; }
+    public float ScheduledEchoBoundary { get; private set; } = -1f;
     public float CurrentLaneIncentiveCenter
     {
         get
@@ -277,11 +336,16 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
 
         AITrackPlan plan = BuildPlan(intent, baseDifficulty, baseObstacleChance,
             baseCoinChance, baseTurnChance, previousSafeLane, canTurn);
+        plan.echoEncounterStep = PositiveModulo(_decisionCount, 1024);
         EchoContractData activeContract = AIShadowRunner.Instance != null
             ? AIShadowRunner.Instance.ActiveContract : null;
-        plan = ApplyEchoContract(
-            plan, activeContract,
-            _decisionCount);
+        EchoDuelPhase phaseOverride = ScheduledEchoPhase != EchoDuelPhase.None
+                                      && segmentStartDistance + 0.01f
+                                      >= ScheduledEchoBoundary
+            ? ScheduledEchoPhase
+            : EchoDuelPhase.None;
+        plan = ApplyEchoContract(plan, activeContract, _decisionCount,
+            phaseOverride);
         ShadowAIDirective directive = BuildShadowDirective(intent);
         int telemetryDecisionId =
             AIRunTelemetry.RecordDirectorDecision(
@@ -341,6 +405,19 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         _activeDecision = null;
         _plannedDecisions.Clear();
         CurrentShadowDirective = ShadowAIDirective.Neutral;
+        ClearScheduledEchoPhase();
+    }
+
+    public void ScheduleEchoPhase(EchoDuelPhase phase, float routeBoundary)
+    {
+        if (phase == EchoDuelPhase.None) return;
+        ScheduledEchoPhase = phase;
+        ScheduledEchoBoundary = Mathf.Max(0f, routeBoundary);
+    }
+
+    public void CommitScheduledEchoPhase(EchoDuelPhase phase)
+    {
+        if (ScheduledEchoPhase == phase) ClearScheduledEchoPhase();
     }
 
     public void RecordLaneChange(int lane)
@@ -399,6 +476,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         _decisionCount = 0;
         _lastPlannedHitCount = 0;
         _lastHitDistance = float.NegativeInfinity;
+        ClearScheduledEchoPhase();
         _laneChanges = _jumps = _slides = _coins = _dodges = _hits = 0;
         _laneVisits[0] = 0;
         _laneVisits[1] = 1;
@@ -563,7 +641,17 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             shouldTurn = false,
             echoContractType = EchoContractType.None,
             echoChallengeLane = -1,
-            echoTargetAction = ShadowAction.Keep
+            echoTargetAction = ShadowAction.Keep,
+            echoEncounterKind = EchoEncounterKind.None,
+            echoEncounterContractType = EchoContractType.None,
+            echoEncounterStep = 0,
+            echoPredictedLane = -1,
+            echoSafeChoiceLane = -1,
+            echoRiskChoiceLane = -1,
+            echoPredictedAction = ShadowAction.Keep,
+            echoObstaclePattern = EchoObstaclePattern.Standard,
+            echoObstacleSpacingBand = 0,
+            echoObstacleLayoutStep = 0
         };
 
         float turnMultiplier = TurnMultiplierForIntent(intent);
@@ -648,13 +736,23 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
     public static AITrackPlan ApplyEchoContract(AITrackPlan plan,
         EchoContractData contract, int decisionCount)
     {
+        return ApplyEchoContract(plan, contract, decisionCount,
+            EchoDuelPhase.None);
+    }
+
+    public static AITrackPlan ApplyEchoContract(AITrackPlan plan,
+        EchoContractData contract, int decisionCount,
+        EchoDuelPhase phaseOverride)
+    {
         if (contract == null || contract.type == EchoContractType.None)
             return plan;
 
-        EchoDuelPhase phase = contract.duelPhase == EchoDuelPhase.None
-            ? EchoDuelPhase.Resistance : contract.duelPhase;
-        if (phase == EchoDuelPhase.Detection
-            || phase == EchoDuelPhase.Reveal)
+        EchoDuelPhase phase = phaseOverride != EchoDuelPhase.None
+            ? phaseOverride
+            : contract.duelPhase == EchoDuelPhase.None
+                ? EchoDuelPhase.Resistance : contract.duelPhase;
+        plan = ConfigureEchoEncounter(plan, contract, decisionCount, phase);
+        if (phase == EchoDuelPhase.Detection)
         {
             plan.echoContractType = EchoContractType.None;
             plan.obstacleChance = Mathf.Min(plan.obstacleChance, 0.35f);
@@ -663,12 +761,22 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             return plan;
         }
 
+        if (phase == EchoDuelPhase.Reveal)
+        {
+            plan.echoContractType = EchoContractType.None;
+            plan.difficulty = Mathf.Max(plan.difficulty, 0.35f);
+            plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.58f);
+            plan.coinChance = Mathf.Max(plan.coinChance, 0.9f);
+            plan.maxBlockedLanes = contract.type
+                                   == EchoContractType.BreakLaneHabit ? 1 : 2;
+            return plan;
+        }
+
         if (phase == EchoDuelPhase.Rewrite)
         {
             // The player is authoring a new style, so provide several readable
             // routes instead of continuing to order a single counter-action.
             plan.echoContractType = EchoContractType.None;
-            plan.safeLane = Mathf.Abs(decisionCount) % 3;
             plan.obstacleChance = Mathf.Clamp(plan.obstacleChance, 0.42f, 0.58f);
             plan.coinChance = Mathf.Max(plan.coinChance, 0.82f);
             plan.maxBlockedLanes = 1;
@@ -679,10 +787,9 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         plan.echoTargetAction = contract.targetAction;
         if (phase == EchoDuelPhase.Counterattack)
         {
-            plan.safeLane = Mathf.Abs(decisionCount + contract.generation) % 3;
             plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.8f);
             plan.coinChance = Mathf.Max(plan.coinChance, 0.78f);
-            plan.maxBlockedLanes = Mathf.Max(1, plan.maxBlockedLanes);
+            plan.maxBlockedLanes = 2;
         }
         else if (phase == EchoDuelPhase.Finale)
         {
@@ -691,28 +798,170 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             plan.coinChance = Mathf.Max(plan.coinChance, 0.72f);
             plan.maxBlockedLanes = 2;
         }
+        else
+        {
+            plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.72f);
+            plan.coinChance = Mathf.Max(plan.coinChance, 0.8f);
+            plan.maxBlockedLanes = 2;
+        }
         if (contract.type == EchoContractType.BreakLaneHabit)
         {
-            if (phase != EchoDuelPhase.Counterattack
-                && phase != EchoDuelPhase.Finale)
-                plan.safeLane = Mathf.Clamp(contract.targetLane, 0, 2);
             plan.coinChance = Mathf.Max(plan.coinChance, 0.9f);
             plan.minCoinCount = Mathf.Max(plan.minCoinCount, 7);
             plan.maxCoinCount = Mathf.Max(plan.maxCoinCount, 10);
             return plan;
         }
 
-        int safeLane = Mathf.Clamp(plan.safeLane, 0, 2);
-        plan.echoChallengeLane = Mathf.Clamp(contract.targetLane, 0, 2);
-        if (safeLane == plan.echoChallengeLane)
-        {
-            safeLane = (safeLane + 1) % 3;
-            plan.safeLane = safeLane;
-        }
-        plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.72f);
-        plan.coinChance = Mathf.Max(plan.coinChance, 0.8f);
-        plan.maxBlockedLanes = Mathf.Max(1, plan.maxBlockedLanes);
         return plan;
+    }
+
+    private static AITrackPlan ConfigureEchoEncounter(AITrackPlan plan,
+        EchoContractData contract, int decisionCount, EchoDuelPhase phase)
+    {
+        int step = PositiveModulo(decisionCount, 1024);
+        EchoEncounterKind kind;
+        switch (phase)
+        {
+            case EchoDuelPhase.Detection:
+                kind = EchoEncounterKind.DetectionEvidence;
+                break;
+            case EchoDuelPhase.Reveal:
+                kind = EchoEncounterKind.RevealChoice;
+                break;
+            case EchoDuelPhase.Resistance:
+                kind = EchoEncounterKind.ResistanceTest;
+                break;
+            case EchoDuelPhase.Counterattack:
+                kind = EchoEncounterKind.CounterTest;
+                break;
+            case EchoDuelPhase.Rewrite:
+                kind = EchoEncounterKind.RewriteChoice;
+                break;
+            case EchoDuelPhase.Finale:
+                int finaleStep = PositiveModulo(decisionCount, 3);
+                kind = finaleStep == 0
+                    ? EchoEncounterKind.FinaleOldHabit
+                    : finaleStep == 1
+                        ? EchoEncounterKind.FinaleCounterHabit
+                        : EchoEncounterKind.FinaleFreeChoice;
+                break;
+            default:
+                kind = EchoEncounterKind.None;
+                break;
+        }
+
+        plan.echoEncounterKind = kind;
+        plan.echoEncounterContractType = contract.type;
+        plan.echoEncounterStep = step;
+        plan.echoTargetAction = ResolveTargetAction(contract);
+        plan.echoPredictedAction = ResolvePredictedAction(contract, kind);
+        plan.echoObstaclePattern = kind == EchoEncounterKind.CounterTest
+            ? EchoObstaclePatternRules.PatternForStep(step)
+            : EchoObstaclePattern.PairedAligned;
+        plan.echoObstacleSpacingBand = kind == EchoEncounterKind.CounterTest
+            ? EchoObstaclePatternRules.SpacingBandForStep(step) : 0;
+        plan.echoObstacleLayoutStep = step;
+
+        int predictedLane = ResolvePredictedLane(contract, kind, step);
+        int riskLane = ResolveRiskLane(contract, kind, step, predictedLane);
+        int safeLane = RemainingLane(predictedLane, riskLane);
+        plan.echoPredictedLane = predictedLane;
+        plan.echoSafeChoiceLane = safeLane;
+        plan.echoRiskChoiceLane = riskLane;
+        plan.safeLane = safeLane;
+        plan.echoChallengeLane = riskLane;
+
+        // Phase encounters are authored as readable three-lane questions.
+        // Curved segments cannot preserve those lane roles, so the director
+        // reserves turns for ordinary adaptive track plans.
+        plan.shouldTurn = kind == EchoEncounterKind.None && plan.shouldTurn;
+        return plan;
+    }
+
+    private static int ResolvePredictedLane(EchoContractData contract,
+        EchoEncounterKind kind, int step)
+    {
+        if (contract.type == EchoContractType.BreakLaneHabit)
+        {
+            int lane = kind == EchoEncounterKind.CounterTest
+                       || kind == EchoEncounterKind.FinaleCounterHabit
+                       || kind == EchoEncounterKind.FinaleFreeChoice
+                ? contract.predictionLane
+                : contract.learnedLane;
+            if (lane < 0 || lane > 2)
+                lane = (Mathf.Clamp(contract.targetLane, 0, 2) + 1) % 3;
+            return Mathf.Clamp(lane, 0, 2);
+        }
+
+        if (kind == EchoEncounterKind.CounterTest)
+            return PositiveModulo(contract.generation + step, 3);
+
+        int targetLane = Mathf.Clamp(contract.targetLane, 0, 2);
+        return (targetLane + 1 + PositiveModulo(step, 2)) % 3;
+    }
+
+    private static int ResolveRiskLane(EchoContractData contract,
+        EchoEncounterKind kind, int step, int predictedLane)
+    {
+        if (kind == EchoEncounterKind.CounterTest)
+        {
+            int side = contract.type == EchoContractType.BreakLaneHabit
+                ? PositiveModulo(step, 2)
+                : 0;
+            return (predictedLane + 1 + side) % 3;
+        }
+
+        int preferred = Mathf.Clamp(contract.targetLane, 0, 2);
+        if (kind == EchoEncounterKind.RewriteChoice
+            || kind == EchoEncounterKind.FinaleFreeChoice)
+            preferred = (predictedLane + 1 + PositiveModulo(step, 2)) % 3;
+        if (preferred == predictedLane)
+            preferred = (predictedLane + 1 + PositiveModulo(step, 2)) % 3;
+        return preferred;
+    }
+
+    private static int RemainingLane(int first, int second)
+    {
+        for (int lane = 0; lane < 3; lane++)
+            if (lane != first && lane != second) return lane;
+        return (Mathf.Clamp(first, 0, 2) + 1) % 3;
+    }
+
+    private static ShadowAction ResolvePredictedAction(
+        EchoContractData contract, EchoEncounterKind kind)
+    {
+        ShadowAction action = kind == EchoEncounterKind.FinaleOldHabit
+            || kind == EchoEncounterKind.DetectionEvidence
+            || kind == EchoEncounterKind.RevealChoice
+            || kind == EchoEncounterKind.ResistanceTest
+                ? contract.learnedAction
+                : contract.predictionAction;
+        if (action == ShadowAction.Jump || action == ShadowAction.Slide)
+            return action;
+        ShadowAction target = ResolveTargetAction(contract);
+        return target == ShadowAction.Jump
+            ? ShadowAction.Slide : ShadowAction.Jump;
+    }
+
+    private static ShadowAction ResolveTargetAction(EchoContractData contract)
+    {
+        if (contract.targetAction == ShadowAction.Jump
+            || contract.targetAction == ShadowAction.Slide)
+            return contract.targetAction;
+        return contract.generation % 2 == 0
+            ? ShadowAction.Jump : ShadowAction.Slide;
+    }
+
+    private static int PositiveModulo(int value, int modulo)
+    {
+        int result = value % Mathf.Max(1, modulo);
+        return result < 0 ? result + modulo : result;
+    }
+
+    private void ClearScheduledEchoPhase()
+    {
+        ScheduledEchoPhase = EchoDuelPhase.None;
+        ScheduledEchoBoundary = -1f;
     }
 
     public static ShadowAIDirective BuildShadowDirective(

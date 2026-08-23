@@ -55,6 +55,15 @@ public class GameStateTests
     }
 
     [Test]
+    public void ScheduledFinishDistanceUsesCurrentPaceAndRequestedWindow()
+    {
+        float distance = GameManager.CalculateScheduledCourseDistance(
+            100f, 10f, 20f, 2f, 6f);
+
+        Assert.AreEqual(195f, distance, 0.001f);
+    }
+
+    [Test]
     public void ContractMarkersAreCountedSeparatelyFromOrdinaryCoins()
     {
         GameManager manager = Create<GameManager>("GameManager");

@@ -47,6 +47,12 @@ public sealed class AIDirectorDecisionSample
     public int safeLane;
     public int maxBlockedLanes;
     public bool shouldTurn;
+    public int echoEncounter;
+    public int echoPredictedLane;
+    public int echoSafeChoiceLane;
+    public int echoRiskChoiceLane;
+    public int echoPredictedAction;
+    public int echoTargetAction;
     public float segmentStartDistance;
     public float segmentEndDistance;
     public bool activated;
@@ -171,7 +177,7 @@ public sealed class AIRunTelemetryData
 
 public static class AIRunTelemetry
 {
-    public const int SchemaVersion = 7;
+    public const int SchemaVersion = 8;
     public const float StateSampleInterval = 0.25f;
     public const string CompletedTrainingReason = "finish_reached";
 
@@ -364,6 +370,12 @@ public static class AIRunTelemetry
             safeLane = plan.safeLane,
             maxBlockedLanes = plan.maxBlockedLanes,
             shouldTurn = plan.shouldTurn,
+            echoEncounter = (int)plan.echoEncounterKind,
+            echoPredictedLane = plan.echoPredictedLane,
+            echoSafeChoiceLane = plan.echoSafeChoiceLane,
+            echoRiskChoiceLane = plan.echoRiskChoiceLane,
+            echoPredictedAction = (int)plan.echoPredictedAction,
+            echoTargetAction = (int)plan.echoTargetAction,
             segmentStartDistance = Mathf.Max(0f, segmentStartDistance),
             segmentEndDistance = Mathf.Max(segmentStartDistance,
                 segmentEndDistance)

@@ -146,7 +146,7 @@ public sealed class UIExperienceTests
 
         EchoDuelViewData leading = EchoRunPresentation.BuildDuel(
             true, contract, 2.75f, 2, 2);
-        Assert.AreEqual("右侧路线 · 滑铲躲避", leading.contract);
+        Assert.AreEqual("AI预测已公开 · 打破旧习惯", leading.contract);
         Assert.AreEqual("稳定度 67%", leading.progress);
         Assert.AreEqual(2f / 3f, leading.progress01, 0.001f);
         Assert.AreEqual(EchoLeadState.Leading, leading.leadState);
@@ -186,7 +186,7 @@ public sealed class UIExperienceTests
     }
 
     [Test]
-    public void RhythmHudShowsTheNextRequiredAction()
+    public void RhythmHudDoesNotExposeTheNextRequiredAction()
     {
         var contract = new EchoContractData
         {
@@ -198,7 +198,8 @@ public sealed class UIExperienceTests
         EchoDuelViewData view = EchoRunPresentation.BuildDuel(
             true, contract, 0f, 2, 2);
 
-        StringAssert.Contains("下一次：跳跃", view.contract);
+        Assert.AreEqual("AI预测已公开 · 打破旧习惯", view.contract);
+        StringAssert.DoesNotContain("跳跃", view.contract);
     }
 
     [Test]

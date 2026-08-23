@@ -94,7 +94,7 @@ public class EchoHudDataTests
     }
 
     [Test]
-    public void LaneCounterattackTellsPlayerToAvoidThePredictedLane()
+    public void CounterattackShowsPredictionWithoutSolvingIt()
     {
         EchoContractData contract = Contract(0.55f, false);
         contract.targetLane = 2;
@@ -105,8 +105,65 @@ public class EchoHudDataTests
         EchoHudViewData view = EchoRunPresentation.BuildHud(true, contract, 0f,
             2, 2, 2, 2, 1f, EchoDuelPhase.Counterattack);
 
-        Assert.AreEqual("避开右侧路线", view.directiveShort);
+        Assert.AreEqual("让新预判失效", view.directiveShort);
         Assert.AreEqual("预判右侧路线", view.predictionShort);
+        StringAssert.DoesNotContain("右侧路线", view.directiveShort);
+    }
+
+    [Test]
+    public void RevealSeparatesAiPredictionFromPlayerDirective()
+    {
+        EchoContractData contract = Contract(0f, false);
+
+        EchoHudViewData view = EchoRunPresentation.BuildHud(true, contract, 0f,
+            2, 2, 2, 2, 1f, EchoDuelPhase.Reveal);
+
+        Assert.AreEqual("AI公开下注", view.directiveShort);
+        Assert.AreEqual("预判右侧路线", view.predictionShort);
+        Assert.AreNotEqual(view.directiveShort, view.predictionShort);
+    }
+
+    [Test]
+    public void FailedFinaleLocksContractInsteadOfOfferingSilentRecovery()
+    {
+        EchoContractData contract = Contract(0.65f, false);
+        contract.duelFailed = true;
+        contract.failurePhase = EchoDuelPhase.Resistance;
+
+        EchoHudViewData view = BuildFinale(contract);
+
+        Assert.AreEqual(EchoHudMode.FinaleFailed, view.mode);
+        Assert.AreEqual(EchoHudMeterKind.None, view.meterKind);
+        Assert.AreEqual("契约锁定 · 完成追逐", view.directiveShort);
+        Assert.AreEqual(0f, view.displayedMeter01);
+    }
+
+    [Test]
+    public void PendingTransitionShowsTheUpcomingPhaseGate()
+    {
+        EchoHudViewData view = EchoRunPresentation.BuildHud(true,
+            Contract(0f, false), 0f, 2, 2, 2, 2, 1f,
+            EchoDuelPhase.Detection, phaseTransitionPending: true,
+            pendingPhase: EchoDuelPhase.Reveal);
+
+        Assert.IsTrue(view.phaseTransitionPending);
+        Assert.AreEqual(EchoDuelPhase.Reveal, view.pendingPhase);
+        Assert.AreEqual("前方同步：暴露", view.directiveShort);
+    }
+
+    [Test]
+    public void RewriteHudShowsTheLiveEffectiveStyleProfile()
+    {
+        EchoHudViewData view = EchoRunPresentation.BuildHud(
+            true, Contract(1f, true), 0f, 2, 2,
+            duelPhase: EchoDuelPhase.Rewrite,
+            phaseProgress01: 0.5f,
+            rewriteStyleSummary: "路线多变 · 跳滑均衡 · 节奏多变");
+
+        Assert.AreEqual(EchoHudMode.Rewrite, view.mode);
+        Assert.AreEqual("路线多变 · 跳滑均衡 · 节奏多变",
+            view.directiveShort);
+        Assert.AreEqual(0.5f, view.displayedMeter01);
     }
 
     private static EchoHudViewData BuildFinale(EchoContractData contract)

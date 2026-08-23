@@ -12,7 +12,7 @@ public enum EchoContractType
 [Serializable]
 public sealed class EchoContractData
 {
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     public int version = CurrentVersion;
     public EchoContractType type;
@@ -33,6 +33,8 @@ public sealed class EchoContractData
     public ShadowAction predictionAction = ShadowAction.Keep;
     public bool completed;
     public bool won;
+    public bool duelFailed;
+    public EchoDuelPhase failurePhase;
     public bool exploratory;
     public int feedbackSequence;
     public string title = "";
@@ -64,6 +66,14 @@ public sealed class EchoContractData
             targetAction = ShadowAction.Keep;
         if (!Enum.IsDefined(typeof(ShadowAction), startingAction))
             startingAction = ShadowAction.Keep;
+        if ((type == EchoContractType.ChangeVerticalHabit
+             || type == EchoContractType.DisruptRhythm)
+            && learnedAction != ShadowAction.Jump
+            && learnedAction != ShadowAction.Slide
+            && (targetAction == ShadowAction.Jump
+                || targetAction == ShadowAction.Slide))
+            learnedAction = targetAction == ShadowAction.Jump
+                ? ShadowAction.Slide : ShadowAction.Jump;
         if (startingAction == ShadowAction.Keep
             && (type == EchoContractType.ChangeVerticalHabit
                 || type == EchoContractType.DisruptRhythm))
@@ -73,6 +83,12 @@ public sealed class EchoContractData
         if (type == EchoContractType.DisruptRhythm
             && targetAction == ShadowAction.Keep)
             targetAction = startingAction;
+        if ((type == EchoContractType.ChangeVerticalHabit
+             || type == EchoContractType.DisruptRhythm)
+            && learnedAction != ShadowAction.Jump
+            && learnedAction != ShadowAction.Slide)
+            learnedAction = targetAction == ShadowAction.Jump
+                ? ShadowAction.Slide : ShadowAction.Jump;
         if (sourceVersion < 3 && targetProgress <= 10f)
         {
             float legacyTarget = Mathf.Max(0.01f, targetProgress);
@@ -93,6 +109,9 @@ public sealed class EchoContractData
         completed = progress >= targetProgress || completed;
         if (!Enum.IsDefined(typeof(EchoDuelPhase), duelPhase))
             duelPhase = EchoDuelPhase.None;
+        if (!Enum.IsDefined(typeof(EchoDuelPhase), failurePhase))
+            failurePhase = EchoDuelPhase.None;
+        if (!duelFailed) failurePhase = EchoDuelPhase.None;
         if (duelPhase == EchoDuelPhase.None && type != EchoContractType.None)
             duelPhase = EchoDuelPhase.Detection;
         predictionLane = Mathf.Clamp(predictionLane, -1, 2);
@@ -125,6 +144,8 @@ public sealed class EchoContractData
         reset.predictionAction = reset.learnedAction;
         reset.completed = false;
         reset.won = false;
+        reset.duelFailed = false;
+        reset.failurePhase = EchoDuelPhase.None;
         reset.feedbackSequence = 0;
         reset.lastFeedback = "";
         if (reset.startingAction != ShadowAction.Keep)
@@ -258,7 +279,10 @@ public static class EchoContractPolicy
     private static EchoContractData CreateRhythmContract(
         PlayerStyleData style, int generation)
     {
-        ShadowAction first = ShadowAction.Jump;
+        ShadowAction learned = style.slideFrequency >= 0.5f
+            ? ShadowAction.Slide : ShadowAction.Jump;
+        ShadowAction first = learned == ShadowAction.Jump
+            ? ShadowAction.Slide : ShadowAction.Jump;
         int challengeLane = Mathf.Abs(generation) % 3;
         string rhythm = style.rhythmStability >= 0.65f
             ? "你的跳跃/滑铲节奏高度固定"
@@ -268,6 +292,8 @@ public static class EchoContractPolicy
             type = EchoContractType.DisruptRhythm,
             generation = Mathf.Max(1, generation),
             targetLane = challengeLane,
+            learnedAction = learned,
+            predictionAction = learned,
             startingAction = first,
             targetAction = first,
             targetProgress = 100f,
@@ -318,10 +344,10 @@ public static class EchoContractPolicy
 public sealed class EchoContractEvaluator
 {
     public EchoContractData Contract { get; }
+    public bool ScoringSuspended { get; private set; }
 
     private float _learnedLaneFeedbackTimer;
     private float _lastLaneMarkerDistance = float.NegativeInfinity;
-    private int _lastCounterLane = -1;
     private const float LaneMarkerSpacingSeconds = 4.5f;
     private const float CorrectLeadSeconds = 0.35f;
     private const float MistakeLeadSeconds = 0.2f;
@@ -360,11 +386,31 @@ public sealed class EchoContractEvaluator
                 SetFeedback("契约已重写：本阶段行为将更强地塑造下一代回声");
                 break;
             case EchoDuelPhase.Finale:
-                SetFeedback(Contract.completed
-                    ? "进入决胜：守住领先并完成终局组合"
-                    : "最终契约机会：在冲线前稳定新策略");
+                SetFeedback(Contract.duelFailed
+                    ? "契约锁定：反抗未完成，进入回声决胜追逐"
+                    : Contract.completed
+                        ? "进入决胜：守住领先并完成终局组合"
+                        : "最终契约机会：在冲线前稳定新策略");
                 break;
         }
+    }
+
+    public void SetScoringSuspended(bool suspended)
+    {
+        ScoringSuspended = suspended;
+    }
+
+    public void LockForFinale(EchoDuelPhase failurePhase)
+    {
+        if (Contract.type == EchoContractType.None) return;
+        Contract.duelFailed = true;
+        Contract.failurePhase = failurePhase;
+        Contract.completed = false;
+        Contract.counterattackActive = false;
+        ScoringSuspended = false;
+        SetFeedback(failurePhase == EchoDuelPhase.Counterattack
+            ? "反扑失败：契约锁定，进入决胜追逐"
+            : "反抗失败：契约锁定，进入决胜追逐");
     }
 
     public string BuildPredictionText(bool counterattack = true)
@@ -412,13 +458,15 @@ public sealed class EchoContractEvaluator
         float currentSpeed = 10f)
     {
         if (Contract.type != EchoContractType.BreakLaneHabit
-            || !CanChangeStability())
+            || Contract.completed || Contract.duelFailed || ScoringSuspended)
             return;
+        bool revealChoice = Contract.duelPhase == EchoDuelPhase.Reveal;
+        if (!revealChoice && !CanChangeStability()) return;
+
+        int predictedLane = Contract.predictionLane >= 0
+            ? Contract.predictionLane : Contract.learnedLane;
+        predictedLane = Mathf.Clamp(predictedLane, 0, 2);
         bool counterattack = Contract.initialBreakCompleted;
-        bool validLane = counterattack
-            ? lane != Contract.predictionLane && lane != _lastCounterLane
-            : lane == Contract.targetLane;
-        if (!validLane) return;
         float spacing = EchoTimeRules.MinimumSpacingDistance(
             LaneMarkerSpacingSeconds, currentSpeed);
         if (!float.IsNegativeInfinity(_lastLaneMarkerDistance)
@@ -426,12 +474,40 @@ public sealed class EchoContractEvaluator
             return;
 
         _lastLaneMarkerDistance = routeDistance;
-        _lastCounterLane = lane;
+        if (revealChoice)
+        {
+            if (lane == predictedLane)
+            {
+                AddShadowLead(0.35f, currentSpeed);
+                SetFeedback("公开预判命中：回声获得推进");
+            }
+            else
+            {
+                AddPlayerLead(0.2f, currentSpeed);
+                SetFeedback("公开预判失效：你获得反超窗口");
+            }
+            return;
+        }
+
+        bool validLane = lane != predictedLane;
+        if (!validLane)
+        {
+            ReduceStability(14f);
+            AddShadowLead(MistakeLeadSeconds, currentSpeed);
+            SetFeedback(counterattack
+                ? "回声施压：你重复了刚被识别的反制路线"
+                : "回声施压：你重复了被公开的预测路线");
+            return;
+        }
+
         AddStability(counterattack ? 24f : 34f,
             CorrectLeadSeconds, currentSpeed);
-        SetFeedback(counterattack
-            ? "预测失效：你没有把反抗变成新的固定路线"
-            : "预测失效：你主动选择了非习惯路线");
+        if (counterattack)
+        {
+            Contract.predictionLane = lane;
+            SetFeedback("预测失效：回声已把你的新路线列为下一次预判");
+        }
+        else SetFeedback("预测失效：你主动选择了非习惯路线");
         CompleteIfReady();
     }
 
@@ -443,7 +519,33 @@ public sealed class EchoContractEvaluator
             : obstacleType == ObstacleType.Low
                 ? ShadowAction.Slide
                 : ShadowAction.Keep;
-        if (action == ShadowAction.Keep || !CanChangeStability()) return;
+        if (action == ShadowAction.Keep) return;
+
+        if (Contract.duelPhase == EchoDuelPhase.Reveal
+            && !Contract.completed && !Contract.duelFailed
+            && !ScoringSuspended
+            && (Contract.type == EchoContractType.ChangeVerticalHabit
+                || Contract.type == EchoContractType.DisruptRhythm))
+        {
+            ShadowAction predicted = Contract.predictionAction;
+            if (predicted != ShadowAction.Jump
+                && predicted != ShadowAction.Slide)
+                predicted = Contract.targetAction == ShadowAction.Jump
+                    ? ShadowAction.Slide : ShadowAction.Jump;
+            if (action == predicted)
+            {
+                AddShadowLead(0.35f, currentSpeed);
+                SetFeedback("公开预判命中：回声复制了你的旧动作");
+            }
+            else
+            {
+                AddPlayerLead(0.2f, currentSpeed);
+                SetFeedback("公开预判失效：你的动作选择骗过了回声");
+            }
+            return;
+        }
+
+        if (!CanChangeStability()) return;
 
         if (Contract.type == EchoContractType.ChangeVerticalHabit)
         {
@@ -506,7 +608,9 @@ public sealed class EchoContractEvaluator
 
     public void RecordHit(float currentSpeed = 10f)
     {
-        if (Contract.type == EchoContractType.None) return;
+        if (Contract.type == EchoContractType.None || ScoringSuspended
+            || Contract.duelFailed)
+            return;
         ReduceStability(18f);
         AddShadowLead(0.4f, currentSpeed);
         SetFeedback("回声施压：碰撞让契约重新收紧");
@@ -555,7 +659,6 @@ public sealed class EchoContractEvaluator
         if (Contract.type == EchoContractType.BreakLaneHabit)
         {
             Contract.predictionLane = Contract.targetLane;
-            _lastCounterLane = Contract.predictionLane;
         }
         else
         {
@@ -567,7 +670,8 @@ public sealed class EchoContractEvaluator
 
     private bool CanChangeStability()
     {
-        if (Contract.completed) return false;
+        if (Contract.completed || Contract.duelFailed || ScoringSuspended)
+            return false;
         return Contract.duelPhase == EchoDuelPhase.Resistance
                || Contract.duelPhase == EchoDuelPhase.Counterattack
                || Contract.duelPhase == EchoDuelPhase.Finale;
@@ -592,6 +696,12 @@ public sealed class EchoContractEvaluator
     private void AddShadowLead(float seconds, float currentSpeed)
     {
         Contract.shadowProgressBonus += EchoTimeRules.SecondsToDistance(
+            seconds, currentSpeed);
+    }
+
+    private void AddPlayerLead(float seconds, float currentSpeed)
+    {
+        Contract.playerProgressBonus += EchoTimeRules.SecondsToDistance(
             seconds, currentSpeed);
     }
 
