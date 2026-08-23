@@ -1,8 +1,10 @@
 using NUnit.Framework;
+using UnityEditor;
 using UnityEngine;
 
 public class VisualFoundationTests
 {
+    private const string BrandingRoot = "Assets/Art/Branding/";
     private GameObject _controllerObject;
 
     [TearDown]
@@ -23,6 +25,38 @@ public class VisualFoundationTests
             VisualQualityController.DefaultForPlatform(RuntimePlatform.WindowsPlayer));
         Assert.AreEqual(VisualQuality.High,
             VisualQualityController.DefaultForPlatform(RuntimePlatform.WindowsEditor));
+    }
+
+    [Test]
+    public void WindowsIconAndSplashUseEchoRunBranding()
+    {
+        Texture2D icon = AssetDatabase.LoadAssetAtPath<Texture2D>(
+            BrandingRoot + "EchoRunAppIcon.png");
+        Sprite background = AssetDatabase.LoadAssetAtPath<Sprite>(
+            BrandingRoot + "EchoRunSplashLandscape.png");
+        Sprite logo = AssetDatabase.LoadAssetAtPath<Sprite>(
+            BrandingRoot + "EchoRunSplashLogo.png");
+
+        Assert.IsNotNull(icon);
+        Assert.GreaterOrEqual(icon.width, 1024);
+        Assert.GreaterOrEqual(icon.height, 1024);
+        Assert.IsNotNull(background);
+        Assert.GreaterOrEqual(background.texture.width, 1600);
+        Assert.GreaterOrEqual(background.texture.height, 900);
+        Assert.IsNotNull(logo);
+
+        Texture2D[] icons = PlayerSettings.GetIconsForTargetGroup(
+            BuildTargetGroup.Standalone, IconKind.Application);
+        Assert.IsNotEmpty(icons);
+        foreach (Texture2D platformIcon in icons)
+            Assert.AreSame(icon, platformIcon);
+
+        Assert.AreSame(background, PlayerSettings.SplashScreen.background);
+        Assert.IsTrue(PlayerSettings.SplashScreen.show);
+        PlayerSettings.SplashScreenLogo[] logos =
+            PlayerSettings.SplashScreen.logos;
+        Assert.AreEqual(1, logos.Length);
+        Assert.AreSame(logo, logos[0].logo);
     }
 
     [Test]
@@ -124,7 +158,7 @@ public class VisualFoundationTests
     }
 
     [Test]
-    public void RuntimeSkyKeepsCityPanoramaAndBlendsItsWrapBoundary()
+    public void RuntimeSkyMapsConceptArtHorizonWithoutDarkGroundOverride()
     {
         Material material = WorldStyler.CreateSeamlessSkyMaterial();
         try
@@ -138,6 +172,11 @@ public class VisualFoundationTests
             Assert.NotNull(material.GetTexture("_MainTex"));
             Assert.That(material.GetFloat("_SeamBlend"),
                 Is.InRange(0.001f, 0.10f));
+            Assert.That(material.GetFloat("_HorizonTexY"),
+                Is.InRange(0.20f, 0.30f));
+            Assert.IsFalse(material.HasProperty("_GroundFadeStart"));
+            Assert.IsFalse(material.HasProperty("_GroundFadeEnd"));
+            Assert.IsFalse(material.HasProperty("_GroundColor"));
         }
         finally
         {

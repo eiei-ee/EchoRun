@@ -17,6 +17,12 @@ public class BuildConfig
     const string CompanyName = "Eiei-ee";
     const string ProductName = "EchoRun";
     const string PublicWebGLUrl = EchoRunVersion.PublicWebGLUrl;
+    const string AppIconPath =
+        "Assets/Art/Branding/EchoRunAppIcon.png";
+    const string SplashBackgroundPath =
+        "Assets/Art/Branding/EchoRunSplashLandscape.png";
+    const string SplashLogoPath =
+        "Assets/Art/Branding/EchoRunSplashLogo.png";
 
     [System.Serializable]
     sealed class BuildArtifactInfo
@@ -692,12 +698,101 @@ public class BuildConfig
         PlayerSettings.companyName = CompanyName;
         PlayerSettings.productName = ProductName;
         PlayerSettings.bundleVersion = EchoRunVersion.Current;
+        ConfigureBranding();
 
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Android, BundleId);
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.WebGL, BundleId);
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.iOS, BundleId);
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Standalone, BundleId);
         PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.WeixinMiniGame, BundleId);
+    }
+
+    [MenuItem("Tools/Install EchoRun Branding")]
+    public static void InstallBranding()
+    {
+        ConfigureBranding();
+        AssetDatabase.SaveAssets();
+        Debug.Log("EchoRun icon and splash branding installed.");
+    }
+
+    static void ConfigureBranding()
+    {
+        ConfigureBrandTexture(AppIconPath, false, 1024, true);
+        ConfigureBrandTexture(SplashBackgroundPath, true, 2048, false);
+        ConfigureBrandTexture(SplashLogoPath, true, 2048, true);
+
+        Texture2D icon = AssetDatabase.LoadAssetAtPath<Texture2D>(AppIconPath);
+        Sprite background = AssetDatabase.LoadAssetAtPath<Sprite>(
+            SplashBackgroundPath);
+        Sprite logo = AssetDatabase.LoadAssetAtPath<Sprite>(SplashLogoPath);
+        if (icon == null || background == null || logo == null)
+        {
+            throw new BuildFailedException(
+                "EchoRun branding assets are missing or not importable.");
+        }
+
+        int iconCount = PlayerSettings.GetIconSizesForTargetGroup(
+            BuildTargetGroup.Standalone, IconKind.Application).Length;
+        Texture2D[] icons = new Texture2D[Mathf.Max(1, iconCount)];
+        for (int i = 0; i < icons.Length; i++) icons[i] = icon;
+        PlayerSettings.SetIconsForTargetGroup(
+            BuildTargetGroup.Standalone, icons, IconKind.Application);
+
+        PlayerSettings.SplashScreen.show = true;
+        PlayerSettings.SplashScreen.showUnityLogo = true;
+        PlayerSettings.SplashScreen.background = background;
+        PlayerSettings.SplashScreen.backgroundPortrait = null;
+        PlayerSettings.SplashScreen.backgroundColor =
+            new Color(0.012f, 0.035f, 0.070f, 1f);
+        PlayerSettings.SplashScreen.blurBackgroundImage = false;
+        PlayerSettings.SplashScreen.overlayOpacity = 0.5f;
+        PlayerSettings.SplashScreen.animationMode =
+            PlayerSettings.SplashScreen.AnimationMode.Static;
+        PlayerSettings.SplashScreen.unityLogoStyle =
+            PlayerSettings.SplashScreen.UnityLogoStyle.LightOnDark;
+        PlayerSettings.SplashScreen.drawMode =
+            PlayerSettings.SplashScreen.DrawMode.TuanjieLogoBelow;
+        PlayerSettings.SplashScreen.logos = new[]
+        {
+            PlayerSettings.SplashScreenLogo.Create(2f, logo)
+        };
+    }
+
+    static void ConfigureBrandTexture(string path, bool sprite,
+        int maxTextureSize, bool alphaIsTransparency)
+    {
+        TextureImporter importer = AssetImporter.GetAtPath(path)
+            as TextureImporter;
+        if (importer == null)
+        {
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
+            importer = AssetImporter.GetAtPath(path) as TextureImporter;
+        }
+        if (importer == null)
+            throw new BuildFailedException(
+                "Unable to configure branding texture: " + path);
+
+        TextureImporterType textureType = sprite
+            ? TextureImporterType.Sprite : TextureImporterType.Default;
+        bool changed = importer.textureType != textureType
+                       || importer.mipmapEnabled
+                       || importer.npotScale != TextureImporterNPOTScale.None
+                       || importer.maxTextureSize != maxTextureSize
+                       || importer.textureCompression
+                           != TextureImporterCompression.CompressedHQ
+                       || importer.compressionQuality != 90
+                       || importer.alphaIsTransparency != alphaIsTransparency;
+        if (!changed) return;
+
+        importer.textureType = textureType;
+        if (sprite) importer.spriteImportMode = SpriteImportMode.Single;
+        importer.mipmapEnabled = false;
+        importer.npotScale = TextureImporterNPOTScale.None;
+        importer.maxTextureSize = maxTextureSize;
+        importer.textureCompression = TextureImporterCompression.CompressedHQ;
+        importer.compressionQuality = 90;
+        importer.alphaIsTransparency = alphaIsTransparency;
+        importer.SaveAndReimport();
     }
 
     static void ConfigureAndroid()

@@ -4,9 +4,10 @@ Shader "EchoRun/SeamlessPanoramicSky"
     {
         _MainTex ("Panorama", 2D) = "grey" {}
         _Tint ("Tint Color", Color) = (.5, .5, .5, 1)
-        _Exposure ("Exposure", Range(0, 8)) = 1.0
+        _Exposure ("Exposure", Range(0, 8)) = 0.54
         _Rotation ("Rotation", Range(0, 360)) = 0
         _SeamBlend ("Seam Blend", Range(0.001, 0.1)) = 0.07
+        _HorizonTexY ("Source Horizon Height", Range(0.1, 0.45)) = 0.24
     }
 
     SubShader
@@ -29,6 +30,7 @@ Shader "EchoRun/SeamlessPanoramicSky"
             half _Exposure;
             float _Rotation;
             float _SeamBlend;
+            float _HorizonTexY;
 
             struct appdata
             {
@@ -73,6 +75,16 @@ Shader "EchoRun/SeamlessPanoramicSky"
             {
                 float2 uv = ToRadialCoords(input.direction);
                 uv.x = frac(uv.x);
+
+                // EchoSky is a perspective concept painting, not a true
+                // equirectangular panorama. Map the painting's authored
+                // horizon to the skybox horizon, then use its own blue ground
+                // below it. This avoids the previous hard dark hemisphere.
+                float upperAmount = saturate((uv.y - 0.5) * 2.0);
+                float lowerAmount = saturate(uv.y * 2.0);
+                uv.y = uv.y >= 0.5
+                    ? lerp(_HorizonTexY, 1.0, upperAmount)
+                    : lerp(0.0, _HorizonTexY, lowerAmount);
                 uv.y = saturate(uv.y);
 
                 // The source artwork is not authored as a seamless panorama.
@@ -89,6 +101,7 @@ Shader "EchoRun/SeamlessPanoramicSky"
                     0.0, max(_SeamBlend, 0.001), edgeDistance);
                 half4 color = lerp(city, (city + oppositeEdge) * 0.5, seamWeight);
                 color.rgb *= _Tint.rgb * unity_ColorSpaceDouble.rgb * _Exposure;
+
                 color.a = 1.0;
                 return color;
             }

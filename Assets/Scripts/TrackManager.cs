@@ -1283,8 +1283,19 @@ public class TrackManager : MonoBehaviour
 
     void EnsureTurnCoverage(GameObject segment, int turnDirection)
     {
-        if (segment == null || segment.transform.Find("RuntimeTurnCoverage") != null)
+        if (segment == null)
             return;
+
+        Transform entryStrip = segment.transform.Find("EntryStrip");
+        Transform exitStrip = segment.transform.Find("ExitStrip");
+        if (entryStrip != null && exitStrip != null)
+        {
+            ConfigureAuthoredTurnSurface(entryStrip, true, turnDirection);
+            ConfigureAuthoredTurnSurface(exitStrip, false, turnDirection);
+            return;
+        }
+
+        if (segment.transform.Find("RuntimeTurnCoverage") != null) return;
 
         int layer = LayerMask.NameToLayer("Ground");
         if (layer < 0) layer = segment.layer;
@@ -1294,23 +1305,63 @@ public class TrackManager : MonoBehaviour
         coverage.transform.SetParent(segment.transform, false);
 
         CreateTurnSurface("EntryCoverage", coverage.transform,
-            new Vector3(0f, -0.15f, segmentLength * 0.5f),
+            new Vector3(0f, -0.15f,
+                TrackGeometryStandards.TurnEntrySurfaceCenter(segmentLength)),
             Quaternion.identity,
             new Vector3(TrackGeometryStandards.VisualRoadWidth, 0.3f,
-                segmentLength), layer);
+                TrackGeometryStandards.TurnEntrySurfaceLength(segmentLength)),
+            layer);
         // Exit strip fills only the gap between the turn and the following
         // straight. Extending it under that straight creates coplanar overlap,
         // which z-fights across the entire first road block after every turn.
-        const float roadHalfWidth = TrackGeometryStandards.VisualRoadHalfWidth;
-        float nextStraightNearEdge = segmentLength * 0.5f;
-        float exitLength = nextStraightNearEdge - roadHalfWidth;
-        float exitCenterX = roadHalfWidth + exitLength * 0.5f;
+        float exitLength = TrackGeometryStandards.TurnExitSurfaceLength(
+            segmentLength);
+        float exitCenterX = TrackGeometryStandards.TurnExitSurfaceCenter(
+            segmentLength);
         CreateTurnSurface("ExitCoverage", coverage.transform,
             new Vector3(turnDirection * exitCenterX, -0.15f,
                 segmentLength * 0.5f),
             Quaternion.Euler(0f, 90f, 0f),
             new Vector3(TrackGeometryStandards.VisualRoadWidth, 0.3f,
                 exitLength), layer);
+    }
+
+    void ConfigureAuthoredTurnSurface(Transform surface, bool entry,
+        int turnDirection)
+    {
+        float length = entry
+            ? TrackGeometryStandards.TurnEntrySurfaceLength(segmentLength)
+            : TrackGeometryStandards.TurnExitSurfaceLength(segmentLength);
+        Vector3 position = surface.localPosition;
+        Vector3 scale = surface.localScale;
+        scale.x = TrackGeometryStandards.VisualRoadWidth / 10f;
+        scale.z = length / 10f;
+
+        if (entry)
+        {
+            position.x = 0f;
+            position.z = TrackGeometryStandards.TurnEntrySurfaceCenter(
+                segmentLength);
+            surface.localRotation = Quaternion.identity;
+        }
+        else
+        {
+            position.x = turnDirection
+                         * TrackGeometryStandards.TurnExitSurfaceCenter(
+                             segmentLength);
+            position.z = segmentLength * 0.5f;
+            surface.localRotation = Quaternion.Euler(0f, 90f, 0f);
+        }
+
+        surface.localPosition = position;
+        surface.localScale = scale;
+        BoxCollider collider = surface.GetComponent<BoxCollider>();
+        if (collider != null)
+        {
+            collider.size = new Vector3(
+                TrackGeometryStandards.WalkableWidth / scale.x,
+                collider.size.y, 10f);
+        }
     }
 
     static void CreateTurnSurface(string name, Transform parent, Vector3 localPosition,

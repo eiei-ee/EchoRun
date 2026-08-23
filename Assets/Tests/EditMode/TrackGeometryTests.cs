@@ -32,8 +32,11 @@ public sealed class TrackGeometryTests
         GameObject prefab = LoadPrefab(path);
 
         AssertRoadRootAndLanes(prefab);
-        AssertRoadSurface(prefab.transform.Find("EntryStrip"));
-        AssertRoadSurface(prefab.transform.Find("ExitStrip"));
+        Transform entry = prefab.transform.Find("EntryStrip");
+        Transform exit = prefab.transform.Find("ExitStrip");
+        AssertRoadWidth(entry);
+        AssertRoadWidth(exit);
+        AssertTurnJoinBounds(entry, exit);
         Assert.AreEqual(TrackGeometryStandards.EdgeRailOffset,
             Mathf.Abs(FindDescendant(prefab.transform, "TurnEntryRail")
                 .localPosition.x), 0.001f);
@@ -64,9 +67,7 @@ public sealed class TrackGeometryTests
 
     private static void AssertRoadSurface(Transform surface)
     {
-        Assert.NotNull(surface);
-        Assert.AreEqual(TrackGeometryStandards.VisualRoadWidth,
-            surface.localScale.x * 10f, 0.001f);
+        AssertRoadWidth(surface);
         Assert.AreEqual(20f, surface.localScale.z * 10f, 0.001f);
 
         BoxCollider collider = surface.GetComponent<BoxCollider>();
@@ -74,6 +75,48 @@ public sealed class TrackGeometryTests
         Assert.AreEqual(TrackGeometryStandards.WalkableWidth,
             collider.size.x * surface.localScale.x, 0.001f);
         Assert.AreEqual(20f, collider.size.z * surface.localScale.z, 0.001f);
+    }
+
+    private static void AssertRoadWidth(Transform surface)
+    {
+        Assert.NotNull(surface);
+        Assert.AreEqual(TrackGeometryStandards.VisualRoadWidth,
+            surface.localScale.x * 10f, 0.001f);
+
+        BoxCollider collider = surface.GetComponent<BoxCollider>();
+        Assert.NotNull(collider);
+        Assert.AreEqual(TrackGeometryStandards.WalkableWidth,
+            collider.size.x * surface.localScale.x, 0.001f);
+    }
+
+    private static void AssertTurnJoinBounds(Transform entry, Transform exit)
+    {
+        float segmentLength = TrackGeometryStandards.StandardSegmentLength;
+        float entryLength = entry.localScale.z * 10f;
+        float entryNear = entry.localPosition.z - entryLength * 0.5f;
+        float entryFar = entry.localPosition.z + entryLength * 0.5f;
+        Assert.AreEqual(0f, entryNear, 0.001f,
+            "The turn entry must touch the previous straight without overlap.");
+        Assert.AreEqual(segmentLength * 0.5f
+                        + TrackGeometryStandards.VisualRoadHalfWidth,
+            entryFar, 0.001f,
+            "The entry may cover only the corner square, not continue as a road arm.");
+
+        float exitLength = exit.localScale.z * 10f;
+        float exitCenter = Mathf.Abs(exit.localPosition.x);
+        Assert.AreEqual(TrackGeometryStandards.VisualRoadHalfWidth,
+            exitCenter - exitLength * 0.5f, 0.001f,
+            "The exit must begin at the corner square's outer edge.");
+        Assert.AreEqual(segmentLength * 0.5f,
+            exitCenter + exitLength * 0.5f, 0.001f,
+            "The exit must stop at the following straight's near edge.");
+
+        BoxCollider entryCollider = entry.GetComponent<BoxCollider>();
+        BoxCollider exitCollider = exit.GetComponent<BoxCollider>();
+        Assert.AreEqual(entryLength,
+            entryCollider.size.z * entry.localScale.z, 0.001f);
+        Assert.AreEqual(exitLength,
+            exitCollider.size.z * exit.localScale.z, 0.001f);
     }
 
     private static Transform FindDescendant(Transform root, string name)

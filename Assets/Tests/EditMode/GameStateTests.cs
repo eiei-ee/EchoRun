@@ -2544,6 +2544,14 @@ public class GameStateTests
         float exitHalfLength = exit.localScale.z * 0.5f;
         float coverageJoin = entry.localScale.x * 0.5f;
         float nextStraightNearEdge = manager.segmentLength * 0.5f;
+        float entryHalfLength = entry.localScale.z * 0.5f;
+
+        Assert.AreEqual(0f,
+            entry.localPosition.z - entryHalfLength, 0.001f,
+            "Entry coverage must start at the previous straight's far edge.");
+        Assert.AreEqual(nextStraightNearEdge + coverageJoin,
+            entry.localPosition.z + entryHalfLength, 0.001f,
+            "Entry coverage may extend only across the corner square.");
 
         Assert.AreEqual(coverageJoin,
             exitCenter - exitHalfLength, 0.001f,

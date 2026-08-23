@@ -90,6 +90,10 @@ public class GameManager : MonoBehaviour
 
     private void EnsureSceneRuntimeServices()
     {
+        // RuntimeInitializeOnLoadMethod runs for the player's initial scene,
+        // not for every SceneManager reload. Restart destroys the scene-owned
+        // styler, so recreate it here before TrackManager.Start builds pools.
+        EnsureSceneService<WorldStyler>("WorldStyler_Runtime");
         EnsureSceneService<TrackManager>("TrackManager_Runtime");
         EnsureSceneService<PowerUpShopUI>("Power Up Shop UI");
         EnsureSceneService<AITrainingDashboardUI>("AI Training Dashboard UI");

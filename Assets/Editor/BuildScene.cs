@@ -399,10 +399,11 @@ public class BuildScene
         }
 
         material.SetTexture("_MainTex", texture);
-        material.SetColor("_Tint", new Color(0.56f, 0.65f, 0.74f));
-        material.SetFloat("_Exposure", 0.52f);
+        material.SetColor("_Tint", new Color(0.52f, 0.60f, 0.70f));
+        material.SetFloat("_Exposure", 0.54f);
         material.SetFloat("_Rotation", 0f);
         material.SetFloat("_SeamBlend", 0.07f);
+        material.SetFloat("_HorizonTexY", 0.24f);
         EditorUtility.SetDirty(material);
     }
 
@@ -883,6 +884,38 @@ public class BuildScene
         CreateTurnPrefab("Assets/Prefabs/TurnSegment_Left.prefab", "TurnSegment_Left", -1, trackMat, lineMat, groundLayer);
     }
 
+    [MenuItem("Tools/EchoRun/Fix Turn Road Joins")]
+    public static void FixTurnRoadJoins()
+    {
+        FixTurnRoadJoinPrefab("Assets/Prefabs/TurnSegment_Left.prefab", -1);
+        FixTurnRoadJoinPrefab("Assets/Prefabs/TurnSegment_Right.prefab", 1);
+        AssetDatabase.SaveAssets();
+        Debug.Log("Turn road joins trimmed to the L-shaped track standard.");
+    }
+
+    static void FixTurnRoadJoinPrefab(string path, int turnDir)
+    {
+        GameObject root = PrefabUtility.LoadPrefabContents(path);
+        try
+        {
+            ConfigureTurnRoadSurface(root.transform.Find("EntryStrip"),
+                true, turnDir);
+            ConfigureTurnRoadSurface(root.transform.Find("ExitStrip"),
+                false, turnDir);
+
+            Transform runtimeCoverage = root.transform.Find(
+                "RuntimeTurnCoverage");
+            if (runtimeCoverage != null)
+                Object.DestroyImmediate(runtimeCoverage.gameObject);
+
+            PrefabUtility.SaveAsPrefabAsset(root, path);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+    }
+
     [MenuItem("Tools/EchoRun/Bake Environment Variants")]
     public static void BakeEnvironmentVariants()
     {
@@ -892,11 +925,11 @@ public class BuildScene
 
         Material[] palette =
         {
-            CreateMaterial("EchoStructure", new Color(0.11f, 0.16f, 0.24f),
-                new Color(0.006f, 0.014f, 0.028f),
+            CreateMaterial("EchoStructure", new Color(0.14f, 0.20f, 0.29f),
+                new Color(0.008f, 0.018f, 0.034f),
                 WorldStyler.StructureMetallic, WorldStyler.StructureSmoothness),
-            CreateMaterial("EchoDepth", new Color(0.035f, 0.06f, 0.105f),
-                new Color(0.003f, 0.008f, 0.018f), 0.10f, 0.27f),
+            CreateMaterial("EchoDepth", new Color(0.055f, 0.085f, 0.14f),
+                new Color(0.004f, 0.010f, 0.020f), 0.10f, 0.27f),
             CreateMaterial("EchoCyan", new Color(0.22f, 0.84f, 1.00f),
                 new Color(0.020f, 0.34f, 0.56f), 0.24f, 0.68f),
             CreateMaterial("EchoCoral", new Color(1.00f, 0.40f, 0.35f),
@@ -1076,32 +1109,49 @@ public class BuildScene
         seg.layer = groundLayer;
         seg.AddComponent<TrackSegmentData>();
 
-        // Cross-shape geometry: both strips are full segment-length so there are no gaps
-        // Entry strip: full 20 units Z, covering from previous straight through the corner
+        float segmentLength = TrackGeometryStandards.StandardSegmentLength;
+        float entryLength = TrackGeometryStandards.TurnEntrySurfaceLength(
+            segmentLength);
+        float exitLength = TrackGeometryStandards.TurnExitSurfaceLength(
+            segmentLength);
+
+        // L-shaped geometry: the entry owns the corner square while the exit
+        // stops at the following straight's near edge. No arm overhangs a join.
         GameObject entry = GameObject.CreatePrimitive(PrimitiveType.Plane);
         entry.name = "EntryStrip";
         entry.transform.SetParent(seg.transform);
-        entry.transform.localPosition = new Vector3(0, 0.05f, 10f);
-        entry.transform.localScale = new Vector3(1.5f, 1f, 2f); // 20 units in Z (full segment)
+        entry.transform.localPosition = new Vector3(0f, 0.05f,
+            TrackGeometryStandards.TurnEntrySurfaceCenter(segmentLength));
+        entry.transform.localScale = new Vector3(
+            TrackGeometryStandards.VisualRoadWidth / 10f, 1f,
+            entryLength / 10f);
         entry.layer = groundLayer;
         Object.DestroyImmediate(entry.GetComponent<MeshCollider>());
         BoxCollider entryCol = entry.AddComponent<BoxCollider>();
         entryCol.center = Vector3.zero;
-        entryCol.size = new Vector3(9f, 0.3f, 20f);
+        entryCol.size = new Vector3(
+            TrackGeometryStandards.WalkableWidth / entry.transform.localScale.x,
+            0.3f, 10f);
         if (trackMat != null) entry.GetComponent<MeshRenderer>().sharedMaterial = trackMat;
 
-        // Exit strip: full 20 units in exit direction, starting from corner
+        // The entry surface already covers the square around the corner.
         GameObject exitStrip = GameObject.CreatePrimitive(PrimitiveType.Plane);
         exitStrip.name = "ExitStrip";
         exitStrip.transform.SetParent(seg.transform);
-        exitStrip.transform.localPosition = new Vector3(turnDir * 10f, 0.05f, 10f); // centered at half the exit length
+        exitStrip.transform.localPosition = new Vector3(
+            turnDir * TrackGeometryStandards.TurnExitSurfaceCenter(segmentLength),
+            0.05f, segmentLength * 0.5f);
         exitStrip.transform.localRotation = Quaternion.Euler(0, 90f, 0);
-        exitStrip.transform.localScale = new Vector3(1.5f, 1f, 2f); // 20 units long in exit direction
+        exitStrip.transform.localScale = new Vector3(
+            TrackGeometryStandards.VisualRoadWidth / 10f, 1f,
+            exitLength / 10f);
         exitStrip.layer = groundLayer;
         Object.DestroyImmediate(exitStrip.GetComponent<MeshCollider>());
         BoxCollider exitCol = exitStrip.AddComponent<BoxCollider>();
         exitCol.center = Vector3.zero;
-        exitCol.size = new Vector3(9f, 0.3f, 20f);
+        exitCol.size = new Vector3(
+            TrackGeometryStandards.WalkableWidth
+            / exitStrip.transform.localScale.x, 0.3f, 10f);
         if (trackMat != null) exitStrip.GetComponent<MeshRenderer>().sharedMaterial = trackMat;
 
         // Lane markers on entry strip
@@ -1124,6 +1174,49 @@ public class BuildScene
 
         PrefabUtility.SaveAsPrefabAsset(seg, path);
         Object.DestroyImmediate(seg);
+    }
+
+    static void ConfigureTurnRoadSurface(Transform surface, bool entry,
+        int turnDir)
+    {
+        if (surface == null)
+            throw new System.InvalidOperationException(
+                "Turn prefab is missing an authored road surface.");
+
+        float segmentLength = TrackGeometryStandards.StandardSegmentLength;
+        float length = entry
+            ? TrackGeometryStandards.TurnEntrySurfaceLength(segmentLength)
+            : TrackGeometryStandards.TurnExitSurfaceLength(segmentLength);
+        Vector3 position = surface.localPosition;
+        Vector3 scale = surface.localScale;
+        scale.x = TrackGeometryStandards.VisualRoadWidth / 10f;
+        scale.z = length / 10f;
+
+        if (entry)
+        {
+            position.x = 0f;
+            position.z = TrackGeometryStandards.TurnEntrySurfaceCenter(
+                segmentLength);
+            surface.localRotation = Quaternion.identity;
+        }
+        else
+        {
+            position.x = turnDir
+                         * TrackGeometryStandards.TurnExitSurfaceCenter(
+                             segmentLength);
+            position.z = segmentLength * 0.5f;
+            surface.localRotation = Quaternion.Euler(0f, 90f, 0f);
+        }
+
+        surface.localPosition = position;
+        surface.localScale = scale;
+        BoxCollider collider = surface.GetComponent<BoxCollider>();
+        if (collider != null)
+        {
+            collider.size = new Vector3(
+                TrackGeometryStandards.WalkableWidth / scale.x,
+                collider.size.y, 10f);
+        }
     }
 
     // ── track manager wiring ───────────────────────────

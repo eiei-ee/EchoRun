@@ -85,6 +85,125 @@ public class EnvironmentVariantTests
     }
 
     [Test]
+    public void StraightSegmentUsesAuthoredDistrictsInEveryVariantAndNoBoxSkyline()
+    {
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+            "Assets/Prefabs/TrackSegment.prefab");
+        Assert.NotNull(prefab);
+        Transform environment = prefab.transform.Find("EchoEnvironment");
+        Assert.NotNull(environment);
+
+        int authoredStationCount = 0;
+        int authoredDistrictCount = 0;
+        foreach (Transform child in
+                 environment.GetComponentsInChildren<Transform>(true))
+        {
+            Assert.AreNotEqual("SilhouetteBlock", child.name,
+                "Procedural skyline blocks must not obscure the authored sky city.");
+            if (child.name == "SideEnergyStation")
+            {
+                authoredStationCount++;
+                Assert.GreaterOrEqual(Mathf.Abs(child.localPosition.x), 14f);
+                Assert.AreEqual("Variant_A_CityLeft",
+                    child.parent.name,
+                    "The station is secondary dressing beside the main city module.");
+            }
+            else if (child.name == "MegacityDistrictA" ||
+                     child.name == "MegacityDistrictB")
+            {
+                authoredDistrictCount++;
+                Assert.GreaterOrEqual(Mathf.Abs(child.localPosition.x), 13f);
+            }
+
+            Assert.AreNotEqual("MidStructureFallback", child.name,
+                "The baked production prefab must use the authored station asset.");
+        }
+
+        Assert.AreEqual(1, authoredStationCount,
+            "The old station is retained only as a secondary accent.");
+        Assert.AreEqual(4, authoredDistrictCount,
+            "Every straight visual variant must contain authored city massing.");
+
+        Transform variants = environment.Find("VisualVariants");
+        foreach (Transform variant in variants)
+        {
+            bool hasDistrict = false;
+            foreach (Transform child in
+                     variant.GetComponentsInChildren<Transform>(true))
+            {
+                if (child.name == "MegacityDistrictA" ||
+                    child.name == "MegacityDistrictB")
+                    hasDistrict = true;
+            }
+
+            Assert.IsTrue(hasDistrict,
+                variant.name + " must present an authored city module.");
+        }
+    }
+
+    [Test]
+    public void AuthoredSideEnergyStationUsesPersistentPaletteAndNoColliders()
+    {
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+            "Assets/Resources/Art/Environment/EchoSideEnergyStation.prefab");
+        Assert.NotNull(prefab);
+        Assert.AreEqual(0, prefab.GetComponentsInChildren<Collider>(true).Length);
+
+        Renderer[] renderers = prefab.GetComponentsInChildren<Renderer>(true);
+        Assert.AreEqual(4, renderers.Length,
+            "The station should stay batched to one renderer per palette material.");
+        foreach (Renderer renderer in renderers)
+        {
+            foreach (Material material in renderer.sharedMaterials)
+            {
+                Assert.NotNull(material, renderer.name);
+                string path = AssetDatabase.GetAssetPath(material);
+                StringAssert.StartsWith("Assets/Prefabs/Materials/Echo", path,
+                    renderer.name + " must use the persistent Echo palette.");
+            }
+        }
+    }
+
+    [TestCase("Assets/Resources/Art/Environment/EchoMegacityDistrictA.prefab")]
+    [TestCase("Assets/Resources/Art/Environment/EchoMegacityDistrictB.prefab")]
+    public void AuthoredMegacityDistrictUsesFiveMaterialBatchesAndNoColliders(
+        string prefabPath)
+    {
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+        Assert.NotNull(prefab, prefabPath);
+        Assert.AreEqual(0, prefab.GetComponentsInChildren<Collider>(true).Length);
+
+        Renderer[] renderers = prefab.GetComponentsInChildren<Renderer>(true);
+        Assert.AreEqual(5, renderers.Length, prefabPath);
+        foreach (Renderer renderer in renderers)
+        {
+            foreach (Material material in renderer.sharedMaterials)
+            {
+                Assert.NotNull(material, renderer.name);
+                StringAssert.StartsWith("Assets/Prefabs/Materials/Echo",
+                    AssetDatabase.GetAssetPath(material), renderer.name);
+            }
+        }
+    }
+
+    [TestCase("Assets/Prefabs/TurnSegment_Left.prefab")]
+    [TestCase("Assets/Prefabs/TurnSegment_Right.prefab")]
+    public void TurnSegmentsDoNotBakeProceduralCornerSkyline(
+        string prefabPath)
+    {
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+        Assert.NotNull(prefab, prefabPath);
+        Assert.IsNull(prefab.transform.Find(
+            "EchoEnvironment/HighQualityOnly/CornerSilhouette"), prefabPath);
+        Assert.NotNull(prefab.transform.Find(
+            "EchoEnvironment/VisualVariants/Variant_A_CornerCity/MegacityDistrictA"),
+            prefabPath + " must use the authored city district.");
+        Assert.NotNull(prefab.transform.Find(
+            "EchoEnvironment/VisualVariants/Variant_B_CornerSignal/MegacityDistrictB"),
+            prefabPath + " must keep authored city massing in its signal variant.");
+    }
+
+    [Test]
     public void TurnSegmentUsesTwoDedicatedVariantsAndQualityGate()
     {
         WorldStyler styler = CreateStyler();

@@ -30,7 +30,8 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _Exposure: 0.52
+    - _Exposure: 0.54
+    - _HorizonTexY: 0.24
     - _ImageType: 0
     - _Layout: 0
     - _Mapping: 1
@@ -38,5 +39,5 @@ Material:
     - _Rotation: 0
     - _SeamBlend: 0.07
     m_Colors:
-    - _Tint: {r: 0.56, g: 0.65, b: 0.74, a: 1}
+    - _Tint: {r: 0.52, g: 0.6, b: 0.7, a: 1}
   m_BuildTextureStacks: []

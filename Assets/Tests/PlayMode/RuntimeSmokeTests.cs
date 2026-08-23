@@ -254,6 +254,93 @@ public sealed class RuntimeSmokeTests
     }
 
     [UnityTest]
+    public IEnumerator RepeatedRestartsRestoreRuntimeArtForEveryRun()
+    {
+        SceneManager.LoadScene("SampleScene");
+        yield return null;
+        yield return WaitForFreshRun(null, false);
+
+        for (int run = 0; run < 4; run++)
+        {
+            AssertRuntimeArtIsReady(run + 1);
+
+            GameManager previous = GameManager.Instance;
+            previous.Restart();
+            yield return WaitForFreshRun(previous, true);
+            yield return null;
+        }
+
+        AssertRuntimeArtIsReady(5);
+    }
+
+    private static IEnumerator WaitForFreshRun(GameManager previous,
+        bool requirePlaying)
+    {
+        for (int frame = 0; frame < 240; frame++)
+        {
+            bool managerReady = GameManager.Instance != null
+                                && !ReferenceEquals(GameManager.Instance, previous);
+            bool stateReady = !requirePlaying
+                              || GameManager.Instance.State == GameState.Playing;
+            bool artReady = WorldStyler.Instance != null
+                            && TrackManager.Instance != null;
+            if (managerReady && stateReady && artReady) yield break;
+            yield return null;
+        }
+
+        Assert.Fail("The reloaded run did not finish bootstrapping in time.");
+    }
+
+    private static void AssertRuntimeArtIsReady(int runNumber)
+    {
+        string context = "Run " + runNumber + ": ";
+        Assert.IsNotNull(WorldStyler.Instance,
+            context + "WorldStyler is missing.");
+        Assert.IsNotNull(RenderSettings.skybox,
+            context + "the runtime skybox is missing.");
+        Assert.IsNotNull(RenderSettings.skybox.shader,
+            context + "the runtime skybox shader is missing.");
+        Assert.AreEqual(WorldStyler.SeamlessSkyShaderName,
+            RenderSettings.skybox.shader.name,
+            context + "the authored skybox was not restored.");
+
+        Camera camera = Camera.main;
+        Assert.IsNotNull(camera, context + "the main camera is missing.");
+        Assert.AreEqual(CameraClearFlags.Skybox, camera.clearFlags,
+            context + "the camera is not rendering the skybox.");
+
+        Light fill = GameObject.Find("EchoFillLight")?.GetComponent<Light>();
+        Assert.IsNotNull(fill, context + "the authored fill light is missing.");
+
+        if (GameManager.Instance == null
+            || GameManager.Instance.State != GameState.Playing) return;
+
+        TrackSegmentData[] segments = Object.FindObjectsOfType<TrackSegmentData>();
+        Assert.IsNotEmpty(segments,
+            context + "no active track segment was generated.");
+        foreach (TrackSegmentData segment in segments)
+        {
+            Transform environment = segment.transform.Find("EchoEnvironment");
+            Assert.IsNotNull(environment,
+                context + segment.name + " has no authored environment.");
+            Assert.IsTrue(environment.gameObject.activeInHierarchy,
+                context + segment.name + " environment is inactive.");
+        }
+
+        foreach (Obstacle obstacle in Object.FindObjectsOfType<Obstacle>())
+        {
+            Assert.IsNotNull(obstacle.transform.Find("StreamlinedVisual"),
+                context + obstacle.name + " kept its primitive obstacle art.");
+        }
+
+        foreach (Coin coin in Object.FindObjectsOfType<Coin>())
+        {
+            Assert.IsNotNull(coin.transform.Find("StreamlinedVisual"),
+                context + coin.name + " kept its primitive coin art.");
+        }
+    }
+
+    [UnityTest]
     public IEnumerator ResultTextAndActionsStayInsideSafeAreaAndRaycast()
     {
         SceneManager.LoadScene("SampleScene");

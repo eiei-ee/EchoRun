@@ -8,6 +8,12 @@ public class WorldStyler : MonoBehaviour
     public const float HighFillLightIntensity = 0.27f;
     public const float HighReflectionIntensity = 0.24f;
     public const float KeyLightIntensity = 1.02f;
+    public const string SideEnergyStationResourcePath =
+        "Art/Environment/EchoSideEnergyStation";
+    public const string MegacityDistrictAResourcePath =
+        "Art/Environment/EchoMegacityDistrictA";
+    public const string MegacityDistrictBResourcePath =
+        "Art/Environment/EchoMegacityDistrictB";
 
     public static WorldStyler Instance { get; private set; }
 
@@ -17,6 +23,9 @@ public class WorldStyler : MonoBehaviour
     private Material _coralMaterial;
     private Material _goldMaterial;
     private Material _skyMaterial;
+    private GameObject _sideEnergyStationPrefab;
+    private GameObject _megacityDistrictAPrefab;
+    private GameObject _megacityDistrictBPrefab;
     private Light _fillLight;
     private Vector2Int _lastCameraScreenSize;
 
@@ -153,10 +162,11 @@ public class WorldStyler : MonoBehaviour
         if (material == null) return null;
 
         material.name = "EchoSky_Seamless_Runtime";
-        material.SetColor("_Tint", new Color(0.56f, 0.65f, 0.74f, 1f));
-        material.SetFloat("_Exposure", 0.52f);
+        material.SetColor("_Tint", new Color(0.52f, 0.60f, 0.70f, 1f));
+        material.SetFloat("_Exposure", 0.54f);
         material.SetFloat("_Rotation", 0f);
         material.SetFloat("_SeamBlend", 0.07f);
+        material.SetFloat("_HorizonTexY", 0.24f);
         return material;
     }
 
@@ -200,10 +210,10 @@ public class WorldStyler : MonoBehaviour
     {
         if (_structureMaterial != null) return;
         _structureMaterial = MakeMaterial("EchoStructure",
-            new Color(0.11f, 0.16f, 0.24f), new Color(0.006f, 0.014f, 0.028f),
+            new Color(0.14f, 0.20f, 0.29f), new Color(0.008f, 0.018f, 0.034f),
             StructureMetallic, StructureSmoothness);
         _deepStructureMaterial = MakeMaterial("EchoDepth",
-            new Color(0.035f, 0.06f, 0.105f), new Color(0.003f, 0.008f, 0.018f),
+            new Color(0.055f, 0.085f, 0.14f), new Color(0.004f, 0.010f, 0.020f),
             0.10f, 0.27f);
         _cyanMaterial = MakeMaterial("EchoCyan",
             new Color(0.22f, 0.84f, 1.00f), new Color(0.020f, 0.34f, 0.56f), 0.24f, 0.68f);
@@ -218,11 +228,11 @@ public class WorldStyler : MonoBehaviour
     {
         GameObject common = new GameObject("Common");
         common.transform.SetParent(parent, false);
-        CreateCapsule("LeftIsland", common.transform, new Vector3(-11.2f, -1.28f, 0f),
-            new Vector3(3.1f, 9.7f, 0.82f), _deepStructureMaterial,
+        CreateCapsule("LeftIsland", common.transform, new Vector3(-11.7f, -1.52f, 0f),
+            new Vector3(2.15f, 9.7f, 0.58f), _deepStructureMaterial,
             new Vector3(90f, 0f, 0f));
-        CreateCapsule("RightIsland", common.transform, new Vector3(11.2f, -1.28f, 0f),
-            new Vector3(3.1f, 9.7f, 0.82f), _deepStructureMaterial,
+        CreateCapsule("RightIsland", common.transform, new Vector3(11.7f, -1.52f, 0f),
+            new Vector3(2.15f, 9.7f, 0.58f), _deepStructureMaterial,
             new Vector3(90f, 0f, 0f));
         CreateBeam("LeftRail", common.transform,
             new Vector3(-TrackGeometryStandards.EdgeRailOffset, 0.24f, -9.7f),
@@ -232,25 +242,28 @@ public class WorldStyler : MonoBehaviour
             new Vector3(TrackGeometryStandards.EdgeRailOffset, 0.24f, -9.7f),
             new Vector3(TrackGeometryStandards.EdgeRailOffset, 0.24f, 9.7f),
             0.09f, _cyanMaterial);
-        BuildMiddleBuildings(common.transform);
         BuildGroundBollards(common.transform);
 
         GameObject visualVariants = new GameObject("VisualVariants");
         visualVariants.transform.SetParent(parent, false);
-        GameObject equipment = CreateVariant("Variant_A_Equipment",
+        GameObject cityLeft = CreateVariant("Variant_A_CityLeft",
             visualVariants.transform);
-        BuildEquipmentAndPipes(equipment.transform);
-        GameObject signalArch = CreateVariant("Variant_B_SignalArch",
+        BuildMegacityDistrict(cityLeft.transform, false, -1, 0f, 0.96f);
+        BuildSideEnergyStation(cityLeft.transform, 1, 5.2f, 0.94f);
+
+        GameObject cityRight = CreateVariant("Variant_B_CityRight",
             visualVariants.transform);
-        BuildSignalArch(signalArch.transform, 5.5f);
-        GameObject silhouettes = CreateVariant("Variant_C_Silhouettes",
+        BuildMegacityDistrict(cityRight.transform, true, 1, 0f, 0.96f);
+        BuildSignalArch(cityRight.transform, 5.5f);
+
+        GameObject cityGate = CreateVariant("Variant_C_CityGate",
             visualVariants.transform);
-        BuildFarSilhouettes(silhouettes.transform, false);
+        BuildMegacityDistrict(cityGate.transform, true, -1, 2.2f, 0.88f);
+        BuildMegacityDistrict(cityGate.transform, false, 1, -2.2f, 0.88f);
 
         GameObject highQualityOnly = new GameObject("HighQualityOnly");
         highQualityOnly.transform.SetParent(parent, false);
-        BuildFarSilhouettes(highQualityOnly.transform, true);
-        variantSet.Initialize(new[] { equipment, signalArch, silhouettes },
+        variantSet.Initialize(new[] { cityLeft, cityRight, cityGate },
             highQualityOnly);
     }
 
@@ -303,8 +316,8 @@ public class WorldStyler : MonoBehaviour
         GameObject common = new GameObject("Common");
         common.transform.SetParent(parent, false);
         CreateCapsule("CornerIsland", common.transform,
-            new Vector3(-direction * 10.5f, -1.25f, 10f),
-            new Vector3(3f, 9.5f, 0.86f), _deepStructureMaterial,
+            new Vector3(-direction * 11f, -1.50f, 10f),
+            new Vector3(2.15f, 9.5f, 0.60f), _deepStructureMaterial,
             new Vector3(90f, 0f, 0f));
         CreateBeam("TurnEntryRail", common.transform,
             new Vector3(-direction * TrackGeometryStandards.EdgeRailOffset,
@@ -322,18 +335,17 @@ public class WorldStyler : MonoBehaviour
 
         GameObject visualVariants = new GameObject("VisualVariants");
         visualVariants.transform.SetParent(parent, false);
-        GameObject equipment = CreateVariant("Variant_A_CornerEquipment",
+        GameObject city = CreateVariant("Variant_A_CornerCity",
             visualVariants.transform);
-        BuildPylonAt(equipment.transform, -direction * 7.8f, 10f, 5.4f, true);
-        BuildCornerEquipment(equipment.transform, direction);
+        BuildMegacityDistrict(city.transform, false, -direction, 10f, 0.92f);
         GameObject signal = CreateVariant("Variant_B_CornerSignal",
             visualVariants.transform);
+        BuildMegacityDistrict(signal.transform, true, -direction, 13f, 0.88f);
         BuildTurnSignal(signal.transform, direction);
 
         GameObject highQualityOnly = new GameObject("HighQualityOnly");
         highQualityOnly.transform.SetParent(parent, false);
-        BuildCornerSilhouette(highQualityOnly.transform, direction);
-        variantSet.Initialize(new[] { equipment, signal }, highQualityOnly);
+        variantSet.Initialize(new[] { city, signal }, highQualityOnly);
     }
 
     private static GameObject CreateVariant(string name, Transform parent)
@@ -341,68 +353,6 @@ public class WorldStyler : MonoBehaviour
         GameObject variant = new GameObject(name);
         variant.transform.SetParent(parent, false);
         return variant;
-    }
-
-    private void BuildEquipmentAndPipes(Transform parent)
-    {
-        for (int side = -1; side <= 1; side += 2)
-        {
-            float x = side * 10.4f;
-            CreateCube("EquipmentBase", parent, new Vector3(x, 0.20f, -2.8f),
-                new Vector3(3.2f, 0.42f, 5.4f), _deepStructureMaterial);
-            CreateCylinder("PressureTank", parent, new Vector3(x, 1.1f, -3.5f),
-                new Vector3(0.72f, 1.25f, 0.72f), _structureMaterial,
-                new Vector3(0f, 0f, 90f));
-            CreateBeam("Pipeline", parent,
-                new Vector3(side * 8.4f, 0.72f, -6.4f),
-                new Vector3(side * 12.6f, 0.72f, 4.8f),
-                0.18f, _structureMaterial);
-            CreateCapsule("PipeSignal", parent,
-                new Vector3(side * 8.7f, 0.78f, 1.8f),
-                new Vector3(0.18f, 0.08f, 0.08f),
-                side > 0 ? _coralMaterial : _cyanMaterial,
-                new Vector3(0f, 0f, 90f));
-        }
-    }
-
-    private void BuildFarSilhouettes(Transform parent, bool secondRow)
-    {
-        float xDistance = secondRow ? 20.5f : 16.2f;
-        float depth = secondRow ? 5.0f : 3.2f;
-        float heightScale = secondRow ? 1.2f : 1f;
-        for (int side = -1; side <= 1; side += 2)
-        {
-            for (int i = 0; i < 3; i++)
-            {
-                float z = -7.2f + i * 7.0f;
-                float height = (4.8f + ((i + (side > 0 ? 1 : 0)) % 3) * 2.1f)
-                               * heightScale;
-                CreateCube("SilhouetteBlock", parent,
-                    new Vector3(side * (xDistance + i * 0.8f), height * 0.5f - 0.8f, z),
-                    new Vector3(4.4f, height, depth), _deepStructureMaterial);
-                if (!secondRow)
-                {
-                    CreateCube("SignalSlit", parent,
-                        new Vector3(side * (xDistance - 2.24f * side),
-                            height * 0.62f, z - depth * 0.51f),
-                        new Vector3(0.10f, height * 0.24f, 0.08f),
-                        i == 1 ? _coralMaterial : _cyanMaterial);
-                }
-            }
-        }
-    }
-
-    private void BuildCornerEquipment(Transform parent, int direction)
-    {
-        float x = -direction * 10.6f;
-        CreateCube("CornerDeviceBase", parent, new Vector3(x, 0.18f, 10f),
-            new Vector3(4.2f, 0.36f, 4.2f), _deepStructureMaterial);
-        CreateCylinder("CornerRotor", parent, new Vector3(x, 1.15f, 10f),
-            new Vector3(1.15f, 0.26f, 1.15f), _structureMaterial,
-            new Vector3(90f, 0f, 0f));
-        CreateCylinder("CornerRotorCore", parent, new Vector3(x, 1.15f, 9.7f),
-            new Vector3(0.46f, 0.30f, 0.46f), _coralMaterial,
-            new Vector3(90f, 0f, 0f));
     }
 
     private void BuildTurnSignal(Transform parent, int direction)
@@ -418,31 +368,51 @@ public class WorldStyler : MonoBehaviour
             0.055f, _cyanMaterial);
     }
 
-    private void BuildCornerSilhouette(Transform parent, int direction)
+    private void BuildSideEnergyStation(Transform parent, int side,
+        float z, float scale)
     {
-        float x = -direction * 18.5f;
-        CreateCube("CornerSilhouette", parent, new Vector3(x, 4.8f, 11f),
-            new Vector3(7.5f, 11.2f, 7.2f), _deepStructureMaterial);
+        if (_sideEnergyStationPrefab == null)
+            _sideEnergyStationPrefab = Resources.Load<GameObject>(
+                SideEnergyStationResourcePath);
+        if (_sideEnergyStationPrefab == null) return;
+
+        GameObject station = Instantiate(_sideEnergyStationPrefab, parent, false);
+        station.name = "SideEnergyStation";
+        station.transform.localPosition = new Vector3(side * 14.2f, -0.7f, z);
+        station.transform.localRotation = Quaternion.Euler(
+            0f, side > 0 ? -90f : 90f, 0f);
+        station.transform.localScale = Vector3.one * scale;
     }
 
-    private void BuildMiddleBuildings(Transform parent)
+    private void BuildMegacityDistrict(Transform parent, bool useVariantB,
+        int side, float z, float scale)
     {
-        for (int side = -1; side <= 1; side += 2)
+        GameObject prefab;
+        if (useVariantB)
         {
-            for (int i = 0; i < 2; i++)
-            {
-                float z = -5.6f + i * 11.2f;
-                float height = 3.8f + i * 1.8f + (side > 0 ? 0.8f : 0f);
-                CreateCube("MidStructure", parent,
-                    new Vector3(side * 13.6f, height * 0.5f - 0.7f, z),
-                    new Vector3(3.0f, height, 3.8f), _structureMaterial);
-                CreateCube("MidSignal", parent,
-                    new Vector3(side * 12.07f,
-                        height * 0.58f, z - 1.94f),
-                    new Vector3(0.08f, height * 0.28f, 0.06f),
-                    i == 0 ? _cyanMaterial : _goldMaterial);
-            }
+            if (_megacityDistrictBPrefab == null)
+                _megacityDistrictBPrefab = Resources.Load<GameObject>(
+                    MegacityDistrictBResourcePath);
+            prefab = _megacityDistrictBPrefab;
         }
+        else
+        {
+            if (_megacityDistrictAPrefab == null)
+                _megacityDistrictAPrefab = Resources.Load<GameObject>(
+                    MegacityDistrictAResourcePath);
+            prefab = _megacityDistrictAPrefab;
+        }
+
+        if (prefab == null) return;
+
+        GameObject district = Instantiate(prefab, parent, false);
+        district.name = useVariantB
+            ? "MegacityDistrictB"
+            : "MegacityDistrictA";
+        district.transform.localPosition = new Vector3(side * 13.2f, -0.72f, z);
+        district.transform.localRotation = Quaternion.Euler(
+            0f, side > 0 ? -90f : 90f, 0f);
+        district.transform.localScale = Vector3.one * scale;
     }
 
     private void BuildGroundBollards(Transform parent)
