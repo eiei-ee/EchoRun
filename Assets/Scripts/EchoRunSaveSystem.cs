@@ -4,13 +4,16 @@ using UnityEngine;
 [Serializable]
 public sealed class EchoRunSaveData
 {
-    public int version = 7;
+    public int version = 9;
     public int highScore;
     public int totalCoins;
     public int targetFrameRate = 60;
+    public float masterVolume = 1f;
     public float musicVolume = 0.5f;
     public float sfxVolume = 1f;
+    public bool audioMuted;
     public int characterPreset;
+    public int runDifficulty = (int)RunDifficultyLevel.Standard;
     public string shadowProfileJson = "";
     public float[] directorWeights;
     public int directorModelUpdateCount;
@@ -41,7 +44,7 @@ public static class EchoRunSaveSystem
     public const string SaveSlotBKey = "EchoRunSaveV1.B";
     public const string ActiveSaveSlotKey = "EchoRunSaveV1.ActiveSlot";
     public const string TelemetryKey = "EchoRunLastTelemetryV1";
-    public const int CurrentVersion = 7;
+    public const int CurrentVersion = 9;
 
     private const string ShadowProfileKey = "AIShadowProfileV1";
     private const int SaveEnvelopeVersion = 1;
@@ -334,10 +337,22 @@ public static class EchoRunSaveSystem
     public static void SaveAudio(float musicVolume, float sfxVolume, bool flush)
     {
         EnsureInitialized();
+        SaveAudio(_data.masterVolume, musicVolume, sfxVolume,
+            _data.audioMuted, flush);
+    }
+
+    public static void SaveAudio(float masterVolume, float musicVolume,
+        float sfxVolume, bool muted, bool flush)
+    {
+        EnsureInitialized();
+        _data.masterVolume = Mathf.Clamp01(masterVolume);
         _data.musicVolume = Mathf.Clamp01(musicVolume);
         _data.sfxVolume = Mathf.Clamp01(sfxVolume);
+        _data.audioMuted = muted;
+        PlayerPrefs.SetFloat("MasterVolume", _data.masterVolume);
         PlayerPrefs.SetFloat("MusicVolume", _data.musicVolume);
         PlayerPrefs.SetFloat("SfxVolume", _data.sfxVolume);
+        PlayerPrefs.SetInt("AudioMuted", _data.audioMuted ? 1 : 0);
         WriteArchive(flush);
     }
 
@@ -358,15 +373,27 @@ public static class EchoRunSaveSystem
 
     private static void Normalize()
     {
+        int sourceVersion = _data.version;
         _data.version = CurrentVersion;
         _data.highScore = Mathf.Max(0, _data.highScore);
         _data.totalCoins = Mathf.Max(0, _data.totalCoins);
         _data.targetFrameRate = _data.targetFrameRate > 0
             ? _data.targetFrameRate
             : 60;
+        if (sourceVersion < 9)
+        {
+            _data.masterVolume = PlayerPrefs.GetFloat("MasterVolume", 1f);
+            _data.audioMuted = PlayerPrefs.GetInt("AudioMuted", 0) != 0;
+        }
+        _data.masterVolume = Mathf.Clamp01(_data.masterVolume);
         _data.musicVolume = Mathf.Clamp01(_data.musicVolume);
         _data.sfxVolume = Mathf.Clamp01(_data.sfxVolume);
         _data.characterPreset = Mathf.Max(0, _data.characterPreset);
+        if (sourceVersion < 8
+            && !PlayerPrefs.HasKey(RunDifficultySettings.PreferenceKey))
+            _data.runDifficulty = (int)RunDifficultyLevel.Standard;
+        _data.runDifficulty = (int)RunDifficultySettings.Normalize(
+            _data.runDifficulty);
         _data.shadowProfileJson = _data.shadowProfileJson ?? "";
         _data.directorWeights = Clone(_data.directorWeights);
         _data.directorModelUpdateCount = Mathf.Max(0, _data.directorModelUpdateCount);
@@ -390,9 +417,12 @@ public static class EchoRunSaveSystem
                || PlayerPrefs.HasKey("TotalCoins")
                || PlayerPrefs.HasKey(ShadowProfileKey)
                || PlayerPrefs.HasKey("TargetFrameRate")
+               || PlayerPrefs.HasKey("MasterVolume")
                || PlayerPrefs.HasKey("MusicVolume")
                || PlayerPrefs.HasKey("SfxVolume")
-               || PlayerPrefs.HasKey("CharacterPreset");
+               || PlayerPrefs.HasKey("AudioMuted")
+               || PlayerPrefs.HasKey("CharacterPreset")
+               || PlayerPrefs.HasKey(RunDifficultySettings.PreferenceKey);
     }
 
     private static void CaptureLegacyKeys()
@@ -404,12 +434,19 @@ public static class EchoRunSaveSystem
             PlayerPrefs.GetInt("TotalCoins", _data.totalCoins));
         _data.targetFrameRate = Mathf.Max(1,
             PlayerPrefs.GetInt("TargetFrameRate", _data.targetFrameRate));
+        _data.masterVolume = Mathf.Clamp01(
+            PlayerPrefs.GetFloat("MasterVolume", _data.masterVolume));
         _data.musicVolume = Mathf.Clamp01(
             PlayerPrefs.GetFloat("MusicVolume", _data.musicVolume));
         _data.sfxVolume = Mathf.Clamp01(
             PlayerPrefs.GetFloat("SfxVolume", _data.sfxVolume));
+        _data.audioMuted = PlayerPrefs.GetInt("AudioMuted",
+            _data.audioMuted ? 1 : 0) != 0;
         _data.characterPreset = Mathf.Max(0,
             PlayerPrefs.GetInt("CharacterPreset", _data.characterPreset));
+        _data.runDifficulty = (int)RunDifficultySettings.Normalize(
+            PlayerPrefs.GetInt(RunDifficultySettings.PreferenceKey,
+                _data.runDifficulty));
         _data.shadowProfileJson = PlayerPrefs.GetString(
             ShadowProfileKey, _data.shadowProfileJson ?? "");
     }
@@ -419,9 +456,13 @@ public static class EchoRunSaveSystem
         PlayerPrefs.SetInt("HighScore", _data.highScore);
         PlayerPrefs.SetInt("TotalCoins", _data.totalCoins);
         PlayerPrefs.SetInt("TargetFrameRate", _data.targetFrameRate);
+        PlayerPrefs.SetFloat("MasterVolume", _data.masterVolume);
         PlayerPrefs.SetFloat("MusicVolume", _data.musicVolume);
         PlayerPrefs.SetFloat("SfxVolume", _data.sfxVolume);
+        PlayerPrefs.SetInt("AudioMuted", _data.audioMuted ? 1 : 0);
         PlayerPrefs.SetInt("CharacterPreset", _data.characterPreset);
+        PlayerPrefs.SetInt(RunDifficultySettings.PreferenceKey,
+            _data.runDifficulty);
         if (!string.IsNullOrEmpty(_data.shadowProfileJson))
             PlayerPrefs.SetString(ShadowProfileKey, _data.shadowProfileJson);
         else

@@ -10,6 +10,87 @@ public enum PowerUpId
     TurboStart = 3
 }
 
+public enum RunDifficultyLevel
+{
+    Relaxed = 0,
+    Standard = 1,
+    Intense = 2
+}
+
+public static class RunDifficultySettings
+{
+    public const string PreferenceKey = "RunDifficulty";
+    public const RunDifficultyLevel DefaultLevel = RunDifficultyLevel.Standard;
+
+    public static RunDifficultyLevel Current => Normalize(
+        PlayerPrefs.GetInt(PreferenceKey, (int)DefaultLevel));
+
+    public static void Set(RunDifficultyLevel level)
+    {
+        PlayerPrefs.SetInt(PreferenceKey, (int)Normalize((int)level));
+        PlayerPrefs.Save();
+    }
+
+    public static RunDifficultyLevel Normalize(int value)
+    {
+        return (RunDifficultyLevel)Mathf.Clamp(value,
+            (int)RunDifficultyLevel.Relaxed,
+            (int)RunDifficultyLevel.Intense);
+    }
+
+    public static float AdjustDifficulty(float baseDifficulty,
+        RunDifficultyLevel level)
+    {
+        float offset = level == RunDifficultyLevel.Relaxed ? -0.15f
+            : level == RunDifficultyLevel.Intense ? 0.22f : 0.08f;
+        return Mathf.Clamp01(baseDifficulty + offset);
+    }
+
+    public static float AdjustObstacleChance(float baseChance,
+        RunDifficultyLevel level)
+    {
+        float multiplier = level == RunDifficultyLevel.Relaxed ? 0.8f
+            : level == RunDifficultyLevel.Intense ? 1.35f : 1.15f;
+        float bonus = level == RunDifficultyLevel.Relaxed ? 0f
+            : level == RunDifficultyLevel.Intense ? 0.05f : 0.03f;
+        return Mathf.Clamp01(baseChance * multiplier + bonus);
+    }
+
+    public static int ResolveMaxFreeSegments(int configuredMaximum,
+        RunDifficultyLevel level)
+    {
+        if (level == RunDifficultyLevel.Relaxed)
+            return Mathf.Max(3, configuredMaximum);
+        return 1;
+    }
+
+    public static float ObstacleRecoverySeconds(RunDifficultyLevel level)
+    {
+        return level == RunDifficultyLevel.Relaxed ? 0.45f
+            : level == RunDifficultyLevel.Intense ? 0.15f : 0.3f;
+    }
+
+    public static string DisplayName(RunDifficultyLevel level)
+    {
+        switch (level)
+        {
+            case RunDifficultyLevel.Relaxed: return "休闲";
+            case RunDifficultyLevel.Intense: return "高压";
+            default: return "标准";
+        }
+    }
+
+    public static string Description(RunDifficultyLevel level)
+    {
+        switch (level)
+        {
+            case RunDifficultyLevel.Relaxed: return "障碍较少 · 单道为主";
+            case RunDifficultyLevel.Intense: return "高密度 · 更短恢复窗";
+            default: return "障碍密集 · 保留反应窗";
+        }
+    }
+}
+
 [Serializable]
 public sealed class PowerUpBalance
 {

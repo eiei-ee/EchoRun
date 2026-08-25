@@ -122,14 +122,19 @@ public sealed class EchoHudView : MonoBehaviour
 
         string label = data.meterKind == EchoHudMeterKind.Calibration
             ? "校准" : data.meterKind == EchoHudMeterKind.Phase
-                ? "阶段" : "稳定度";
+                ? "阶段" : "回声锁定";
         SetTextIfChanged(meterLabel, label);
         SetFillIfChanged(meterFill, data.displayedMeter01);
         if (meterFill != null)
         {
-            Color target = data.meterKind == EchoHudMeterKind.Stability
+            Color target = data.meterKind == EchoHudMeterKind.EchoLock
                 ? Coral : Cyan;
-            if (data.displayedMeter01 >= 1f) target = Gold;
+            if (data.meterKind == EchoHudMeterKind.EchoLock
+                && data.displayedMeter01 <= 0.01f)
+                target = Gold;
+            else if (data.meterKind != EchoHudMeterKind.EchoLock
+                     && data.displayedMeter01 >= 1f)
+                target = Gold;
             if (meterFill.color != target) meterFill.color = target;
         }
     }

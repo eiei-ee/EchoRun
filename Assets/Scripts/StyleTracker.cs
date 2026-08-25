@@ -180,7 +180,7 @@ public static class StyleTracker
     }
 }
 
-public sealed class SlideOpportunityTracker
+public class ObstacleOpportunityTracker
 {
     private const int MaxRememberedObstacles = 256;
     private readonly System.Collections.Generic.HashSet<int> _resolvedIds =
@@ -189,7 +189,13 @@ public sealed class SlideOpportunityTracker
         new System.Collections.Generic.Queue<int>();
     private int _pendingId;
     private int _pendingLane;
-    private bool _usedSlide;
+    private readonly ObstacleType _targetType;
+    private bool _usedAction;
+
+    public ObstacleOpportunityTracker(ObstacleType targetType)
+    {
+        _targetType = targetType;
+    }
 
     public bool HasPending => _pendingId != 0;
     public int PendingId => _pendingId;
@@ -202,7 +208,7 @@ public sealed class SlideOpportunityTracker
     {
         _pendingId = 0;
         _pendingLane = 1;
-        _usedSlide = false;
+        _usedAction = false;
         LastResolvedId = 0;
         LastResolvedLane = 1;
         LastResolvedByPass = false;
@@ -210,42 +216,42 @@ public sealed class SlideOpportunityTracker
         _resolvedOrder.Clear();
     }
 
-    public bool Update(int playerLane, bool isSliding, bool hasObstacle,
+    public bool Update(int playerLane, bool isUsingAction, bool hasObstacle,
         float obstacleDistance, ObstacleType obstacleType, int obstacleId,
-        float detectionDistance, out bool usedSlide)
+        float detectionDistance, out bool usedAction)
     {
-        usedSlide = false;
+        usedAction = false;
         int lane = Mathf.Clamp(playerLane, 0, 2);
         if (HasPending)
         {
             if (lane != _pendingLane)
-                return Resolve(out usedSlide);
-            if (isSliding) _usedSlide = true;
+                return Resolve(out usedAction);
+            if (isUsingAction) _usedAction = true;
             if (!hasObstacle || obstacleId != _pendingId)
-                return Resolve(out usedSlide, true);
+                return Resolve(out usedAction, true);
             return false;
         }
 
-        if (!hasObstacle || obstacleType != ObstacleType.Low
+        if (!hasObstacle || obstacleType != _targetType
             || obstacleId == 0 || _resolvedIds.Contains(obstacleId)
             || obstacleDistance > Mathf.Max(0f, detectionDistance))
             return false;
 
         _pendingId = obstacleId;
         _pendingLane = lane;
-        _usedSlide = isSliding;
+        _usedAction = isUsingAction;
         return false;
     }
 
-    public void MarkSlide(int playerLane)
+    public void MarkAction(int playerLane)
     {
         if (HasPending && Mathf.Clamp(playerLane, 0, 2) == _pendingLane)
-            _usedSlide = true;
+            _usedAction = true;
     }
 
-    public bool Resolve(out bool usedSlide, bool passedInLane = false)
+    public bool Resolve(out bool usedAction, bool passedInLane = false)
     {
-        usedSlide = _usedSlide;
+        usedAction = _usedAction;
         if (!HasPending) return false;
         LastResolvedId = _pendingId;
         LastResolvedLane = _pendingLane;
@@ -257,7 +263,19 @@ public sealed class SlideOpportunityTracker
                 _resolvedIds.Remove(_resolvedOrder.Dequeue());
         }
         _pendingId = 0;
-        _usedSlide = false;
+        _usedAction = false;
         return true;
+    }
+}
+
+public sealed class SlideOpportunityTracker : ObstacleOpportunityTracker
+{
+    public SlideOpportunityTracker() : base(ObstacleType.Low)
+    {
+    }
+
+    public void MarkSlide(int playerLane)
+    {
+        MarkAction(playerLane);
     }
 }

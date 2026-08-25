@@ -69,7 +69,8 @@ public sealed class EchoHudPresenter : MonoBehaviour
             showBuff, buffText,
             shadow != null && shadow.DuelTransitionPending,
             shadow != null ? shadow.PendingDuelPhase : EchoDuelPhase.None,
-            rewriteStyleSummary, finaleSegmentSummary);
+            rewriteStyleSummary, finaleSegmentSummary,
+            shadow != null ? shadow.ActiveChallengeStep : default);
 
         if (!_hasMode || data.mode != _lastMode)
         {
@@ -100,8 +101,15 @@ public sealed class EchoHudPresenter : MonoBehaviour
             _feedbackUntil = Time.unscaledTime + 1.8f;
         }
         Color feedbackColor = duel.feedback.StartsWith("回声施压")
+                              || duel.feedback.StartsWith("命中")
+                              || duel.feedback.StartsWith("预判命中")
+                              || duel.feedback.StartsWith("重锁")
             ? EchoRunUITheme.Danger
             : duel.feedback.StartsWith("预测失效")
+              || duel.feedback.StartsWith("偏离")
+              || duel.feedback.StartsWith("裂解")
+              || duel.feedback.StartsWith("反制生效")
+              || duel.feedback.StartsWith("锁定碎裂")
                 ? EchoRunUITheme.Reward : EchoRunUITheme.RouteCyan;
         _view.ShowFeedback(duel.feedback, feedbackColor,
             Time.unscaledTime < _feedbackUntil);

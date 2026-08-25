@@ -11,6 +11,7 @@ public struct EchoEncounterLaneChoice
 
 public class TrackManager : MonoBehaviour
 {
+    public const float ChallengeSettlementMargin = 7f;
     public static TrackManager Instance { get; private set; }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -39,7 +40,7 @@ public class TrackManager : MonoBehaviour
     public GameObject coinPrefab;
     [Range(0, 1)] public float obstacleChance = 0.4f;
     [Range(0, 1)] public float coinChance = 0.6f;
-    [Min(1)] public int maxConsecutiveObstacleFreeStraights = 3;
+    [Min(1)] public int maxConsecutiveObstacleFreeStraights = 2;
 
     [Header("AI Track Director")]
     public bool useAITrackDirector = true;
@@ -65,6 +66,7 @@ public class TrackManager : MonoBehaviour
         public float startZ;
         public int count;
         public bool echoContractMarker;
+        public int challengeStepId;
     }
 
     private struct SpawnedObstacleInfo
@@ -72,6 +74,13 @@ public class TrackManager : MonoBehaviour
         public int lane;
         public float z;
         public ObstacleType type;
+        public EchoChallengeObstacleRole challengeRole;
+    }
+
+    private struct ChallengeRowRuntime
+    {
+        public int stepId;
+        public float routeDistance;
     }
 
     private Vector3 _spawnPosition;
@@ -82,6 +91,8 @@ public class TrackManager : MonoBehaviour
     private int _rhythmContractRowsSpawned;
     private int _counterattackRowsSpawned;
     private readonly int[] _laneObstacleDrought = new int[3];
+    private readonly List<ChallengeRowRuntime> _challengeRows =
+        new List<ChallengeRowRuntime>();
     private float _lastObstacleRouteDistance = float.NegativeInfinity;
     private int _straightSegmentsSinceLastTurn;
     private float _plannedDistance;
@@ -91,6 +102,17 @@ public class TrackManager : MonoBehaviour
     private GameObject _finishMarker;
     private Material _finishMarkerMaterial;
     private Light[] _finishMarkerLights;
+
+    public int ObstacleRowsSpawned { get; private set; }
+    public int ObstacleRowsRejectedForSpacing { get; private set; }
+    public int ObstacleRowsSkippedByChance { get; private set; }
+    public int JumpOpportunityRows { get; private set; }
+    public int SlideOpportunityRows { get; private set; }
+    public int ChallengeRowsSpawned { get; private set; }
+    public int ChallengeRowsMissed { get; private set; }
+    public float LongestObstacleRowGap { get; private set; }
+    public float MinimumChallengeWarningSeconds { get; private set; }
+        = float.PositiveInfinity;
 
     private const float SEGMENT_CHECK_MULT = 1.5f;
     private const float SEGMENT_RECYCLE_MULT = 5f;
@@ -192,6 +214,7 @@ public class TrackManager : MonoBehaviour
         if (trackSegmentPrefab == null) return;
 
         float playerRouteDistance = GameManager.Instance.Distance;
+        UpdateChallengeRows(playerRouteDistance);
         AIShadowRunner shadow = AIShadowRunner.Instance;
         EchoDuelPhase planningPhase = shadow != null
                                       && shadow.DuelTransitionPending
@@ -370,8 +393,66 @@ public class TrackManager : MonoBehaviour
                ^ Mathf.RoundToInt(position.z * 31f);
     }
 
+    public EchoChallengeObstacleBinding GetChallengeBinding(int obstacleId)
+    {
+        if (obstacleId == 0) return default;
+        for (int i = 0; i < _dynamicObjects.Count; i++)
+        {
+            GameObject instance = _dynamicObjects[i].instance;
+            if (instance == null || !instance.activeInHierarchy
+                || GetObstacleTrackingId(instance) != obstacleId)
+                continue;
+            EchoChallengeObstacleTag tag =
+                instance.GetComponent<EchoChallengeObstacleTag>();
+            return tag != null ? tag.Binding : default;
+        }
+        return default;
+    }
+
+    public bool TryGetUpcomingChallengeObstacle(Vector3 position,
+        Vector3 forward, int challengeStepId, out float obstacleDistance)
+    {
+        obstacleDistance = float.MaxValue;
+        if (challengeStepId <= 0) return false;
+
+        Vector3 normalizedForward = forward.sqrMagnitude > 0.001f
+            ? forward.normalized
+            : Vector3.forward;
+        bool found = false;
+        for (int i = 0; i < _dynamicObjects.Count; i++)
+        {
+            GameObject instance = _dynamicObjects[i].instance;
+            if (instance == null || !instance.activeInHierarchy
+                || instance.GetComponent<Obstacle>() == null)
+                continue;
+            EchoChallengeObstacleTag tag =
+                instance.GetComponent<EchoChallengeObstacleTag>();
+            EchoChallengeObstacleBinding binding = tag != null
+                ? tag.Binding : default;
+            if (!binding.IsBound || binding.stepId != challengeStepId)
+                continue;
+
+            float distance = Vector3.Dot(
+                instance.transform.position - position, normalizedForward);
+            if (distance <= 0.5f || distance >= obstacleDistance)
+                continue;
+            obstacleDistance = distance;
+            found = true;
+        }
+        return found;
+    }
+
     public void GetTrackPoseAhead(Vector3 playerPosition, Vector3 playerForward,
         int playerLane, float targetLane, float distanceAhead,
+        out Vector3 trackPosition, out Vector3 trackForward)
+    {
+        GetTrackPoseAhead(playerPosition, playerForward,
+            (playerLane - 1) * laneDistance, targetLane, distanceAhead,
+            out trackPosition, out trackForward);
+    }
+
+    public void GetTrackPoseAhead(Vector3 playerPosition, Vector3 playerForward,
+        float playerLateralOffset, float targetLane, float distanceAhead,
         out Vector3 trackPosition, out Vector3 trackForward)
     {
         Vector3 forward = playerForward.sqrMagnitude > 0.001f
@@ -379,7 +460,7 @@ public class TrackManager : MonoBehaviour
             : Vector3.forward;
         Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
         Vector3 trackCenter = playerPosition
-                              - right * ((playerLane - 1) * laneDistance);
+                              - right * playerLateralOffset;
         trackForward = forward;
 
         if (distanceAhead > 0f)
@@ -504,6 +585,13 @@ public class TrackManager : MonoBehaviour
                 turnChance, _lastSafeLane, canTurn, _plannedDistance,
                 _plannedDistance + segmentLength)
             : CreateFallbackPlan(baseDifficulty, canTurn);
+        RunDifficultyLevel runDifficulty = RunDifficultySettings.Current;
+        plan.difficulty = RunDifficultySettings.AdjustDifficulty(
+            plan.difficulty, runDifficulty);
+        plan.obstacleChance = RunDifficultySettings.AdjustObstacleChance(
+            plan.obstacleChance, runDifficulty);
+        if (runDifficulty == RunDifficultyLevel.Relaxed)
+            plan.maxBlockedLanes = 1;
         if (_aiDirector == null || !_aiDirector.useAI)
             plan.echoEncounterStep = Mathf.RoundToInt(
                 _plannedDistance / Mathf.Max(1f, segmentLength));
@@ -612,6 +700,8 @@ public class TrackManager : MonoBehaviour
 
             AITrackPlan contentPlan = RefreshPlanForPreparedContent(
                 data.trackPlan, data.routeDistance);
+            if (ShouldDeferChallengeContent(contentPlan))
+                break;
             data.trackPlan = contentPlan;
             data.contentSpawned = true;
             if (!data.isFinishSegment)
@@ -619,6 +709,57 @@ public class TrackManager : MonoBehaviour
             _contentPreparedDistance = Mathf.Max(_contentPreparedDistance,
                 data.routeDistance + segmentLength);
         }
+    }
+
+    public static bool ShouldDeferChallengeContent(AITrackPlan plan)
+    {
+        return plan.echoEncounterKind == EchoEncounterKind.CounterTest
+               && plan.echoChallengeStepId < 0;
+    }
+
+    private void UpdateChallengeRows(float playerRouteDistance)
+    {
+        AIShadowRunner shadow = AIShadowRunner.Instance;
+        EchoChallengeStep activeStep = shadow != null
+            ? shadow.ActiveChallengeStep : default;
+        for (int i = _challengeRows.Count - 1; i >= 0; i--)
+        {
+            ChallengeRowRuntime row = _challengeRows[i];
+            if (playerRouteDistance
+                <= row.routeDistance + ChallengeSettlementMargin)
+                continue;
+
+            _challengeRows.RemoveAt(i);
+            if (!ShouldMarkChallengeRowMissed(activeStep, row.stepId))
+                continue;
+            PlayerController player = _player != null
+                ? _player.GetComponent<PlayerController>() : null;
+            int playerLane = player != null ? player.CurrentLane : 1;
+            if (shadow.ResolveChallengeStepAtGate(row.stepId, playerLane))
+            {
+                AIRunTelemetry.RecordEvent("echo_challenge_gate_resolved",
+                    row.stepId, playerLane, row.routeDistance,
+                    playerRouteDistance);
+                continue;
+            }
+
+            ChallengeRowsMissed++;
+            shadow.RecordChallengeStepMissed(row.stepId);
+            AIRunTelemetry.RecordEvent("echo_challenge_cancelled", row.stepId,
+                playerLane, row.routeDistance, playerRouteDistance);
+        }
+    }
+
+    public static bool ShouldMarkChallengeRowMissed(
+        EchoChallengeStep activeStep, int rowStepId)
+    {
+        return activeStep.IsActive && activeStep.stepId == rowStepId;
+    }
+
+    public static float RowsPer100Meters(int rowCount, float routeDistance)
+    {
+        return Mathf.Max(0, rowCount) * 100f
+               / Mathf.Max(1f, routeDistance);
     }
 
     private AITrackPlan RefreshPlanForPreparedContent(AITrackPlan plan,
@@ -648,8 +789,10 @@ public class TrackManager : MonoBehaviour
                 phaseOverride, segmentRouteDistance, segmentLength,
                 plan.echoEncounterStep)
             : plan.echoEncounterStep;
+        EchoChallengeStep challengeStep = shadow != null
+            ? shadow.ActiveChallengeStep : default;
         return AITrackDirector.ApplyEchoContract(plan, contract,
-            encounterStep, phaseOverride);
+            encounterStep, phaseOverride, challengeStep);
     }
 
     public static bool ShouldSpawnTurn(bool canTurn, bool planShouldTurn,
@@ -697,8 +840,9 @@ public class TrackManager : MonoBehaviour
         Vector3 forward = controller != null
             ? controller.ForwardDirection
             : _player.forward;
-        int lane = controller != null ? controller.CurrentLane : 1;
-        GetTrackPoseAhead(_player.position, forward, lane, 1f, remaining,
+        float lateralOffset = controller != null
+            ? controller.RenderedLateralOffset : 0f;
+        GetTrackPoseAhead(_player.position, forward, lateralOffset, 1f, remaining,
             out Vector3 position, out Vector3 trackForward);
         position.y = 0f;
         _finishMarker.transform.SetPositionAndRotation(position,
@@ -864,7 +1008,7 @@ public class TrackManager : MonoBehaviour
        }
 
         // Warmup: first few segments have no obstacles
-        const int warmupSegments = 2;
+        const int warmupSegments = 1;
         _straightSegmentsSpawned++;
         _obstacleFreeSegments++;
         for (int lane = 0; lane < _laneObstacleDrought.Length; lane++)
@@ -906,7 +1050,12 @@ public class TrackManager : MonoBehaviour
                     lane = choice.lane,
                     startZ = coinZ + choiceIndex * 0.35f,
                     count = AIRunRandom.Range(choiceMin, choiceMax + 1),
-                    echoContractMarker = choice.echoContractMarker
+                    echoContractMarker = choice.echoContractMarker,
+                    challengeStepId = plan.echoEncounterKind
+                                      == EchoEncounterKind.CounterTest
+                                      && plan.echoEncounterContractType
+                                      == EchoContractType.BreakLaneHabit
+                        ? Mathf.Max(0, plan.echoChallengeStepId) : 0
                 });
             }
         }
@@ -971,6 +1120,12 @@ public class TrackManager : MonoBehaviour
         float jumpHeight = playerController != null
             ? playerController.jumpHeight
             : 3f;
+        TrackSegmentData segmentData = segment.GetComponent<TrackSegmentData>();
+        float segmentRouteDistance = segmentData != null
+            ? segmentData.routeDistance
+            : _plannedDistance;
+        bool challengeObstacleReady = false;
+        float challengeRouteDistance = segmentRouteDistance + coinZ;
         bool prefabsReady = obstaclePrefabs != null && obstaclePrefabs.Length >= 3;
         bool guaranteedContractRow = RequiresGuaranteedEchoEncounterRow(plan);
         bool shouldSpawnObstacles = prefabsReady
@@ -978,7 +1133,10 @@ public class TrackManager : MonoBehaviour
                 ? _straightSegmentsSpawned > warmupSegments
                 : ShouldSpawnObstacleRow(
                     _straightSegmentsSpawned, _obstacleFreeSegments,
-                    warmupSegments, maxConsecutiveObstacleFreeStraights,
+                    warmupSegments,
+                    RunDifficultySettings.ResolveMaxFreeSegments(
+                        maxConsecutiveObstacleFreeStraights,
+                        RunDifficultySettings.Current),
                     plan.obstacleChance, AIRunRandom.Value));
         if (shouldSpawnObstacles)
         {
@@ -999,14 +1157,12 @@ public class TrackManager : MonoBehaviour
                     obsZ = coinZ - 3f - AIRunRandom.Range(0f, 3f);
                 obsZ = Mathf.Clamp(obsZ, buffer + 1f, end - 1f);
             }
-            TrackSegmentData segmentData = segment.GetComponent<TrackSegmentData>();
-            float segmentRouteDistance = segmentData != null
-                ? segmentData.routeDistance
-                : _plannedDistance;
             float firstObstacleRouteDistance = segmentRouteDistance + obsZ
                 + EchoObstacleMinimumLaneOffset(plan);
             float minimumSpacing = TrackSpawnRules.MinimumObstacleRowSpacing(
-                currentSpeed, jumpDuration, segmentLength)
+                currentSpeed, jumpDuration, segmentLength,
+                RunDifficultySettings.ObstacleRecoverySeconds(
+                    RunDifficultySettings.Current))
                 * EchoObstacleSpacingMultiplier(plan);
             if (TrackSpawnRules.CanSpawnObstacleRow(
                     firstObstacleRouteDistance, _lastObstacleRouteDistance,
@@ -1022,6 +1178,17 @@ public class TrackManager : MonoBehaviour
                     if (plan.echoEncounterKind == EchoEncounterKind.CounterTest)
                         _counterattackRowsSpawned++;
                     _obstacleFreeSegments = 0;
+                    ObstacleRowsSpawned++;
+                    float obstacleGap = float.IsNegativeInfinity(
+                        _lastObstacleRouteDistance)
+                        ? 0f
+                        : firstObstacleRouteDistance
+                          - _lastObstacleRouteDistance;
+                    LongestObstacleRowGap = Mathf.Max(LongestObstacleRowGap,
+                        obstacleGap);
+                    AIRunTelemetry.RecordEvent("obstacle_row_spawned",
+                        (int)plan.echoEncounterKind, plan.echoChallengeStepId,
+                        firstObstacleRouteDistance, obstacleGap);
                     float lastObstacleZ = spawnedObstacles[0].z;
                     for (int obstacleIndex = 1;
                          obstacleIndex < spawnedObstacles.Count; obstacleIndex++)
@@ -1029,17 +1196,97 @@ public class TrackManager : MonoBehaviour
                             spawnedObstacles[obstacleIndex].z);
                     _lastObstacleRouteDistance = segmentRouteDistance
                                                  + lastObstacleZ;
+                    bool hasJumpOpportunity = false;
+                    bool hasSlideOpportunity = false;
+                    for (int obstacleIndex = 0;
+                         obstacleIndex < spawnedObstacles.Count; obstacleIndex++)
+                    {
+                        SpawnedObstacleInfo info = spawnedObstacles[obstacleIndex];
+                        if (info.type == ObstacleType.High)
+                            hasJumpOpportunity = true;
+                        else if (info.type == ObstacleType.Low)
+                            hasSlideOpportunity = true;
+                        if (info.challengeRole
+                            != EchoChallengeObstacleRole.Required)
+                            continue;
+                        challengeObstacleReady = true;
+                        challengeRouteDistance = segmentRouteDistance + info.z;
+                    }
+                    if (hasJumpOpportunity) JumpOpportunityRows++;
+                    if (hasSlideOpportunity) SlideOpportunityRows++;
+                    AIRunTelemetry.RecordEvent("obstacle_row_actions",
+                        (hasJumpOpportunity ? 1 : 0)
+                        | (hasSlideOpportunity ? 2 : 0),
+                        plan.echoChallengeLane,
+                        RowsPer100Meters(ObstacleRowsSpawned,
+                            firstObstacleRouteDistance),
+                        plan.echoChallengeStepId);
                 }
             }
+            else
+            {
+                ObstacleRowsRejectedForSpacing++;
+                AIRunTelemetry.RecordEvent("obstacle_row_spacing_rejected",
+                    (int)plan.echoEncounterKind, plan.echoChallengeStepId,
+                    firstObstacleRouteDistance, minimumSpacing);
+            }
+        }
+        else if (prefabsReady && _straightSegmentsSpawned > warmupSegments)
+        {
+            ObstacleRowsSkippedByChance++;
         }
 
         for (int i = 0; i < coinTrails.Count; i++)
         {
             CoinTrailPlan trail = coinTrails[i];
             SpawnCoinTrail(segment, trail.lane, trail.startZ, trail.count,
-                spawnedObstacles, jumpHeight, trail.echoContractMarker);
+                spawnedObstacles, jumpHeight, trail.echoContractMarker,
+                trail.challengeStepId);
+        }
+
+        bool laneChallengeReady = plan.echoChallengeStepId > 0
+                                  && plan.echoEncounterKind
+                                  == EchoEncounterKind.CounterTest
+                                  && plan.echoEncounterContractType
+                                  == EchoContractType.BreakLaneHabit
+                                  && coinPrefab != null;
+        if (laneChallengeReady || challengeObstacleReady)
+        {
+            RegisterChallengeRow(plan, challengeRouteDistance);
         }
    }
+
+    private void RegisterChallengeRow(AITrackPlan plan, float routeDistance)
+    {
+        if (plan.echoChallengeStepId <= 0) return;
+        AIShadowRunner shadow = AIShadowRunner.Instance;
+        if (shadow == null || !shadow.BindChallengeStep(
+                plan.echoChallengeStepId, plan.echoPredictedLane,
+                plan.echoRiskChoiceLane, plan.echoSafeChoiceLane,
+                routeDistance))
+            return;
+
+        _challengeRows.Add(new ChallengeRowRuntime
+        {
+            stepId = plan.echoChallengeStepId,
+            routeDistance = routeDistance
+        });
+        ChallengeRowsSpawned++;
+        GameManager gameManager = GameManager.Instance;
+        float playerDistance = gameManager != null ? gameManager.Distance : 0f;
+        float currentSpeed = gameManager != null
+            ? gameManager.CurrentSpeed : 10f;
+        float warningSeconds = Mathf.Max(0f, routeDistance - playerDistance)
+                               / Mathf.Max(1f, currentSpeed);
+        MinimumChallengeWarningSeconds = Mathf.Min(
+            MinimumChallengeWarningSeconds, warningSeconds);
+        AIRunTelemetry.RecordEvent("echo_challenge_spawned",
+            plan.echoChallengeStepId, plan.echoRiskChoiceLane,
+            routeDistance, (float)plan.echoTargetAction);
+        AIRunTelemetry.RecordEvent("echo_challenge_warning",
+            plan.echoChallengeStepId, plan.echoRiskChoiceLane,
+            warningSeconds, (float)plan.echoTargetAction);
+    }
 
     float CalculateBaseDifficulty()
     {
@@ -1072,6 +1319,7 @@ public class TrackManager : MonoBehaviour
             echoTargetAction = ShadowAction.Keep,
             echoEncounterKind = EchoEncounterKind.None,
             echoEncounterContractType = EchoContractType.None,
+            echoChallengeStepId = 0,
             echoPredictedLane = -1,
             echoSafeChoiceLane = -1,
             echoRiskChoiceLane = -1,
@@ -1086,14 +1334,14 @@ public class TrackManager : MonoBehaviour
 
     void SpawnCoinTrail(GameObject segment, int lane, float startZ, int count,
         List<SpawnedObstacleInfo> obstacles, float jumpHeight,
-        bool echoContractMarker = false)
+        bool echoContractMarker = false, int challengeStepId = 0)
     {
         if (coinPrefab == null) return;
         if (TryGetOverlappingJumpObstacle(
                 lane, startZ, count, obstacles, out float obstacleZ))
         {
             SpawnJumpCoinArc(segment, lane, obstacleZ, jumpHeight,
-                echoContractMarker);
+                echoContractMarker, challengeStepId);
             return;
         }
 
@@ -1104,7 +1352,8 @@ public class TrackManager : MonoBehaviour
                 startZ + c * TrackSpawnRules.CoinSpacing);
             if (lp.z > segmentLength - 1f) break;
             Vector3 wp = segment.transform.TransformPoint(lp);
-            SpawnCoinInstance(segment, wp, echoContractMarker);
+            SpawnCoinInstance(segment, wp, echoContractMarker,
+                challengeStepId);
         }
     }
 
@@ -1131,7 +1380,8 @@ public class TrackManager : MonoBehaviour
     }
 
     void SpawnJumpCoinArc(GameObject segment, int lane, float obstacleZ,
-        float jumpHeight, bool echoContractMarker = false)
+        float jumpHeight, bool echoContractMarker = false,
+        int challengeStepId = 0)
     {
         int count = TrackSpawnRules.JumpRewardCoinCount;
         float spacing = TrackSpawnRules.CoinSpacing;
@@ -1149,7 +1399,8 @@ public class TrackManager : MonoBehaviour
                 TrackSpawnRules.GroundCoinHeight, jumpHeight);
             Vector3 wp = segment.transform.TransformPoint(
                 new Vector3(x, y, z));
-            SpawnCoinInstance(segment, wp, echoContractMarker);
+            SpawnCoinInstance(segment, wp, echoContractMarker,
+                challengeStepId);
         }
     }
 
@@ -1235,14 +1486,37 @@ public class TrackManager : MonoBehaviour
                     TrackSpawnRules.CoinSegmentMargin);
             }
 
-            if (SpawnObstacleAt(segment, lane, obstacleZ, type))
+            EchoChallengeObstacleRole challengeRole =
+                EchoChallengeObstacleRole.None;
+            if (plan.echoChallengeStepId > 0
+                && plan.echoEncounterKind == EchoEncounterKind.CounterTest)
+            {
+                if (lane == plan.echoRiskChoiceLane)
+                    challengeRole = EchoChallengeObstacleRole.Required;
+                else if (lane == plan.echoPredictedLane)
+                    challengeRole = EchoChallengeObstacleRole.Predicted;
+            }
+            EchoChallengeObstacleBinding binding = new EchoChallengeObstacleBinding
+            {
+                stepId = challengeRole == EchoChallengeObstacleRole.None
+                    ? 0 : plan.echoChallengeStepId,
+                role = challengeRole,
+                action = obstacleType == ObstacleType.High
+                    ? ShadowAction.Jump : obstacleType == ObstacleType.Low
+                        ? ShadowAction.Slide : ShadowAction.Keep,
+                lane = lane
+            };
+
+            if (SpawnObstacleAtWithBinding(
+                    segment, lane, obstacleZ, type, binding) != null)
             {
                 _laneObstacleDrought[lane] = 0;
                 spawnedObstacles.Add(new SpawnedObstacleInfo
                 {
                     lane = lane,
                     z = obstacleZ,
-                    type = obstacleType
+                    type = obstacleType,
+                    challengeRole = challengeRole
                 });
                 spawned++;
             }
@@ -1250,18 +1524,39 @@ public class TrackManager : MonoBehaviour
        return spawned;
     }
 
-    bool SpawnObstacleAt(GameObject segment, int lane, float z, int prefabIndex)
+    bool SpawnObstacleAt(GameObject segment, int lane, float z,
+        int prefabIndex)
+    {
+        return SpawnObstacleAtWithBinding(
+            segment, lane, z, prefabIndex, default) != null;
+    }
+
+    GameObject SpawnObstacleAtWithBinding(GameObject segment, int lane,
+        float z, int prefabIndex, EchoChallengeObstacleBinding binding)
     {
         if (obstaclePrefabs == null || prefabIndex < 0
             || prefabIndex >= obstaclePrefabs.Length || obstaclePrefabs[prefabIndex] == null)
-            return false;
+            return null;
 
         float x = (lane - 1) * laneDistance;
         Vector3 lp = new Vector3(x, 1f, z);
         Vector3 wp = segment.transform.TransformPoint(lp);
         Quaternion rot = segment.transform.rotation;
-        SpawnDynamic(obstaclePrefabs[prefabIndex], segment, wp, rot);
-        return true;
+        GameObject instance = SpawnDynamic(
+            obstaclePrefabs[prefabIndex], segment, wp, rot);
+        if (instance == null) return null;
+        EchoChallengeObstacleTag tag = instance.GetComponent<
+            EchoChallengeObstacleTag>();
+        if (binding.IsBound)
+        {
+            if (tag == null) tag = instance.AddComponent<EchoChallengeObstacleTag>();
+            tag.Configure(binding);
+        }
+        else
+        {
+            tag?.Clear();
+        }
+        return instance;
     }
 
     public static bool ShouldSpawnObstacleRow(int straightSegmentsSpawned,
@@ -1323,9 +1618,11 @@ public class TrackManager : MonoBehaviour
     {
         if (plan.echoEncounterKind == EchoEncounterKind.None)
             return RequiresGuaranteedContractRow(plan.echoContractType);
+        if (plan.echoEncounterKind == EchoEncounterKind.CounterTest
+            && plan.echoChallengeStepId < 0)
+            return false;
         if (plan.echoEncounterKind == EchoEncounterKind.DetectionEvidence)
-            return plan.echoEncounterContractType != EchoContractType.BreakLaneHabit
-                   && plan.echoEncounterStep % 2 == 0;
+            return plan.echoEncounterStep % 2 == 0;
         return true;
     }
 
@@ -1346,7 +1643,21 @@ public class TrackManager : MonoBehaviour
                     lane = Mathf.Clamp(plan.echoPredictedLane, 0, 2),
                     minCoinCount = 5,
                     maxCoinCount = 7,
-                    echoContractMarker = false
+                    echoContractMarker = true
+                },
+                new EchoEncounterLaneChoice
+                {
+                    lane = Mathf.Clamp(plan.echoSafeChoiceLane, 0, 2),
+                    minCoinCount = 5,
+                    maxCoinCount = 7,
+                    echoContractMarker = true
+                },
+                new EchoEncounterLaneChoice
+                {
+                    lane = Mathf.Clamp(plan.echoRiskChoiceLane, 0, 2),
+                    minCoinCount = 5,
+                    maxCoinCount = 7,
+                    echoContractMarker = true
                 }
             };
         }
@@ -1503,15 +1814,9 @@ public class TrackManager : MonoBehaviour
 
     public static float EchoObstacleSpacingMultiplier(AITrackPlan plan)
     {
-        if (plan.echoEncounterKind != EchoEncounterKind.CounterTest)
-            return 1f;
-
-        switch ((plan.echoObstacleSpacingBand % 3 + 3) % 3)
-        {
-            case 1: return 1.1f;
-            case 2: return 1.2f;
-            default: return 1f;
-        }
+        // Layout bands still vary row position and lane order, but no longer
+        // stretch the recovery-safe floor during the time-limited counterattack.
+        return 1f;
     }
 
     public static AITrackPlan PrepareCounterObstacleRowPlan(
@@ -1676,13 +1981,14 @@ public class TrackManager : MonoBehaviour
        return instance;
    }
 
-   private GameObject SpawnCoinInstance(GameObject ownerSegment,
-       Vector3 position, bool echoContractMarker)
+    private GameObject SpawnCoinInstance(GameObject ownerSegment,
+        Vector3 position, bool echoContractMarker,
+        int challengeStepId = 0)
    {
        GameObject instance = SpawnDynamic(
            coinPrefab, ownerSegment, position, Quaternion.identity);
        Coin coin = instance != null ? instance.GetComponent<Coin>() : null;
-       coin?.ConfigureEchoContractMarker(echoContractMarker);
+        coin?.ConfigureEchoContractMarker(echoContractMarker, challengeStepId);
        return instance;
    }
 
@@ -1697,16 +2003,23 @@ public class TrackManager : MonoBehaviour
            return;
        }
 
-       if (instance != null) instance.SetActive(false);
+        if (instance != null)
+        {
+            instance.GetComponent<EchoChallengeObstacleTag>()?.Clear();
+            instance.GetComponent<Coin>()?.ConfigureEchoContractMarker(false);
+            instance.SetActive(false);
+        }
    }
 
    void ReturnDynamicToPool(DynamicEntry entry)
    {
        if (entry.instance == null || entry.prefab == null) return;
-       if (_player != null)
-           _player.GetComponent<PlayerController>()
-               ?.ForgetResolvedObstacle(entry.instance);
-       entry.instance.SetActive(false);
+        if (_player != null)
+            _player.GetComponent<PlayerController>()
+                ?.ForgetResolvedObstacle(entry.instance);
+        entry.instance.GetComponent<EchoChallengeObstacleTag>()?.Clear();
+        entry.instance.GetComponent<Coin>()?.ConfigureEchoContractMarker(false);
+        entry.instance.SetActive(false);
        entry.instance.transform.SetParent(transform, false);
 
        if (!_dynamicPools.TryGetValue(entry.prefab, out Queue<GameObject> pool))

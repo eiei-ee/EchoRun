@@ -75,6 +75,7 @@ public struct AITrackPlan
     public EchoEncounterKind echoEncounterKind;
     public EchoContractType echoEncounterContractType;
     public int echoEncounterStep;
+    public int echoChallengeStepId;
     public int echoPredictedLane;
     public int echoSafeChoiceLane;
     public int echoRiskChoiceLane;
@@ -348,8 +349,10 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
                                       >= ScheduledEchoBoundary
             ? ScheduledEchoPhase
             : EchoDuelPhase.None;
+        EchoChallengeStep challengeStep = AIShadowRunner.Instance != null
+            ? AIShadowRunner.Instance.ActiveChallengeStep : default;
         plan = ApplyEchoContract(plan, activeContract, _decisionCount,
-            phaseOverride);
+            phaseOverride, challengeStep);
         ShadowAIDirective directive = BuildShadowDirective(intent);
         int telemetryDecisionId =
             AIRunTelemetry.RecordDirectorDecision(
@@ -707,6 +710,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             echoEncounterKind = EchoEncounterKind.None,
             echoEncounterContractType = EchoContractType.None,
             echoEncounterStep = 0,
+            echoChallengeStepId = 0,
             echoPredictedLane = -1,
             echoSafeChoiceLane = -1,
             echoRiskChoiceLane = -1,
@@ -806,6 +810,14 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         EchoContractData contract, int decisionCount,
         EchoDuelPhase phaseOverride)
     {
+        return ApplyEchoContract(plan, contract, decisionCount, phaseOverride,
+            default);
+    }
+
+    public static AITrackPlan ApplyEchoContract(AITrackPlan plan,
+        EchoContractData contract, int decisionCount,
+        EchoDuelPhase phaseOverride, EchoChallengeStep challengeStep)
+    {
         if (contract == null || contract.type == EchoContractType.None)
             return plan;
 
@@ -813,11 +825,12 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             ? phaseOverride
             : contract.duelPhase == EchoDuelPhase.None
                 ? EchoDuelPhase.Resistance : contract.duelPhase;
-        plan = ConfigureEchoEncounter(plan, contract, decisionCount, phase);
+        plan = ConfigureEchoEncounter(plan, contract, decisionCount, phase,
+            challengeStep);
         if (phase == EchoDuelPhase.Detection)
         {
             plan.echoContractType = EchoContractType.None;
-            plan.obstacleChance = Mathf.Min(plan.obstacleChance, 0.35f);
+            plan.obstacleChance = Mathf.Clamp(plan.obstacleChance, 0.5f, 0.72f);
             plan.coinChance = Mathf.Max(plan.coinChance, 0.78f);
             plan.maxBlockedLanes = 1;
             return plan;
@@ -827,7 +840,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         {
             plan.echoContractType = EchoContractType.None;
             plan.difficulty = Mathf.Max(plan.difficulty, 0.35f);
-            plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.58f);
+            plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.72f);
             plan.coinChance = Mathf.Max(plan.coinChance, 0.9f);
             plan.maxBlockedLanes = contract.type
                                    == EchoContractType.BreakLaneHabit ? 1 : 2;
@@ -839,17 +852,16 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             // The player is authoring a new style, so provide several readable
             // routes instead of continuing to order a single counter-action.
             plan.echoContractType = EchoContractType.None;
-            plan.obstacleChance = Mathf.Clamp(plan.obstacleChance, 0.42f, 0.58f);
+            plan.obstacleChance = Mathf.Clamp(plan.obstacleChance, 0.62f, 0.72f);
             plan.coinChance = Mathf.Max(plan.coinChance, 0.82f);
             plan.maxBlockedLanes = 1;
             return plan;
         }
 
         plan.echoContractType = contract.type;
-        plan.echoTargetAction = contract.targetAction;
         if (phase == EchoDuelPhase.Counterattack)
         {
-            plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.8f);
+            plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.9f);
             plan.coinChance = Mathf.Max(plan.coinChance, 0.78f);
             plan.maxBlockedLanes = 2;
         }
@@ -861,7 +873,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
                     // The old route is deliberately tempting and readable.
                     // Only the aggressive counter route carries an obstacle.
                     plan.difficulty = Mathf.Clamp(plan.difficulty, 0.58f, 0.7f);
-                    plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.76f);
+                    plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.84f);
                     plan.coinChance = Mathf.Max(plan.coinChance, 0.9f);
                     plan.maxBlockedLanes = 1;
                     break;
@@ -869,7 +881,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
                     // The echo attacks both its new prediction and the greedy
                     // route, leaving one deterministic escape route.
                     plan.difficulty = Mathf.Max(plan.difficulty, 0.84f);
-                    plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.92f);
+                    plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.96f);
                     plan.coinChance = Mathf.Max(plan.coinChance, 0.78f);
                     plan.maxBlockedLanes = 2;
                     break;
@@ -877,7 +889,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
                     // Free choice keeps two readable lanes open and puts the
                     // largest distance reward behind one explicit action test.
                     plan.difficulty = Mathf.Clamp(plan.difficulty, 0.68f, 0.82f);
-                    plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.82f);
+                    plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.9f);
                     plan.coinChance = Mathf.Max(plan.coinChance, 0.84f);
                     plan.maxBlockedLanes = 1;
                     break;
@@ -885,7 +897,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         }
         else
         {
-            plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.72f);
+            plan.obstacleChance = Mathf.Max(plan.obstacleChance, 0.82f);
             plan.coinChance = Mathf.Max(plan.coinChance, 0.8f);
             plan.maxBlockedLanes = 2;
         }
@@ -901,7 +913,8 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
     }
 
     private static AITrackPlan ConfigureEchoEncounter(AITrackPlan plan,
-        EchoContractData contract, int decisionCount, EchoDuelPhase phase)
+        EchoContractData contract, int decisionCount, EchoDuelPhase phase,
+        EchoChallengeStep challengeStep)
     {
         int step = PositiveModulo(decisionCount, 1024);
         EchoEncounterKind kind;
@@ -938,8 +951,18 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         plan.echoEncounterKind = kind;
         plan.echoEncounterContractType = contract.type;
         plan.echoEncounterStep = step;
-        plan.echoTargetAction = ResolveTargetAction(contract);
-        plan.echoPredictedAction = ResolvePredictedAction(contract, kind);
+        bool currentCounterStep = phase == EchoDuelPhase.Counterattack
+                                  && challengeStep.stepId > 0
+                                  && challengeStep.contractType == contract.type;
+        plan.echoChallengeStepId = currentCounterStep
+            ? challengeStep.IsPending
+                ? challengeStep.stepId : -challengeStep.stepId
+            : 0;
+        plan.echoTargetAction = currentCounterStep
+            ? challengeStep.requiredAction : ResolveTargetAction(contract);
+        plan.echoPredictedAction = currentCounterStep
+            ? challengeStep.predictedAction
+            : ResolvePredictedAction(contract, kind);
         plan.echoObstaclePattern = kind == EchoEncounterKind.CounterTest
             ? EchoObstaclePatternRules.PatternForStep(step)
             : EchoObstaclePattern.PairedAligned;
@@ -948,6 +971,10 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         plan.echoObstacleLayoutStep = step;
 
         int predictedLane = ResolvePredictedLane(contract, kind, step);
+        if (currentCounterStep
+            && challengeStep.predictedLane >= 0
+            && challengeStep.predictedLane <= 2)
+            predictedLane = challengeStep.predictedLane;
         int riskLane = ResolveRiskLane(contract, kind, step, predictedLane);
         int safeLane = RemainingLane(predictedLane, riskLane);
         plan.echoPredictedLane = predictedLane;
@@ -979,7 +1006,9 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         }
 
         if (kind == EchoEncounterKind.CounterTest)
-            return PositiveModulo(contract.generation + step, 3);
+            return contract.predictionLane >= 0
+                ? Mathf.Clamp(contract.predictionLane, 0, 2)
+                : PositiveModulo(contract.generation + step, 3);
 
         int targetLane = Mathf.Clamp(contract.targetLane, 0, 2);
         return (targetLane + 1 + PositiveModulo(step, 2)) % 3;

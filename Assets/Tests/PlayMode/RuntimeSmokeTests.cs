@@ -254,6 +254,38 @@ public sealed class RuntimeSmokeTests
     }
 
     [UnityTest]
+    public IEnumerator SettingsSoundSlidersKeepVisibleMeaningfulReadouts()
+    {
+        SceneManager.LoadScene("SampleScene");
+        yield return null;
+        UIManager ui = null;
+        for (int frame = 0; frame < 180
+             && (GameManager.Instance == null || ui == null); frame++)
+        {
+            ui = Object.FindObjectOfType<UIManager>();
+            yield return null;
+        }
+
+        Assert.IsNotNull(ui);
+        Button settings = GetPrivateField<Button>(ui, "_settingsBtn");
+        ExecuteEvents.Execute(settings.gameObject,
+            new PointerEventData(EventSystem.current),
+            ExecuteEvents.pointerClickHandler);
+        for (int frame = 0; frame < 5; frame++) yield return null;
+        Canvas.ForceUpdateCanvases();
+
+        Text master = GetPrivateField<Text>(ui, "_masterValueText");
+        Text music = GetPrivateField<Text>(ui, "_bgmValueText");
+        Text effects = GetPrivateField<Text>(ui, "_sfxValueText");
+        AssertSoundReadout(master, "主音量");
+        AssertSoundReadout(music, "音乐音量");
+        AssertSoundReadout(effects, "音效音量");
+        Assert.Greater(master.transform.GetSiblingIndex(),
+            GetPrivateField<Button>(ui, "_settingsBackBtn")
+                .transform.GetSiblingIndex());
+    }
+
+    [UnityTest]
     public IEnumerator RepeatedRestartsRestoreRuntimeArtForEveryRun()
     {
         SceneManager.LoadScene("SampleScene");
@@ -641,11 +673,13 @@ public sealed class RuntimeSmokeTests
         "HighScore",
         "TotalCoins",
         "TargetFrameRate",
+        "AudioMuted",
         "CharacterPreset"
     };
 
     private static readonly string[] SaveFloatKeys =
     {
+        "MasterVolume",
         "MusicVolume",
         "SfxVolume"
     };
@@ -725,6 +759,17 @@ public sealed class RuntimeSmokeTests
             BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.IsNotNull(info, "Missing private field: " + field);
         return info.GetValue(component) as T;
+    }
+
+    private static void AssertSoundReadout(Text readout, string expectedLabel)
+    {
+        Assert.IsNotNull(readout);
+        Assert.IsTrue(readout.gameObject.activeInHierarchy);
+        Assert.IsTrue(readout.enabled);
+        StringAssert.StartsWith(expectedLabel, readout.text);
+        Assert.Greater(readout.color.a, 0.9f);
+        Assert.Greater(readout.preferredWidth, 0f);
+        Assert.Greater(readout.cachedTextGenerator.vertexCount, 0);
     }
 
     private static void AssertButtonVisibleAndRaycastable(

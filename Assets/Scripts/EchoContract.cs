@@ -9,10 +9,286 @@ public enum EchoContractType
     DisruptRhythm
 }
 
+public enum EchoChallengeStepStatus
+{
+    None,
+    PendingSpawn,
+    Active
+}
+
+public enum EchoChallengeObstacleRole
+{
+    None,
+    Predicted,
+    Required
+}
+
+public enum EchoEncounterOutcome
+{
+    None,
+    Evidence,
+    PredictionHit,
+    PredictionBroken,
+    SafeChoice,
+    Collision,
+    Cancelled
+}
+
+public enum EchoCounterStrategy
+{
+    None,
+    OppositeAction,
+    FarLane,
+    SafeChoice,
+    RewardChoice,
+    AlternateChoice
+}
+
+[Serializable]
+public struct EchoPredictionSnapshot
+{
+    public int hypothesisVersion;
+    public int predictedLane;
+    public ShadowAction predictedAction;
+    public float predictedProbability;
+    public EchoCounterStrategy counterStrategy;
+}
+
+[Serializable]
+public struct EchoEncounterInputEvidence
+{
+    public bool recorded;
+    public ShadowAction action;
+    public int lane;
+    public float routeDistance;
+}
+
+[Serializable]
+public struct EchoDetectionEvidence
+{
+    public int leftLaneChoices;
+    public int centerLaneChoices;
+    public int rightLaneChoices;
+    public int jumpChoices;
+    public int slideChoices;
+    public int repeatedVerticalChoices;
+    public int changedVerticalChoices;
+    public ShadowAction lastVerticalAction;
+
+    public int LaneChoiceCount => leftLaneChoices + centerLaneChoices
+                                  + rightLaneChoices;
+    public int VerticalChoiceCount => jumpChoices + slideChoices;
+    public int ValidChoiceCount => LaneChoiceCount + VerticalChoiceCount;
+    public int VerticalTransitionCount => repeatedVerticalChoices
+                                          + changedVerticalChoices;
+    public float LaneConfidence01 => Mathf.Clamp01(LaneChoiceCount / 2f);
+    public float VerticalConfidence01 => Mathf.Clamp01(
+        VerticalChoiceCount / 2f);
+    public float RhythmConfidence01 => Mathf.Clamp01(
+        VerticalTransitionCount / 2f);
+    public float LanePreference => LaneChoiceCount > 0
+        ? (rightLaneChoices - leftLaneChoices) / (float)LaneChoiceCount
+        : 0f;
+    public float SlideFrequency => VerticalChoiceCount > 0
+        ? slideChoices / (float)VerticalChoiceCount : 0.5f;
+    public float RhythmStability => VerticalTransitionCount > 0
+        ? repeatedVerticalChoices / (float)VerticalTransitionCount : 0.5f;
+
+    public void RecordLane(int lane)
+    {
+        if (lane <= 0) leftLaneChoices++;
+        else if (lane >= 2) rightLaneChoices++;
+        else centerLaneChoices++;
+    }
+
+    public void RecordVertical(ShadowAction action)
+    {
+        if (action != ShadowAction.Jump && action != ShadowAction.Slide)
+            return;
+        if (action == ShadowAction.Jump) jumpChoices++;
+        else slideChoices++;
+
+        if (lastVerticalAction == ShadowAction.Jump
+            || lastVerticalAction == ShadowAction.Slide)
+        {
+            if (lastVerticalAction == action) repeatedVerticalChoices++;
+            else changedVerticalChoices++;
+        }
+        lastVerticalAction = action;
+    }
+}
+
+[Serializable]
+public struct EchoEncounterResult
+{
+    public int encounterId;
+    public EchoDuelPhase phase;
+    public EchoEncounterOutcome outcome;
+    public int selectedLane;
+    public ShadowAction selectedAction;
+    public float predictedProbability;
+    public float surprise;
+    public float novelty;
+    public float executionQuality;
+    public float fracturePower;
+    public float lockBefore;
+    public float lockAfter;
+    public float playerLeadDelta;
+    public float shadowLeadDelta;
+    public int hypothesisVersion;
+
+    public bool IsResolved => encounterId > 0
+                              && outcome != EchoEncounterOutcome.None;
+}
+
+[Serializable]
+public struct EchoChallengeStep
+{
+    public int stepId;
+    public EchoDuelPhase phase;
+    public EchoContractType contractType;
+    public EchoChallengeStepStatus status;
+    public ShadowAction predictedAction;
+    public ShadowAction requiredAction;
+    public int predictedLane;
+    public int challengeLane;
+    public int safeLane;
+    public int successes;
+    public int requiredSuccesses;
+    public float routeDistance;
+    public EchoPredictionSnapshot prediction;
+
+    public bool IsPending => stepId > 0
+                             && status == EchoChallengeStepStatus.PendingSpawn;
+    public bool IsActive => stepId > 0
+                            && status == EchoChallengeStepStatus.Active;
+    public int EncounterId => stepId;
+}
+
+/// <summary>
+/// Owns the only live encounter and its input evidence. Inputs may be recorded
+/// while the player approaches the gate, but only the evaluator can turn the
+/// frozen snapshot into a result at an obstacle pass, collision, or gate.
+/// </summary>
+public sealed class EchoEncounterController
+{
+    public EchoChallengeStep Active { get; private set; }
+    public EchoEncounterInputEvidence InputEvidence { get; private set; }
+    public EchoEncounterResult LastResult { get; private set; }
+
+    private int _nextEncounterId = 1;
+
+    public EchoChallengeStep Begin(EchoChallengeStep template)
+    {
+        template.stepId = _nextEncounterId++;
+        template.status = EchoChallengeStepStatus.PendingSpawn;
+        Active = template;
+        InputEvidence = default;
+        return Active;
+    }
+
+    public bool Bind(int encounterId, int predictedLane, int challengeLane,
+        int safeLane, float resolveDistance)
+    {
+        if (!Active.IsPending || Active.stepId != encounterId) return false;
+        EchoChallengeStep bound = Active;
+        bound.predictedLane = Mathf.Clamp(predictedLane, 0, 2);
+        bound.challengeLane = Mathf.Clamp(challengeLane, 0, 2);
+        bound.safeLane = Mathf.Clamp(safeLane, 0, 2);
+        bound.routeDistance = Mathf.Max(0f, resolveDistance);
+        bound.status = EchoChallengeStepStatus.Active;
+        EchoPredictionSnapshot snapshot = bound.prediction;
+        snapshot.predictedLane = bound.predictedLane;
+        snapshot.predictedAction = bound.predictedAction;
+        bound.prediction = snapshot;
+        Active = bound;
+        return true;
+    }
+
+    public bool RecordInput(int encounterId, ShadowAction action, int lane,
+        float routeDistance)
+    {
+        if (!Active.IsActive || Active.stepId != encounterId
+            || (action != ShadowAction.Jump && action != ShadowAction.Slide))
+            return false;
+        InputEvidence = new EchoEncounterInputEvidence
+        {
+            recorded = true,
+            action = action,
+            lane = Mathf.Clamp(lane, 0, 2),
+            routeDistance = Mathf.Max(0f, routeDistance)
+        };
+        return true;
+    }
+
+    public bool TryGetActive(int encounterId, out EchoChallengeStep encounter,
+        out EchoEncounterInputEvidence evidence)
+    {
+        encounter = Active;
+        evidence = InputEvidence;
+        return Active.IsActive && Active.stepId == encounterId;
+    }
+
+    public void Resolve(EchoEncounterResult result)
+    {
+        if (!result.IsResolved || !Active.IsActive
+            || result.encounterId != Active.stepId)
+            return;
+        LastResult = result;
+        Active = default;
+        InputEvidence = default;
+    }
+
+    public void CancelActive(EchoDuelPhase phase)
+    {
+        if (Active.stepId > 0)
+        {
+            LastResult = new EchoEncounterResult
+            {
+                encounterId = Active.stepId,
+                phase = phase,
+                outcome = EchoEncounterOutcome.Cancelled,
+                selectedLane = -1,
+                selectedAction = ShadowAction.Keep,
+                hypothesisVersion = Active.prediction.hypothesisVersion
+            };
+        }
+        Active = default;
+        InputEvidence = default;
+    }
+}
+
+[Serializable]
+public struct EchoChallengeObstacleBinding
+{
+    public int stepId;
+    public EchoChallengeObstacleRole role;
+    public ShadowAction action;
+    public int lane;
+
+    public bool IsBound => stepId > 0
+                           && role != EchoChallengeObstacleRole.None;
+}
+
+public sealed class EchoChallengeObstacleTag : MonoBehaviour
+{
+    public EchoChallengeObstacleBinding Binding { get; private set; }
+
+    public void Configure(EchoChallengeObstacleBinding binding)
+    {
+        Binding = binding;
+    }
+
+    public void Clear()
+    {
+        Binding = default;
+    }
+}
+
 [Serializable]
 public sealed class EchoContractData
 {
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 6;
 
     public int version = CurrentVersion;
     public EchoContractType type;
@@ -36,6 +312,21 @@ public sealed class EchoContractData
     public bool duelFailed;
     public EchoDuelPhase failurePhase;
     public bool exploratory;
+    public bool completionLocked;
+    public float echoLock = 100f;
+    public int hypothesisVersion = 1;
+    public int counterRelockCount;
+    public EchoCounterStrategy counterStrategy;
+    public int detectionEvidenceCount;
+    public bool detectionContractLocked;
+    public bool preserveRuleForRetry;
+    public int revealEncounterCount;
+    public int resistanceEncounterCount;
+    public int counterEncounterCount;
+    public bool counterattackExhausted;
+    public bool rewriteReady;
+    public EchoEncounterResult lastEncounterResult;
+    public string encounterDebug = "";
     public int feedbackSequence;
     public string title = "";
     public string learnedTrait = "";
@@ -45,6 +336,8 @@ public sealed class EchoContractData
 
     public float Progress01 => Mathf.Clamp01(
         progress / Mathf.Max(0.01f, targetProgress));
+    public float EchoLock01 => completionLocked
+        ? 0f : Mathf.Clamp01(1f - Progress01);
 
     public EchoContractData Clone()
     {
@@ -104,9 +397,36 @@ public sealed class EchoContractData
         }
         targetProgress = Mathf.Max(1f, targetProgress);
         progress = Mathf.Clamp(progress, 0f, targetProgress);
+        if (sourceVersion < 5)
+        {
+            completionLocked = completed
+                               && (duelPhase == EchoDuelPhase.Rewrite
+                                   || duelPhase == EchoDuelPhase.Finale
+                                   || duelPhase == EchoDuelPhase.Finished
+                                   || won);
+            echoLock = completed
+                ? 0f : 100f * (1f - Progress01);
+            hypothesisVersion = Mathf.Max(1, hypothesisVersion);
+        }
+        completionLocked = completionLocked || won;
+        if (completionLocked || won) completed = true;
+        echoLock = completionLocked
+            ? 0f : 100f * (1f - Progress01);
+        hypothesisVersion = Mathf.Max(1, hypothesisVersion);
+        counterRelockCount = Mathf.Clamp(counterRelockCount, 0, 1);
+        if (!Enum.IsDefined(typeof(EchoCounterStrategy), counterStrategy))
+            counterStrategy = EchoCounterStrategy.None;
+        detectionEvidenceCount = Mathf.Max(0, detectionEvidenceCount);
+        if (sourceVersion < 6)
+        {
+            detectionContractLocked = false;
+            preserveRuleForRetry = false;
+        }
+        revealEncounterCount = Mathf.Max(0, revealEncounterCount);
+        resistanceEncounterCount = Mathf.Max(0, resistanceEncounterCount);
+        counterEncounterCount = Mathf.Max(0, counterEncounterCount);
         playerProgressBonus = Mathf.Max(0f, playerProgressBonus);
         shadowProgressBonus = Mathf.Max(0f, shadowProgressBonus);
-        completed = progress >= targetProgress || completed;
         if (!Enum.IsDefined(typeof(EchoDuelPhase), duelPhase))
             duelPhase = EchoDuelPhase.None;
         if (!Enum.IsDefined(typeof(EchoDuelPhase), failurePhase))
@@ -128,6 +448,7 @@ public sealed class EchoContractData
         ruleDescription = ruleDescription ?? "";
         objective = objective ?? "";
         lastFeedback = lastFeedback ?? "";
+        encounterDebug = encounterDebug ?? "";
     }
 
     public EchoContractData ResetForRun()
@@ -146,6 +467,20 @@ public sealed class EchoContractData
         reset.won = false;
         reset.duelFailed = false;
         reset.failurePhase = EchoDuelPhase.None;
+        reset.completionLocked = false;
+        reset.echoLock = 100f;
+        reset.hypothesisVersion = 1;
+        reset.counterRelockCount = 0;
+        reset.counterStrategy = EchoCounterStrategy.None;
+        reset.detectionEvidenceCount = 0;
+        reset.detectionContractLocked = false;
+        reset.revealEncounterCount = 0;
+        reset.resistanceEncounterCount = 0;
+        reset.counterEncounterCount = 0;
+        reset.counterattackExhausted = false;
+        reset.rewriteReady = false;
+        reset.lastEncounterResult = default;
+        reset.encounterDebug = "";
         reset.feedbackSequence = 0;
         reset.lastFeedback = "";
         if (reset.startingAction != ShadowAction.Keep)
@@ -156,6 +491,9 @@ public sealed class EchoContractData
 
 public static class EchoContractPolicy
 {
+    public const float FrozenDetectionWeight = 0.7f;
+    public const float CurrentDetectionWeight = 0.3f;
+
     public static EchoContractData CreateForRun(PlayerStyleData source,
         int generation, string retryJson)
     {
@@ -170,7 +508,11 @@ public static class EchoContractPolicy
                     retry.Normalize();
                     if (retry.type != EchoContractType.None && !retry.won
                         && retry.generation == Mathf.Max(1, generation))
-                        return retry.ResetForRun();
+                    {
+                        EchoContractData reset = retry.ResetForRun();
+                        reset.preserveRuleForRetry = true;
+                        return reset;
+                    }
                 }
             }
             catch (Exception)
@@ -179,6 +521,62 @@ public static class EchoContractPolicy
             }
         }
         return Create(source, generation);
+    }
+
+    public static EchoContractData CreateFromDetection(PlayerStyleData frozen,
+        int generation, EchoDetectionEvidence evidence)
+    {
+        return Create(BlendDetectionStyle(frozen, evidence), generation);
+    }
+
+    public static PlayerStyleData BlendDetectionStyle(PlayerStyleData frozen,
+        EchoDetectionEvidence evidence)
+    {
+        PlayerStyleData blended = frozen != null
+            ? frozen.Clone() : new PlayerStyleData();
+        blended.Normalize();
+        if (evidence.ValidChoiceCount < 2) return blended;
+
+        float laneInfluence = CurrentDetectionWeight
+                              * evidence.LaneConfidence01;
+        if (evidence.LaneChoiceCount > 0)
+        {
+            blended.lanePreference = Mathf.Lerp(blended.lanePreference,
+                evidence.LanePreference, laneInfluence);
+            blended.laneSamples = Mathf.Max(blended.laneSamples,
+                Mathf.Min(12, evidence.LaneChoiceCount * 6));
+        }
+
+        float verticalInfluence = CurrentDetectionWeight
+                                  * evidence.VerticalConfidence01;
+        if (evidence.VerticalChoiceCount > 0)
+        {
+            blended.slideFrequency = Mathf.Lerp(blended.slideFrequency,
+                evidence.SlideFrequency, verticalInfluence);
+            int verticalSamples = Mathf.Min(5,
+                evidence.VerticalChoiceCount * 3);
+            blended.verticalActionSamples = Mathf.Max(
+                blended.verticalActionSamples, verticalSamples);
+            int inferredSlides = Mathf.RoundToInt(
+                blended.slideFrequency * blended.verticalActionSamples);
+            blended.slideActionSamples = Mathf.Clamp(inferredSlides, 0,
+                blended.verticalActionSamples);
+            blended.jumpActionSamples = blended.verticalActionSamples
+                                         - blended.slideActionSamples;
+        }
+
+        float rhythmInfluence = CurrentDetectionWeight
+                                * evidence.RhythmConfidence01;
+        if (evidence.VerticalTransitionCount > 0)
+        {
+            blended.rhythmStability = Mathf.Lerp(blended.rhythmStability,
+                evidence.RhythmStability, rhythmInfluence);
+            blended.rhythmSamples = Mathf.Max(blended.rhythmSamples,
+                Mathf.Min(6, evidence.VerticalTransitionCount * 3));
+        }
+
+        blended.Normalize();
+        return blended;
     }
 
     public static EchoContractData Create(PlayerStyleData source, int generation)
@@ -345,10 +743,21 @@ public sealed class EchoContractEvaluator
 {
     public EchoContractData Contract { get; }
     public bool ScoringSuspended { get; private set; }
+    public EchoChallengeStep ActiveChallengeStep => _encounters.Active;
+    public EchoEncounterResult LastEncounterResult => _encounters.LastResult;
+    public EchoDetectionEvidence DetectionEvidence => _detectionEvidence;
 
     private float _learnedLaneFeedbackTimer;
     private float _lastLaneMarkerDistance = float.NegativeInfinity;
     private float _lastFinaleMarkerDistance = float.NegativeInfinity;
+    private readonly EchoEncounterController _encounters =
+        new EchoEncounterController();
+    private EchoDetectionEvidence _detectionEvidence;
+    private int _counterattackSuccesses;
+    private int _counterattackRequiredSuccesses;
+    private int _counterRepeatedChoiceCount;
+    private int _lastCounterLane = -1;
+    private ShadowAction _lastCounterAction = ShadowAction.Keep;
     private const float LaneMarkerSpacingSeconds = 4.5f;
     private const float CorrectLeadSeconds = 0.35f;
     private const float MistakeLeadSeconds = 0.2f;
@@ -359,12 +768,43 @@ public sealed class EchoContractEvaluator
         Contract.Normalize();
     }
 
+    public bool LockDetectionContract(PlayerStyleData frozenStyle,
+        int generation)
+    {
+        if (Contract.detectionContractLocked) return false;
+        Contract.detectionContractLocked = true;
+        if (Contract.preserveRuleForRetry) return true;
+
+        EchoContractData selected = EchoContractPolicy.CreateFromDetection(
+            frozenStyle, generation, _detectionEvidence);
+        selected.Normalize();
+        Contract.type = selected.type;
+        Contract.generation = selected.generation;
+        Contract.learnedLane = selected.learnedLane;
+        Contract.targetLane = selected.targetLane;
+        Contract.learnedAction = selected.learnedAction;
+        Contract.startingAction = selected.startingAction;
+        Contract.targetAction = selected.targetAction;
+        Contract.predictionLane = selected.predictionLane;
+        Contract.predictionAction = selected.predictionAction;
+        Contract.targetProgress = selected.targetProgress;
+        Contract.exploratory = selected.exploratory;
+        Contract.title = selected.title;
+        Contract.learnedTrait = selected.learnedTrait;
+        Contract.ruleDescription = selected.ruleDescription;
+        Contract.objective = selected.objective;
+        Contract.Normalize();
+        return true;
+    }
+
     public void SetPhase(EchoDuelPhase phase)
     {
         if (Contract.type == EchoContractType.None || phase == EchoDuelPhase.None)
             return;
         if (Contract.duelPhase == phase) return;
 
+        EchoDuelPhase previous = Contract.duelPhase;
+        _encounters.CancelActive(previous);
         Contract.duelPhase = phase;
         switch (phase)
         {
@@ -384,9 +824,18 @@ public sealed class EchoContractEvaluator
                 break;
             case EchoDuelPhase.Rewrite:
                 Contract.completed = true;
+                Contract.completionLocked = true;
+                Contract.echoLock = 0f;
                 SetFeedback("契约已重写：本阶段行为将更强地塑造下一代回声");
                 break;
             case EchoDuelPhase.Finale:
+                if (!Contract.completed && !Contract.duelFailed)
+                {
+                    Contract.duelFailed = true;
+                    Contract.failurePhase = previous == EchoDuelPhase.Resistance
+                        ? EchoDuelPhase.Resistance
+                        : EchoDuelPhase.Counterattack;
+                }
                 SetFeedback(Contract.duelFailed
                     ? "契约锁定：反抗未完成，进入回声决胜追逐"
                     : Contract.completed
@@ -407,7 +856,9 @@ public sealed class EchoContractEvaluator
         Contract.duelFailed = true;
         Contract.failurePhase = failurePhase;
         Contract.completed = false;
+        Contract.completionLocked = false;
         Contract.counterattackActive = false;
+        _encounters.CancelActive(failurePhase);
         ScoringSuspended = false;
         SetFeedback(failurePhase == EchoDuelPhase.Counterattack
             ? "反扑失败：契约锁定，进入决胜追逐"
@@ -435,6 +886,11 @@ public sealed class EchoContractEvaluator
         if (Contract.type != EchoContractType.BreakLaneHabit
             || !CanChangeStability() || deltaTime <= 0f)
             return;
+        if (Contract.initialBreakCompleted)
+        {
+            _learnedLaneFeedbackTimer = 0f;
+            return;
+        }
 
         int predictedLane = Contract.initialBreakCompleted
             ? Contract.predictionLane : Contract.learnedLane;
@@ -456,18 +912,30 @@ public sealed class EchoContractEvaluator
     }
 
     public void RecordLaneMarker(int lane, float routeDistance,
-        float currentSpeed = 10f)
+        float currentSpeed = 10f, int challengeStepId = 0)
     {
-        if (Contract.type != EchoContractType.BreakLaneHabit
+        bool detectionEvidence = Contract.duelPhase
+                                 == EchoDuelPhase.Detection;
+        if ((!detectionEvidence
+             && Contract.type != EchoContractType.BreakLaneHabit)
             || Contract.completed || Contract.duelFailed || ScoringSuspended)
             return;
         bool revealChoice = Contract.duelPhase == EchoDuelPhase.Reveal;
-        if (!revealChoice && !CanChangeStability()) return;
+        if (!detectionEvidence && !revealChoice && !CanChangeStability())
+            return;
 
         int predictedLane = Contract.predictionLane >= 0
             ? Contract.predictionLane : Contract.learnedLane;
         predictedLane = Mathf.Clamp(predictedLane, 0, 2);
-        bool counterattack = Contract.initialBreakCompleted;
+        bool counterattack = Contract.initialBreakCompleted
+                             && Contract.duelPhase
+                             == EchoDuelPhase.Counterattack;
+        if (counterattack)
+        {
+            RecordCounterattackLaneChoice(challengeStepId, lane,
+                routeDistance, currentSpeed);
+            return;
+        }
         float spacing = EchoTimeRules.MinimumSpacingDistance(
             LaneMarkerSpacingSeconds, currentSpeed);
         if (!float.IsNegativeInfinity(_lastLaneMarkerDistance)
@@ -475,8 +943,31 @@ public sealed class EchoContractEvaluator
             return;
 
         _lastLaneMarkerDistance = routeDistance;
+        if (detectionEvidence)
+        {
+            _detectionEvidence.RecordLane(lane);
+            EchoChallengeStep encounter = BeginImmediateEncounter(
+                EchoDuelPhase.Detection, predictedLane, ShadowAction.Keep,
+                lane, routeDistance);
+            Contract.detectionEvidenceCount++;
+            SetFeedback("侦测样本 "
+                        + Mathf.Min(2, Contract.detectionEvidenceCount)
+                        + "/2");
+            FinishImmediateEncounter(encounter, EchoEncounterOutcome.Evidence,
+                lane, ShadowAction.Keep, Contract.echoLock,
+                Contract.playerProgressBonus, Contract.shadowProgressBonus);
+            return;
+        }
+
         if (revealChoice)
         {
+            EchoChallengeStep encounter = BeginImmediateEncounter(
+                EchoDuelPhase.Reveal, predictedLane, ShadowAction.Keep,
+                lane, routeDistance);
+            float lockBefore = Contract.echoLock;
+            float playerBefore = Contract.playerProgressBonus;
+            float shadowBefore = Contract.shadowProgressBonus;
+            Contract.revealEncounterCount++;
             if (lane == predictedLane)
             {
                 AddShadowLead(0.35f, currentSpeed);
@@ -487,10 +978,23 @@ public sealed class EchoContractEvaluator
                 AddPlayerLead(0.2f, currentSpeed);
                 SetFeedback("公开预判失效：你获得反超窗口");
             }
+            FinishImmediateEncounter(encounter,
+                lane == predictedLane
+                    ? EchoEncounterOutcome.PredictionHit
+                    : EchoEncounterOutcome.PredictionBroken,
+                lane, ShadowAction.Keep, lockBefore, playerBefore,
+                shadowBefore);
             return;
         }
 
+        EchoChallengeStep resistanceEncounter = BeginImmediateEncounter(
+            EchoDuelPhase.Resistance, predictedLane, ShadowAction.Keep,
+            lane, routeDistance);
+        float resistanceLockBefore = Contract.echoLock;
+        float resistancePlayerBefore = Contract.playerProgressBonus;
+        float resistanceShadowBefore = Contract.shadowProgressBonus;
         bool validLane = lane != predictedLane;
+        Contract.resistanceEncounterCount++;
         if (!validLane)
         {
             ReduceStability(14f);
@@ -498,18 +1002,79 @@ public sealed class EchoContractEvaluator
             SetFeedback(counterattack
                 ? "回声施压：你重复了刚被识别的反制路线"
                 : "回声施压：你重复了被公开的预测路线");
+            FinishImmediateEncounter(resistanceEncounter,
+                EchoEncounterOutcome.PredictionHit, lane, ShadowAction.Keep,
+                resistanceLockBefore, resistancePlayerBefore,
+                resistanceShadowBefore);
             return;
         }
 
-        AddStability(counterattack ? 24f : 34f,
-            CorrectLeadSeconds, currentSpeed);
-        if (counterattack)
-        {
-            Contract.predictionLane = lane;
-            SetFeedback("预测失效：回声已把你的新路线列为下一次预判");
-        }
-        else SetFeedback("预测失效：你主动选择了非习惯路线");
+        AddStability(34f, CorrectLeadSeconds, currentSpeed);
+        SetFeedback("预测失效：你主动选择了非习惯路线");
         CompleteIfReady();
+        FinishImmediateEncounter(resistanceEncounter,
+            EchoEncounterOutcome.PredictionBroken, lane, ShadowAction.Keep,
+            resistanceLockBefore, resistancePlayerBefore,
+            resistanceShadowBefore);
+    }
+
+    public bool BindChallengeStep(int stepId, int predictedLane,
+        int challengeLane, int safeLane, float routeDistance)
+    {
+        return _encounters.Bind(stepId, predictedLane, challengeLane,
+            safeLane, routeDistance);
+    }
+
+    public bool RecordEncounterInput(int encounterId, ShadowAction action,
+        int lane, float routeDistance)
+    {
+        return _encounters.RecordInput(encounterId, action, lane,
+            routeDistance);
+    }
+
+    public bool ResolveChallengeAtGate(int encounterId, int playerLane,
+        float currentSpeed = 10f)
+    {
+        if (!_encounters.TryGetActive(encounterId,
+                out EchoChallengeStep encounter,
+                out EchoEncounterInputEvidence evidence))
+            return false;
+
+        int lane = Mathf.Clamp(playerLane, 0, 2);
+        if (Contract.type == EchoContractType.BreakLaneHabit)
+            return ResolveCounterattackChoice(encounter, lane,
+                ShadowAction.Keep, currentSpeed, 1f);
+
+        if (lane == encounter.safeLane)
+            return ResolveCounterattackChoice(encounter, lane,
+                ShadowAction.Keep, currentSpeed, 1f);
+
+        if (evidence.recorded)
+            return ResolveCounterattackChoice(encounter, lane,
+                evidence.action, currentSpeed, 1f);
+
+        return CancelEncounter(encounter, "交锋取消 · 未形成有效选择");
+    }
+
+    public void RecordChallengeMissed(int stepId)
+    {
+        if (!_encounters.TryGetActive(stepId, out EchoChallengeStep encounter,
+                out _))
+            return;
+
+        CancelEncounter(encounter, "交锋取消 · 锁定不变");
+        BeginNextChallengeStep();
+    }
+
+    private void RecordCounterattackLaneChoice(int challengeStepId, int lane,
+        float routeDistance, float currentSpeed)
+    {
+        if (!_encounters.TryGetActive(challengeStepId,
+                out EchoChallengeStep encounter, out _))
+            return;
+        _lastLaneMarkerDistance = routeDistance;
+        ResolveCounterattackChoice(encounter, Mathf.Clamp(lane, 0, 2),
+            ShadowAction.Keep, currentSpeed, 1f);
     }
 
     public void RecordFinaleRouteChoice(int lane, int predictedLane,
@@ -555,6 +1120,12 @@ public sealed class EchoContractEvaluator
     public void RecordDodge(ObstacleType obstacleType, int playerLane = -1,
         float currentSpeed = 10f)
     {
+        RecordDodge(obstacleType, playerLane, currentSpeed, default);
+    }
+
+    public void RecordDodge(ObstacleType obstacleType, int playerLane,
+        float currentSpeed, EchoChallengeObstacleBinding binding)
+    {
         ShadowAction action = obstacleType == ObstacleType.High
             ? ShadowAction.Jump
             : obstacleType == ObstacleType.Low
@@ -562,17 +1133,39 @@ public sealed class EchoContractEvaluator
                 : ShadowAction.Keep;
         if (action == ShadowAction.Keep) return;
 
+        if (Contract.duelPhase == EchoDuelPhase.Detection
+            && !Contract.completed && !Contract.duelFailed
+            && !ScoringSuspended)
+        {
+            _detectionEvidence.RecordVertical(action);
+            ShadowAction prediction = ResolvePredictedVerticalAction();
+            EchoChallengeStep encounter = BeginImmediateEncounter(
+                EchoDuelPhase.Detection, playerLane, prediction, playerLane,
+                Contract.detectionEvidenceCount + 1f);
+            Contract.detectionEvidenceCount++;
+            SetFeedback("侦测样本 "
+                        + Mathf.Min(2, Contract.detectionEvidenceCount)
+                        + "/2");
+            FinishImmediateEncounter(encounter, EchoEncounterOutcome.Evidence,
+                playerLane, action, Contract.echoLock,
+                Contract.playerProgressBonus, Contract.shadowProgressBonus);
+            return;
+        }
+
         if (Contract.duelPhase == EchoDuelPhase.Reveal
             && !Contract.completed && !Contract.duelFailed
             && !ScoringSuspended
             && (Contract.type == EchoContractType.ChangeVerticalHabit
                 || Contract.type == EchoContractType.DisruptRhythm))
         {
-            ShadowAction predicted = Contract.predictionAction;
-            if (predicted != ShadowAction.Jump
-                && predicted != ShadowAction.Slide)
-                predicted = Contract.targetAction == ShadowAction.Jump
-                    ? ShadowAction.Slide : ShadowAction.Jump;
+            ShadowAction predicted = ResolvePredictedVerticalAction();
+            EchoChallengeStep encounter = BeginImmediateEncounter(
+                EchoDuelPhase.Reveal, playerLane, predicted, playerLane,
+                Contract.revealEncounterCount + 1f);
+            float lockBefore = Contract.echoLock;
+            float playerBefore = Contract.playerProgressBonus;
+            float shadowBefore = Contract.shadowProgressBonus;
+            Contract.revealEncounterCount++;
             if (action == predicted)
             {
                 AddShadowLead(0.35f, currentSpeed);
@@ -583,16 +1176,36 @@ public sealed class EchoContractEvaluator
                 AddPlayerLead(0.2f, currentSpeed);
                 SetFeedback("公开预判失效：你的动作选择骗过了回声");
             }
+            FinishImmediateEncounter(encounter,
+                action == predicted
+                    ? EchoEncounterOutcome.PredictionHit
+                    : EchoEncounterOutcome.PredictionBroken,
+                playerLane, action, lockBefore, playerBefore, shadowBefore);
             return;
         }
 
         if (!CanChangeStability()) return;
+
+        if (Contract.initialBreakCompleted
+            && Contract.duelPhase == EchoDuelPhase.Counterattack)
+        {
+            RecordCounterattackDodge(action, playerLane, currentSpeed, binding);
+            return;
+        }
 
         if (Contract.type == EchoContractType.ChangeVerticalHabit)
         {
             if (!Contract.initialBreakCompleted && Contract.targetLane >= 0
                 && playerLane != Contract.targetLane)
                 return;
+            Contract.resistanceEncounterCount++;
+            EchoChallengeStep encounter = BeginImmediateEncounter(
+                EchoDuelPhase.Resistance, playerLane,
+                ResolvePredictedVerticalAction(), playerLane,
+                Contract.resistanceEncounterCount + 1f);
+            float lockBefore = Contract.echoLock;
+            float playerBefore = Contract.playerProgressBonus;
+            float shadowBefore = Contract.shadowProgressBonus;
             if (action == Contract.targetAction)
             {
                 AddStability(Contract.initialBreakCompleted ? 24f : 34f,
@@ -604,6 +1217,9 @@ public sealed class EchoContractEvaluator
                     Contract.targetAction = OppositeVertical(action);
                 }
                 CompleteIfReady();
+                FinishImmediateEncounter(encounter,
+                    EchoEncounterOutcome.PredictionBroken, playerLane, action,
+                    lockBefore, playerBefore, shadowBefore);
             }
             else if (action == Contract.predictionAction
                      || action == Contract.learnedAction)
@@ -611,6 +1227,13 @@ public sealed class EchoContractEvaluator
                 ReduceStability(14f);
                 AddShadowLead(MistakeLeadSeconds, currentSpeed);
                 SetFeedback("回声施压：你重复了被公开的预测");
+                FinishImmediateEncounter(encounter,
+                    EchoEncounterOutcome.PredictionHit, playerLane, action,
+                    lockBefore, playerBefore, shadowBefore);
+            }
+            else
+            {
+                CancelEncounter(encounter, "交锋取消 · 无有效选择");
             }
             return;
         }
@@ -619,6 +1242,14 @@ public sealed class EchoContractEvaluator
         if (!Contract.initialBreakCompleted && Contract.targetLane >= 0
             && playerLane != Contract.targetLane)
             return;
+        Contract.resistanceEncounterCount++;
+        EchoChallengeStep rhythmEncounter = BeginImmediateEncounter(
+            EchoDuelPhase.Resistance, playerLane,
+            ResolvePredictedVerticalAction(), playerLane,
+            Contract.resistanceEncounterCount + 1f);
+        float rhythmLockBefore = Contract.echoLock;
+        float rhythmPlayerBefore = Contract.playerProgressBonus;
+        float rhythmShadowBefore = Contract.shadowProgressBonus;
         if (action == Contract.targetAction)
         {
             AddStability(Contract.initialBreakCompleted ? 22f : 27f,
@@ -627,45 +1258,193 @@ public sealed class EchoContractEvaluator
             Contract.targetAction = action == ShadowAction.Jump
                 ? ShadowAction.Slide : ShadowAction.Jump;
             CompleteIfReady();
+            FinishImmediateEncounter(rhythmEncounter,
+                EchoEncounterOutcome.PredictionBroken, playerLane, action,
+                rhythmLockBefore, rhythmPlayerBefore, rhythmShadowBefore);
         }
         else
         {
             ReduceStability(14f);
             AddShadowLead(MistakeLeadSeconds, currentSpeed);
             SetFeedback("回声施压：固定节拍正在修复契约");
+            FinishImmediateEncounter(rhythmEncounter,
+                EchoEncounterOutcome.PredictionHit, playerLane, action,
+                rhythmLockBefore, rhythmPlayerBefore, rhythmShadowBefore);
         }
     }
 
-    public void SetRhythmTarget(ObstacleType obstacleType)
+    public bool RecordCounterattackActionResponse(ShadowAction action,
+        float currentSpeed = 10f)
     {
-        if (Contract.type != EchoContractType.DisruptRhythm
-            || !CanChangeStability())
-            return;
-        if (obstacleType == ObstacleType.High)
-            Contract.targetAction = ShadowAction.Jump;
-        else if (obstacleType == ObstacleType.Low)
-            Contract.targetAction = ShadowAction.Slide;
+        // Kept as a compatibility boundary. Raw input is evidence only and
+        // must never directly settle an encounter.
+        return false;
     }
 
-    public void RecordHit(float currentSpeed = 10f)
+    private void RecordCounterattackDodge(ShadowAction action, int playerLane,
+        float currentSpeed, EchoChallengeObstacleBinding binding)
+    {
+        if ((Contract.type != EchoContractType.ChangeVerticalHabit
+             && Contract.type != EchoContractType.DisruptRhythm)
+            || !binding.IsBound
+            || !_encounters.TryGetActive(binding.stepId,
+                out EchoChallengeStep encounter, out _))
+            return;
+
+        bool counterChoice = binding.role
+                             == EchoChallengeObstacleRole.Required
+                             && binding.lane == encounter.challengeLane
+                             && binding.action == encounter.requiredAction
+                             && action == binding.action;
+        bool predictedChoice = binding.role
+                               == EchoChallengeObstacleRole.Predicted
+                               && binding.lane == encounter.predictedLane
+                               && binding.action == encounter.predictedAction
+                               && action == binding.action;
+        if (counterChoice || predictedChoice)
+            ResolveCounterattackChoice(encounter, playerLane, action,
+                currentSpeed, 1f);
+    }
+
+    private bool ResolveCounterattackChoice(EchoChallengeStep encounter,
+        int playerLane, ShadowAction action, float currentSpeed,
+        float executionQuality)
+    {
+        if (!_encounters.TryGetActive(encounter.stepId, out _, out _))
+            return false;
+
+        bool laneContract = Contract.type == EchoContractType.BreakLaneHabit;
+        int selectedLane = Mathf.Clamp(playerLane, 0, 2);
+        bool predictionHit = laneContract
+            ? selectedLane == encounter.predictedLane
+            : action == encounter.predictedAction;
+        bool safeChoice = !predictionHit
+                          && selectedLane == encounter.safeLane
+                          && (laneContract || action == ShadowAction.Keep);
+        bool counterChoice = !predictionHit && (laneContract
+            || action == encounter.requiredAction || safeChoice);
+        if (!predictionHit && !counterChoice) return false;
+
+        float lockBefore = Contract.echoLock;
+        float probability = predictionHit ? 0.68f : safeChoice ? 0.10f : 0.22f;
+        float surprise = predictionHit ? 0f : 1f - probability;
+        float novelty = predictionHit ? 0f
+            : ResolveCounterNovelty(selectedLane, action, laneContract);
+        float quality = Mathf.Clamp01(executionQuality);
+        float fracture = predictionHit ? 0f
+            : Mathf.Clamp(65f * surprise * novelty * quality, 12f, 58f);
+        float playerBefore = Contract.playerProgressBonus;
+        float shadowBefore = Contract.shadowProgressBonus;
+
+        Contract.counterEncounterCount++;
+        if (predictionHit)
+        {
+            AddShadowLead(MistakeLeadSeconds, currentSpeed);
+            SetFeedback("预判命中 · 回声追近");
+        }
+        else
+        {
+            AddStability(fracture, safeChoice ? 0f : CorrectLeadSeconds,
+                currentSpeed);
+            _counterattackSuccesses++;
+            SetFeedback((safeChoice ? "偏离成功" : "裂解成功")
+                        + " · 锁定 -" + fracture.ToString("0") + "%");
+        }
+
+        EchoEncounterResult result = new EchoEncounterResult
+        {
+            encounterId = encounter.stepId,
+            phase = encounter.phase,
+            outcome = predictionHit
+                ? EchoEncounterOutcome.PredictionHit
+                : safeChoice ? EchoEncounterOutcome.SafeChoice
+                    : EchoEncounterOutcome.PredictionBroken,
+            selectedLane = selectedLane,
+            selectedAction = action,
+            predictedProbability = probability,
+            surprise = surprise,
+            novelty = novelty,
+            executionQuality = quality,
+            fracturePower = fracture,
+            lockBefore = lockBefore,
+            lockAfter = Contract.echoLock,
+            playerLeadDelta = Contract.playerProgressBonus - playerBefore,
+            shadowLeadDelta = Contract.shadowProgressBonus - shadowBefore,
+            hypothesisVersion = encounter.prediction.hypothesisVersion
+        };
+        FinishEncounter(result);
+        CompleteIfReady();
+        if (!Contract.completed)
+        {
+            TryRelockCounterHypothesis(result);
+            BeginNextChallengeStep();
+        }
+        return true;
+    }
+
+    public void RecordHit(float currentSpeed = 10f,
+        EchoChallengeObstacleBinding binding = default)
     {
         if (Contract.type == EchoContractType.None || ScoringSuspended
             || Contract.duelFailed)
             return;
+
+        if (binding.IsBound
+            && _encounters.TryGetActive(binding.stepId,
+                out EchoChallengeStep encounter, out _))
+        {
+            float lockBefore = Contract.echoLock;
+            float shadowBefore = Contract.shadowProgressBonus;
+            AddShadowLead(0.4f, currentSpeed);
+            EchoEncounterResult result = new EchoEncounterResult
+            {
+                encounterId = encounter.stepId,
+                phase = encounter.phase,
+                outcome = EchoEncounterOutcome.Collision,
+                selectedLane = binding.lane,
+                selectedAction = binding.action,
+                executionQuality = 0f,
+                lockBefore = lockBefore,
+                lockAfter = Contract.echoLock,
+                shadowLeadDelta = Contract.shadowProgressBonus - shadowBefore,
+                hypothesisVersion = encounter.prediction.hypothesisVersion
+            };
+            FinishEncounter(result);
+            Contract.counterEncounterCount++;
+            SetFeedback("命中");
+            BeginNextChallengeStep();
+            return;
+        }
+
+        if (Contract.completionLocked
+            || Contract.duelPhase == EchoDuelPhase.Rewrite
+            || Contract.duelPhase == EchoDuelPhase.Finale)
+        {
+            AddShadowLead(0.4f, currentSpeed);
+            SetFeedback("碰撞 · 回声追近");
+            return;
+        }
         ReduceStability(18f);
         AddShadowLead(0.4f, currentSpeed);
-        SetFeedback("回声施压：碰撞让契约重新收紧");
+        SetFeedback("命中");
     }
 
     public string BuildHudText()
     {
         if (Contract.type == EchoContractType.None) return "";
-        string progress = Contract.Progress01.ToString("P0");
+        if (Contract.duelPhase == EchoDuelPhase.Detection)
+        {
+            return Contract.detectionContractLocked
+                ? "回声侦测 · 画像已锁定"
+                : "回声侦测 · 有效样本 "
+                  + Mathf.Min(2, Contract.detectionEvidenceCount) + "/2";
+        }
         string state = Contract.completed
-            ? "契约已重写"
+            ? "锁定碎裂"
             : Contract.initialBreakCompleted
-                ? "回声反扑 · 稳定度 " + progress
-                : "契约稳定度 " + progress;
+                ? "回声追学"
+                : Contract.EchoLock01 >= 0.98f
+                    ? "完整锁定" : "锁定开裂";
         string feedback = string.IsNullOrEmpty(Contract.lastFeedback)
             ? ""
             : " · " + Contract.lastFeedback;
@@ -679,43 +1458,281 @@ public sealed class EchoContractEvaluator
         {
             Contract.initialBreakCompleted = true;
             Contract.counterattackActive = true;
-            Contract.progress = Contract.targetProgress * 0.55f;
+            Contract.progress = Contract.targetProgress;
+            Contract.echoLock = 0f;
             Contract.predictionLane = Contract.targetLane;
             Contract.predictionAction = Contract.targetAction;
-            SetFeedback("契约初裂：回声正在根据你的反抗重新预测");
+            SetFeedback("裂解");
             return;
         }
 
         Contract.completed = true;
+        Contract.completionLocked = true;
+        Contract.echoLock = 0f;
         Contract.counterattackActive = false;
-        SetFeedback("契约已重写：下一代回声正在记录新的你");
+        _encounters.CancelActive(EchoDuelPhase.Counterattack);
+        SetFeedback("锁定碎裂");
     }
 
     private void BeginCounterattack()
     {
         Contract.counterattackActive = true;
-        Contract.progress = Mathf.Clamp(Contract.progress,
-            Contract.targetProgress * 0.5f,
-            Contract.targetProgress * 0.7f);
+        Contract.progress = 0f;
+        Contract.echoLock = 100f;
+        Contract.hypothesisVersion++;
+        Contract.counterRelockCount = 0;
+        Contract.counterEncounterCount = 0;
+        Contract.counterattackExhausted = false;
         if (Contract.type == EchoContractType.BreakLaneHabit)
         {
             Contract.predictionLane = Contract.targetLane;
+            Contract.counterStrategy = EchoCounterStrategy.FarLane;
         }
         else
         {
             Contract.predictionAction = Contract.targetAction;
             Contract.targetAction = OppositeVertical(Contract.targetAction);
+            Contract.counterStrategy = Contract.type
+                == EchoContractType.DisruptRhythm
+                ? EchoCounterStrategy.AlternateChoice
+                : EchoCounterStrategy.OppositeAction;
         }
-        SetFeedback(BuildPredictionText(true));
+        _counterattackSuccesses = 0;
+        _counterattackRequiredSuccesses = 4;
+        _counterRepeatedChoiceCount = 0;
+        _lastCounterLane = -1;
+        _lastCounterAction = ShadowAction.Keep;
+        BeginNextChallengeStep();
+        SetFeedback("回声锁定新预判");
+    }
+
+    private void BeginNextChallengeStep()
+    {
+        if (Contract.completed || Contract.duelFailed
+            || Contract.duelPhase != EchoDuelPhase.Counterattack)
+        {
+            _encounters.CancelActive(Contract.duelPhase);
+            return;
+        }
+
+        if (Contract.counterEncounterCount >= 4)
+        {
+            Contract.counterattackExhausted = true;
+            _encounters.CancelActive(Contract.duelPhase);
+            SetFeedback("锁定未破");
+            return;
+        }
+
+        EchoChallengeStep template = new EchoChallengeStep
+        {
+            phase = EchoDuelPhase.Counterattack,
+            contractType = Contract.type,
+            predictedAction = Contract.predictionAction,
+            requiredAction = Contract.targetAction,
+            predictedLane = Contract.predictionLane >= 0
+                ? Mathf.Clamp(Contract.predictionLane, 0, 2) : -1,
+            challengeLane = -1,
+            safeLane = -1,
+            successes = _counterattackSuccesses,
+            requiredSuccesses = _counterattackRequiredSuccesses,
+            routeDistance = 0f,
+            prediction = new EchoPredictionSnapshot
+            {
+                hypothesisVersion = Contract.hypothesisVersion,
+                predictedLane = Contract.predictionLane,
+                predictedAction = Contract.predictionAction,
+                predictedProbability = 0.68f,
+                counterStrategy = Contract.counterStrategy
+            }
+        };
+        _encounters.Begin(template);
+    }
+
+    private string BuildChallengeSuccessFeedback(string action)
+    {
+        return action + " · 反制 "
+               + Mathf.Min(_counterattackSuccesses,
+                   _counterattackRequiredSuccesses)
+               + "/" + _counterattackRequiredSuccesses;
+    }
+
+    private float ResolveCounterNovelty(int lane, ShadowAction action,
+        bool laneContract)
+    {
+        bool repeated;
+        if (laneContract)
+        {
+            repeated = _lastCounterLane == lane;
+            _lastCounterLane = lane;
+        }
+        else
+        {
+            repeated = _lastCounterAction == action;
+            _lastCounterAction = action;
+        }
+
+        _counterRepeatedChoiceCount = repeated
+            ? _counterRepeatedChoiceCount + 1 : 1;
+        return _counterRepeatedChoiceCount <= 1
+            ? 1f
+            : Mathf.Max(0.35f,
+                1f - 0.35f * (_counterRepeatedChoiceCount - 1));
+    }
+
+    private void TryRelockCounterHypothesis(EchoEncounterResult result)
+    {
+        if (Contract.counterRelockCount > 0
+            || Contract.counterEncounterCount < 2
+            || _counterRepeatedChoiceCount < 2
+            || result.outcome == EchoEncounterOutcome.PredictionHit
+            || result.outcome == EchoEncounterOutcome.Collision)
+            return;
+
+        Contract.counterRelockCount = 1;
+        Contract.hypothesisVersion++;
+        if (Contract.type == EchoContractType.BreakLaneHabit)
+        {
+            Contract.predictionLane = Mathf.Clamp(result.selectedLane, 0, 2);
+            Contract.counterStrategy = EchoCounterStrategy.FarLane;
+        }
+        else if (result.selectedAction == ShadowAction.Jump
+                 || result.selectedAction == ShadowAction.Slide)
+        {
+            Contract.predictionAction = result.selectedAction;
+            Contract.targetAction = OppositeVertical(result.selectedAction);
+            Contract.counterStrategy = EchoCounterStrategy.OppositeAction;
+        }
+        else
+        {
+            Contract.predictionLane = Mathf.Clamp(result.selectedLane, 0, 2);
+            Contract.counterStrategy = EchoCounterStrategy.SafeChoice;
+        }
+
+        Contract.progress = Mathf.Max(0f, Contract.progress - 20f);
+        SyncLockFromProgress();
+        SetFeedback("反制生效 · 回声改判"
+                    + (Contract.type == EchoContractType.BreakLaneHabit
+                        ? EchoContractPolicy.LaneName(Contract.predictionLane)
+                        : EchoContractPolicy.ActionName(
+                            Contract.predictionAction)));
+    }
+
+    private EchoChallengeStep BeginImmediateEncounter(EchoDuelPhase phase,
+        int predictedLane, ShadowAction predictedAction, int selectedLane,
+        float routeDistance)
+    {
+        if (_encounters.Active.stepId > 0)
+            _encounters.CancelActive(phase);
+
+        int lane = Mathf.Clamp(selectedLane, 0, 2);
+        int frozenPredictionLane = predictedLane >= 0
+            ? Mathf.Clamp(predictedLane, 0, 2) : lane;
+        EchoChallengeStep started = _encounters.Begin(new EchoChallengeStep
+        {
+            phase = phase,
+            contractType = Contract.type,
+            predictedAction = predictedAction,
+            requiredAction = Contract.targetAction,
+            predictedLane = frozenPredictionLane,
+            challengeLane = lane,
+            safeLane = lane,
+            routeDistance = Mathf.Max(0f, routeDistance),
+            prediction = new EchoPredictionSnapshot
+            {
+                hypothesisVersion = Contract.hypothesisVersion,
+                predictedLane = frozenPredictionLane,
+                predictedAction = predictedAction,
+                predictedProbability = 0.68f,
+                counterStrategy = Contract.counterStrategy
+            }
+        });
+        _encounters.Bind(started.stepId, frozenPredictionLane, lane, lane,
+            routeDistance);
+        return _encounters.Active;
+    }
+
+    private void FinishImmediateEncounter(EchoChallengeStep encounter,
+        EchoEncounterOutcome outcome, int selectedLane,
+        ShadowAction selectedAction, float lockBefore, float playerBefore,
+        float shadowBefore)
+    {
+        float probability = outcome == EchoEncounterOutcome.PredictionHit
+            ? 0.68f : outcome == EchoEncounterOutcome.PredictionBroken
+                ? 0.22f : 0.5f;
+        EchoEncounterResult result = new EchoEncounterResult
+        {
+            encounterId = encounter.stepId,
+            phase = encounter.phase,
+            outcome = outcome,
+            selectedLane = Mathf.Clamp(selectedLane, 0, 2),
+            selectedAction = selectedAction,
+            predictedProbability = probability,
+            surprise = outcome == EchoEncounterOutcome.PredictionBroken
+                ? 1f - probability : 0f,
+            novelty = outcome == EchoEncounterOutcome.PredictionBroken
+                ? 1f : 0f,
+            executionQuality = outcome == EchoEncounterOutcome.Evidence
+                ? 0.5f : 1f,
+            fracturePower = Mathf.Max(0f, lockBefore - Contract.echoLock),
+            lockBefore = lockBefore,
+            lockAfter = Contract.echoLock,
+            playerLeadDelta = Contract.playerProgressBonus - playerBefore,
+            shadowLeadDelta = Contract.shadowProgressBonus - shadowBefore,
+            hypothesisVersion = encounter.prediction.hypothesisVersion
+        };
+        FinishEncounter(result);
+    }
+
+    private void FinishEncounter(EchoEncounterResult result)
+    {
+        Contract.lastEncounterResult = result;
+        Contract.encounterDebug = "EncounterId=" + result.encounterId
+            + " Prediction=" + ActivePredictionLabel()
+            + " Choice=" + EchoContractPolicy.ActionName(result.selectedAction)
+            + " Lane=" + result.selectedLane
+            + " Probability=" + result.predictedProbability.ToString("0.00")
+            + " Surprise=" + result.surprise.ToString("0.00")
+            + " Novelty=" + result.novelty.ToString("0.00")
+            + " Fracture=" + result.fracturePower.ToString("0.0")
+            + " Lock=" + result.lockBefore.ToString("0.0")
+            + "->" + result.lockAfter.ToString("0.0")
+            + " Hypothesis=" + result.hypothesisVersion;
+        _encounters.Resolve(result);
+    }
+
+    private bool CancelEncounter(EchoChallengeStep encounter, string feedback)
+    {
+        EchoEncounterResult result = new EchoEncounterResult
+        {
+            encounterId = encounter.stepId,
+            phase = encounter.phase,
+            outcome = EchoEncounterOutcome.Cancelled,
+            selectedLane = -1,
+            selectedAction = ShadowAction.Keep,
+            lockBefore = Contract.echoLock,
+            lockAfter = Contract.echoLock,
+            hypothesisVersion = encounter.prediction.hypothesisVersion
+        };
+        FinishEncounter(result);
+        SetFeedback(feedback);
+        return true;
+    }
+
+    private string ActivePredictionLabel()
+    {
+        EchoChallengeStep encounter = _encounters.Active;
+        if (Contract.type == EchoContractType.BreakLaneHabit)
+            return EchoContractPolicy.LaneName(encounter.predictedLane);
+        return EchoContractPolicy.ActionName(encounter.predictedAction);
     }
 
     private bool CanChangeStability()
     {
-        if (Contract.completed || Contract.duelFailed || ScoringSuspended)
+        if (Contract.completed || Contract.completionLocked
+            || Contract.duelFailed || ScoringSuspended)
             return false;
         return Contract.duelPhase == EchoDuelPhase.Resistance
-               || Contract.duelPhase == EchoDuelPhase.Counterattack
-               || Contract.duelPhase == EchoDuelPhase.Finale;
+               || Contract.duelPhase == EchoDuelPhase.Counterattack;
     }
 
     private void AddStability(float amount, float leadSeconds,
@@ -723,15 +1740,24 @@ public sealed class EchoContractEvaluator
     {
         Contract.progress = Mathf.Min(Contract.targetProgress,
             Contract.progress + Mathf.Max(0f, amount));
+        SyncLockFromProgress();
         Contract.playerProgressBonus += EchoTimeRules.SecondsToDistance(
             leadSeconds, currentSpeed);
     }
 
     private void ReduceStability(float amount)
     {
+        if (Contract.completionLocked) return;
         Contract.progress = Mathf.Max(0f,
             Contract.progress - Mathf.Max(0f, amount));
         Contract.completed = false;
+        SyncLockFromProgress();
+    }
+
+    private void SyncLockFromProgress()
+    {
+        Contract.echoLock = Contract.completionLocked
+            ? 0f : 100f * (1f - Contract.Progress01);
     }
 
     private void AddShadowLead(float seconds, float currentSpeed)
@@ -750,6 +1776,17 @@ public sealed class EchoContractEvaluator
     {
         return action == ShadowAction.Jump
             ? ShadowAction.Slide : ShadowAction.Jump;
+    }
+
+    private ShadowAction ResolvePredictedVerticalAction()
+    {
+        if (Contract.predictionAction == ShadowAction.Jump
+            || Contract.predictionAction == ShadowAction.Slide)
+            return Contract.predictionAction;
+        if (Contract.learnedAction == ShadowAction.Jump
+            || Contract.learnedAction == ShadowAction.Slide)
+            return Contract.learnedAction;
+        return OppositeVertical(Contract.targetAction);
     }
 
     private void SetFeedback(string feedback)

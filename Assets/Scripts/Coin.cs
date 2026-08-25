@@ -6,6 +6,7 @@ public class Coin : MonoBehaviour
     public float bobSpeed = 2f;
     public float bobHeight = 0.3f;
     public bool IsEchoContractMarker { get; private set; }
+    public int EchoChallengeStepId { get; private set; }
 
     private float _baseY;
     private float _phaseOffset;
@@ -72,9 +73,11 @@ public class Coin : MonoBehaviour
         return _player;
     }
 
-    public void ConfigureEchoContractMarker(bool isMarker)
+    public void ConfigureEchoContractMarker(bool isMarker,
+        int challengeStepId = 0)
     {
         IsEchoContractMarker = isMarker;
+        EchoChallengeStepId = isMarker ? Mathf.Max(0, challengeStepId) : 0;
         EchoCoinVisual visual = GetComponentInChildren<EchoCoinVisual>(true);
         if (visual != null) visual.SetContractMarker(isMarker);
     }

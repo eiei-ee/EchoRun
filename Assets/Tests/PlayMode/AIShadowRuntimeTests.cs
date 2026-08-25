@@ -56,7 +56,7 @@ public sealed class AIShadowRuntimeTests
         Assert.AreNotSame(previousRunner, runner);
         Assert.IsTrue(runner.HasActiveOpponent);
         Assert.IsNotNull(runner.ActiveContract);
-        StringAssert.Contains("回声契约", runner.CurrentStatus);
+        StringAssert.Contains("回声侦测", runner.CurrentStatus);
 
         EchoContractEvaluator evaluator =
             (EchoContractEvaluator)GetField(runner, "_contractEvaluator");
@@ -257,13 +257,46 @@ public sealed class AIShadowRuntimeTests
                     : contract.targetLane;
                 if (lane == contract.predictionLane && counterattack)
                     lane = (lane + 1) % 3;
-                evaluator.RecordLaneMarker(lane, guard * 100f, 10f);
+                if (counterattack)
+                {
+                    EchoChallengeStep step = evaluator.ActiveChallengeStep;
+                    int safeLane = 0;
+                    while (safeLane == lane
+                           || safeLane == step.predictedLane)
+                        safeLane++;
+                    evaluator.BindChallengeStep(step.stepId,
+                        step.predictedLane, lane, safeLane, guard * 100f);
+                    evaluator.RecordLaneMarker(lane, guard * 100f, 10f,
+                        step.stepId);
+                }
+                else
+                {
+                    evaluator.RecordLaneMarker(lane, guard * 100f, 10f);
+                }
             }
             else
             {
                 ObstacleType required = contract.targetAction == ShadowAction.Jump
                     ? ObstacleType.High : ObstacleType.Low;
-                evaluator.RecordDodge(required, contract.targetLane);
+                if (counterattack)
+                {
+                    EchoChallengeStep step = evaluator.ActiveChallengeStep;
+                    int lane = 1;
+                    evaluator.BindChallengeStep(step.stepId, 0, lane, 2,
+                        guard * 100f);
+                    evaluator.RecordDodge(required, lane, 10f,
+                        new EchoChallengeObstacleBinding
+                        {
+                            stepId = step.stepId,
+                            role = EchoChallengeObstacleRole.Required,
+                            action = step.requiredAction,
+                            lane = lane
+                        });
+                }
+                else
+                {
+                    evaluator.RecordDodge(required, contract.targetLane);
+                }
             }
         }
         Assert.Less(guard, 20, "Contract stage did not converge.");

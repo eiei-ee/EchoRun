@@ -73,6 +73,24 @@ public sealed class UIExperienceTests
             portraitMenu, portrait);
     }
 
+    [TestCase(false, 1920f)]
+    [TestCase(true, 1080f)]
+    public void HomeNavigationKeepsReadableGapsAtEveryReferenceSize(
+        bool portrait, float referenceWidth)
+    {
+        Vector2 size = UILayoutRules.GetHomeNavigationSize(portrait, portrait);
+        Vector2 runner = UILayoutRules.GetHomeNavigationAnchor(0, portrait);
+        Vector2 supply = UILayoutRules.GetHomeNavigationAnchor(1, portrait);
+        Vector2 settings = UILayoutRules.GetHomeNavigationAnchor(2, portrait);
+
+        Assert.AreEqual(supply.x - runner.x, settings.x - supply.x, 0.0001f);
+        float firstSeam = (supply.x - runner.x) * referenceWidth - size.x;
+        float secondSeam = (settings.x - supply.x) * referenceWidth - size.x;
+        float expectedGap = portrait ? 42.4f : 21.6f;
+        Assert.AreEqual(expectedGap, firstSeam, 0.2f);
+        Assert.AreEqual(expectedGap, secondSeam, 0.2f);
+    }
+
     private static void AssertCenteredRectFits(
         Vector2 anchor, Vector2 size, Vector2 reference)
     {
@@ -147,8 +165,8 @@ public sealed class UIExperienceTests
         EchoDuelViewData leading = EchoRunPresentation.BuildDuel(
             true, contract, 2.75f, 2, 2);
         Assert.AreEqual("AI预测已公开 · 打破旧习惯", leading.contract);
-        Assert.AreEqual("稳定度 67%", leading.progress);
-        Assert.AreEqual(2f / 3f, leading.progress01, 0.001f);
+        Assert.AreEqual("深度裂解", leading.progress);
+        Assert.AreEqual(1f / 3f, leading.progress01, 0.001f);
         Assert.AreEqual(EchoLeadState.Leading, leading.leadState);
         StringAssert.StartsWith("领先 +2.8m", leading.lead);
         StringAssert.StartsWith("反制成功", leading.feedback);
@@ -281,7 +299,8 @@ public sealed class UIExperienceTests
         Assert.IsNotNull(font);
         const string copy =
             "首次回声校准挑战契约补给舱跑者外观库存装备领先落后已破解"
-            + "设置音乐音量音效画面帧率辅助显示选择配色立即预览并保存"
+            + "设置主音量音乐音效一键静音已画面帧率辅助显示选择配色立即预览并保存"
+            + "跑酷难度休闲标准高压障碍较少密集恢复窗"
             + "大字高对比减少动态返回百分比补充";
         foreach (char character in copy)
             Assert.IsTrue(font.HasCharacter(character), "UI font is missing: " + character);

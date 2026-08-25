@@ -82,6 +82,12 @@ public class AIShadowRunner : MonoBehaviour
         ? _contractEvaluator.BuildPredictionText() : "";
     public EchoContractData ActiveContract =>
         _contractEvaluator != null ? _contractEvaluator.Contract : null;
+    public EchoChallengeStep ActiveChallengeStep => _contractEvaluator != null
+        ? _contractEvaluator.ActiveChallengeStep : default;
+    public EchoEncounterResult LastEncounterResult => _contractEvaluator != null
+        ? _contractEvaluator.LastEncounterResult : default;
+    public string EncounterDebug => _contractEvaluator != null
+        ? _contractEvaluator.Contract.encounterDebug : "";
     public EchoContractData ContractPreview => _activeGeneration != null
         && _activeGeneration.generation > 0
         ? EchoContractPolicy.CreateForRun(_activeGeneration.GetStyle(),
@@ -179,6 +185,8 @@ public class AIShadowRunner : MonoBehaviour
     private readonly HashSet<int> _recordedPlayerDodgeIds = new HashSet<int>();
     private readonly SlideOpportunityTracker _slideOpportunityTracker =
         new SlideOpportunityTracker();
+    private readonly ObstacleOpportunityTracker _jumpOpportunityTracker =
+        new ObstacleOpportunityTracker(ObstacleType.High);
 
     void Awake()
     {
@@ -218,7 +226,7 @@ public class AIShadowRunner : MonoBehaviour
         if (!_runStarted) BeginRun();
         if (HasActiveOpponent && _ghost == null) CreateGhost();
 
-        TrackPlayerSlideOpportunity();
+        TrackPlayerObstacleOpportunities();
 
         _runTime += Time.deltaTime;
         if (HasActiveOpponent && _contractEvaluator != null)
@@ -239,7 +247,6 @@ public class AIShadowRunner : MonoBehaviour
             {
                 BeginPendingDuelTransition(remainingSeconds);
             }
-            SyncRhythmTarget();
             _contractEvaluator.TickLane(_player.CurrentLane, Time.deltaTime,
                 _gameManager.CurrentSpeed);
             ApplyContractMotionDelta();
@@ -369,8 +376,11 @@ public class AIShadowRunner : MonoBehaviour
         }
         else if (action == ShadowAction.Jump || action == ShadowAction.Slide)
             styleProximity = 0f;
-        if (action == ShadowAction.Slide)
+        if (action == ShadowAction.Jump)
+            _jumpOpportunityTracker.MarkAction(laneBeforeAction);
+        else if (action == ShadowAction.Slide)
             _slideOpportunityTracker.MarkSlide(laneBeforeAction);
+        TryRecordCounterattackActionResponse(action, laneBeforeAction);
         bool airLaneChange = _player != null && _player.IsJumping
                              && (action == ShadowAction.Left
                                  || action == ShadowAction.Right);
@@ -379,7 +389,8 @@ public class AIShadowRunner : MonoBehaviour
         if (_rewriteTracker != null)
         {
             _rewriteTracker.RecordVerticalAction(
-                action, matchedActionObstacle, _runTime);
+                action, matchedActionObstacle, _runTime,
+                RewriteSampleWeightForPhase(DuelPhase));
             RefreshRewriteSnapshot();
         }
         if (matchedActionObstacle)
@@ -392,7 +403,8 @@ public class AIShadowRunner : MonoBehaviour
         _keepSampleTimer = 0f;
     }
 
-    public void RecordCoin(bool isEchoContractMarker = false)
+    public void RecordCoin(bool isEchoContractMarker = false,
+        int challengeStepId = 0)
     {
         _runCoins++;
         float routeDistance = _gameManager != null
@@ -400,7 +412,8 @@ public class AIShadowRunner : MonoBehaviour
         if (_rewriteTracker != null && _player != null)
         {
             _rewriteTracker.RecordRouteChoice(
-                _player.CurrentLane, routeDistance);
+                _player.CurrentLane, routeDistance,
+                RewriteSampleWeightForPhase(DuelPhase));
             RefreshRewriteSnapshot();
         }
         if (HasActiveOpponent && _contractEvaluator != null && _player != null)
@@ -410,10 +423,12 @@ public class AIShadowRunner : MonoBehaviour
             EchoContractData contract = _contractEvaluator.Contract;
             bool completedBeforeChoice = contract.completed;
             if (ShouldCountContractMarker(
-                    contract.type, isEchoContractMarker))
+                    contract.type, contract.duelPhase,
+                    isEchoContractMarker))
             {
                 _contractEvaluator.RecordLaneMarker(
-                    _player.CurrentLane, routeDistance, speed);
+                    _player.CurrentLane, routeDistance, speed,
+                    challengeStepId);
             }
             AITrackDirector director = AITrackDirector.Instance;
             AITrackPlan plan = director != null
@@ -437,8 +452,16 @@ public class AIShadowRunner : MonoBehaviour
     public static bool ShouldCountContractMarker(EchoContractType contractType,
         bool isEchoContractMarker)
     {
-        return contractType == EchoContractType.BreakLaneHabit
-               && isEchoContractMarker;
+        return ShouldCountContractMarker(contractType, EchoDuelPhase.None,
+            isEchoContractMarker);
+    }
+
+    public static bool ShouldCountContractMarker(EchoContractType contractType,
+        EchoDuelPhase phase, bool isEchoContractMarker)
+    {
+        return isEchoContractMarker
+               && (phase == EchoDuelPhase.Detection
+                   || contractType == EchoContractType.BreakLaneHabit);
     }
 
     public static bool IsFinaleEncounter(EchoEncounterKind kind)
@@ -465,6 +488,24 @@ public class AIShadowRunner : MonoBehaviour
             ? Mathf.Clamp(writeStrength, 1f, 2f) : 1f;
     }
 
+    public static float RewriteSampleWeightForPhase(EchoDuelPhase phase)
+    {
+        switch (phase)
+        {
+            case EchoDuelPhase.Detection:
+            case EchoDuelPhase.Reveal:
+                return 0.35f;
+            case EchoDuelPhase.Rewrite:
+                return 2f;
+            case EchoDuelPhase.Resistance:
+            case EchoDuelPhase.Counterattack:
+            case EchoDuelPhase.Finale:
+                return 1f;
+            default:
+                return 0.5f;
+        }
+    }
+
     public static string FinaleLabelFor(EchoEncounterKind kind)
     {
         switch (kind)
@@ -489,18 +530,26 @@ public class AIShadowRunner : MonoBehaviour
     public bool RecordDodge(ObstacleType obstacleType, int obstacleId = 0,
         int playerLane = -1)
     {
+        return RecordDodge(obstacleType, obstacleId, playerLane, default);
+    }
+
+    public bool RecordDodge(ObstacleType obstacleType, int obstacleId,
+        int playerLane, EchoChallengeObstacleBinding binding)
+    {
         if (obstacleId != 0 && !_recordedPlayerDodgeIds.Add(obstacleId))
             return false;
         _runDodges++;
         if (_rewriteTracker != null)
         {
-            _rewriteTracker.RecordSuccessfulExecution();
+            _rewriteTracker.RecordSuccessfulExecution(
+                RewriteSampleWeightForPhase(DuelPhase));
             RefreshRewriteSnapshot();
         }
         if (HasActiveOpponent && _contractEvaluator != null)
         {
             _contractEvaluator.RecordDodge(obstacleType, playerLane,
-                _gameManager != null ? _gameManager.CurrentSpeed : 10f);
+                _gameManager != null ? _gameManager.CurrentSpeed : 10f,
+                binding);
             ApplyContractMotionDelta();
         }
         AIRunTelemetry.RecordEvent("dodge", 0,
@@ -510,18 +559,46 @@ public class AIShadowRunner : MonoBehaviour
         return true;
     }
 
-    public void RecordObstacleHit()
+    public bool BindChallengeStep(int stepId, int predictedLane,
+        int challengeLane, int safeLane, float routeDistance)
     {
-        ResolvePlayerSlideOpportunity();
+        return _contractEvaluator != null
+               && _contractEvaluator.BindChallengeStep(stepId, predictedLane,
+                   challengeLane, safeLane, routeDistance);
+    }
+
+    public void RecordChallengeStepMissed(int stepId)
+    {
+        if (_contractEvaluator == null) return;
+        _contractEvaluator.RecordChallengeMissed(stepId);
+        ApplyContractMotionDelta();
+    }
+
+    public bool ResolveChallengeStepAtGate(int stepId, int playerLane)
+    {
+        if (_contractEvaluator == null) return false;
+        bool resolved = _contractEvaluator.ResolveChallengeAtGate(
+            stepId, playerLane,
+            _gameManager != null ? _gameManager.CurrentSpeed : 10f);
+        if (resolved) ApplyContractMotionDelta();
+        return resolved;
+    }
+
+    public void RecordObstacleHit(
+        EchoChallengeObstacleBinding binding = default)
+    {
+        ResolvePlayerObstacleOpportunities();
         if (_rewriteTracker != null)
         {
-            _rewriteTracker.RecordMistake();
+            _rewriteTracker.RecordMistake(
+                RewriteSampleWeightForPhase(DuelPhase));
             RefreshRewriteSnapshot();
         }
         if (HasActiveOpponent && _contractEvaluator != null)
         {
             _contractEvaluator.RecordHit(
-                _gameManager != null ? _gameManager.CurrentSpeed : 10f);
+                _gameManager != null ? _gameManager.CurrentSpeed : 10f,
+                binding);
             ApplyContractMotionDelta();
         }
         AIRunTelemetry.RecordEvent("obstacle_hit", 0,
@@ -651,6 +728,7 @@ public class AIShadowRunner : MonoBehaviour
         _lastStyleDecision = ShadowAction.Keep;
         LastDecisionTrace = null;
         _slideOpportunityTracker.Reset();
+        _jumpOpportunityTracker.Reset();
         _recordedPlayerDodgeIds.Clear();
         _opponentStyle = null;
         _opponentPace = 0f;
@@ -683,6 +761,8 @@ public class AIShadowRunner : MonoBehaviour
                     EchoRunSaveSystem.GetLastEchoContractJson()));
             _contractEvaluator.Contract.duelPhase = EchoDuelPhase.None;
             _contractEvaluator.SetPhase(_duelFlow.Phase);
+            _rewriteTracker = new EchoRewriteTracker(_opponentStyle);
+            RefreshRewriteSnapshot();
             CreateGhost();
             CurrentStatus = _contractEvaluator.BuildHudText();
         }
@@ -706,6 +786,19 @@ public class AIShadowRunner : MonoBehaviour
         _pendingDuelBoundary = track != null
             ? track.GetPreparedPhaseBoundary(distance)
             : TrackManager.NextRouteBoundary(distance, 20f);
+        if (_duelFlow.Phase == EchoDuelPhase.Detection
+            && _duelFlow.PendingPhase == EchoDuelPhase.Reveal
+            && _contractEvaluator.LockDetectionContract(
+                _opponentStyle, Generation))
+        {
+            EchoDetectionEvidence evidence =
+                _contractEvaluator.DetectionEvidence;
+            AIRunTelemetry.RecordEvent("echo_detection_locked",
+                (int)_contractEvaluator.Contract.type,
+                evidence.ValidChoiceCount,
+                evidence.LaneChoiceCount,
+                evidence.VerticalChoiceCount);
+        }
         _contractEvaluator.SetScoringSuspended(
             ShouldSuspendContractScoringAtGate(_duelFlow.Phase));
         float phaseDuration = _duelFlow.PendingPhase == EchoDuelPhase.Rewrite
@@ -773,8 +866,9 @@ public class AIShadowRunner : MonoBehaviour
 
     private void BeginRewriteProfile()
     {
-        _rewriteTracker = new EchoRewriteTracker(
-            _opponentStyle ?? StyleTracker.GetSnapshot());
+        if (_rewriteTracker == null)
+            _rewriteTracker = new EchoRewriteTracker(
+                _opponentStyle ?? StyleTracker.GetSnapshot());
         _frozenRewriteSnapshot = null;
         RefreshRewriteSnapshot();
         AIRunTelemetry.RecordEvent("echo_rewrite_begin",
@@ -787,6 +881,14 @@ public class AIShadowRunner : MonoBehaviour
         if (_rewriteTracker == null) return;
         _liveRewriteSnapshot = _rewriteTracker.BuildSnapshot(
             StyleTracker.GetSnapshot());
+        if (_contractEvaluator != null && _liveRewriteSnapshot != null)
+        {
+            int effectiveSamples = _liveRewriteSnapshot.effectiveRouteChoices
+                                   + _liveRewriteSnapshot.effectiveVerticalActions;
+            _contractEvaluator.Contract.rewriteReady = effectiveSamples >= 4
+                && _liveRewriteSnapshot.sampleCoverage01 >= 0.6f
+                && _liveRewriteSnapshot.execution01 >= 0.55f;
+        }
     }
 
     private void FreezeRewriteProfile()
@@ -934,8 +1036,16 @@ public class AIShadowRunner : MonoBehaviour
             string learning;
             if (ledButFailedContract)
             {
-                cause = "距离领先，但未破解回声契约";
-                learning = "旧习惯仍被回声掌握";
+                bool partialCounter = _contractEvaluator.Contract.progress
+                                      > 0.01f;
+                cause = partialCounter
+                    ? "距离领先，反制已生效但契约未完全破解"
+                    : "距离领先，但尚未形成有效反制";
+                learning = _contractEvaluator.Contract.counterRelockCount > 0
+                    ? "回声已改判，后续需要再次改变选择"
+                    : partialCounter
+                        ? "反制有效，但回声锁定尚未完全碎裂"
+                        : "尚未在有效交锋点打破回声预判";
             }
             else if (contractCompleted)
             {
@@ -1289,6 +1399,10 @@ public class AIShadowRunner : MonoBehaviour
         _displayedGhostLane = Mathf.SmoothDamp(_displayedGhostLane, _ghostLane,
             ref _laneSmoothVelocity, Mathf.Max(0.02f, laneSmoothTime),
             12f, Time.deltaTime);
+        float unclampedLane = _displayedGhostLane;
+        _displayedGhostLane = Mathf.Clamp(_displayedGhostLane, 0f, 2f);
+        if (!Mathf.Approximately(unclampedLane, _displayedGhostLane))
+            _laneSmoothVelocity = 0f;
         float jumpDuration = GetGhostJumpDuration();
         float jumpProgress = _ghostJumpTimer > 0f
             ? 1f - _ghostJumpTimer / jumpDuration
@@ -1303,7 +1417,8 @@ public class AIShadowRunner : MonoBehaviour
         {
             TrackManager.Instance.GetTrackPoseAhead(
                 _player.transform.position, _player.ForwardDirection,
-                _player.CurrentLane, _displayedGhostLane, _displayedGap,
+                _player.RenderedLateralOffset,
+                _displayedGhostLane, _displayedGap,
                 out target, out targetForward);
         }
         else
@@ -1312,8 +1427,9 @@ public class AIShadowRunner : MonoBehaviour
             Vector3 right = Vector3.Cross(Vector3.up, targetForward).normalized;
             target = _player.transform.position
                      + targetForward * _displayedGap
-                     + right * ((_displayedGhostLane - _player.CurrentLane)
-                                * _player.laneDistance);
+                     + right * ((_displayedGhostLane - 1f)
+                                * _player.laneDistance
+                                - _player.RenderedLateralOffset);
         }
 
         if (TryGetGhostGroundHeight(target, out float groundHeight))
@@ -1411,7 +1527,51 @@ public class AIShadowRunner : MonoBehaviour
             : ShadowAIDirective.Neutral;
     }
 
-    private void TrackPlayerSlideOpportunity()
+    private void TrackPlayerObstacleOpportunities()
+    {
+        TrackPlayerObstacleOpportunity(_jumpOpportunityTracker,
+            ObstacleType.High, _player != null && _player.IsJumping,
+            _player != null ? _player.jumpDuration : 0.9f);
+        TrackPlayerObstacleOpportunity(_slideOpportunityTracker,
+            ObstacleType.Low, _player != null && _player.IsSliding,
+            _player != null ? _player.slideDuration : 0.8f);
+    }
+
+    private void TryRecordCounterattackActionResponse(ShadowAction action,
+        int playerLane)
+    {
+        if ((action != ShadowAction.Jump && action != ShadowAction.Slide)
+            || _contractEvaluator == null || _gameManager == null
+            || _player == null || TrackManager.Instance == null)
+            return;
+
+        EchoChallengeStep step = _contractEvaluator.ActiveChallengeStep;
+        if (!step.IsActive
+            || (step.contractType != EchoContractType.ChangeVerticalHabit
+                && step.contractType != EchoContractType.DisruptRhythm)
+            || !TrackManager.Instance.TryGetUpcomingChallengeObstacle(
+                _player.transform.position, _player.ForwardDirection,
+                step.stepId, out float obstacleDistance))
+            return;
+
+        float actionDuration = action == ShadowAction.Jump
+            ? _player.jumpDuration : _player.slideDuration;
+        float responseDistance = CalculateReactionDistance(
+            _gameManager.CurrentSpeed, Mathf.Max(0.2f, actionDuration)) * 1.25f;
+        if (obstacleDistance > responseDistance)
+            return;
+
+        if (!_contractEvaluator.RecordEncounterInput(step.stepId, action,
+                playerLane, _gameManager.Distance))
+            return;
+
+        AIRunTelemetry.RecordEvent("echo_challenge_input",
+            (int)action, playerLane, step.stepId, obstacleDistance);
+    }
+
+    private void TrackPlayerObstacleOpportunity(
+        ObstacleOpportunityTracker tracker, ObstacleType obstacleType,
+        bool isUsingRequiredAction, float actionDuration)
     {
         if (_player == null || _gameManager == null
             || TrackManager.Instance == null)
@@ -1419,31 +1579,34 @@ public class AIShadowRunner : MonoBehaviour
 
         bool found = TrackManager.Instance.TryGetUpcomingObstacleInLane(
             _player.transform.position, _player.ForwardDirection,
-            _player.CurrentLane, _slideOpportunityTracker.ResolvedIds,
+            _player.CurrentLane, tracker.ResolvedIds,
             out float distance, out ObstacleType type, out int obstacleId);
         float detectionDistance = CalculateReactionDistance(
             _gameManager.CurrentSpeed,
-            Mathf.Max(0.2f, _player.slideDuration)) * 1.25f;
-        if (_slideOpportunityTracker.Update(
-                _player.CurrentLane, _player.IsSliding, found, distance,
-                type, obstacleId, detectionDistance, out bool usedSlide))
+            Mathf.Max(0.2f, actionDuration)) * 1.25f;
+        if (tracker.Update(
+                _player.CurrentLane, isUsingRequiredAction, found, distance,
+                type, obstacleId, detectionDistance, out bool usedAction))
         {
-            StyleTracker.RecordObstacleOpportunity(ObstacleType.Low, usedSlide);
-            if (_slideOpportunityTracker.LastResolvedByPass && usedSlide
-                && RecordDodge(ObstacleType.Low,
-                    _slideOpportunityTracker.LastResolvedId,
-                    _slideOpportunityTracker.LastResolvedLane))
+            StyleTracker.RecordObstacleOpportunity(obstacleType, usedAction);
+            if (tracker.LastResolvedByPass && usedAction
+                && RecordDodge(obstacleType,
+                    tracker.LastResolvedId,
+                    tracker.LastResolvedLane,
+                    TrackManager.Instance.GetChallengeBinding(
+                        tracker.LastResolvedId)))
             {
                 AIPlayerSkillEstimator.RecordObstacleOutcome(
-                    ObstacleType.Low, true);
+                    obstacleType, true);
                 AITrackDirector.Instance?.RecordDodge();
                 AudioManager.Instance?.PlayDodgeObstacle();
             }
         }
     }
 
-    private void ResolvePlayerSlideOpportunity()
+    private void ResolvePlayerObstacleOpportunities()
     {
+        _jumpOpportunityTracker.Resolve(out _);
         if (_slideOpportunityTracker.Resolve(out bool usedSlide))
             StyleTracker.RecordObstacleOpportunity(ObstacleType.Low, usedSlide);
     }
@@ -1464,11 +1627,15 @@ public class AIShadowRunner : MonoBehaviour
             : "回声契约未载入";
         string phase = _duelFlow != null
             ? EchoDuelFlow.PhaseName(_duelFlow.Phase) : "回声决斗";
+        string encounter = _contractEvaluator != null
+                           && !string.IsNullOrEmpty(
+                               _contractEvaluator.Contract.encounterDebug)
+            ? "\n" + _contractEvaluator.Contract.encounterDebug : "";
         return phase + " · " + contract + "\n第 " + _profile.generation
                 + " 代 · 回声清晰度 " + (EchoClarity * 100f).ToString("0")
                 + "% · " + lead
                 + " · AI置信 " + (_decisionConfidence * 100f).ToString("0")
-                + "%" + sequence;
+                + "%" + sequence + encounter;
     }
 
     public static bool IsContractVictory(float playerLead,
@@ -1508,20 +1675,6 @@ public class AIShadowRunner : MonoBehaviour
         _ghostProgress = Mathf.Max(0f,
             _ghostProgress + shadowDelta - playerDelta);
         PlayerLead = CalculatePhysicalLead(_playerProgress, _ghostProgress);
-    }
-
-    private void SyncRhythmTarget()
-    {
-        EchoContractData contract = ActiveContract;
-        if (contract == null || contract.type != EchoContractType.DisruptRhythm
-            || TrackManager.Instance == null || _player == null)
-            return;
-
-        if (TrackManager.Instance.TryGetUpcomingObstacleInLane(
-                _player.transform.position, _player.ForwardDirection,
-                contract.targetLane, null, out _, out ObstacleType type,
-                out _))
-            _contractEvaluator.SetRhythmTarget(type);
     }
 
     public static bool CanAvoidObstacle(ObstacleType obstacleType,

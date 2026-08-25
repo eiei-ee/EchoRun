@@ -24,6 +24,9 @@ public sealed class EchoDuelFlow
     public const float DefaultRevealDuration = 4f;
     public const float DefaultRewriteDuration = 24f;
     public const float DefaultFinaleDuration = 25f;
+    public const float DetectionMinimumDuration = 8f;
+    public const float RevealMinimumDuration = 3f;
+    public const float RewriteMinimumDuration = 16f;
 
     public EchoDuelPhase Phase { get; private set; }
     public float PhaseElapsed { get; private set; }
@@ -71,11 +74,17 @@ public sealed class EchoDuelFlow
         switch (Phase)
         {
             case EchoDuelPhase.Detection:
-                if (PhaseElapsed + gateLead >= DetectionDuration)
+                if (PhaseElapsed + gateLead >= DetectionDuration
+                    || contract != null && contract.detectionEvidenceCount >= 2
+                    && PhaseElapsed + gateLead >= Mathf.Min(
+                        DetectionMinimumDuration, DetectionDuration))
                     next = EchoDuelPhase.Reveal;
                 break;
             case EchoDuelPhase.Reveal:
-                if (PhaseElapsed + gateLead >= RevealDuration)
+                if (PhaseElapsed + gateLead >= RevealDuration
+                    || contract != null && contract.revealEncounterCount >= 1
+                    && PhaseElapsed + gateLead >= Mathf.Min(
+                        RevealMinimumDuration, RevealDuration))
                     next = EchoDuelPhase.Resistance;
                 break;
             case EchoDuelPhase.Resistance:
@@ -90,6 +99,11 @@ public sealed class EchoDuelFlow
             case EchoDuelPhase.Counterattack:
                 if (contract != null && contract.completed)
                     next = EchoDuelPhase.Rewrite;
+                else if (contract != null && contract.counterattackExhausted)
+                {
+                    next = EchoDuelPhase.Finale;
+                    failurePhase = EchoDuelPhase.Counterattack;
+                }
                 else if (ShouldEnterFinale(estimatedRemainingSeconds))
                 {
                     next = EchoDuelPhase.Finale;
@@ -97,7 +111,10 @@ public sealed class EchoDuelFlow
                 }
                 break;
             case EchoDuelPhase.Rewrite:
-                if (PhaseElapsed + gateLead >= RewriteDuration)
+                if (PhaseElapsed + gateLead >= RewriteDuration
+                    || contract != null && contract.rewriteReady
+                    && PhaseElapsed + gateLead >= Mathf.Min(
+                        RewriteMinimumDuration, RewriteDuration))
                     next = EchoDuelPhase.Finale;
                 break;
         }

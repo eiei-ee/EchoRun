@@ -8,6 +8,8 @@ public sealed class EchoRewriteSnapshot
     [Range(0f, 1f)] public float actionMix01;
     [Range(0f, 1f)] public float rhythmNovelty01;
     [Range(0f, 1f)] public float execution01;
+    [Range(0f, 1f)] public float sampleCoverage01;
+    [Range(0f, 1f)] public float profileChange01;
     [Range(1f, 2f)] public float writeStrength = 1f;
     public int effectiveRouteChoices;
     public int effectiveVerticalActions;
@@ -40,10 +42,9 @@ public sealed class EchoRewriteSnapshot
 
     public string BuildHudSummary()
     {
-        return "路线变化 " + Percent(routeVariation01)
-               + " · 动作混合 " + Percent(actionMix01)
-               + "\n节奏新颖 " + Percent(rhythmNovelty01)
-               + " · 有效执行 " + Percent(execution01)
+        return "样本 " + Percent(sampleCoverage01)
+               + " · 清晰 " + Percent(execution01)
+               + " · 变化 " + Percent(profileChange01)
                + " · 写入×" + Mathf.Clamp(writeStrength, 1f, 2f)
                    .ToString("0.00");
     }
@@ -60,6 +61,7 @@ public sealed class EchoRewriteSnapshot
             ? "非固定节奏" : rhythmNovelty01 >= 0.2f
                 ? "节奏变化" : "节奏稳定";
         return route + " · " + action + " · " + rhythm
+               + " · 画像变化 " + Percent(profileChange01)
                + " · 写入×" + Mathf.Clamp(writeStrength, 1f, 2f)
                    .ToString("0.00");
     }
@@ -87,16 +89,23 @@ public sealed class EchoRewriteTracker
     private int _routeSamples;
     private int _laneSwitches;
     private float _laneTotal;
+    private float _routeWeight;
+    private float _laneWeightTotal;
+    private float _laneSwitchWeight;
     private int _lastLane = -1;
     private float _lastRouteDistance = float.NegativeInfinity;
     private int _jumpActions;
     private int _slideActions;
+    private float _jumpWeight;
+    private float _slideWeight;
     private float _lastVerticalActionTime = -1f;
     private int _rhythmIntervals;
     private float _rhythmMean;
     private float _rhythmM2;
     private int _successes;
     private int _mistakes;
+    private float _successWeight;
+    private float _mistakeWeight;
 
     public EchoRewriteTracker(PlayerStyleData baselineStyle = null)
     {
@@ -105,7 +114,8 @@ public sealed class EchoRewriteTracker
         _baselineStyle.Normalize();
     }
 
-    public void RecordRouteChoice(int lane, float routeDistance)
+    public void RecordRouteChoice(int lane, float routeDistance,
+        float sampleWeight = 1f)
     {
         int clampedLane = Mathf.Clamp(lane, 0, 2);
         float distance = Mathf.Max(0f, routeDistance);
@@ -114,28 +124,45 @@ public sealed class EchoRewriteTracker
             return;
 
         _lastRouteDistance = distance;
+        float weight = Mathf.Clamp(sampleWeight, 0.1f, 2f);
         _routeSamples++;
         _laneTotal += clampedLane;
+        _routeWeight += weight;
+        _laneWeightTotal += clampedLane * weight;
         _successes++;
+        _successWeight += weight;
         if (!_visitedLanes[clampedLane])
         {
             _visitedLanes[clampedLane] = true;
             _visitedLaneCount++;
         }
-        if (_lastLane >= 0 && _lastLane != clampedLane) _laneSwitches++;
+        if (_lastLane >= 0 && _lastLane != clampedLane)
+        {
+            _laneSwitches++;
+            _laneSwitchWeight += weight;
+        }
         _lastLane = clampedLane;
     }
 
     public void RecordVerticalAction(ShadowAction action,
-        bool matchedObstacle, float eventTime)
+        bool matchedObstacle, float eventTime, float sampleWeight = 1f)
     {
         if (!matchedObstacle
             || (action != ShadowAction.Jump
                 && action != ShadowAction.Slide))
             return;
 
-        if (action == ShadowAction.Jump) _jumpActions++;
-        else _slideActions++;
+        float weight = Mathf.Clamp(sampleWeight, 0.1f, 2f);
+        if (action == ShadowAction.Jump)
+        {
+            _jumpActions++;
+            _jumpWeight += weight;
+        }
+        else
+        {
+            _slideActions++;
+            _slideWeight += weight;
+        }
 
         float time = Mathf.Max(0f, eventTime);
         if (_lastVerticalActionTime >= 0f)
@@ -152,34 +179,38 @@ public sealed class EchoRewriteTracker
         _lastVerticalActionTime = time;
     }
 
-    public void RecordSuccessfulExecution()
+    public void RecordSuccessfulExecution(float sampleWeight = 1f)
     {
         _successes++;
+        _successWeight += Mathf.Clamp(sampleWeight, 0.1f, 2f);
     }
 
-    public void RecordMistake()
+    public void RecordMistake(float sampleWeight = 1f)
     {
         _mistakes++;
+        _mistakeWeight += Mathf.Clamp(sampleWeight, 0.1f, 2f);
     }
 
     public EchoRewriteSnapshot BuildSnapshot(PlayerStyleData style)
     {
-        float routeParticipation = Mathf.Clamp01(_routeSamples / 4f);
+        float routeParticipation = Mathf.Clamp01(_routeWeight / 4f);
         float distinctRoutes = Mathf.Clamp01((_visitedLaneCount - 1f) / 2f);
-        float switchRatio = _routeSamples > 1
-            ? Mathf.Clamp01(_laneSwitches / (float)(_routeSamples - 1))
+        float switchRatio = _routeWeight > 1f
+            ? Mathf.Clamp01(_laneSwitchWeight / Mathf.Max(1f,
+                _routeWeight - 1f))
             : 0f;
         float routeVariation = routeParticipation
                                * (distinctRoutes * 0.65f
                                   + switchRatio * 0.35f);
 
         int verticalActions = _jumpActions + _slideActions;
-        float actionBalance = verticalActions >= 2
-            ? 1f - Mathf.Abs(_jumpActions - _slideActions)
-              / (float)verticalActions
+        float verticalWeight = _jumpWeight + _slideWeight;
+        float actionBalance = verticalWeight >= 1.5f
+            ? 1f - Mathf.Abs(_jumpWeight - _slideWeight)
+              / verticalWeight
             : 0f;
         float actionMix = actionBalance
-                          * Mathf.Clamp01(verticalActions / 4f);
+                          * Mathf.Clamp01(verticalWeight / 4f);
 
         float rhythmNovelty = 0f;
         if (_rhythmIntervals >= 2 && _rhythmMean > 0.001f)
@@ -191,17 +222,19 @@ public sealed class EchoRewriteTracker
                             * Mathf.Clamp01(_rhythmIntervals / 3f);
         }
 
-        int weightedMistakes = _mistakes * MistakeExecutionWeight;
-        int executionSamples = _successes + weightedMistakes;
-        float execution = executionSamples > 0
-            ? _successes / (float)executionSamples
+        float weightedMistakes = _mistakeWeight * MistakeExecutionWeight;
+        float executionSamples = _successWeight + weightedMistakes;
+        float execution = executionSamples > 0f
+            ? _successWeight / executionSamples
               * Mathf.Clamp01(executionSamples / 4f)
             : 0f;
-        float effectiveVariation = routeVariation * 0.40f
-                                   + actionMix * 0.35f
-                                   + rhythmNovelty * 0.25f;
+        float actionParticipation = Mathf.Clamp01(verticalWeight / 4f);
+        float rhythmParticipation = Mathf.Clamp01(_rhythmIntervals / 3f);
+        float sampleCoverage = routeParticipation * 0.40f
+                               + actionParticipation * 0.35f
+                               + rhythmParticipation * 0.25f;
         float strength = Mathf.Clamp(
-            1f + effectiveVariation * execution, 1f, 2f);
+            1f + sampleCoverage * execution, 1f, 2f);
 
         if (_baselineStyle == null)
         {
@@ -210,39 +243,55 @@ public sealed class EchoRewriteTracker
             _baselineStyle.Normalize();
         }
         PlayerStyleData frozenStyle = _baselineStyle.Clone();
-        if (_routeSamples > 0 && routeVariation > 0f)
+        float baselineLane = frozenStyle.lanePreference;
+        float baselineSlide = frozenStyle.slideFrequency;
+        float baselineRhythm = frozenStyle.rhythmStability;
+        if (_routeSamples > 0)
         {
             float rewriteLanePreference = Mathf.Clamp(
-                _laneTotal / _routeSamples - 1f, -1f, 1f);
+                _laneWeightTotal / Mathf.Max(0.1f, _routeWeight) - 1f,
+                -1f, 1f);
             frozenStyle.lanePreference = Mathf.Lerp(
                 frozenStyle.lanePreference, rewriteLanePreference,
-                Mathf.Clamp01(routeVariation));
+                Mathf.Clamp01(routeParticipation * execution));
             frozenStyle.laneSamples += _routeSamples;
         }
-        if (verticalActions > 0 && actionMix > 0f)
+        if (verticalActions > 0)
         {
-            float rewriteSlideFrequency = (_slideActions + 1f)
-                                          / (verticalActions + 2f);
+            float rewriteSlideFrequency = (_slideWeight + 1f)
+                                          / (verticalWeight + 2f);
             frozenStyle.slideFrequency = Mathf.Lerp(
                 frozenStyle.slideFrequency, rewriteSlideFrequency,
-                Mathf.Clamp01(actionMix));
+                Mathf.Clamp01(actionParticipation * execution));
             frozenStyle.jumpActionSamples += _jumpActions;
             frozenStyle.slideActionSamples += _slideActions;
         }
-        if (_rhythmIntervals >= 2 && rhythmNovelty > 0f)
+        if (_rhythmIntervals >= 2)
         {
+            float observedRhythmStability = 1f - rhythmNovelty;
             frozenStyle.rhythmStability = Mathf.Lerp(
-                frozenStyle.rhythmStability, 1f - rhythmNovelty,
-                Mathf.Clamp01(rhythmNovelty));
+                frozenStyle.rhythmStability, observedRhythmStability,
+                Mathf.Clamp01(rhythmParticipation * execution));
             frozenStyle.rhythmSamples += _rhythmIntervals;
         }
         frozenStyle.Normalize();
+        float laneChange = Mathf.Abs(frozenStyle.lanePreference - baselineLane)
+                           * 0.5f;
+        float actionChange = Mathf.Abs(frozenStyle.slideFrequency
+                                       - baselineSlide);
+        float rhythmChange = Mathf.Abs(frozenStyle.rhythmStability
+                                       - baselineRhythm);
+        float profileChange = Mathf.Clamp01(laneChange * 0.40f
+                                            + actionChange * 0.35f
+                                            + rhythmChange * 0.25f);
         return new EchoRewriteSnapshot
         {
             routeVariation01 = Mathf.Clamp01(routeVariation),
             actionMix01 = Mathf.Clamp01(actionMix),
             rhythmNovelty01 = Mathf.Clamp01(rhythmNovelty),
             execution01 = Mathf.Clamp01(execution),
+            sampleCoverage01 = Mathf.Clamp01(sampleCoverage),
+            profileChange01 = profileChange,
             writeStrength = strength,
             effectiveRouteChoices = _routeSamples,
             effectiveVerticalActions = verticalActions,

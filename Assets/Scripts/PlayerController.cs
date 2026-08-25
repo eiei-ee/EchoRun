@@ -24,6 +24,12 @@ public class PlayerController : MonoBehaviour
     public float fallOffY = -5f;
 
     public int CurrentLane { get; private set; } = 1;
+    public float LateralOffset => _laneOffset;
+    public float RenderedLateralOffset => ResolveRenderedLateralOffset(
+        _laneOffset, transform.position,
+        _rb != null ? _rb.position : transform.position,
+        ForwardDirection,
+        _rb != null && _rb.interpolation != RigidbodyInterpolation.None);
     public bool IsJumping { get; private set; }
     public bool IsSliding { get; private set; }
     public Vector3 ForwardDirection { get; private set; } = Vector3.forward;
@@ -54,6 +60,21 @@ public class PlayerController : MonoBehaviour
     private readonly System.Collections.Generic.List<int>
         _resolvedObstacleCleanup =
             new System.Collections.Generic.List<int>();
+
+    public static float ResolveRenderedLateralOffset(float physicsOffset,
+        Vector3 renderedPosition, Vector3 physicsPosition,
+        Vector3 forwardDirection, bool usesRigidbodyInterpolation)
+    {
+        if (!usesRigidbodyInterpolation) return physicsOffset;
+
+        Vector3 forward = Vector3.ProjectOnPlane(
+            forwardDirection, Vector3.up);
+        if (forward.sqrMagnitude < 0.0001f) forward = Vector3.forward;
+        Vector3 right = Vector3.Cross(
+            Vector3.up, forward.normalized).normalized;
+        return physicsOffset
+               + Vector3.Dot(renderedPosition - physicsPosition, right);
+    }
 
     private const float GROUND_RAY_DIST = 0.3f;
 
@@ -389,7 +410,8 @@ public class PlayerController : MonoBehaviour
             else
                 _gm.AddCoins(1);
             AITrackDirector.Instance?.RecordCoin();
-            AIShadowRunner.Instance?.RecordCoin(coin.IsEchoContractMarker);
+            AIShadowRunner.Instance?.RecordCoin(coin.IsEchoContractMarker,
+                coin.EchoChallengeStepId);
             AudioManager.Instance?.PlayCoin();
             ParticleManager.Instance?.EmitCoin(other.transform.position);
             if (TrackManager.Instance != null)
@@ -527,6 +549,10 @@ public class PlayerController : MonoBehaviour
            ForwardDirection);
        _resolvedObstacles[obstacleId] = other;
        RecordObstacleDiagnostic(source, obstacleId, obs.type, evaluation);
+       EchoChallengeObstacleTag challengeTag =
+           obs.GetComponentInParent<EchoChallengeObstacleTag>();
+       EchoChallengeObstacleBinding challengeBinding = challengeTag != null
+           ? challengeTag.Binding : default;
 
        if (evaluation.Passed)
        {
@@ -534,7 +560,7 @@ public class PlayerController : MonoBehaviour
            bool firstSettlement = shadow == null
                || shadow.RecordDodge(obs.type,
                    TrackManager.GetObstacleTrackingId(obs.gameObject),
-                   CurrentLane);
+                   CurrentLane, challengeBinding);
            if (firstSettlement)
            {
                AIPlayerSkillEstimator.RecordObstacleOutcome(obs.type, true);
@@ -548,7 +574,7 @@ public class PlayerController : MonoBehaviour
                obs.type, false);
            StyleTracker.RecordMistake();
            AITrackDirector.Instance?.RecordObstacleHit();
-           AIShadowRunner.Instance?.RecordObstacleHit();
+           AIShadowRunner.Instance?.RecordObstacleHit(challengeBinding);
            AudioManager.Instance?.PlayCollision();
            if (PowerUpController.Instance != null
                && PowerUpController.Instance.TryAbsorbCollision())

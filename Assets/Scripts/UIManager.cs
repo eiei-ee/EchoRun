@@ -25,12 +25,17 @@ public class UIManager : MonoBehaviour
 
     // ── Settings (sub-panel of menu) ──
     GameObject _settingsPanel;
-    Slider _bgmSlider, _sfxSlider;
-    Text _bgmValueText, _sfxValueText, _fpsStatusText;
+    Slider _masterSlider, _bgmSlider, _sfxSlider;
+    Text _masterValueText, _bgmValueText, _sfxValueText, _fpsStatusText,
+        _difficultyStatusText;
+    Button _muteBtn;
     Button _fps30Btn, _fps60Btn, _fps120Btn;
+    Button _difficultyRelaxedBtn, _difficultyStandardBtn,
+        _difficultyIntenseBtn;
     Button _largeTextBtn, _highContrastBtn, _reducedMotionBtn;
     Button _settingsBackBtn;
     RectTransform _settingsContent;
+    ScrollRect _settingsScroll;
 
     // ── Character (sub-panel of menu) ──
     GameObject _characterPanel;
@@ -127,7 +132,7 @@ public class UIManager : MonoBehaviour
         CreateLandscapeGuard();
 
         _menuRouter.Register(MenuScreen.Home, _menuPanel, _startBtn);
-        _menuRouter.Register(MenuScreen.Settings, _settingsPanel, _bgmSlider);
+        _menuRouter.Register(MenuScreen.Settings, _settingsPanel, _masterSlider);
         _menuRouter.Register(MenuScreen.Runner, _characterPanel,
             _presetButtons.Length > 0 ? _presetButtons[0] : null);
         _menuRouter.RegisterHomeNavigation(_settingsBtn.gameObject);
@@ -415,13 +420,11 @@ public class UIManager : MonoBehaviour
             UILayoutRules.GetPrimaryActionSize(
                 Screen.width, Screen.height, UsesTouchLayout()));
         SetButtonLayout(_characterBtn,
-            new Vector2(portrait ? 0.22f : 0.10f, 0.095f),
-            TouchButtonSize(portrait ? new Vector2(260f, 104f)
-                : new Vector2(180f, 56f), largeTargets, portrait));
+            UILayoutRules.GetHomeNavigationAnchor(0, portrait),
+            UILayoutRules.GetHomeNavigationSize(portrait, largeTargets));
         SetButtonLayout(_settingsBtn,
-            new Vector2(portrait ? 0.78f : 0.28f, 0.095f),
-            TouchButtonSize(portrait ? new Vector2(260f, 104f)
-                : new Vector2(180f, 56f), largeTargets, portrait));
+            UILayoutRules.GetHomeNavigationAnchor(2, portrait),
+            UILayoutRules.GetHomeNavigationSize(portrait, largeTargets));
     }
 
     // ═══════════════════════════════════════════════════
@@ -433,10 +436,10 @@ public class UIManager : MonoBehaviour
         _settingsPanel = NewPanel("SettingsPanel", WithAlpha(Backdrop, 0.96f));
 
         // ScrollRect setup
-        ScrollRect scroll = _settingsPanel.AddComponent<ScrollRect>();
-        scroll.horizontal = false;
-        scroll.vertical = true;
-        scroll.movementType = ScrollRect.MovementType.Clamped;
+        _settingsScroll = _settingsPanel.AddComponent<ScrollRect>();
+        _settingsScroll.horizontal = false;
+        _settingsScroll.vertical = true;
+        _settingsScroll.movementType = ScrollRect.MovementType.Clamped;
 
         // Viewport
         GameObject viewport = new GameObject("Viewport", typeof(Image), typeof(Mask));
@@ -454,26 +457,31 @@ public class UIManager : MonoBehaviour
         _settingsContent.anchorMin = new Vector2(0.5f, 1f);
         _settingsContent.anchorMax = new Vector2(0.5f, 1f);
         _settingsContent.pivot = new Vector2(0.5f, 1f);
-        _settingsContent.sizeDelta = new Vector2(1020, 850);
+        _settingsContent.sizeDelta = new Vector2(1020, 1260);
         _settingsContent.anchoredPosition = Vector2.zero;
 
-        scroll.viewport = vpRT;
-        scroll.content = _settingsContent;
+        _settingsScroll.viewport = vpRT;
+        _settingsScroll.content = _settingsContent;
 
         Transform c = content.transform;
-        float topY = 0.92f;
+        float topY = 0.95f;
 
         Text title = MakeText("SettingsTitle", c, "设置", 56, TextAnchor.MiddleCenter);
         title.color = Color.white;
         title.fontStyle = FontStyle.Bold;
         AnchorText(title.GetComponent<RectTransform>(), 0.5f, topY, 400, 70);
 
-        MakeLabel("BgmLabel", c, "音乐音量", new Vector2(0.34f, 0.80f));
-        _bgmValueText = MakeText("BgmValue", c, "50%", 28,
-            TextAnchor.MiddleRight);
-        _bgmValueText.color = TextPrimary;
-        AnchorText(_bgmValueText.rectTransform, 0.72f, 0.80f, 160, 40);
-        _bgmSlider = MakeSlider("BgmSlider", c, new Vector2(0.5f, 0.73f));
+        _masterSlider = MakeSlider("MasterVolumeSlider", c,
+            new Vector2(0.5f, 0.81f));
+        float savedMaster = PlayerPrefs.GetFloat("MasterVolume", 1f);
+        _masterSlider.value = savedMaster;
+        _masterSlider.onValueChanged.AddListener(v =>
+        {
+            AudioManager.Instance?.SetMasterVolume(v);
+            RefreshVolumeLabels();
+        });
+
+        _bgmSlider = MakeSlider("BgmSlider", c, new Vector2(0.5f, 0.68f));
         float savedBgm = PlayerPrefs.GetFloat("MusicVolume", 0.5f);
         _bgmSlider.value = savedBgm;
         _bgmSlider.onValueChanged.AddListener(v =>
@@ -482,12 +490,7 @@ public class UIManager : MonoBehaviour
             RefreshVolumeLabels();
         });
 
-        MakeLabel("SfxLabel", c, "音效音量", new Vector2(0.34f, 0.63f));
-        _sfxValueText = MakeText("SfxValue", c, "100%", 28,
-            TextAnchor.MiddleRight);
-        _sfxValueText.color = TextPrimary;
-        AnchorText(_sfxValueText.rectTransform, 0.72f, 0.63f, 160, 40);
-        _sfxSlider = MakeSlider("SfxSlider", c, new Vector2(0.5f, 0.56f));
+        _sfxSlider = MakeSlider("SfxSlider", c, new Vector2(0.5f, 0.55f));
         float savedSfx = PlayerPrefs.GetFloat("SfxVolume", 1f);
         _sfxSlider.value = savedSfx;
         _sfxSlider.onValueChanged.AddListener(v =>
@@ -496,17 +499,21 @@ public class UIManager : MonoBehaviour
             RefreshVolumeLabels();
         });
 
-        MakeLabel("FpsLabel", c, "画面帧率", new Vector2(0.34f, 0.49f));
+        _muteBtn = MakeSmallButton("AudioMute", c, "一键静音",
+            new Vector2(0.5f, 0.47f), new Vector2(220, 60), SurfaceRaised);
+        _muteBtn.onClick.AddListener(ToggleAudioMute);
+
+        MakeLabel("FpsLabel", c, "画面帧率", new Vector2(0.34f, 0.42f));
         _fpsStatusText = MakeText("FpsStatus", c, "目标 60 · 正在测量…", 24,
             TextAnchor.MiddleRight);
         _fpsStatusText.color = TextMuted;
-        AnchorText(_fpsStatusText.rectTransform, 0.72f, 0.49f, 340, 40);
+        AnchorText(_fpsStatusText.rectTransform, 0.72f, 0.42f, 340, 40);
         _fps30Btn  = MakeSmallButton("Fps30", c, "30",
-            new Vector2(0.25f, 0.42f), new Vector2(140, 60), SurfaceRaised);
+            new Vector2(0.25f, 0.36f), new Vector2(140, 60), SurfaceRaised);
         _fps60Btn  = MakeSmallButton("Fps60", c, "60",
-            new Vector2(0.5f, 0.42f), new Vector2(140, 60), SurfaceRaised);
+            new Vector2(0.5f, 0.36f), new Vector2(140, 60), SurfaceRaised);
         _fps120Btn = MakeSmallButton("Fps120", c, "120",
-            new Vector2(0.75f, 0.42f), new Vector2(140, 60), SurfaceRaised);
+            new Vector2(0.75f, 0.36f), new Vector2(140, 60), SurfaceRaised);
 
         _fps30Btn.onClick.AddListener(() => { _gm.SetFrameRate(30);  HighlightFps(); });
         _fps60Btn.onClick.AddListener(() => { _gm.SetFrameRate(60);  HighlightFps(); });
@@ -514,19 +521,42 @@ public class UIManager : MonoBehaviour
         if (_gm != null && !_gm.SupportsHighFrameRate)
         {
             _fps120Btn.gameObject.SetActive(false);
-            SetButtonAnchor(_fps30Btn, new Vector2(0.36f, 0.42f));
-            SetButtonAnchor(_fps60Btn, new Vector2(0.64f, 0.42f));
+            SetButtonAnchor(_fps30Btn, new Vector2(0.36f, 0.36f));
+            SetButtonAnchor(_fps60Btn, new Vector2(0.64f, 0.36f));
         }
         HighlightFps();
-        RefreshVolumeLabels();
 
-        MakeLabel("AccessibilityLabel", c, "辅助显示", new Vector2(0.34f, 0.33f));
+        MakeLabel("DifficultyLabel", c, "跑酷难度",
+            new Vector2(0.34f, 0.28f));
+        _difficultyStatusText = MakeText("DifficultyStatus", c, "", 24,
+            TextAnchor.MiddleRight);
+        _difficultyStatusText.color = TextMuted;
+        AnchorText(_difficultyStatusText.rectTransform, 0.72f, 0.28f,
+            360, 40);
+        _difficultyRelaxedBtn = MakeSmallButton("DifficultyRelaxed", c,
+            "休闲", new Vector2(0.25f, 0.22f), new Vector2(180, 60),
+            SurfaceRaised);
+        _difficultyStandardBtn = MakeSmallButton("DifficultyStandard", c,
+            "标准", new Vector2(0.5f, 0.22f), new Vector2(180, 60),
+            SurfaceRaised);
+        _difficultyIntenseBtn = MakeSmallButton("DifficultyIntense", c,
+            "高压", new Vector2(0.75f, 0.22f), new Vector2(180, 60),
+            SurfaceRaised);
+        _difficultyRelaxedBtn.onClick.AddListener(() =>
+            SetRunDifficulty(RunDifficultyLevel.Relaxed));
+        _difficultyStandardBtn.onClick.AddListener(() =>
+            SetRunDifficulty(RunDifficultyLevel.Standard));
+        _difficultyIntenseBtn.onClick.AddListener(() =>
+            SetRunDifficulty(RunDifficultyLevel.Intense));
+        HighlightDifficulty();
+
+        MakeLabel("AccessibilityLabel", c, "辅助显示", new Vector2(0.34f, 0.14f));
         _largeTextBtn = MakeSmallButton("LargeText", c, "大字",
-            new Vector2(0.22f, 0.26f), new Vector2(210, 60), SurfaceRaised);
+            new Vector2(0.22f, 0.08f), new Vector2(210, 60), SurfaceRaised);
         _highContrastBtn = MakeSmallButton("HighContrast", c, "高对比",
-            new Vector2(0.50f, 0.26f), new Vector2(210, 60), SurfaceRaised);
+            new Vector2(0.50f, 0.08f), new Vector2(210, 60), SurfaceRaised);
         _reducedMotionBtn = MakeSmallButton("ReducedMotion", c, "减少动态",
-            new Vector2(0.78f, 0.26f), new Vector2(230, 60), SurfaceRaised);
+            new Vector2(0.78f, 0.08f), new Vector2(230, 60), SurfaceRaised);
         _largeTextBtn.onClick.AddListener(() =>
             EchoRunAccessibility.SetLargeText(!EchoRunAccessibility.LargeText));
         _highContrastBtn.onClick.AddListener(() =>
@@ -536,11 +566,46 @@ public class UIManager : MonoBehaviour
         RefreshAccessibilityButtons();
 
         _settingsBackBtn = MakeButton("SettingsBackBtn", c, "返回", 34,
-            new Vector2(0.5f, 0.10f), new Vector2(280, 76),
+            new Vector2(0.5f, 0.015f), new Vector2(280, 76),
             SurfaceRaised, TextMuted);
         _settingsBackBtn.onClick.AddListener(HideSettings);
 
+        // Create the three sound readouts after every other setting label.
+        // Tuanjie legacy dynamic fonts can rebuild their atlas while this page
+        // is being assembled and invalidate early direct-child Text geometry.
+        CreateVolumeReadouts(c);
+        RefreshVolumeLabels();
+
         _settingsPanel.SetActive(false);
+    }
+
+    void CreateVolumeReadouts(Transform parent)
+    {
+        if (_font != null)
+            _font.RequestCharactersInTexture(
+                "主音量音乐效0123456789%· ", 28, FontStyle.Bold);
+
+        _masterValueText = MakeVolumeReadout("MasterVolumeValue", parent,
+            "主音量 · 100%", 0.86f);
+        _bgmValueText = MakeVolumeReadout("BgmValue", parent,
+            "音乐音量 · 50%", 0.73f);
+        _sfxValueText = MakeVolumeReadout("SfxValue", parent,
+            "音效音量 · 100%", 0.60f);
+    }
+
+    Text MakeVolumeReadout(string name, Transform parent, string value,
+        float anchorY)
+    {
+        Text readout = MakeText(name, parent, value, 28,
+            TextAnchor.MiddleCenter);
+        readout.color = Primary;
+        readout.fontStyle = FontStyle.Bold;
+        readout.horizontalOverflow = HorizontalWrapMode.Overflow;
+        readout.verticalOverflow = VerticalWrapMode.Overflow;
+        AnchorText(readout.rectTransform, 0.5f, anchorY, 520f, 48f);
+        AddOutline(readout.gameObject, new Color(0f, 0f, 0f, 0.78f));
+        readout.transform.SetAsLastSibling();
+        return readout;
     }
 
     void ShowSettings()
@@ -551,10 +616,30 @@ public class UIManager : MonoBehaviour
             if (_menuPanel != null) _menuPanel.SetActive(false);
             if (_settingsPanel != null) _settingsPanel.SetActive(true);
         }
+        RefreshVolumeLabels();
+        RefreshVolumeReadoutGeometry();
         RefreshTextGeometry(_settingsPanel != null
             ? _settingsPanel.transform : null);
         ScheduleTextRefresh(_settingsPanel != null
             ? _settingsPanel.transform : null);
+        Canvas.ForceUpdateCanvases();
+        if (_settingsScroll != null)
+            _settingsScroll.verticalNormalizedPosition = 1f;
+    }
+
+    void RefreshVolumeReadoutGeometry()
+    {
+        Text[] readouts = { _masterValueText, _bgmValueText, _sfxValueText };
+        foreach (Text readout in readouts)
+        {
+            if (readout == null) continue;
+            readout.gameObject.SetActive(true);
+            readout.enabled = false;
+            readout.enabled = true;
+            readout.SetAllDirty();
+            readout.transform.SetAsLastSibling();
+        }
+        Canvas.ForceUpdateCanvases();
     }
 
     void HideSettings()
@@ -585,6 +670,32 @@ public class UIManager : MonoBehaviour
             _fpsStatusText.text = $"目标 {cur} · 正在测量…";
     }
 
+    void SetRunDifficulty(RunDifficultyLevel level)
+    {
+        RunDifficultySettings.Set(level);
+        EchoRunSaveSystem.SaveLegacyState();
+        HighlightDifficulty();
+    }
+
+    void HighlightDifficulty()
+    {
+        RunDifficultyLevel level = RunDifficultySettings.Current;
+        SetBtnColor(_difficultyRelaxedBtn,
+            level == RunDifficultyLevel.Relaxed ? PrimaryStrong : SurfaceRaised);
+        SetBtnColor(_difficultyStandardBtn,
+            level == RunDifficultyLevel.Standard ? PrimaryStrong : SurfaceRaised);
+        SetBtnColor(_difficultyIntenseBtn,
+            level == RunDifficultyLevel.Intense ? PrimaryStrong : SurfaceRaised);
+        SetButtonLabel(_difficultyRelaxedBtn,
+            level == RunDifficultyLevel.Relaxed ? "✓ 休闲" : "休闲");
+        SetButtonLabel(_difficultyStandardBtn,
+            level == RunDifficultyLevel.Standard ? "✓ 标准" : "标准");
+        SetButtonLabel(_difficultyIntenseBtn,
+            level == RunDifficultyLevel.Intense ? "✓ 高压" : "高压");
+        if (_difficultyStatusText != null)
+            _difficultyStatusText.text = RunDifficultySettings.Description(level);
+    }
+
     void UpdateFrameRateStatus()
     {
         if (_fpsStatusText == null || _settingsPanel == null
@@ -608,10 +719,36 @@ public class UIManager : MonoBehaviour
 
     void RefreshVolumeLabels()
     {
+        if (_masterValueText != null && _masterSlider != null)
+            _masterValueText.text = "主音量 · " + Mathf.RoundToInt(
+                _masterSlider.value * 100f) + "%";
         if (_bgmValueText != null && _bgmSlider != null)
-            _bgmValueText.text = Mathf.RoundToInt(_bgmSlider.value * 100f) + "%";
+            _bgmValueText.text = "音乐音量 · " +
+                Mathf.RoundToInt(_bgmSlider.value * 100f) + "%";
         if (_sfxValueText != null && _sfxSlider != null)
-            _sfxValueText.text = Mathf.RoundToInt(_sfxSlider.value * 100f) + "%";
+            _sfxValueText.text = "音效音量 · " +
+                Mathf.RoundToInt(_sfxSlider.value * 100f) + "%";
+        bool muted = AudioManager.Instance != null
+            ? AudioManager.Instance.IsMuted
+            : PlayerPrefs.GetInt("AudioMuted", 0) != 0;
+        SetBtnColor(_muteBtn, muted ? PrimaryStrong : SurfaceRaised);
+        SetButtonLabel(_muteBtn, muted ? "✓ 已静音" : "一键静音");
+    }
+
+    void ToggleAudioMute()
+    {
+        bool muted = AudioManager.Instance != null
+            ? AudioManager.Instance.IsMuted
+            : PlayerPrefs.GetInt("AudioMuted", 0) != 0;
+        if (AudioManager.Instance != null)
+            AudioManager.Instance.SetMuted(!muted);
+        else
+            EchoRunSaveSystem.SaveAudio(
+                _masterSlider != null ? _masterSlider.value : 1f,
+                _bgmSlider != null ? _bgmSlider.value : 0.5f,
+                _sfxSlider != null ? _sfxSlider.value : 1f,
+                !muted, false);
+        RefreshVolumeLabels();
     }
 
     void OnAccessibilityChanged()
@@ -1056,8 +1193,13 @@ public class UIManager : MonoBehaviour
         _lastDuelFeedbackSequence = view.feedbackSequence;
         _duelFeedbackText.text = view.feedback;
         _duelFeedbackText.color = view.feedback.StartsWith("回声施压")
+                                  || view.feedback.StartsWith("预判命中")
             ? Danger
-            : view.feedback.StartsWith("预测失效") ? Reward : Primary;
+            : view.feedback.StartsWith("预测失效")
+              || view.feedback.StartsWith("偏离")
+              || view.feedback.StartsWith("裂解")
+              || view.feedback.StartsWith("反制生效")
+                ? Reward : Primary;
         _duelFeedbackTimer = 1.8f;
         _duelFeedbackText.gameObject.SetActive(true);
     }
@@ -1521,8 +1663,8 @@ public class UIManager : MonoBehaviour
                 Screen.width, Screen.height);
         if (_settingsContent != null)
             _settingsContent.sizeDelta = portrait
-                ? new Vector2(900f, 1420f)
-                : new Vector2(1020f, 850f);
+                ? new Vector2(900f, 1790f)
+                : new Vector2(1020f, 1260f);
         if (_characterContent != null)
             _characterContent.sizeDelta = portrait
                 ? new Vector2(900f, 1160f)
@@ -1533,6 +1675,7 @@ public class UIManager : MonoBehaviour
             : new Vector2(500f, 40f);
         sliderSize = UILayoutRules.EnsureTouchSliderSize(
             sliderSize, largeTargets, portrait);
+        if (_masterSlider != null) _masterSlider.GetComponent<RectTransform>().sizeDelta = sliderSize;
         if (_bgmSlider != null) _bgmSlider.GetComponent<RectTransform>().sizeDelta = sliderSize;
         if (_sfxSlider != null) _sfxSlider.GetComponent<RectTransform>().sizeDelta = sliderSize;
         Vector2 fpsSize = portrait
@@ -1543,6 +1686,12 @@ public class UIManager : MonoBehaviour
         SetButtonSize(_fps30Btn, fpsSize);
         SetButtonSize(_fps60Btn, fpsSize);
         SetButtonSize(_fps120Btn, fpsSize);
+        SetButtonSize(_difficultyRelaxedBtn, fpsSize);
+        SetButtonSize(_difficultyStandardBtn, fpsSize);
+        SetButtonSize(_difficultyIntenseBtn, fpsSize);
+        SetButtonSize(_muteBtn, TouchButtonSize(portrait
+            ? new Vector2(260f, 104f) : new Vector2(220f, 60f),
+            largeTargets, portrait));
         SetButtonSize(_largeTextBtn, TouchButtonSize(portrait
             ? new Vector2(230f, 104f) : new Vector2(210f, 60f), largeTargets, portrait));
         SetButtonSize(_highContrastBtn, TouchButtonSize(portrait

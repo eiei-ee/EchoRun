@@ -54,6 +54,22 @@ public static class UILayoutRules
             : new Vector2(520f, 78f), touchLayout || portrait, portrait);
     }
 
+    public static Vector2 GetHomeNavigationAnchor(int index, bool portrait)
+    {
+        int safeIndex = Mathf.Clamp(index, 0, 2);
+        return portrait
+            ? new Vector2(0.22f + safeIndex * 0.28f, 0.095f)
+            : new Vector2(0.085f + safeIndex * 0.105f, 0.095f);
+    }
+
+    public static Vector2 GetHomeNavigationSize(bool portrait,
+        bool touchLayout)
+    {
+        return EnsureTouchButtonSize(portrait
+            ? new Vector2(260f, 104f)
+            : new Vector2(180f, 56f), touchLayout || portrait, portrait);
+    }
+
     public static Vector2 GetRestartButtonSize(
         int width, int height, bool touchLayout)
     {

@@ -27,11 +27,13 @@ public sealed class P0InvisibleExperienceTests
         "HighScore",
         "TotalCoins",
         "TargetFrameRate",
+        "AudioMuted",
         "CharacterPreset"
     };
 
     private static readonly string[] FloatKeys =
     {
+        "MasterVolume",
         "MusicVolume",
         "SfxVolume"
     };

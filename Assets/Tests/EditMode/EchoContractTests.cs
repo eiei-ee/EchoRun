@@ -88,8 +88,8 @@ public sealed class EchoContractTests
         Assert.IsFalse(evaluator.Contract.completed);
 
         evaluator.SetPhase(EchoDuelPhase.Counterattack);
-        evaluator.RecordLaneMarker(1, 200f, 10f);
-        evaluator.RecordLaneMarker(2, 250f, 10f);
+        RecordRequiredCounterattackLane(evaluator, 1, 2, 200f);
+        RecordRequiredCounterattackLane(evaluator, 2, 0, 250f);
 
         Assert.IsTrue(evaluator.Contract.completed);
         Assert.AreEqual(100f, evaluator.Contract.progress);
@@ -124,8 +124,7 @@ public sealed class EchoContractTests
 
         evaluator.SetPhase(EchoDuelPhase.Counterattack);
         while (!evaluator.Contract.completed)
-            evaluator.RecordDodge(RequiredObstacle(
-                evaluator.Contract.targetAction), 0);
+            RecordRequiredCounterattackDodge(evaluator, 0);
 
         Assert.IsTrue(evaluator.Contract.completed);
         Assert.AreEqual(100f, evaluator.Contract.progress);
@@ -154,8 +153,7 @@ public sealed class EchoContractTests
 
         evaluator.SetPhase(EchoDuelPhase.Counterattack);
         while (!evaluator.Contract.completed)
-            evaluator.RecordDodge(RequiredObstacle(
-                evaluator.Contract.targetAction));
+            RecordRequiredCounterattackDodge(evaluator, 1);
 
         Assert.IsTrue(evaluator.Contract.completed);
         Assert.AreEqual(100f, evaluator.Contract.progress);
@@ -303,7 +301,7 @@ public sealed class EchoContractTests
     }
 
     [Test]
-    public void CounterattackPredictsTheMostRecentSuccessfulCounterRoute()
+    public void CounterattackRelocksOnceAfterARepeatedCounterRoute()
     {
         var evaluator = new EchoContractEvaluator(new EchoContractData
         {
@@ -318,15 +316,299 @@ public sealed class EchoContractTests
         });
         evaluator.SetPhase(EchoDuelPhase.Counterattack);
 
-        evaluator.RecordLaneMarker(1, 50f, 10f);
+        int initialHypothesis = evaluator.Contract.hypothesisVersion;
+        RecordRequiredCounterattackLane(evaluator, 1, 2, 50f);
+        Assert.AreEqual(0, evaluator.Contract.predictionLane,
+            "One choice must not mutate the frozen hypothesis.");
 
+        RecordRequiredCounterattackLane(evaluator, 1, 2, 100f);
         Assert.AreEqual(1, evaluator.Contract.predictionLane);
+        Assert.AreEqual(1, evaluator.Contract.counterRelockCount);
+        Assert.AreEqual(initialHypothesis + 1,
+            evaluator.Contract.hypothesisVersion);
+        StringAssert.StartsWith("反制生效 · 回声改判",
+            evaluator.Contract.lastFeedback);
         StringAssert.Contains("中间路线",
             evaluator.BuildPredictionText(true));
-        float progressAfterCounter = evaluator.Contract.progress;
-        evaluator.RecordLaneMarker(1, 100f, 10f);
-        Assert.Less(evaluator.Contract.progress, progressAfterCounter,
-            "Repeating the newly learned counter route must strengthen the echo.");
+
+        float progressBeforeHit = evaluator.Contract.progress;
+        float shadowBeforeHit = evaluator.Contract.shadowProgressBonus;
+        EchoChallengeStep repeat = evaluator.ActiveChallengeStep;
+        evaluator.BindChallengeStep(repeat.stepId, repeat.predictedLane,
+            2, 0, 150f);
+        evaluator.RecordLaneMarker(1, 150f, 10f, repeat.stepId);
+        Assert.AreEqual(progressBeforeHit, evaluator.Contract.progress,
+            "A prediction hit changes the race lead, not settled lock damage.");
+        Assert.Greater(evaluator.Contract.shadowProgressBonus,
+            shadowBeforeHit);
+        Assert.AreEqual(1, evaluator.Contract.counterRelockCount,
+            "Counterattack may relock at most once.");
+    }
+
+    [Test]
+    public void CounterattackOnlyScoresObstacleBoundToCurrentStep()
+    {
+        var evaluator = CounterattackEvaluator(
+            EchoContractType.ChangeVerticalHabit);
+        EchoChallengeStep step = evaluator.ActiveChallengeStep;
+        float before = evaluator.Contract.progress;
+
+        evaluator.RecordDodge(RequiredObstacle(step.requiredAction), 1, 10f);
+        Assert.AreEqual(before, evaluator.Contract.progress,
+            "An ordinary obstacle must not score the current counterattack step.");
+
+        EchoChallengeObstacleBinding binding = BindRequiredObstacle(
+            evaluator, 1, step);
+        evaluator.RecordDodge(RequiredObstacle(step.requiredAction), 1, 10f,
+            binding);
+
+        Assert.Greater(evaluator.Contract.progress, before);
+        Assert.AreEqual(step.predictedAction,
+            evaluator.Contract.predictionAction,
+            "One counter must not rewrite the frozen prediction.");
+        Assert.AreEqual(step.requiredAction,
+            evaluator.ActiveChallengeStep.requiredAction);
+        Assert.AreNotEqual(step.stepId,
+            evaluator.ActiveChallengeStep.stepId);
+    }
+
+    [Test]
+    public void StaleChallengeObstacleCannotScoreTheNextStep()
+    {
+        var evaluator = CounterattackEvaluator(EchoContractType.DisruptRhythm);
+        EchoChallengeStep first = evaluator.ActiveChallengeStep;
+        EchoChallengeObstacleBinding stale = BindRequiredObstacle(
+            evaluator, 1, first);
+        evaluator.RecordDodge(RequiredObstacle(first.requiredAction), 1, 10f,
+            stale);
+        float afterFirst = evaluator.Contract.progress;
+
+        evaluator.RecordDodge(RequiredObstacle(first.requiredAction), 1, 10f,
+            stale);
+
+        Assert.AreEqual(afterFirst, evaluator.Contract.progress);
+        Assert.AreNotEqual(first.stepId,
+            evaluator.ActiveChallengeStep.stepId);
+    }
+
+    [Test]
+    public void EncounterGateSettlesOnceAndRejectsTheStaleId()
+    {
+        var evaluator = CounterattackEvaluator(
+            EchoContractType.ChangeVerticalHabit);
+        EchoChallengeStep first = evaluator.ActiveChallengeStep;
+        evaluator.BindChallengeStep(first.stepId, 0, 2, 1, 50f);
+        Assert.IsTrue(evaluator.RecordEncounterInput(first.stepId,
+            first.requiredAction, 2, 48f));
+
+        Assert.IsTrue(evaluator.ResolveChallengeAtGate(first.stepId, 2, 10f));
+        float afterSettlement = evaluator.Contract.progress;
+        EchoEncounterResult result = evaluator.LastEncounterResult;
+        Assert.IsFalse(evaluator.ResolveChallengeAtGate(first.stepId, 2, 10f));
+        Assert.IsFalse(evaluator.RecordEncounterInput(first.stepId,
+            first.requiredAction, 2, 52f));
+        Assert.AreEqual(afterSettlement, evaluator.Contract.progress);
+        Assert.AreEqual(first.stepId, result.encounterId);
+        Assert.AreNotEqual(first.stepId,
+            evaluator.ActiveChallengeStep.stepId);
+    }
+
+    [Test]
+    public void DetectionAndRevealChoicesProduceTraceableEncounterResults()
+    {
+        var evaluator = new EchoContractEvaluator(new EchoContractData
+        {
+            type = EchoContractType.BreakLaneHabit,
+            learnedLane = 2,
+            predictionLane = 2,
+            targetLane = 0,
+            targetProgress = 100f
+        });
+        evaluator.SetPhase(EchoDuelPhase.Detection);
+        evaluator.RecordLaneMarker(2, 50f, 10f);
+        int detectionId = evaluator.LastEncounterResult.encounterId;
+        Assert.Greater(detectionId, 0);
+        Assert.AreEqual(EchoEncounterOutcome.Evidence,
+            evaluator.LastEncounterResult.outcome);
+        Assert.AreEqual(1, evaluator.Contract.detectionEvidenceCount);
+
+        evaluator.SetPhase(EchoDuelPhase.Reveal);
+        evaluator.RecordLaneMarker(0, 100f, 10f);
+        Assert.Greater(evaluator.LastEncounterResult.encounterId,
+            detectionId);
+        Assert.AreEqual(EchoEncounterOutcome.PredictionBroken,
+            evaluator.LastEncounterResult.outcome);
+        Assert.AreEqual(1, evaluator.Contract.revealEncounterCount);
+    }
+
+    [Test]
+    public void CompletedContractCannotBeReopenedByCollision()
+    {
+        var evaluator = new EchoContractEvaluator(new EchoContractData
+        {
+            type = EchoContractType.ChangeVerticalHabit,
+            initialBreakCompleted = true,
+            completed = true,
+            completionLocked = true,
+            progress = 100f,
+            targetProgress = 100f,
+            duelPhase = EchoDuelPhase.Rewrite
+        });
+        float progressBefore = evaluator.Contract.progress;
+        float shadowBefore = evaluator.Contract.shadowProgressBonus;
+
+        evaluator.RecordHit(10f);
+
+        Assert.IsTrue(evaluator.Contract.completed);
+        Assert.IsTrue(evaluator.Contract.completionLocked);
+        Assert.AreEqual(progressBefore, evaluator.Contract.progress);
+        Assert.AreEqual(0f, evaluator.Contract.EchoLock01);
+        Assert.Greater(evaluator.Contract.shadowProgressBonus, shadowBefore,
+            "A late collision may change the race but not reopen the contract.");
+    }
+
+    [Test]
+    public void MissedChallengeAdvancesWithoutChangingStability()
+    {
+        var evaluator = CounterattackEvaluator(EchoContractType.DisruptRhythm);
+        EchoChallengeStep step = evaluator.ActiveChallengeStep;
+        evaluator.BindChallengeStep(step.stepId, 0, 1, 2, 50f);
+        float before = evaluator.Contract.progress;
+
+        evaluator.RecordChallengeMissed(step.stepId);
+
+        Assert.AreEqual(before, evaluator.Contract.progress);
+        Assert.AreNotEqual(step.stepId,
+            evaluator.ActiveChallengeStep.stepId);
+        Assert.AreEqual("交锋取消 · 锁定不变",
+            evaluator.Contract.lastFeedback);
+        StringAssert.DoesNotContain("本题", evaluator.Contract.lastFeedback);
+    }
+
+    [Test]
+    public void CounterattackInputIsEvidenceUntilTheGateSettlesIt()
+    {
+        var evaluator = CounterattackEvaluator(
+            EchoContractType.ChangeVerticalHabit);
+        EchoChallengeStep step = evaluator.ActiveChallengeStep;
+        evaluator.BindChallengeStep(step.stepId, 0, 2, 1, 50f);
+        float before = evaluator.Contract.progress;
+
+        Assert.IsFalse(evaluator.RecordCounterattackActionResponse(
+            step.requiredAction, 10f));
+        Assert.AreEqual(before, evaluator.Contract.progress);
+        Assert.IsTrue(evaluator.RecordEncounterInput(step.stepId,
+            step.requiredAction, 2, 48f));
+        Assert.AreEqual(before, evaluator.Contract.progress,
+            "Raw input evidence must never score directly.");
+        Assert.IsTrue(evaluator.ResolveChallengeAtGate(step.stepId, 2, 10f));
+        Assert.Greater(evaluator.Contract.progress, before);
+        Assert.AreEqual(EchoEncounterOutcome.PredictionBroken,
+            evaluator.LastEncounterResult.outcome);
+        Assert.AreNotEqual(step.stepId,
+            evaluator.ActiveChallengeStep.stepId);
+    }
+
+    [Test]
+    public void CounterattackPredictedActionResponseCountsAsPredictionHit()
+    {
+        var evaluator = CounterattackEvaluator(EchoContractType.DisruptRhythm);
+        EchoChallengeStep step = evaluator.ActiveChallengeStep;
+        evaluator.BindChallengeStep(step.stepId, 0, 2, 1, 50f);
+        float before = evaluator.Contract.progress;
+        float shadowBefore = evaluator.Contract.shadowProgressBonus;
+
+        Assert.IsTrue(evaluator.RecordEncounterInput(step.stepId,
+            step.predictedAction, 2, 48f));
+        Assert.IsTrue(evaluator.ResolveChallengeAtGate(step.stepId, 2, 10f));
+
+        Assert.AreEqual(before, evaluator.Contract.progress);
+        Assert.Greater(evaluator.Contract.shadowProgressBonus, shadowBefore);
+        Assert.AreEqual(EchoEncounterOutcome.PredictionHit,
+            evaluator.LastEncounterResult.outcome);
+    }
+
+    [Test]
+    public void BoundCounterObstacleSettlesFromItsIdentityDuringLaneMotion()
+    {
+        var evaluator = CounterattackEvaluator(
+            EchoContractType.ChangeVerticalHabit);
+        EchoChallengeStep step = evaluator.ActiveChallengeStep;
+        EchoChallengeObstacleBinding binding = BindRequiredObstacle(
+            evaluator, 2, step);
+        float before = evaluator.Contract.progress;
+
+        evaluator.RecordDodge(RequiredObstacle(step.requiredAction), 0, 10f,
+            binding);
+
+        Assert.Greater(evaluator.Contract.progress, before,
+            "The bound obstacle is authoritative even while CurrentLane is " +
+            "already changing again.");
+    }
+
+    [Test]
+    public void PredictedObstacleSettlesAsEchoPredictionHit()
+    {
+        var evaluator = CounterattackEvaluator(EchoContractType.DisruptRhythm);
+        EchoChallengeStep step = evaluator.ActiveChallengeStep;
+        evaluator.BindChallengeStep(step.stepId, 0, 2, 1, 50f);
+        var binding = new EchoChallengeObstacleBinding
+        {
+            stepId = step.stepId,
+            role = EchoChallengeObstacleRole.Predicted,
+            action = step.predictedAction,
+            lane = 0
+        };
+        float before = evaluator.Contract.progress;
+        float shadowBefore = evaluator.Contract.shadowProgressBonus;
+
+        evaluator.RecordDodge(RequiredObstacle(step.predictedAction), 2, 10f,
+            binding);
+
+        Assert.AreEqual(before, evaluator.Contract.progress);
+        Assert.Greater(evaluator.Contract.shadowProgressBonus, shadowBefore);
+        Assert.AreEqual(EchoEncounterOutcome.PredictionHit,
+            evaluator.LastEncounterResult.outcome);
+        Assert.AreNotEqual(step.stepId,
+            evaluator.ActiveChallengeStep.stepId);
+    }
+
+    [Test]
+    public void DirectorUsesChallengeStepAsCounterattackActionSource()
+    {
+        var contract = new EchoContractData
+        {
+            type = EchoContractType.DisruptRhythm,
+            targetAction = ShadowAction.Slide,
+            predictionAction = ShadowAction.Jump,
+            targetProgress = 100f,
+            duelPhase = EchoDuelPhase.Counterattack
+        };
+        var step = new EchoChallengeStep
+        {
+            stepId = 17,
+            phase = EchoDuelPhase.Counterattack,
+            contractType = EchoContractType.DisruptRhythm,
+            status = EchoChallengeStepStatus.PendingSpawn,
+            predictedAction = ShadowAction.Slide,
+            requiredAction = ShadowAction.Jump,
+            predictedLane = -1
+        };
+
+        AITrackPlan plan = AITrackDirector.ApplyEchoContract(
+            new AITrackPlan { maxBlockedLanes = 2 }, contract, 4,
+            EchoDuelPhase.Counterattack, step);
+
+        Assert.AreEqual(17, plan.echoChallengeStepId);
+        Assert.AreEqual(ShadowAction.Slide, plan.echoPredictedAction);
+        Assert.AreEqual(ShadowAction.Jump, plan.echoTargetAction);
+
+        step.status = EchoChallengeStepStatus.Active;
+        AITrackPlan deferred = AITrackDirector.ApplyEchoContract(
+            new AITrackPlan { maxBlockedLanes = 2 }, contract, 5,
+            EchoDuelPhase.Counterattack, step);
+        Assert.AreEqual(-17, deferred.echoChallengeStepId);
+        Assert.IsTrue(TrackManager.ShouldDeferChallengeContent(deferred));
     }
 
     [Test]
@@ -522,7 +804,7 @@ public sealed class EchoContractTests
     }
 
     [Test]
-    public void CounterattackSpacingBandsVaryAboveTheRecoveryFloor()
+    public void CounterattackLayoutBandsDoNotStretchRecoverySafeSpacing()
     {
         var contract = new EchoContractData
         {
@@ -531,7 +813,6 @@ public sealed class EchoContractTests
             predictionAction = ShadowAction.Slide,
             targetProgress = 100f
         };
-        var multipliers = new System.Collections.Generic.HashSet<float>();
         float recoveryFloor = TrackSpawnRules.MinimumObstacleRowSpacing(
             24f, 0.9f, 20f);
 
@@ -542,11 +823,10 @@ public sealed class EchoContractTests
                 EchoDuelPhase.Counterattack);
             plan = TrackManager.PrepareCounterObstacleRowPlan(plan, step);
             float multiplier = TrackManager.EchoObstacleSpacingMultiplier(plan);
-            multipliers.Add(multiplier);
-            Assert.GreaterOrEqual(recoveryFloor * multiplier, recoveryFloor);
+            Assert.AreEqual(1f, multiplier);
+            Assert.AreEqual(recoveryFloor,
+                recoveryFloor * multiplier, 0.001f);
         }
-
-        Assert.AreEqual(3, multipliers.Count);
     }
 
     [Test]
@@ -687,19 +967,21 @@ public sealed class EchoContractTests
     }
 
     [Test]
-    public void RewriteProfileRewardsEffectiveVarietyInsteadOfInputSpam()
+    public void RewriteProfileRewardsClearEvidenceNotOnlyVariety()
     {
         var style = new PlayerStyleData();
         var spam = new EchoRewriteTracker();
-        spam.RecordRouteChoice(1, 0f);
-        spam.RecordRouteChoice(1, 20f);
-        spam.RecordRouteChoice(1, 40f);
-        spam.RecordRouteChoice(1, 60f);
+        spam.RecordRouteChoice(2, 0f);
+        spam.RecordRouteChoice(2, 20f);
+        spam.RecordRouteChoice(2, 40f);
+        spam.RecordRouteChoice(2, 60f);
         spam.RecordVerticalAction(ShadowAction.Jump, false, 1f);
         spam.RecordVerticalAction(ShadowAction.Slide, false, 3f);
         EchoRewriteSnapshot spamSnapshot = spam.BuildSnapshot(style);
-        Assert.AreEqual(1f, spamSnapshot.writeStrength, 0.001f);
+        Assert.Greater(spamSnapshot.writeStrength, 1f,
+            "Repeated, valid route choices are a clear stable style.");
         Assert.AreEqual(0, spamSnapshot.effectiveVerticalActions);
+        Assert.Greater(spamSnapshot.profileChange01, 0f);
 
         var varied = new EchoRewriteTracker();
         varied.RecordRouteChoice(0, 0f);
@@ -717,7 +999,7 @@ public sealed class EchoContractTests
         Assert.Greater(strong.routeVariation01, 0.9f);
         Assert.Greater(strong.actionMix01, 0.9f);
         Assert.Greater(strong.rhythmNovelty01, 0.6f);
-        Assert.Greater(strong.writeStrength, 1.8f);
+        Assert.Greater(strong.writeStrength, spamSnapshot.writeStrength);
         Assert.LessOrEqual(strong.writeStrength, 2f);
 
         varied.RecordMistake();
@@ -751,11 +1033,13 @@ public sealed class EchoContractTests
         tracker.RecordRouteChoice(0, 10f);
         EchoRewriteSnapshot snapshot = tracker.BuildSnapshot(style);
         EchoRewriteSnapshot clone = snapshot.Clone();
+        float frozenLanePreference = snapshot.GetStyle().lanePreference;
 
         style.lanePreference = -0.9f;
         snapshot.styleJson = "{}";
 
-        Assert.AreEqual(0.7f, clone.GetStyle().lanePreference, 0.001f);
+        Assert.AreEqual(frozenLanePreference,
+            clone.GetStyle().lanePreference, 0.001f);
         Assert.AreEqual(clone.BuildProfileSummary(),
             clone.Clone().BuildProfileSummary());
     }
@@ -1012,6 +1296,47 @@ public sealed class EchoContractTests
         Assert.AreEqual(EchoDuelPhase.Finale, flow.PendingPhase);
         Assert.IsTrue(flow.PendingTransitionFailed);
         Assert.AreEqual(EchoDuelPhase.Resistance, flow.PendingFailurePhase);
+    }
+
+    [Test]
+    public void ExhaustedCounterattackRequestsExplicitFailureFinale()
+    {
+        var flow = new EchoDuelFlow(true, 12f, 4f, 24f, 25f);
+        var contract = new EchoContractData
+        {
+            type = EchoContractType.BreakLaneHabit,
+            initialBreakCompleted = true,
+            counterattackExhausted = true,
+            targetProgress = 100f
+        };
+
+        Assert.IsTrue(flow.TransitionTo(EchoDuelPhase.Counterattack));
+        Assert.IsTrue(flow.Tick(0.1f, 100f, contract));
+        Assert.AreEqual(EchoDuelPhase.Finale, flow.PendingPhase);
+        Assert.IsTrue(flow.PendingTransitionFailed);
+        Assert.AreEqual(EchoDuelPhase.Counterattack,
+            flow.PendingFailurePhase);
+    }
+
+    [Test]
+    public void EvidenceCanShortenFixedPhasesButNotTheirMinimumBeat()
+    {
+        var flow = new EchoDuelFlow(true, 12f, 4f, 24f, 25f);
+        var contract = new EchoContractData
+        {
+            type = EchoContractType.BreakLaneHabit,
+            detectionEvidenceCount = 2,
+            targetProgress = 100f
+        };
+
+        Assert.IsFalse(flow.Tick(7.9f, 100f, contract));
+        Assert.IsTrue(flow.Tick(0.1f, 100f, contract));
+        Assert.IsTrue(flow.CommitPendingTransition());
+
+        contract.revealEncounterCount = 1;
+        Assert.IsFalse(flow.Tick(2.9f, 100f, contract));
+        Assert.IsTrue(flow.Tick(0.1f, 100f, contract));
+        Assert.AreEqual(EchoDuelPhase.Resistance, flow.PendingPhase);
     }
 
     [Test]
@@ -1273,9 +1598,212 @@ public sealed class EchoContractTests
         StringAssert.Contains("节奏固定", summary);
     }
 
+    [Test]
+    public void DetectionBlendsFrozenAndCurrentVerticalHabitSeventyThirty()
+    {
+        var frozen = new PlayerStyleData
+        {
+            slideFrequency = 0.58f,
+            verticalActionSamples = 10,
+            jumpActionSamples = 4,
+            slideActionSamples = 6
+        };
+        var evidence = new EchoDetectionEvidence();
+        evidence.RecordVertical(ShadowAction.Jump);
+        evidence.RecordVertical(ShadowAction.Jump);
+
+        PlayerStyleData blended = EchoContractPolicy.BlendDetectionStyle(
+            frozen, evidence);
+        Assert.AreEqual(0.406f, blended.slideFrequency, 0.001f);
+
+        EchoContractData contract = EchoContractPolicy.CreateFromDetection(
+            frozen, 1, evidence);
+        Assert.AreEqual(EchoContractType.ChangeVerticalHabit, contract.type);
+        Assert.AreEqual(ShadowAction.Jump, contract.learnedAction);
+    }
+
+    [Test]
+    public void DetectionNeedsTwoValidChoicesBeforeCurrentRunCanInfluenceRule()
+    {
+        var frozen = new PlayerStyleData
+        {
+            slideFrequency = 0.58f,
+            verticalActionSamples = 10,
+            jumpActionSamples = 4,
+            slideActionSamples = 6
+        };
+        var evidence = new EchoDetectionEvidence();
+        evidence.RecordVertical(ShadowAction.Jump);
+
+        PlayerStyleData blended = EchoContractPolicy.BlendDetectionStyle(
+            frozen, evidence);
+        Assert.AreEqual(0.58f, blended.slideFrequency, 0.001f);
+    }
+
+    [Test]
+    public void DetectionContractLocksOnceAndCannotMoveDuringReveal()
+    {
+        var frozen = new PlayerStyleData
+        {
+            slideFrequency = 0.58f,
+            verticalActionSamples = 10,
+            jumpActionSamples = 4,
+            slideActionSamples = 6
+        };
+        var evaluator = new EchoContractEvaluator(
+            EchoContractPolicy.Create(frozen, 1));
+        evaluator.SetPhase(EchoDuelPhase.Detection);
+        evaluator.RecordDodge(ObstacleType.High, 1, 10f);
+        evaluator.RecordDodge(ObstacleType.High, 1, 10f);
+
+        Assert.IsTrue(evaluator.LockDetectionContract(frozen, 1));
+        Assert.AreEqual(ShadowAction.Jump,
+            evaluator.Contract.learnedAction);
+
+        evaluator.RecordDodge(ObstacleType.Low, 1, 10f);
+        evaluator.RecordDodge(ObstacleType.Low, 1, 10f);
+        Assert.IsFalse(evaluator.LockDetectionContract(frozen, 1));
+        Assert.AreEqual(ShadowAction.Jump,
+            evaluator.Contract.learnedAction);
+    }
+
+    [Test]
+    public void DetectionHudHidesProvisionalContractUntilItIsLocked()
+    {
+        var evaluator = new EchoContractEvaluator(new EchoContractData
+        {
+            type = EchoContractType.ChangeVerticalHabit,
+            title = "不应提前公开",
+            duelPhase = EchoDuelPhase.Detection
+        });
+
+        StringAssert.Contains("有效样本 0/2", evaluator.BuildHudText());
+        StringAssert.DoesNotContain("不应提前公开", evaluator.BuildHudText());
+
+        evaluator.LockDetectionContract(new PlayerStyleData(), 1);
+        Assert.AreEqual("回声侦测 · 画像已锁定", evaluator.BuildHudText());
+    }
+
+    [Test]
+    public void RetryKeepsItsPublishedRuleDuringDetection()
+    {
+        var contract = new EchoContractData
+        {
+            type = EchoContractType.ChangeVerticalHabit,
+            generation = 2,
+            learnedAction = ShadowAction.Slide,
+            targetAction = ShadowAction.Jump,
+            preserveRuleForRetry = true,
+            duelPhase = EchoDuelPhase.Detection
+        };
+        var evaluator = new EchoContractEvaluator(contract);
+        evaluator.RecordDodge(ObstacleType.High, 1, 10f);
+        evaluator.RecordDodge(ObstacleType.High, 1, 10f);
+
+        Assert.IsTrue(evaluator.LockDetectionContract(
+            new PlayerStyleData(), 2));
+        Assert.AreEqual(ShadowAction.Slide,
+            evaluator.Contract.learnedAction);
+    }
+
+    [Test]
+    public void DetectionRowsOfferEqualMarkedChoicesAcrossAllThreeLanes()
+    {
+        var plan = new AITrackPlan
+        {
+            echoEncounterKind = EchoEncounterKind.DetectionEvidence,
+            echoEncounterContractType = EchoContractType.ChangeVerticalHabit,
+            echoPredictedLane = 0,
+            echoSafeChoiceLane = 1,
+            echoRiskChoiceLane = 2,
+            echoEncounterStep = 2
+        };
+
+        EchoEncounterLaneChoice[] choices =
+            TrackManager.BuildEchoEncounterLaneChoices(plan);
+        Assert.AreEqual(3, choices.Length);
+        CollectionAssert.AreEquivalent(new[] { 0, 1, 2 },
+            new[] { choices[0].lane, choices[1].lane, choices[2].lane });
+        Assert.IsTrue(choices[0].echoContractMarker);
+        Assert.IsTrue(choices[1].echoContractMarker);
+        Assert.IsTrue(choices[2].echoContractMarker);
+        Assert.IsTrue(TrackManager.RequiresGuaranteedEchoEncounterRow(plan));
+    }
+
+    [Test]
+    public void DetectionMarkersCountForEveryProvisionalContractType()
+    {
+        Assert.IsTrue(AIShadowRunner.ShouldCountContractMarker(
+            EchoContractType.ChangeVerticalHabit,
+            EchoDuelPhase.Detection, true));
+        Assert.IsFalse(AIShadowRunner.ShouldCountContractMarker(
+            EchoContractType.ChangeVerticalHabit,
+            EchoDuelPhase.Reveal, true));
+    }
+
     private static ObstacleType RequiredObstacle(ShadowAction action)
     {
         return action == ShadowAction.Jump
             ? ObstacleType.High : ObstacleType.Low;
+    }
+
+    private static EchoContractEvaluator CounterattackEvaluator(
+        EchoContractType type)
+    {
+        var evaluator = new EchoContractEvaluator(new EchoContractData
+        {
+            type = type,
+            learnedAction = ShadowAction.Slide,
+            targetAction = ShadowAction.Slide,
+            predictionAction = ShadowAction.Jump,
+            targetLane = 1,
+            initialBreakCompleted = true,
+            counterattackActive = true,
+            progress = 55f,
+            targetProgress = 100f,
+            duelPhase = EchoDuelPhase.Resistance
+        });
+        evaluator.SetPhase(EchoDuelPhase.Counterattack);
+        return evaluator;
+    }
+
+    private static EchoChallengeObstacleBinding BindRequiredObstacle(
+        EchoContractEvaluator evaluator, int lane, EchoChallengeStep step)
+    {
+        evaluator.BindChallengeStep(step.stepId, 0, lane,
+            lane == 2 ? 1 : 2, 50f);
+        return new EchoChallengeObstacleBinding
+        {
+            stepId = step.stepId,
+            role = EchoChallengeObstacleRole.Required,
+            action = step.requiredAction,
+            lane = lane
+        };
+    }
+
+    private static void RecordRequiredCounterattackDodge(
+        EchoContractEvaluator evaluator, int lane)
+    {
+        EchoChallengeStep step = evaluator.ActiveChallengeStep;
+        EchoChallengeObstacleBinding binding = BindRequiredObstacle(
+            evaluator, lane, step);
+        evaluator.RecordDodge(RequiredObstacle(step.requiredAction), lane, 10f,
+            binding);
+    }
+
+    private static void RecordRequiredCounterattackLane(
+        EchoContractEvaluator evaluator, int lane, int safeLane,
+        float routeDistance)
+    {
+        EchoChallengeStep step = evaluator.ActiveChallengeStep;
+        evaluator.BindChallengeStep(step.stepId, step.predictedLane,
+            lane, safeLane, routeDistance);
+        evaluator.RecordLaneMarker(lane, routeDistance, 10f, step.stepId);
+    }
+
+    private static ShadowAction Opposite(ShadowAction action)
+    {
+        return action == ShadowAction.Jump
+            ? ShadowAction.Slide : ShadowAction.Jump;
     }
 }

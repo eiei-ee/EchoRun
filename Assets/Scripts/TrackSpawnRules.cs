@@ -29,16 +29,24 @@ public static class TrackSpawnRules
         float chance, float chanceRoll)
     {
         if (straightSegmentsSpawned <= Mathf.Max(0, warmupSegments)) return false;
-        if (obstacleFreeSegments > Mathf.Max(0, maxFreeSegments)) return true;
+        if (obstacleFreeSegments >= Mathf.Max(1, maxFreeSegments)) return true;
         return chanceRoll < Mathf.Clamp01(chance);
     }
 
     public static float MinimumObstacleRowSpacing(float speed,
         float jumpDuration, float segmentLength)
     {
+        return MinimumObstacleRowSpacing(speed, jumpDuration, segmentLength,
+            0.3f);
+    }
+
+    public static float MinimumObstacleRowSpacing(float speed,
+        float jumpDuration, float segmentLength, float recoverySeconds)
+    {
         float actionRecoveryDistance = Mathf.Max(1f, speed)
-                                       * (Mathf.Max(0.2f, jumpDuration) + 0.3f);
-        return Mathf.Max(Mathf.Max(1f, segmentLength) * 1.25f,
+                                       * (Mathf.Max(0.2f, jumpDuration)
+                                          + Mathf.Max(0f, recoverySeconds));
+        return Mathf.Max(Mathf.Max(1f, segmentLength),
             actionRecoveryDistance);
     }
 

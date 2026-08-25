@@ -136,6 +136,23 @@ public class PlayerStyleTests
     }
 
     [Test]
+    public void JumpOpportunityRecordsAJumpThatClearsWithoutContact()
+    {
+        var tracker = new ObstacleOpportunityTracker(ObstacleType.High);
+        Assert.IsFalse(tracker.Update(2, false, true, 5f,
+            ObstacleType.High, 303, 7f, out _));
+
+        tracker.MarkAction(2);
+        Assert.IsTrue(tracker.Update(2, true, false, 0f,
+            ObstacleType.High, 0, 7f, out bool usedJump));
+
+        Assert.IsTrue(usedJump);
+        Assert.AreEqual(303, tracker.LastResolvedId);
+        Assert.AreEqual(2, tracker.LastResolvedLane);
+        Assert.IsTrue(tracker.LastResolvedByPass);
+    }
+
+    [Test]
     public void SixCalibrationSignalsMoveInExpectedDirections()
     {
         var style = new PlayerStyleData();

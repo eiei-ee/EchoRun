@@ -31,8 +31,13 @@ public class AudioManager : MonoBehaviour
 
     [Header("Music")]
     public AudioClip bgmClip;
+    [Range(0f, 1f)] public float masterVolume = 1f;
     [Range(0f, 1f)] public float musicVolume = 0.5f;
     [Range(0f, 1f)] public float sfxVolume = 1f;
+    public bool muted;
+
+    public bool IsMuted => muted;
+    public float EffectiveMasterVolume => muted ? 0f : masterVolume;
 
     [Header("Footsteps")]
     public float footstepInterval = 0.35f;
@@ -60,15 +65,17 @@ public class AudioManager : MonoBehaviour
         _musicSource.playOnAwake = false;
         _musicSource.loop = true;
         _musicSource.spatialBlend = 0f;
-        _musicSource.volume = musicVolume;
+        ApplyOutputVolumes();
     }
 
     void Start()
     {
         LoadBundledAudio();
+        masterVolume = PlayerPrefs.GetFloat("MasterVolume", 1f);
         musicVolume = PlayerPrefs.GetFloat("MusicVolume", 0.5f);
         sfxVolume = PlayerPrefs.GetFloat("SfxVolume", 1f);
-        if (_musicSource != null) _musicSource.volume = musicVolume;
+        muted = PlayerPrefs.GetInt("AudioMuted", 0) != 0;
+        ApplyOutputVolumes();
 
         AudioClip music = bgmClip != null ? bgmClip : GetProceduralClip("bgm");
         if (music == null) return;
@@ -115,14 +122,51 @@ public class AudioManager : MonoBehaviour
     public void SetMusicVolume(float v)
     {
         musicVolume = Mathf.Clamp01(v);
-        if (_musicSource != null) _musicSource.volume = musicVolume;
-        EchoRunSaveSystem.SaveAudio(musicVolume, sfxVolume, false);
+        ApplyOutputVolumes();
+        SaveAudioSettings(false);
     }
 
     public void SetSfxVolume(float v)
     {
         sfxVolume = Mathf.Clamp01(v);
-        EchoRunSaveSystem.SaveAudio(musicVolume, sfxVolume, false);
+        ApplyOutputVolumes();
+        SaveAudioSettings(false);
+    }
+
+    public void SetMasterVolume(float v)
+    {
+        masterVolume = Mathf.Clamp01(v);
+        ApplyOutputVolumes();
+        SaveAudioSettings(false);
+    }
+
+    public void SetMuted(bool value)
+    {
+        muted = value;
+        ApplyOutputVolumes();
+        SaveAudioSettings(false);
+    }
+
+    public static float ResolveOutputVolume(float master, float channel,
+        bool isMuted)
+    {
+        return isMuted ? 0f : Mathf.Clamp01(master) * Mathf.Clamp01(channel);
+    }
+
+    private void ApplyOutputVolumes()
+    {
+        if (_musicSource != null)
+            _musicSource.volume = ResolveOutputVolume(
+                masterVolume, musicVolume, muted);
+        if (_sfxSource != null)
+            _sfxSource.volume = ResolveOutputVolume(
+                masterVolume, 1f, muted);
+    }
+
+    private void SaveAudioSettings(bool flush)
+    {
+        EchoRunSaveSystem.SaveAudio(masterVolume, musicVolume, sfxVolume,
+            muted, flush);
     }
 
     void PlaySFX(AudioClip clip, float volumeScale = 1f, string procKey = null)

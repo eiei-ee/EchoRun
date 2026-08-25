@@ -249,18 +249,15 @@ public sealed class PowerUpShopUI : MonoBehaviour
         if (_panelRect == null) return;
 
         bool portrait = UILayoutRules.IsCompactPortrait(Screen.width, Screen.height);
-        Vector2 launcherSize = RuntimePanelFactory.TouchButtonSize(
-            portrait ? new Vector2(260f, 104f) : new Vector2(180f, 56f),
-            portrait);
+        Vector2 launcherSize = UILayoutRules.GetHomeNavigationSize(
+            portrait, Application.isMobilePlatform || portrait);
         Vector2 closeSize = RuntimePanelFactory.TouchButtonSize(
             portrait ? new Vector2(260f, 104f) : new Vector2(190f, 58f),
             portrait);
         if (_launcher != null)
         {
             RuntimePanelFactory.Place(_launcher.GetComponent<RectTransform>(),
-                portrait
-                    ? new Vector2(0.50f, 0.095f)
-                    : new Vector2(0.19f, 0.095f),
+                UILayoutRules.GetHomeNavigationAnchor(1, portrait),
                 launcherSize,
                 Vector2.zero);
         }

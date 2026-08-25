@@ -568,7 +568,7 @@ public class GameStateTests
         Assert.IsNotNull(font, "The bundled Noto Sans CJK font must be included in runtime builds.");
 
         const string requiredCharacters =
-            "开始游戏设置角色选择音量帧率返回默认红色蓝色绿色金色暗黑距离已暂停继续主页得分最高金币重新新纪录总计校准影子挑战领先落后模仿进化▶";
+            "开始游戏设置角色选择主音量一键静音已帧率返回默认红色蓝色绿色金色暗黑距离已暂停继续主页得分最高金币重新新纪录总计校准影子挑战领先落后模仿进化▶";
         foreach (char character in requiredCharacters)
             Assert.IsTrue(font.HasCharacter(character), "UI font is missing: " + character);
     }
@@ -2345,12 +2345,48 @@ public class GameStateTests
     public void TrackObstacleGenerationCapsEmptyStraightsAfterWarmup()
     {
         Assert.IsFalse(TrackManager.ShouldSpawnObstacleRow(
-            2, 2, 2, 3, 1f, 0f), "Warmup must remain obstacle-free.");
+            1, 1, 1, 3, 1f, 0f), "Warmup must remain obstacle-free.");
         Assert.IsFalse(TrackManager.ShouldSpawnObstacleRow(
-            5, 3, 2, 3, 0f, 1f));
+            3, 2, 1, 3, 0f, 1f));
         Assert.IsTrue(TrackManager.ShouldSpawnObstacleRow(
-            6, 4, 2, 3, 0f, 1f),
-            "The fourth consecutive empty straight must force an obstacle row.");
+            4, 3, 1, 3, 0f, 1f),
+            "The third consecutive empty straight must force an obstacle row.");
+    }
+
+    [Test]
+    public void RunDifficultyProfilesIncreaseObstaclePressureMonotonically()
+    {
+        float relaxedChance = RunDifficultySettings.AdjustObstacleChance(
+            0.7f, RunDifficultyLevel.Relaxed);
+        float standardChance = RunDifficultySettings.AdjustObstacleChance(
+            0.7f, RunDifficultyLevel.Standard);
+        float intenseChance = RunDifficultySettings.AdjustObstacleChance(
+            0.7f, RunDifficultyLevel.Intense);
+
+        Assert.Less(relaxedChance, standardChance);
+        Assert.Less(standardChance, intenseChance);
+        Assert.AreEqual(3, RunDifficultySettings.ResolveMaxFreeSegments(
+            2, RunDifficultyLevel.Relaxed));
+        Assert.AreEqual(1, RunDifficultySettings.ResolveMaxFreeSegments(
+            2, RunDifficultyLevel.Standard));
+        Assert.AreEqual(1, RunDifficultySettings.ResolveMaxFreeSegments(
+            2, RunDifficultyLevel.Intense));
+    }
+
+    [TestCase(RunDifficultyLevel.Relaxed)]
+    [TestCase(RunDifficultyLevel.Standard)]
+    [TestCase(RunDifficultyLevel.Intense)]
+    public void EveryRunDifficultyKeepsItsDeclaredActionRecoveryWindow(
+        RunDifficultyLevel level)
+    {
+        const float speed = 24f;
+        const float jumpDuration = 0.9f;
+        float recovery = RunDifficultySettings.ObstacleRecoverySeconds(level);
+        float spacing = TrackSpawnRules.MinimumObstacleRowSpacing(
+            speed, jumpDuration, 20f, recovery);
+
+        Assert.GreaterOrEqual(spacing + 0.001f,
+            speed * (jumpDuration + recovery));
     }
 
     [Test]
@@ -2609,6 +2645,165 @@ public class GameStateTests
     }
 
     [Test]
+    public void ShadowTrackPoseUsesPhysicalLateralOffsetDuringRapidReversal()
+    {
+        TrackManager manager = Create<TrackManager>("TrackManager");
+
+        manager.GetTrackPoseAhead(new Vector3(-3f, 1f, 0f),
+            Vector3.forward, -3f, 0f, 0f,
+            out Vector3 leftLane, out _);
+        manager.GetTrackPoseAhead(new Vector3(3f, 1f, 0f),
+            Vector3.forward, 3f, 2f, 0f,
+            out Vector3 rightLane, out _);
+
+        Assert.AreEqual(-3f, leftLane.x, 0.001f,
+            "A body still on the left must not move the shadow to x=-6 when CurrentLane changes early.");
+        Assert.AreEqual(3f, rightLane.x, 0.001f,
+            "The symmetric right-edge reversal must remain inside the road.");
+    }
+
+    [TestCase(-3f, -2.4f)]
+    [TestCase(-2.2f, -2.55f)]
+    [TestCase(2.6f, 2.15f)]
+    [TestCase(3f, 2.7f)]
+    public void RenderedLateralOffsetCancelsPhysicsInterpolationLag(
+        float physicsOffset, float renderedOffset)
+    {
+        Vector3 physicsPosition = new Vector3(physicsOffset, 1f, 12f);
+        Vector3 renderedPosition = new Vector3(renderedOffset, 1f, 11.7f);
+
+        float resolved = PlayerController.ResolveRenderedLateralOffset(
+            physicsOffset, renderedPosition, physicsPosition,
+            Vector3.forward, true);
+        Vector3 renderedTrackCenter = renderedPosition
+                                      - Vector3.right * resolved;
+
+        Assert.AreEqual(renderedOffset, resolved, 0.0001f);
+        Assert.AreEqual(0f, renderedTrackCenter.x, 0.0001f,
+            "Render-position and lateral-offset samples must describe the same frame during rapid reversals.");
+    }
+
+    [Test]
+    public void RenderedLateralOffsetUsesTrackLocalRightAfterTurn()
+    {
+        float resolved = PlayerController.ResolveRenderedLateralOffset(
+            2.8f, new Vector3(8f, 1f, -2.4f),
+            new Vector3(8.3f, 1f, -2.8f), Vector3.right, true);
+
+        Assert.AreEqual(2.4f, resolved, 0.0001f,
+            "The interpolation correction must follow track-local right, not world X.");
+    }
+
+    [Test]
+    public void RenderedLateralOffsetKeepsPhysicsValueWithoutInterpolation()
+    {
+        float resolved = PlayerController.ResolveRenderedLateralOffset(
+            -3f, new Vector3(-2f, 1f, 0f),
+            new Vector3(-3f, 1f, 0f), Vector3.forward, false);
+
+        Assert.AreEqual(-3f, resolved, 0.0001f);
+    }
+
+    [Test]
+    public void ChallengeObstacleTagClearsPooledStepIdentity()
+    {
+        GameObject obstacle = new GameObject("ChallengeObstacle");
+        _objects.Add(obstacle);
+        EchoChallengeObstacleTag tag =
+            obstacle.AddComponent<EchoChallengeObstacleTag>();
+        tag.Configure(new EchoChallengeObstacleBinding
+        {
+            stepId = 12,
+            role = EchoChallengeObstacleRole.Required,
+            action = ShadowAction.Jump,
+            lane = 0
+        });
+
+        tag.Clear();
+
+        Assert.IsFalse(tag.Binding.IsBound);
+        Assert.AreEqual(0, tag.Binding.stepId);
+    }
+
+    [Test]
+    public void ChallengeActionWindowFindsTheBoundRowAcrossLanes()
+    {
+        TrackManager manager = Create<TrackManager>("TrackManager");
+        GameObject owner = new GameObject("Segment");
+        _objects.Add(owner);
+        GameObject prefab = CreateObstaclePrefab(
+            "CounterObstacle", ObstacleType.Low);
+        GameObject obstacle = (GameObject)InvokePrivate(
+            manager, "SpawnDynamic", prefab, owner,
+            new Vector3(-manager.laneDistance, 1f, 12f),
+            Quaternion.identity);
+        obstacle.AddComponent<EchoChallengeObstacleTag>().Configure(
+            new EchoChallengeObstacleBinding
+            {
+                stepId = 31,
+                role = EchoChallengeObstacleRole.Required,
+                action = ShadowAction.Slide,
+                lane = 0
+            });
+
+        Assert.IsTrue(manager.TryGetUpcomingChallengeObstacle(
+            Vector3.zero, Vector3.forward, 31, out float distance));
+        Assert.AreEqual(12f, distance, 0.001f,
+            "The response window must not depend on the player's lane.");
+        Assert.IsFalse(manager.TryGetUpcomingChallengeObstacle(
+            Vector3.zero, Vector3.forward, 32, out _));
+    }
+
+    [Test]
+    public void ChallengeSettlementMarginCoversBothStaggeredChoices()
+    {
+        var plan = new AITrackPlan
+        {
+            echoEncounterKind = EchoEncounterKind.CounterTest,
+            echoObstaclePattern = EchoObstaclePattern.RiskThenPredicted,
+            echoRiskChoiceLane = 0,
+            echoPredictedLane = 2
+        };
+        float stagger = Mathf.Abs(
+            TrackManager.EchoObstacleLaneOffset(plan, 0)
+            - TrackManager.EchoObstacleLaneOffset(plan, 2));
+
+        Assert.Greater(TrackManager.ChallengeSettlementMargin, stagger);
+    }
+
+    [Test]
+    public void ResolvedChallengeRowIsNotReportedAsMissed()
+    {
+        var active = new EchoChallengeStep
+        {
+            stepId = 8,
+            status = EchoChallengeStepStatus.Active
+        };
+        var nextPending = new EchoChallengeStep
+        {
+            stepId = 9,
+            status = EchoChallengeStepStatus.PendingSpawn
+        };
+
+        Assert.IsTrue(TrackManager.ShouldMarkChallengeRowMissed(active, 8));
+        Assert.IsFalse(TrackManager.ShouldMarkChallengeRowMissed(active, 7));
+        Assert.IsFalse(TrackManager.ShouldMarkChallengeRowMissed(
+            nextPending, 8),
+            "A resolved row must be removed without inflating missed metrics.");
+    }
+
+    [Test]
+    public void DensityMetricsUseARealPerHundredMeterRate()
+    {
+        Assert.AreEqual(5f, TrackManager.RowsPer100Meters(10, 200f), 0.001f);
+        Assert.AreEqual(4f, TrackManager.RowsPer100Meters(2, 50f), 0.001f);
+
+        TrackManager manager = Create<TrackManager>("TrackManager");
+        Assert.AreEqual(2, manager.maxConsecutiveObstacleFreeStraights,
+            "Ordinary phases should not leave more than two free straight segments by default.");
+    }
+
+    [Test]
     public void TurnTransitionOnlyCoversTheCorner()
     {
         TrackManager manager = Create<TrackManager>("TrackManager");
@@ -2787,6 +2982,17 @@ public class GameStateTests
             ObstacleType.High);
         AssertObstacleGeometry("Assets/Prefabs/Obstacle_Barrier.prefab",
             ObstacleType.Barrier);
+    }
+
+    [Test]
+    public void MasterVolumeMultipliesChannelsAndMuteForcesSilence()
+    {
+        Assert.AreEqual(0.4f,
+            AudioManager.ResolveOutputVolume(0.8f, 0.5f, false), 0.001f);
+        Assert.AreEqual(0f,
+            AudioManager.ResolveOutputVolume(0.8f, 0.5f, true), 0.001f);
+        Assert.AreEqual(1f,
+            AudioManager.ResolveOutputVolume(2f, 2f, false), 0.001f);
     }
 
     private static string BuildBlockedLaneBitmap(int seed)

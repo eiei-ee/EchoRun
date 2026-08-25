@@ -300,6 +300,86 @@ public sealed class ProgressionAndTrainingTests
     }
 
     [Test]
+    public void LegacySaveDefaultsToStandardRunDifficulty()
+    {
+        bool hadPreference = PlayerPrefs.HasKey(
+            RunDifficultySettings.PreferenceKey);
+        int previousPreference = PlayerPrefs.GetInt(
+            RunDifficultySettings.PreferenceKey, 0);
+        FieldInfo dataField = typeof(EchoRunSaveSystem).GetField(
+            "_data", BindingFlags.Static | BindingFlags.NonPublic);
+        MethodInfo normalize = typeof(EchoRunSaveSystem).GetMethod(
+            "Normalize", BindingFlags.Static | BindingFlags.NonPublic);
+        object previous = dataField.GetValue(null);
+        try
+        {
+            PlayerPrefs.DeleteKey(RunDifficultySettings.PreferenceKey);
+            dataField.SetValue(null, new EchoRunSaveData
+            {
+                version = 7,
+                runDifficulty = (int)RunDifficultyLevel.Relaxed
+            });
+
+            normalize.Invoke(null, null);
+
+            var normalized = (EchoRunSaveData)dataField.GetValue(null);
+            Assert.AreEqual(EchoRunSaveSystem.CurrentVersion,
+                normalized.version);
+            Assert.AreEqual((int)RunDifficultyLevel.Standard,
+                normalized.runDifficulty);
+        }
+        finally
+        {
+            if (hadPreference)
+                PlayerPrefs.SetInt(RunDifficultySettings.PreferenceKey,
+                    previousPreference);
+            else PlayerPrefs.DeleteKey(RunDifficultySettings.PreferenceKey);
+            dataField.SetValue(null, previous);
+        }
+    }
+
+    [Test]
+    public void LegacyAudioSaveDefaultsToFullMasterVolumeAndUnmuted()
+    {
+        bool hadMaster = PlayerPrefs.HasKey("MasterVolume");
+        float previousMaster = PlayerPrefs.GetFloat("MasterVolume", 1f);
+        bool hadMuted = PlayerPrefs.HasKey("AudioMuted");
+        int previousMuted = PlayerPrefs.GetInt("AudioMuted", 0);
+        FieldInfo dataField = typeof(EchoRunSaveSystem).GetField(
+            "_data", BindingFlags.Static | BindingFlags.NonPublic);
+        MethodInfo normalize = typeof(EchoRunSaveSystem).GetMethod(
+            "Normalize", BindingFlags.Static | BindingFlags.NonPublic);
+        object previous = dataField.GetValue(null);
+        try
+        {
+            PlayerPrefs.DeleteKey("MasterVolume");
+            PlayerPrefs.DeleteKey("AudioMuted");
+            dataField.SetValue(null, new EchoRunSaveData
+            {
+                version = 8,
+                masterVolume = 0f,
+                audioMuted = true
+            });
+
+            normalize.Invoke(null, null);
+
+            var normalized = (EchoRunSaveData)dataField.GetValue(null);
+            Assert.AreEqual(EchoRunSaveSystem.CurrentVersion,
+                normalized.version);
+            Assert.AreEqual(1f, normalized.masterVolume);
+            Assert.IsFalse(normalized.audioMuted);
+        }
+        finally
+        {
+            if (hadMaster) PlayerPrefs.SetFloat("MasterVolume", previousMaster);
+            else PlayerPrefs.DeleteKey("MasterVolume");
+            if (hadMuted) PlayerPrefs.SetInt("AudioMuted", previousMuted);
+            else PlayerPrefs.DeleteKey("AudioMuted");
+            dataField.SetValue(null, previous);
+        }
+    }
+
+    [Test]
     public void RestoringEmptyArchiveRemovesStaleLegacyShadowProfile()
     {
         const string legacyKey = "AIShadowProfileV1";
