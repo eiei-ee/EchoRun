@@ -13,9 +13,19 @@ public struct EchoPhaseVisualStyle
 public sealed class EchoPhaseVisualController : MonoBehaviour
 {
     public static EchoPhaseVisualController Instance { get; private set; }
+    public bool UsesSingleContractVisualState =>
+        _usesSingleContractVisualState;
+    public SingleContractVisualState ActiveSingleContractVisualState =>
+        _singleContractVisualState;
+    public EchoPhaseVisualStyle TargetStyle => _target;
+
     private EchoDuelPhase _phase = EchoDuelPhase.None;
     private EchoPhaseVisualStyle _current;
     private EchoPhaseVisualStyle _target;
+    private bool _usesSingleContractVisualState;
+    private SingleContractVisualState _singleContractVisualState =
+        SingleContractVisualState.Calibration;
+    private bool _singleContractReducedMotion;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeInstance()
@@ -41,13 +51,26 @@ public sealed class EchoPhaseVisualController : MonoBehaviour
 
     private void Update()
     {
-        AIShadowRunner shadow = AIShadowRunner.Instance;
-        EchoDuelPhase phase = shadow != null
-            ? shadow.DuelPhase : EchoDuelPhase.Calibration;
-        if (phase != _phase)
+        if (_usesSingleContractVisualState)
         {
-            _phase = phase;
-            _target = StyleFor(phase);
+            bool reducedMotion = EchoRunAccessibility.ReducedMotion;
+            if (reducedMotion != _singleContractReducedMotion)
+            {
+                _singleContractReducedMotion = reducedMotion;
+                _target = StyleFor(_singleContractVisualState,
+                    reducedMotion);
+            }
+        }
+        else
+        {
+            AIShadowRunner shadow = AIShadowRunner.Instance;
+            EchoDuelPhase phase = shadow != null
+                ? shadow.DuelPhase : EchoDuelPhase.Calibration;
+            if (phase != _phase)
+            {
+                _phase = phase;
+                _target = StyleFor(phase);
+            }
         }
 
         float blend = 1f - Mathf.Exp(-Time.unscaledDeltaTime * 5f);
@@ -60,6 +83,57 @@ public sealed class EchoPhaseVisualController : MonoBehaviour
         _current.contrast = Mathf.Lerp(_current.contrast,
             _target.contrast, blend);
         Apply(_current);
+    }
+
+    public void ApplySingleContractVisualState(
+        SingleContractVisualState state, bool immediate = false)
+    {
+        _usesSingleContractVisualState = true;
+        _singleContractVisualState = state;
+        _singleContractReducedMotion = EchoRunAccessibility.ReducedMotion;
+        _target = StyleFor(state, _singleContractReducedMotion);
+        if (!immediate) return;
+
+        _current = _target;
+        Apply(_current);
+    }
+
+    public void ReleaseSingleContractVisualState()
+    {
+        _usesSingleContractVisualState = false;
+        _phase = EchoDuelPhase.None;
+    }
+
+    public static EchoPhaseVisualStyle StyleFor(
+        SingleContractVisualState state)
+    {
+        return StyleFor(state, false);
+    }
+
+    public static EchoPhaseVisualStyle StyleFor(
+        SingleContractVisualState state, bool reducedMotion)
+    {
+        switch (state)
+        {
+            case SingleContractVisualState.Calibration:
+                return Make(new Color(0.18f, 0.48f, 0.78f),
+                    0.24f, 0f, 0f, 0f);
+            case SingleContractVisualState.Challenge:
+                return Make(new Color(0.29f, 0.58f, 0.98f),
+                    0.44f, 0.12f, 0.03f, 0.02f);
+            case SingleContractVisualState.RelearnPulse:
+                return reducedMotion
+                    ? Make(new Color(1f, 0.20f, 0.12f),
+                        0.42f, 0.58f, 0.025f, 0.018f)
+                    : Make(new Color(1f, 0.20f, 0.12f),
+                        0.50f, 0.70f, 0.04f, 0.025f);
+            case SingleContractVisualState.Finale:
+                return Make(new Color(1f, 0.55f, 0.08f),
+                    0.55f, 0.88f, 0.08f, 0.045f);
+            default:
+                return Make(new Color(0.18f, 0.48f, 0.78f),
+                    0.24f, 0f, 0f, 0f);
+        }
     }
 
     public static EchoPhaseVisualStyle StyleFor(EchoDuelPhase phase)

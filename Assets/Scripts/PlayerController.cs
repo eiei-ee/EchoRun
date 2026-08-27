@@ -553,13 +553,24 @@ public class PlayerController : MonoBehaviour
            obs.GetComponentInParent<EchoChallengeObstacleTag>();
        EchoChallengeObstacleBinding challengeBinding = challengeTag != null
            ? challengeTag.Binding : default;
+       PredictionGateObstacleTag predictionGateTag =
+           obs.GetComponentInParent<PredictionGateObstacleTag>();
+       PredictionGateObstacleBinding predictionGateBinding =
+           predictionGateTag != null
+               ? predictionGateTag.Binding : default;
+       int trackingId = TrackManager.GetObstacleTrackingId(obs.gameObject);
 
        if (evaluation.Passed)
        {
            AIShadowRunner shadow = AIShadowRunner.Instance;
+           if (shadow != null && predictionGateBinding.IsBound)
+           {
+               shadow.RecordPredictionGateObstaclePassed(
+                   predictionGateBinding, trackingId);
+           }
            bool firstSettlement = shadow == null
                || shadow.RecordDodge(obs.type,
-                   TrackManager.GetObstacleTrackingId(obs.gameObject),
+                   trackingId,
                    CurrentLane, challengeBinding);
            if (firstSettlement)
            {
@@ -574,6 +585,11 @@ public class PlayerController : MonoBehaviour
                obs.type, false);
            StyleTracker.RecordMistake();
            AITrackDirector.Instance?.RecordObstacleHit();
+           if (predictionGateBinding.IsBound)
+           {
+               AIShadowRunner.Instance?.RecordPredictionGateObstacleHit(
+                   predictionGateBinding, trackingId);
+           }
            AIShadowRunner.Instance?.RecordObstacleHit(challengeBinding);
            AudioManager.Instance?.PlayCollision();
            if (PowerUpController.Instance != null

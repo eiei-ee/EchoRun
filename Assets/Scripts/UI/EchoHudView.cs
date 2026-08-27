@@ -65,6 +65,8 @@ public sealed class EchoHudView : MonoBehaviour
 
         SetTextIfChanged(calibrationObservationText,
             calibrating ? "路线  记录中    节奏  采集中" : "");
+        SetActiveIfChanged(calibrationObservationText != null
+            ? calibrationObservationText.gameObject : null, calibrating);
         SetTextIfChanged(distanceText,
             data.remainingDistance > 0f
                 ? "终点 " + Mathf.CeilToInt(data.remainingDistance) + "m"
@@ -81,6 +83,72 @@ public sealed class EchoHudView : MonoBehaviour
         bool showBuff = data.showBuff && !string.IsNullOrEmpty(data.buffText);
         SetActiveIfChanged(buffGroup, showBuff);
         SetTextIfChanged(buffText, data.buffText);
+    }
+
+    public void PresentSingleContract(SingleContractHudData data,
+        bool showAnnouncement)
+    {
+        // Keep the persistent run shell visible from the first gameplay frame.
+        // Opening memory is a foreground message, not a loading state.
+        SetActiveIfChanged(staticLayer, true);
+        SetActiveIfChanged(dynamicLayer, true);
+        SetActiveIfChanged(stageRail, false);
+        SetActiveIfChanged(calibrationRail, true);
+        SetActiveIfChanged(meterGroup, false);
+        SetActiveIfChanged(markerGroup, false);
+        SetActiveIfChanged(pauseButton != null
+            ? pauseButton.gameObject : null, true);
+
+        SetTextIfChanged(directiveText, data.memory);
+        SetActiveIfChanged(directiveText != null
+            ? directiveText.gameObject : null, data.showMemory);
+        if (data.openingMemory)
+        {
+            SetActiveIfChanged(announcementText != null
+                ? announcementText.gameObject : null, false);
+            SetTextIfChanged(predictionText, "");
+            SetActiveIfChanged(predictionText != null
+                ? predictionText.gameObject : null, false);
+            SetTextIfChanged(calibrationObservationText, data.injuriesText);
+            SetActiveIfChanged(calibrationObservationText != null
+                ? calibrationObservationText.gameObject : null, true);
+            SetTextIfChanged(distanceText, data.finishRemainingText);
+            SetActiveIfChanged(distanceText != null
+                ? distanceText.gameObject : null, true);
+            PresentSingleContractLead(data);
+            SetSyncCellsVisible(false);
+            SetActiveIfChanged(buffGroup, false);
+            SetActiveIfChanged(feedbackText != null
+                ? feedbackText.gameObject : null, false);
+            return;
+        }
+
+        SetTextIfChanged(announcementText,
+            SingleContractAnnouncement(data.visualState));
+        SetActiveIfChanged(announcementText != null
+            ? announcementText.gameObject : null, showAnnouncement);
+        SetTextIfChanged(predictionText, data.prediction);
+        SetActiveIfChanged(predictionText != null
+                ? predictionText.gameObject : null,
+            !string.IsNullOrEmpty(data.prediction));
+
+        SetTextIfChanged(calibrationObservationText, data.injuriesText);
+        SetActiveIfChanged(calibrationObservationText != null
+            ? calibrationObservationText.gameObject : null, true);
+        SetTextIfChanged(distanceText, data.finishRemainingText);
+        SetActiveIfChanged(distanceText != null
+            ? distanceText.gameObject : null, true);
+
+        PresentSingleContractLead(data);
+        SetSyncCellsVisible(false);
+        SetTextIfChanged(recoveryText, "");
+        SetActiveIfChanged(recoveryText != null
+            ? recoveryText.gameObject : null, false);
+
+        bool showBuff = data.showPowerUp
+                        && !string.IsNullOrEmpty(data.powerUp);
+        SetActiveIfChanged(buffGroup, showBuff);
+        SetTextIfChanged(buffText, data.powerUp);
     }
 
     public void SetStats(int score, float distance)
@@ -164,6 +232,7 @@ public sealed class EchoHudView : MonoBehaviour
 
     private void PresentSync(EchoHudViewData data)
     {
+        SetSyncCellsVisible(true);
         if (syncCells != null)
         {
             for (int i = 0; i < syncCells.Length; i++)
@@ -181,6 +250,79 @@ public sealed class EchoHudView : MonoBehaviour
             : "");
         SetActiveIfChanged(recoveryText != null ? recoveryText.gameObject : null,
             recovering);
+    }
+
+    private void PresentSingleContractLead(SingleContractHudData data)
+    {
+        bool visible = data.visualState != SingleContractVisualState.Calibration;
+        SetActiveIfChanged(leadGroup, visible);
+        if (!visible) return;
+
+        SetTextIfChanged(leadText, data.lead);
+        if (leadText != null)
+        {
+            Color target = data.leadState
+                == SingleContractLeadState.PlayerLeading
+                ? Gold
+                : data.leadState == SingleContractLeadState.EchoLeading
+                    ? Coral : Muted;
+            if (leadText.color != target) leadText.color = target;
+        }
+        if (leadMarker != null)
+        {
+            float x = Mathf.InverseLerp(-12f, 12f, data.leadMeters);
+            Vector2 anchor = leadMarker.anchorMin;
+            if (!Mathf.Approximately(anchor.x, x))
+            {
+                leadMarker.anchorMin = new Vector2(x, 0.5f);
+                leadMarker.anchorMax = new Vector2(x, 0.5f);
+            }
+        }
+    }
+
+    private void SetSyncCellsVisible(bool visible)
+    {
+        GameObject syncGroup = null;
+        if (recoveryText != null && recoveryText.transform.parent != null)
+            syncGroup = recoveryText.transform.parent.gameObject;
+        else if (syncCells != null)
+        {
+            for (int i = 0; i < syncCells.Length; i++)
+            {
+                Image cell = syncCells[i];
+                if (cell == null || cell.transform.parent == null) continue;
+                syncGroup = cell.transform.parent.gameObject;
+                break;
+            }
+        }
+        if (syncGroup != null)
+        {
+            SetActiveIfChanged(syncGroup, visible);
+            return;
+        }
+
+        if (syncCells == null) return;
+        for (int i = 0; i < syncCells.Length; i++)
+        {
+            Image cell = syncCells[i];
+            SetActiveIfChanged(cell != null ? cell.gameObject : null, visible);
+        }
+    }
+
+    private static string SingleContractAnnouncement(
+        SingleContractVisualState state)
+    {
+        switch (state)
+        {
+            case SingleContractVisualState.Challenge:
+                return "回声对决";
+            case SingleContractVisualState.RelearnPulse:
+                return "回声追学 · 预测更新";
+            case SingleContractVisualState.Finale:
+                return "最终决胜";
+            default:
+                return "回声路线校准";
+        }
     }
 
     private static void SetTextIfChanged(Text target, string value)
@@ -203,4 +345,5 @@ public sealed class EchoHudView : MonoBehaviour
         if (target != null && target.activeSelf != active)
             target.SetActive(active);
     }
+
 }

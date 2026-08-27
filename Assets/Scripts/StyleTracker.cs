@@ -158,12 +158,28 @@ public static class StyleTracker
 
     public static void ResetTraining()
     {
+        ResetTrainingInternal(true);
+    }
+
+    public static void ResetTrainingInMemory()
+    {
+        ResetTrainingInternal(false);
+    }
+
+    private static void ResetTrainingInternal(bool persist)
+    {
         _profile = new PlayerStyleData();
         _profile.Normalize();
         _initialized = true;
         _runActive = false;
+        _laneSampleTimer = 0f;
+        _rhythmProximityMean = 0f;
+        _rhythmProximityM2 = 0f;
+        _rhythmSamples = 0;
         _recoveryTimeRemaining = 0f;
-        EchoRunSaveSystem.SavePlayerStyle("");
+        _recoveryActions = 0;
+        _recoveryRiskTotal = 0f;
+        if (persist) EchoRunSaveSystem.SavePlayerStyle("");
     }
 
     private static void CommitRecoveryObservation()

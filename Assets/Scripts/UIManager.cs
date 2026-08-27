@@ -49,6 +49,7 @@ public class UIManager : MonoBehaviour
     // ── HUD ──
     GameObject _hudPanel;
     GameObject _hudStatsPanel, _hudContractPanel;
+    GameObject _contractProgressGroup;
     Text _statsText, _contractText, _contractProgressText, _leadText, _duelFeedbackText;
     Image _contractProgressFill;
     GameObject _buffGroup;
@@ -1057,6 +1058,7 @@ public class UIManager : MonoBehaviour
 
         GameObject progressTrack = new GameObject("ProgressTrack", typeof(Image));
         progressTrack.transform.SetParent(_hudContractPanel.transform, false);
+        _contractProgressGroup = progressTrack;
         Image progressTrackImage = progressTrack.GetComponent<Image>();
         progressTrackImage.color = SurfaceRaised;
         progressTrackImage.raycastTarget = false;
@@ -1149,6 +1151,19 @@ public class UIManager : MonoBehaviour
         }
 
         AIShadowRunner shadow = AIShadowRunner.Instance;
+        if (IsSingleContractPresentation(shadow))
+        {
+            RefreshSingleContractFallbackHud(shadow, forceFeedback);
+            return;
+        }
+
+        EchoPhaseVisualController visual = EchoPhaseVisualController.Instance;
+        if (visual != null && visual.UsesSingleContractVisualState)
+            visual.ReleaseSingleContractVisualState();
+        if (_contractProgressGroup != null)
+            _contractProgressGroup.SetActive(true);
+        if (_contractProgressText != null)
+            _contractProgressText.gameObject.SetActive(true);
         EchoDuelViewData view = EchoRunPresentation.BuildDuel(
             shadow != null && shadow.HasActiveOpponent,
             shadow != null ? shadow.ActiveContract : null,
@@ -1202,6 +1217,83 @@ public class UIManager : MonoBehaviour
                 ? Reward : Primary;
         _duelFeedbackTimer = 1.8f;
         _duelFeedbackText.gameObject.SetActive(true);
+    }
+
+    void RefreshSingleContractFallbackHud(AIShadowRunner shadow,
+        bool forceFeedback)
+    {
+        string powerUpStatus = PowerUpController.Instance != null
+            ? PowerUpController.Instance.GetStatusText() : "";
+        SingleContractHudData view =
+            EchoHudPresenter.BuildSingleContractHudData(
+                _gm, shadow, powerUpStatus);
+
+        if (_contractText != null)
+        {
+            _contractText.text = view.memory;
+            _contractText.gameObject.SetActive(view.showMemory);
+        }
+        if (_contractProgressText != null)
+        {
+            _contractProgressText.text = view.prediction;
+            _contractProgressText.gameObject.SetActive(
+                !string.IsNullOrEmpty(view.prediction));
+        }
+        if (_contractProgressGroup != null)
+            _contractProgressGroup.SetActive(false);
+        if (_leadText != null)
+        {
+            _leadText.text = view.visualState
+                             == SingleContractVisualState.Calibration
+                ? view.injuriesText + "　|　" + view.finishRemainingText
+                : view.lead + "　|　" + view.injuriesText
+                  + "　|　" + view.finishRemainingText;
+            _leadText.color = view.leadState
+                              == SingleContractLeadState.PlayerLeading
+                ? Reward
+                : view.leadState == SingleContractLeadState.EchoLeading
+                    ? Danger : TextMuted;
+        }
+
+        EchoPhaseVisualController visual = EchoPhaseVisualController.Instance;
+        if (visual != null)
+            visual.ApplySingleContractVisualState(view.visualState);
+
+        if (_duelFeedbackText == null
+            || string.IsNullOrEmpty(view.instantFeedback)) return;
+        if (!forceFeedback
+            && view.feedbackSequence == _lastDuelFeedbackSequence) return;
+
+        _lastDuelFeedbackSequence = view.feedbackSequence;
+        _duelFeedbackText.text = view.instantFeedback;
+        _duelFeedbackText.color = SingleContractFeedbackColor(
+            view.instantFeedbackKind);
+        _duelFeedbackTimer =
+            EchoRunPresentation.SingleContractFeedbackDurationSeconds;
+        _duelFeedbackText.gameObject.SetActive(true);
+    }
+
+    bool IsSingleContractPresentation(AIShadowRunner shadow)
+    {
+        if (_gm != null) return _gm.IsSingleContractRun;
+        return shadow != null && shadow.ActiveGameplayFlowMode
+            == GameplayFlowMode.SingleContract;
+    }
+
+    static Color SingleContractFeedbackColor(
+        SingleContractInstantFeedback feedback)
+    {
+        switch (feedback)
+        {
+            case SingleContractInstantFeedback.PredictionHit:
+            case SingleContractInstantFeedback.CounterFailed:
+            case SingleContractInstantFeedback.EchoRelearned:
+                return Danger;
+            case SingleContractInstantFeedback.RewriteSucceeded:
+                return Reward;
+            default:
+                return Primary;
+        }
     }
 
     void CreateControlHint()
@@ -1383,6 +1475,11 @@ public class UIManager : MonoBehaviour
 
     void OnGameStateChanged(GameState state)
     {
+        bool resumedFromPause = state == GameState.Playing
+                                && _pausePanel != null
+                                && _pausePanel.activeSelf;
+        if (state == GameState.Menu || state == GameState.GameOver)
+            ReleaseSingleContractVisualState();
         if (_menuRouter != null) _menuRouter.ExitMenu();
         else
         {
@@ -1410,8 +1507,12 @@ public class UIManager : MonoBehaviour
             case GameState.Playing:
                 if (_hudPanel != null) _hudPanel.SetActive(true);
                 SelectForNavigation(null);
-                if (_echoHudPresenter != null) _echoHudPresenter.ResetRun();
-                _lastDuelFeedbackSequence = -1;
+                if (!resumedFromPause)
+                {
+                    if (_echoHudPresenter != null)
+                        _echoHudPresenter.ResetRun();
+                    _lastDuelFeedbackSequence = -1;
+                }
                 _nextDuelRefresh = 0f;
                 RefreshDuelHud();
                 ShowControlHintIfNeeded();
@@ -1435,26 +1536,77 @@ public class UIManager : MonoBehaviour
                 if (_controlHint != null) _controlHint.SetActive(false);
                 if (_gameOverPanel != null) _gameOverPanel.SetActive(true);
                 SelectForNavigation(_restartBtn);
-                if (_shadowResultText != null && AIShadowRunner.Instance != null)
-                    _shadowResultText.text = AIShadowRunner.Instance.FinalizeRunIfNeeded();
                 AIShadowRunner resultShadow = AIShadowRunner.Instance;
-                if (_restartBtn != null)
-                    SetButtonLabel(_restartBtn, GetGameOverActionLabel(
-                        _gm != null ? _gm.LastEndReason : RunEndReason.None,
-                        resultShadow != null && resultShadow.LastRunWasChallenge,
-                        resultShadow != null && resultShadow.LastRunWon,
-                        resultShadow != null ? resultShadow.Generation : 0));
-                if (_gameOverTitleText != null && AIShadowRunner.Instance != null)
+                string singleContractResultText = resultShadow != null
+                    ? resultShadow.FinalizeRunIfNeeded() : "";
+                bool singleContractResult = IsSingleContractPresentation(
+                    resultShadow);
+                if (singleContractResult && resultShadow != null)
                 {
-                    AIShadowRunner shadow = AIShadowRunner.Instance;
-                    bool interrupted = _gm != null
-                                       && _gm.LastEndReason == RunEndReason.Collision;
-                    _gameOverTitleText.text = interrupted
-                        ? "赛程中断"
-                        : !shadow.LastRunWasChallenge
-                            ? (shadow.Generation > 0 ? "校准完成" : "继续校准")
-                            : shadow.LastRunWon ? "契约完成" : "回声胜出";
-                    _gameOverTitleText.color = shadow.LastRunWon ? Success : Danger;
+                    SingleContractHudData resultView =
+                        EchoHudPresenter.BuildSingleContractHudData(
+                            _gm, resultShadow, "");
+                    singleContractResultText = resultView.result;
+                }
+                if (_shadowResultText != null)
+                    _shadowResultText.text = singleContractResultText;
+                RunEndReason resultReason = _gm != null
+                    ? _gm.LastEndReason : RunEndReason.None;
+                bool wasChallenge = resultShadow != null
+                                    && resultShadow.LastRunWasChallenge;
+                bool won = resultShadow != null && resultShadow.LastRunWon;
+                bool settlementSaved = resultShadow != null
+                                       && (resultShadow
+                                               .LastSingleContractCommitSucceeded
+                                           || resultShadow
+                                               .LastRunWasTransientValidation);
+                bool identityPromoted = resultShadow != null
+                                        && resultShadow
+                                            .LastSingleContractIdentityPromoted;
+                int resultGeneration = resultShadow != null
+                    ? resultShadow.Generation : 0;
+                ActiveEchoIdentity resultIdentity = resultShadow != null
+                    ? resultShadow.ActiveSingleContractIdentityPreview : null;
+                bool routeMemoryReady = resultIdentity != null
+                                        && !resultIdentity
+                                            .RequiresRouteCalibration;
+                if (_restartBtn != null)
+                    SetButtonLabel(_restartBtn, singleContractResult
+                        ? GetSingleContractGameOverActionLabel(resultReason,
+                            wasChallenge, identityPromoted, resultGeneration,
+                            routeMemoryReady)
+                        : GetGameOverActionLabel(resultReason,
+                            wasChallenge, won, resultGeneration));
+                if (_gameOverTitleText != null && resultShadow != null)
+                {
+                    if (singleContractResult)
+                    {
+                        _gameOverTitleText.text =
+                            GetSingleContractGameOverTitle(
+                                singleContractResultText, resultReason,
+                                wasChallenge, won);
+                        bool positiveResult = settlementSaved
+                                              && (wasChallenge
+                                                  ? won
+                                                  : identityPromoted
+                                                    && routeMemoryReady);
+                        _gameOverTitleText.color = positiveResult
+                            ? Success : Danger;
+                    }
+                    else
+                    {
+                        bool interrupted = resultReason
+                                           == RunEndReason.Collision;
+                        _gameOverTitleText.text = interrupted
+                            ? "赛程中断"
+                            : !resultShadow.LastRunWasChallenge
+                                ? (resultShadow.Generation > 0
+                                    ? "校准完成" : "继续校准")
+                                : resultShadow.LastRunWon
+                                    ? "契约完成" : "回声胜出";
+                        _gameOverTitleText.color = resultShadow.LastRunWon
+                            ? Success : Danger;
+                    }
                 }
                 if (_gm != null)
                 {
@@ -1487,13 +1639,60 @@ public class UIManager : MonoBehaviour
         return won ? "挑战下一代" : "重新挑战";
     }
 
+    public static string GetSingleContractGameOverTitle(
+        string result, RunEndReason endReason, bool wasChallenge, bool won)
+    {
+        string safe = (result ?? "").Trim();
+        if (safe.Contains("结算保存失败")) return "身份结算失败";
+        int newline = safe.IndexOf('\n');
+        string firstLine = newline >= 0
+            ? safe.Substring(0, newline).Trim() : safe;
+        if (!wasChallenge)
+        {
+            bool savedCalibration = firstLine.StartsWith("校准完成")
+                                    && !safe.Contains("身份结算保存失败");
+            return savedCalibration ? "校准完成" : "校准未完成";
+        }
+
+        if (firstLine.StartsWith("你跑赢了")
+            || firstLine.Contains("回声胜出")) return firstLine;
+        return won ? "你跑赢了回声" : "回声胜出";
+    }
+
+    public static string GetSingleContractGameOverActionLabel(
+        RunEndReason endReason, bool wasChallenge, bool identityPromoted,
+        int generation, bool routeMemoryReady)
+    {
+        if (!routeMemoryReady) return "继续校准";
+        if (!identityPromoted && !wasChallenge) return "继续校准";
+        if (!wasChallenge)
+            return "挑战第 " + Mathf.Max(1, generation) + " 代回声";
+        if (identityPromoted)
+            return "挑战第 " + Mathf.Max(1, generation) + " 代回声";
+        return "重试第 " + Mathf.Max(1, generation) + " 代回声";
+    }
+
     void OnScoreChanged(int score)
     {
         RefreshStats();
     }
 
+    void ReleaseSingleContractVisualState()
+    {
+        if (_echoHudPresenter != null)
+        {
+            _echoHudPresenter.ReleaseSingleContractVisualState();
+            return;
+        }
+
+        EchoPhaseVisualController visual = EchoPhaseVisualController.Instance;
+        if (visual != null && visual.UsesSingleContractVisualState)
+            visual.ReleaseSingleContractVisualState();
+    }
+
     void OnDestroy()
     {
+        ReleaseSingleContractVisualState();
         if (_gm != null)
         {
             _gm.OnStateChanged.RemoveListener(OnGameStateChanged);
@@ -1576,6 +1775,27 @@ public class UIManager : MonoBehaviour
     void RefreshMenuPresentation()
     {
         AIShadowRunner shadow = AIShadowRunner.Instance;
+        bool singleContract = _gm != null
+                              && _gm.ConfiguredGameplayFlowMode
+                              == GameplayFlowMode.SingleContract;
+        if (singleContract)
+        {
+            EchoMenuViewData singleContractView =
+                EchoRunPresentation.BuildSingleContractMenu(
+                    shadow != null
+                        ? shadow.ActiveSingleContractIdentityPreview : null);
+            if (_menuGenerationText != null)
+                _menuGenerationText.text = singleContractView.generation;
+            if (_menuLearnedText != null)
+                _menuLearnedText.text = singleContractView.learned;
+            if (_menuRuleText != null)
+                _menuRuleText.text = singleContractView.rule;
+            if (_menuObjectiveText != null)
+                _menuObjectiveText.text = singleContractView.objective;
+            SetButtonLabel(_startBtn, singleContractView.primaryAction);
+            return;
+        }
+
         int generation = shadow != null ? shadow.Generation : 0;
         EchoMenuViewData view = EchoRunPresentation.BuildMenu(
             generation, StyleTracker.GetSnapshot(),

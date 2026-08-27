@@ -48,7 +48,13 @@ public sealed class PowerUpController : MonoBehaviour
 
     public void BeginRun()
     {
+        BeginRun(true);
+    }
+
+    public void BeginRun(bool allowSelectedPowerUp)
+    {
         ClearActive();
+        if (!allowSelectedPowerUp) return;
         PowerUpId selected = EchoRunSaveSystem.GetSelectedPowerUp();
         if (selected == PowerUpId.None || !EchoRunSaveSystem.ConsumePowerUp(selected))
             return;

@@ -30,6 +30,81 @@ public enum EchoHudMeterKind
     Stability = EchoLock
 }
 
+public enum SingleContractVisualState
+{
+    Calibration,
+    Challenge,
+    RelearnPulse,
+    Finale
+}
+
+public enum SingleContractLeadState
+{
+    Tied,
+    PlayerLeading,
+    EchoLeading
+}
+
+public enum SingleContractInstantFeedback
+{
+    None,
+    PredictionHit,
+    RewriteSucceeded,
+    SafePass,
+    CounterFailed,
+    EchoRelearned
+}
+
+[System.Serializable]
+public struct SingleContractHudInput
+{
+    public SingleContractVisualState visualState;
+    public bool openingMemory;
+    public int generation;
+    public string memory;
+    public bool showPrediction;
+    public int predictedLane;
+    public int predictionGateNumber;
+    public int predictionGateCount;
+    public bool predictionGateActive;
+    public float leadMeters;
+    public int injuries;
+    public float finishRemaining;
+    public string powerUp;
+    public SingleContractInstantFeedback instantFeedback;
+    public float feedbackLeadDeltaMeters;
+    public int feedbackSequence;
+    public string result;
+}
+
+[System.Serializable]
+public struct SingleContractHudData
+{
+    public SingleContractVisualState visualState;
+    public bool openingMemory;
+    public int generation;
+    public bool showMemory;
+    public string memory;
+    public string prediction;
+    public int predictionGateNumber;
+    public int predictionGateCount;
+    public bool predictionGateActive;
+    public float leadMeters;
+    public SingleContractLeadState leadState;
+    public string lead;
+    public int injuries;
+    public string injuriesText;
+    public float finishRemaining;
+    public string finishRemainingText;
+    public bool showPowerUp;
+    public string powerUp;
+    public SingleContractInstantFeedback instantFeedbackKind;
+    public float feedbackLeadDeltaMeters;
+    public string instantFeedback;
+    public int feedbackSequence;
+    public string result;
+}
+
 public struct EchoHudViewData
 {
     public EchoHudMode mode;
@@ -88,6 +163,7 @@ public struct EchoDuelViewData
 
 public static class EchoRunPresentation
 {
+    public const float SingleContractFeedbackDurationSeconds = 3.2f;
     public static EchoMenuViewData BuildMenu(int generation,
         PlayerStyleData style, int minimumJumpSamples, int minimumSlideSamples,
         EchoContractData contractPreview = null, float echoClarity = 1f)
@@ -120,6 +196,151 @@ public static class EchoRunPresentation
             rule = contract.ruleDescription,
             objective = contract.objective,
             primaryAction = "挑战第 " + generation + " 代回声"
+        };
+    }
+
+    public static EchoMenuViewData BuildSingleContractMenu(
+        ActiveEchoIdentity identity)
+    {
+        if (identity == null)
+        {
+            return new EchoMenuViewData
+            {
+                generation = "首次回声校准",
+                learned = "完成 5 个正式路线选择",
+                rule = "三条路线都能合理通过",
+                objective = "到达终点，生成第 1 代回声",
+                primaryAction = "开始校准"
+            };
+        }
+
+        int generation = Mathf.Max(1, identity.generation);
+        string generationText = "第 " + generation + " 代回声";
+        EchoMemoryContract memory = identity.memoryContract != null
+            ? identity.memoryContract.Clone()
+            : null;
+        if (memory == null)
+        {
+            return new EchoMenuViewData
+            {
+                generation = generationText,
+                learned = "旧回声已保留",
+                rule = "正在重建路线记忆",
+                objective = "完成 5 个正式选择，建立第一条路线记忆",
+                primaryAction = "开始兼容校准"
+            };
+        }
+
+        memory.Normalize();
+        if (!memory.HasPreciseRouteMemory)
+        {
+            return new EchoMenuViewData
+            {
+                generation = generationText,
+                learned = "回声记忆模糊",
+                rule = "你的选择尚未形成稳定模式",
+                objective = "再完成 5 个正式选择，重建路线记忆",
+                primaryAction = "继续校准"
+            };
+        }
+
+        return new EchoMenuViewData
+        {
+            generation = generationText,
+            learned = "它记住了：" + memory.BuildMemoryText(),
+            rule = "走它预料的路，它会获得距离优势；成功骗过它会失真；"
+                   + "同一种骗法连续成功两次，它会追学一次",
+            objective = "先到终点且领先者获胜",
+            primaryAction = "挑战第 " + generation + " 代回声"
+        };
+    }
+
+    public static SingleContractHudData BuildSingleContractHud(
+        SingleContractHudInput input)
+    {
+        bool openingMemory = input.openingMemory
+                             && input.generation > 0
+                             && input.visualState
+                             != SingleContractVisualState.Calibration;
+        int generation = Mathf.Max(0, input.generation);
+        string memory = openingMemory
+            ? BuildOpeningMemory(generation, input.memory)
+            : NormalizeSingleContractMemory(input.memory);
+        bool showPrediction = !openingMemory && input.showPrediction
+                              && input.visualState
+                              != SingleContractVisualState.Calibration
+                              && input.predictedLane >= 0
+                               && input.predictedLane <= 2;
+        int predictionGateCount = Mathf.Max(0, input.predictionGateCount);
+        int predictionGateNumber = predictionGateCount > 0
+            ? Mathf.Clamp(input.predictionGateNumber, 1,
+                predictionGateCount)
+            : Mathf.Max(0, input.predictionGateNumber);
+        float leadMeters = input.leadMeters;
+        SingleContractLeadState leadState;
+        string lead;
+        if (leadMeters > 0.05f)
+        {
+            leadState = SingleContractLeadState.PlayerLeading;
+            lead = "玩家领先：" + leadMeters.ToString("0.0") + "米";
+        }
+        else if (leadMeters < -0.05f)
+        {
+            leadState = SingleContractLeadState.EchoLeading;
+            lead = "回声领先：" + Mathf.Abs(leadMeters).ToString("0.0")
+                   + "米";
+        }
+        else
+        {
+            leadState = SingleContractLeadState.Tied;
+            lead = "并驾齐驱：0.0米";
+        }
+
+        int injuries = Mathf.Max(0, input.injuries);
+        float finishRemaining = Mathf.Max(0f, input.finishRemaining);
+        string powerUp = (input.powerUp ?? "").Trim();
+        string result = (input.result ?? "").Trim();
+        return new SingleContractHudData
+        {
+            visualState = input.visualState,
+            openingMemory = openingMemory,
+            generation = generation,
+            showMemory = openingMemory
+                         || input.visualState
+                         == SingleContractVisualState.Calibration,
+            memory = memory,
+            prediction = showPrediction
+                ? BuildSingleContractPrediction(
+                    input.predictedLane, predictionGateNumber,
+                    predictionGateCount, input.predictionGateActive)
+                : "",
+            predictionGateNumber = predictionGateNumber,
+            predictionGateCount = predictionGateCount,
+            predictionGateActive = input.predictionGateActive,
+            leadMeters = leadMeters,
+            leadState = leadState,
+            lead = lead,
+            injuries = injuries,
+            injuriesText = "受伤次数：" + injuries,
+            finishRemaining = finishRemaining,
+            finishRemainingText = finishRemaining > 0.01f
+                ? "终点距离：" + Mathf.CeilToInt(finishRemaining) + "米"
+                : "终点已到达",
+            showPowerUp = !openingMemory && !string.IsNullOrEmpty(powerUp),
+            powerUp = string.IsNullOrEmpty(powerUp)
+                ? "当前补给：无"
+                : NormalizeSingleContractLabel(powerUp, "当前补给：", "无"),
+            instantFeedbackKind = openingMemory
+                ? SingleContractInstantFeedback.None
+                : input.instantFeedback,
+            feedbackLeadDeltaMeters = input.feedbackLeadDeltaMeters,
+            instantFeedback = SingleContractFeedbackFor(
+                openingMemory
+                    ? SingleContractInstantFeedback.None
+                    : input.instantFeedback,
+                input.feedbackLeadDeltaMeters),
+            feedbackSequence = Mathf.Max(0, input.feedbackSequence),
+            result = result
         };
     }
 
@@ -564,6 +785,80 @@ public static class EchoRunPresentation
         if (feedback.StartsWith("预测失效："))
             return "预测失效 · " + TrimPrefix(feedback, "预测失效：");
         return feedback;
+    }
+
+    private static string BuildSingleContractPrediction(int lane,
+        int gateNumber, int gateCount, bool gateActive)
+    {
+        string progress = gateNumber > 0 && gateCount > 0
+            ? "第" + gateNumber + "/" + gateCount + "门 · " : "";
+        string timing = gateActive ? "当前门预测：" : "下一门预测：";
+        return progress + timing + SingleContractLaneName(lane)
+               + "\n红=预测　青=反制　白=安全";
+    }
+
+    private static string SingleContractFeedbackFor(
+        SingleContractInstantFeedback feedback, float leadDeltaMeters)
+    {
+        float meters = Mathf.Abs(leadDeltaMeters);
+        switch (feedback)
+        {
+            case SingleContractInstantFeedback.PredictionHit:
+                return "预判命中 · 回声 +" + meters.ToString("0.0") + "米";
+            case SingleContractInstantFeedback.RewriteSucceeded:
+                return "改写成功 · 玩家 +" + meters.ToString("0.0") + "米";
+            case SingleContractInstantFeedback.SafePass:
+                return "安全通过 · 距离不变";
+            case SingleContractInstantFeedback.CounterFailed:
+                return "反制失败 · 回声 +" + meters.ToString("0.0") + "米";
+            case SingleContractInstantFeedback.EchoRelearned:
+                return "回声追学 · 预测更新";
+            default:
+                return "";
+        }
+    }
+
+    private static string SingleContractLaneName(int lane)
+    {
+        switch (lane)
+        {
+            case 0: return "左侧路线";
+            case 2: return "右侧路线";
+            default: return "中间路线";
+        }
+    }
+
+    private static string NormalizeSingleContractLabel(
+        string value, string label, string fallback)
+    {
+        string normalized = (value ?? "").Trim();
+        if (normalized.StartsWith(label)) return normalized;
+        return label + (string.IsNullOrEmpty(normalized)
+            ? fallback
+            : normalized);
+    }
+
+    private static string NormalizeSingleContractMemory(string value)
+    {
+        string normalized = (value ?? "").Trim();
+        if (string.IsNullOrEmpty(normalized)
+            || normalized.Contains("尚未形成稳定模式"))
+            return "回声记忆模糊 · 路线尚未稳定";
+        if (normalized.StartsWith("回声记忆模糊"))
+            return "回声记忆模糊 · 路线尚未稳定";
+        if (normalized.StartsWith("旧回声已保留"))
+            return "旧回声已保留 · 重建路线记忆中";
+        return NormalizeSingleContractLabel(
+            normalized.Replace('\n', ' '), "回声记忆：", "路线尚未稳定");
+    }
+
+    private static string BuildOpeningMemory(int generation, string value)
+    {
+        string memory = (value ?? "").Trim().Replace('\n', ' ');
+        memory = TrimPrefix(memory, "回声记忆：");
+        if (string.IsNullOrEmpty(memory))
+            memory = "你的选择尚未形成稳定模式";
+        return "第" + Mathf.Max(1, generation) + "代回声记忆\n" + memory;
     }
 
     private static string TrimPrefix(string value, string prefix)

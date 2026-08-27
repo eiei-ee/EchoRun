@@ -1404,11 +1404,13 @@ public sealed class EchoContractTests
             119.9f, 0f, 20f, 12));
         Assert.IsFalse(TrackSpawnRules.NeedsSegment(
             120f, 0f, 20f, 12));
-        Assert.AreEqual(60f, TrackManager.ContentLookaheadDistance(20f));
+        Assert.AreEqual(120f, TrackManager.ContentLookaheadDistance(20f));
         Assert.IsTrue(TrackManager.ShouldPrepareSegmentContent(
-            59.9f, 0f, 20f));
+            119.9f, 0f, 20f));
         Assert.IsFalse(TrackManager.ShouldPrepareSegmentContent(
-            60f, 0f, 20f));
+            120f, 0f, 20f));
+        Assert.AreEqual(160f,
+            TrackManager.ContentLookaheadDistance(20f, 16));
     }
 
     [Test]

@@ -199,6 +199,18 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
 
     private void Refresh()
     {
+        if (_gameManager != null
+            && _gameManager.ConfiguredGameplayFlowMode
+            == GameplayFlowMode.SingleContract)
+        {
+            BuildSingleContractReport(
+                EchoRunSaveSystem.GetActiveEchoIdentity(),
+                out string singleMetrics, out string singleSummary);
+            _metrics.text = singleMetrics;
+            _summary.text = singleSummary;
+            return;
+        }
+
         AIRunTelemetryData telemetry = AIRunTelemetry.FromJson(
             EchoRunSaveSystem.GetLastRunTelemetryJson());
         AITrainingReport report = AITrainingReportBuilder.FromTelemetry(telemetry);
@@ -235,6 +247,18 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
                         + "\n\n下一局目标\n" + next.objective;
     }
 
+    public static void BuildSingleContractReport(
+        ActiveEchoIdentity identity, out string metrics, out string summary)
+    {
+        EchoMenuViewData view =
+            EchoRunPresentation.BuildSingleContractMenu(identity);
+        metrics = identity == null
+            ? "尚未生成回声\n\n" + view.learned
+            : view.generation + "\n\n" + view.learned;
+        summary = "本轮规则\n" + view.rule
+                  + "\n\n下一局目标\n" + view.objective;
+    }
+
     private void ConfirmReset()
     {
         if (_resetConfirmUntil <= Time.unscaledTime)
@@ -245,11 +269,19 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
             return;
         }
 
-        EchoRunSaveSystem.ResetAITraining();
-        AIPlayerSkillEstimator.ResetTraining();
-        StyleTracker.ResetTraining();
-        AIShadowRunner.Instance?.ResetTraining();
-        AITrackDirector.Instance?.ResetTraining();
+        if (!EchoRunSaveSystem.CommitTrainingReset())
+        {
+            _resetConfirmUntil = 0f;
+            _resetHint.text = "学习数据重置尚未完成；请再次尝试。";
+            AudioManager.Instance?.PlayUIError();
+            return;
+        }
+
+        AIPlayerSkillEstimator.ResetTrainingInMemory();
+        StyleTracker.ResetTrainingInMemory();
+        AIRunTelemetry.ResetTrainingInMemory();
+        AIShadowRunner.Instance?.ResetTrainingInMemory();
+        AITrackDirector.Instance?.ResetTrainingInMemory();
         _resetConfirmUntil = 0f;
         _resetHint.text = "学习数据已重置；下一局将重新校准。";
         AudioManager.Instance?.PlayUIConfirm();

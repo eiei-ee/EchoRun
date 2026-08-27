@@ -9,6 +9,10 @@ public sealed class EchoHudPresenter : MonoBehaviour
     private float _announcementUntil;
     private float _feedbackUntil;
     private int _lastFeedbackSequence = -1;
+    private bool _presentingSingleContract;
+    private bool _hasSingleContractVisualState;
+    private SingleContractVisualState _lastSingleContractVisualState;
+    private bool _lastSingleContractOpeningMemory;
 
     public void Initialize(EchoHudView view, GameManager gameManager)
     {
@@ -29,6 +33,13 @@ public sealed class EchoHudPresenter : MonoBehaviour
         AIShadowRunner shadow = AIShadowRunner.Instance;
         string powerUpStatus = PowerUpController.Instance != null
             ? PowerUpController.Instance.GetStatusText() : "";
+        if (IsSingleContractPresentation(shadow))
+        {
+            RefreshSingleContract(shadow, powerUpStatus, forceFeedback);
+            return;
+        }
+
+        ReleaseSingleContractVisualState();
         bool showBuff = !string.IsNullOrEmpty(powerUpStatus)
                         || _gameManager != null
                         && _gameManager.BuffTimeRemaining > 0f;
@@ -115,12 +126,148 @@ public sealed class EchoHudPresenter : MonoBehaviour
             Time.unscaledTime < _feedbackUntil);
     }
 
+    public static SingleContractHudData BuildSingleContractHudData(
+        GameManager gameManager, AIShadowRunner shadow, string powerUpStatus)
+    {
+        string activePowerUp = (powerUpStatus ?? "").Trim();
+        if (string.IsNullOrEmpty(activePowerUp)
+            && gameManager != null && gameManager.BuffTimeRemaining > 0f)
+        {
+            activePowerUp = string.Format("{0} {1:F1}s",
+                gameManager.BuffName ?? "Buff", gameManager.BuffTimeRemaining);
+        }
+
+        return EchoRunPresentation.BuildSingleContractHud(
+            new SingleContractHudInput
+            {
+                visualState = shadow != null
+                    ? shadow.SingleContractVisualState
+                    : SingleContractVisualState.Calibration,
+                openingMemory = shadow != null
+                                && shadow.IsSingleContractOpeningMemory,
+                generation = shadow != null ? shadow.Generation : 0,
+                memory = shadow != null
+                    ? shadow.SingleContractMemoryText
+                    : "你的选择尚未形成稳定模式",
+                showPrediction = shadow != null
+                                 && shadow.ShowSingleContractPrediction,
+                predictedLane = shadow != null
+                    ? shadow.CurrentSingleContractPredictedLane : -1,
+                predictionGateNumber = shadow != null
+                    ? shadow.CurrentSingleContractPredictionGateNumber : 0,
+                predictionGateCount = shadow != null
+                    ? shadow.SingleContractPredictionGateCount : 0,
+                predictionGateActive = shadow != null
+                                       && shadow
+                                           .IsCurrentSingleContractPredictionGateActive,
+                leadMeters = shadow != null ? shadow.PlayerLead : 0f,
+                injuries = gameManager != null
+                    ? gameManager.CollisionStrikes : 0,
+                finishRemaining = gameManager != null
+                    ? gameManager.RemainingDistance : 0f,
+                powerUp = activePowerUp,
+                instantFeedback = shadow != null
+                    ? shadow.SingleContractFeedback
+                    : SingleContractInstantFeedback.None,
+                feedbackLeadDeltaMeters = shadow != null
+                    ? shadow.SingleContractFeedbackLeadDeltaMeters : 0f,
+                feedbackSequence = shadow != null
+                    ? shadow.SingleContractFeedbackSequence : 0,
+                result = shadow != null ? shadow.LastResult : ""
+            });
+    }
+
+    public void ReleaseSingleContractVisualState()
+    {
+        EchoPhaseVisualController visual = EchoPhaseVisualController.Instance;
+        if (visual != null && visual.UsesSingleContractVisualState)
+            visual.ReleaseSingleContractVisualState();
+        if (!_presentingSingleContract) return;
+
+        _presentingSingleContract = false;
+        _hasSingleContractVisualState = false;
+        _lastSingleContractOpeningMemory = false;
+        _hasMode = false;
+    }
+
     public void ResetRun()
     {
         _hasMode = false;
         _lastFeedbackSequence = -1;
         _feedbackUntil = 0f;
         _announcementUntil = 0f;
+        _hasSingleContractVisualState = false;
+        _lastSingleContractOpeningMemory = false;
+    }
+
+    private void RefreshSingleContract(AIShadowRunner shadow,
+        string powerUpStatus, bool forceFeedback)
+    {
+        SingleContractHudData data = BuildSingleContractHudData(
+            _gameManager, shadow, powerUpStatus);
+        bool enteringSingleContract = !_presentingSingleContract;
+        bool openingChanged = !enteringSingleContract
+                              && data.openingMemory
+                              != _lastSingleContractOpeningMemory;
+        bool stateChanged = enteringSingleContract
+                            || !_hasSingleContractVisualState
+                            || data.visualState
+                            != _lastSingleContractVisualState;
+        if (stateChanged || openingChanged)
+        {
+            _presentingSingleContract = true;
+            _hasSingleContractVisualState = true;
+            _lastSingleContractVisualState = data.visualState;
+            _lastSingleContractOpeningMemory = data.openingMemory;
+            _announcementUntil = data.openingMemory
+                ? 0f : Time.unscaledTime + 1f;
+            if (enteringSingleContract) _lastFeedbackSequence = -1;
+        }
+
+        EchoPhaseVisualController visual = EchoPhaseVisualController.Instance;
+        if (visual != null)
+            visual.ApplySingleContractVisualState(data.visualState);
+
+        _view.PresentSingleContract(data,
+            Time.unscaledTime < _announcementUntil);
+        _view.SetStats(_gameManager != null ? _gameManager.Score : 0,
+            _gameManager != null ? _gameManager.Distance : 0f);
+
+        if (!string.IsNullOrEmpty(data.instantFeedback)
+            && (forceFeedback
+                || data.feedbackSequence != _lastFeedbackSequence))
+        {
+            _lastFeedbackSequence = data.feedbackSequence;
+            _feedbackUntil = Time.unscaledTime
+                             + EchoRunPresentation
+                                 .SingleContractFeedbackDurationSeconds;
+        }
+        _view.ShowFeedback(data.instantFeedback,
+            SingleContractFeedbackColor(data.instantFeedbackKind),
+            !data.openingMemory && Time.unscaledTime < _feedbackUntil);
+    }
+
+    private bool IsSingleContractPresentation(AIShadowRunner shadow)
+    {
+        if (_gameManager != null) return _gameManager.IsSingleContractRun;
+        return shadow != null && shadow.ActiveGameplayFlowMode
+            == GameplayFlowMode.SingleContract;
+    }
+
+    private static Color SingleContractFeedbackColor(
+        SingleContractInstantFeedback feedback)
+    {
+        switch (feedback)
+        {
+            case SingleContractInstantFeedback.PredictionHit:
+            case SingleContractInstantFeedback.CounterFailed:
+            case SingleContractInstantFeedback.EchoRelearned:
+                return EchoRunUITheme.Danger;
+            case SingleContractInstantFeedback.RewriteSucceeded:
+                return EchoRunUITheme.Reward;
+            default:
+                return EchoRunUITheme.RouteCyan;
+        }
     }
 
     private void Pause()
@@ -130,6 +277,7 @@ public sealed class EchoHudPresenter : MonoBehaviour
 
     private void OnDestroy()
     {
+        ReleaseSingleContractVisualState();
         if (_view != null && _view.PauseButton != null)
             _view.PauseButton.onClick.RemoveListener(Pause);
     }

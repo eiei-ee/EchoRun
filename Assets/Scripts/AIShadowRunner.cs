@@ -35,24 +35,63 @@ public class AIShadowRunner : MonoBehaviour
     public bool HasActiveOpponent { get; private set; }
     public bool LastRunWasChallenge { get; private set; }
     public bool LastRunWon { get; private set; }
-    public int Generation => _activeGeneration != null
-        ? _activeGeneration.generation
-        : _profile != null ? _profile.generation : 0;
-    public int TrainingSampleCount => _profile != null ? _profile.sampleCount : 0;
+    public bool LastSingleContractCommitSucceeded { get; private set; }
+    public bool LastSingleContractIdentityPromoted { get; private set; }
+    public bool LastRunWasTransientValidation { get; private set; }
+    public GameplayFlowMode ActiveGameplayFlowMode => _activeGameplayFlowMode;
+    public int Generation => IsSingleContractRuntime()
+        ? _activeSingleContractIdentity != null
+            ? _activeSingleContractIdentity.generation : 0
+        : _activeGeneration != null
+            ? _activeGeneration.generation
+            : _profile != null ? _profile.generation : 0;
+    public int TrainingSampleCount => IsSingleContractRuntime()
+        ? _runIdentityDraft != null ? _runIdentityDraft.sampleCount : 0
+        : _profile != null ? _profile.sampleCount : 0;
     public int ActiveTrainingSampleCount =>
-        _profile != null ? _profile.activeSampleCount : 0;
-    public int JumpTrainingSampleCount => GetActionSampleCount(ShadowAction.Jump);
-    public int SlideTrainingSampleCount => GetActionSampleCount(ShadowAction.Slide);
-    public float CalibrationProgress => _profile == null || HasActiveOpponent
-        ? 0f
-        : CalculateCalibrationProgress(
-            _profile.sampleCount, _profile.activeSampleCount,
-            _profile.actionCounts, minimumTrainingSamples,
-            minimumActiveTrainingSamples, minimumActionCategories,
-            minimumJumpSamples, minimumSlideSamples);
-    public float EchoClarity => _activeGeneration != null
-        ? Mathf.Clamp01(_activeGeneration.clarity)
-        : _profile != null ? Mathf.Clamp01(_profile.clarity) : 0f;
+        IsSingleContractRuntime()
+            ? _runIdentityDraft != null
+                ? _runIdentityDraft.activeSampleCount : 0
+            : _profile != null ? _profile.activeSampleCount : 0;
+    public int JumpTrainingSampleCount => IsSingleContractRuntime()
+        ? GetDraftActionSampleCount(ShadowAction.Jump)
+        : GetActionSampleCount(ShadowAction.Jump);
+    public int SlideTrainingSampleCount => IsSingleContractRuntime()
+        ? GetDraftActionSampleCount(ShadowAction.Slide)
+        : GetActionSampleCount(ShadowAction.Slide);
+    public float CalibrationProgress
+    {
+        get
+        {
+            if (HasActiveOpponent) return 0f;
+            if (IsSingleContractRuntime())
+            {
+                return _runIdentityDraft == null
+                    ? 0f
+                    : CalculateCalibrationProgress(
+                        _runIdentityDraft.sampleCount,
+                        _runIdentityDraft.activeSampleCount,
+                        _runIdentityDraft.actionCounts,
+                        minimumTrainingSamples,
+                        minimumActiveTrainingSamples,
+                        minimumActionCategories,
+                        minimumJumpSamples, minimumSlideSamples);
+            }
+            return _profile == null
+                ? 0f
+                : CalculateCalibrationProgress(
+                    _profile.sampleCount, _profile.activeSampleCount,
+                    _profile.actionCounts, minimumTrainingSamples,
+                    minimumActiveTrainingSamples, minimumActionCategories,
+                    minimumJumpSamples, minimumSlideSamples);
+        }
+    }
+    public float EchoClarity => IsSingleContractRuntime()
+        ? _activeSingleContractIdentity != null
+            ? Mathf.Clamp01(_activeSingleContractIdentity.clarity) : 0f
+        : _activeGeneration != null
+            ? Mathf.Clamp01(_activeGeneration.clarity)
+            : _profile != null ? Mathf.Clamp01(_profile.clarity) : 0f;
     public EchoDuelPhase DuelPhase => _duelFlow != null
         ? _duelFlow.Phase
         : HasActiveOpponent ? EchoDuelPhase.Detection : EchoDuelPhase.Calibration;
@@ -102,6 +141,64 @@ public class AIShadowRunner : MonoBehaviour
     public int SafetyOverrideDecisionCount { get; private set; }
     public int EmergencyReflexSaveCount { get; private set; }
     public bool EmergencyReflexEnabled => enableEmergencyReflex;
+    public SingleContractFlow SingleContractRuntime => _singleContractFlow;
+    public SingleContractInstantFeedback SingleContractFeedback =>
+        _singleContractFeedback;
+    public int SingleContractFeedbackSequence =>
+        _singleContractFeedbackSequence;
+    public float SingleContractFeedbackLeadDeltaMeters =>
+        _singleContractFeedbackLeadDeltaMeters;
+    public bool IsSingleContractOpeningMemory =>
+        IsSingleContractRuntime() && HasActiveOpponent
+        && _singleContractFlow != null
+        && _singleContractFlow.IsOpeningMemoryActive;
+    public SingleContractVisualState SingleContractVisualState
+    {
+        get
+        {
+            if (!IsSingleContractRuntime() || !HasActiveOpponent)
+                return SingleContractVisualState.Calibration;
+            if (_singleContractRelearnPulseTimer > 0f)
+                return SingleContractVisualState.RelearnPulse;
+            return _singleContractFlow != null
+                   && _singleContractFlow.IsFinaleActive
+                ? SingleContractVisualState.Finale
+                : SingleContractVisualState.Challenge;
+        }
+    }
+    public string SingleContractMemoryText
+    {
+        get
+        {
+            ActiveEchoIdentity identity = _frozenSingleContractIdentity
+                                          ?? _activeSingleContractIdentity;
+            if (identity == null)
+                return "你的选择尚未形成稳定模式";
+            return identity.memoryContract != null
+                ? identity.memoryContract.BuildMemoryText()
+                : "旧回声已保留 · 正在重建路线记忆";
+        }
+    }
+    public bool ShowSingleContractPrediction =>
+        HasActiveOpponent
+        && (_frozenSingleContractIdentity?.memoryContract
+            ?.HasPreciseRouteMemory ?? false)
+        && TryGetSingleContractPredictionDisplay(
+            out _, out _, out _);
+    public int CurrentSingleContractPredictedLane =>
+        TryGetSingleContractPredictionDisplay(
+            out int lane, out _, out _) ? lane : -1;
+    public int CurrentSingleContractPredictionGateNumber =>
+        TryGetSingleContractPredictionDisplay(
+            out _, out int gateNumber, out _) ? gateNumber : 0;
+    public int SingleContractPredictionGateCount =>
+        _singleContractFlow != null ? _singleContractFlow.GateCount : 0;
+    public bool IsCurrentSingleContractPredictionGateActive =>
+        TryGetSingleContractPredictionDisplay(
+            out _, out _, out bool active) && active;
+    public ActiveEchoIdentity ActiveSingleContractIdentityPreview =>
+        _activeSingleContractIdentity != null
+            ? _activeSingleContractIdentity.Clone() : null;
 
     private const int SamplesPerCheckpoint = 4;
 
@@ -124,6 +221,13 @@ public class AIShadowRunner : MonoBehaviour
 
     private ShadowProfile _profile;
     private EchoGenerationSnapshot _activeGeneration;
+    private GameplayFlowMode _activeGameplayFlowMode =
+        GameplayFlowMode.SixPhaseLegacy;
+    private ActiveEchoIdentity _activeSingleContractIdentity;
+    private ActiveEchoIdentity _frozenSingleContractIdentity;
+    private RunIdentityDraft _runIdentityDraft;
+    private RunAdaptationState _runAdaptationState;
+    private SingleContractFlow _singleContractFlow;
     private AIShadowPolicy _policy;
     private AIShadowPolicy _opponentPolicy;
     private AIShadowSequencePolicy _sequencePolicy;
@@ -161,6 +265,7 @@ public class AIShadowRunner : MonoBehaviour
     private float _appliedContractPlayerBonus;
     private float _appliedContractShadowBonus;
     private float _runTime;
+    private float _singleContractRelearnPulseTimer;
     private float _pendingDuelBoundary = -1f;
     private float _decisionTimer;
     private float _keepSampleTimer;
@@ -180,6 +285,20 @@ public class AIShadowRunner : MonoBehaviour
     private bool _runStarted;
     private bool _runFinalized;
     private bool _runUsedTurboStart;
+    private bool _usesTransientValidationIdentity;
+    private string _persistentIdentityJsonBeforeValidation = "";
+    private SingleContractInstantFeedback _singleContractFeedback;
+    private float _singleContractFeedbackLeadDeltaMeters;
+    private int _singleContractFeedbackSequence;
+    private int _nextSingleContractSettlementIndex;
+    private readonly HashSet<int> _singleContractPresentedTelemetry =
+        new HashSet<int>();
+    private readonly HashSet<int> _singleContractCommittedTelemetry =
+        new HashSet<int>();
+    private readonly HashSet<int> _singleContractResolvedTelemetry =
+        new HashSet<int>();
+    private readonly HashSet<int> _singleContractAppliedTelemetry =
+        new HashSet<int>();
     private readonly HashSet<int> _handledGhostObstacles = new HashSet<int>();
     private readonly HashSet<int> _reactedGhostObstacles = new HashSet<int>();
     private readonly HashSet<int> _recordedPlayerDodgeIds = new HashSet<int>();
@@ -229,7 +348,25 @@ public class AIShadowRunner : MonoBehaviour
         TrackPlayerObstacleOpportunities();
 
         _runTime += Time.deltaTime;
-        if (HasActiveOpponent && _contractEvaluator != null)
+        _runIdentityDraft?.TickStyle(Time.deltaTime);
+        bool singleContractRun = IsSingleContractRuntime();
+        if (singleContractRun && _singleContractFlow != null)
+        {
+            _singleContractRelearnPulseTimer = Mathf.Max(0f,
+                _singleContractRelearnPulseTimer - Time.deltaTime);
+            _singleContractFlow.Tick(new EchoRunFrame
+            {
+                deltaTime = Time.deltaTime,
+                elapsedTime = _gameManager.RunElapsed,
+                currentSpeed = _gameManager.CurrentSpeed,
+                playerDistance = _gameManager.Distance,
+                remainingDistance = _gameManager.RemainingDistance,
+                playerLane = _player.CurrentLane
+            });
+            CaptureSingleContractGateTelemetry();
+            ConsumeSingleContractSettlements();
+        }
+        else if (HasActiveOpponent && _contractEvaluator != null)
         {
             CommitPendingDuelTransitionIfReady();
             float remainingSeconds = EchoTimeRules.EstimateRemainingSeconds(
@@ -252,7 +389,9 @@ public class AIShadowRunner : MonoBehaviour
             ApplyContractMotionDelta();
         }
         _playerPhysicalProgress = _gameManager.Distance;
-        _playerProgress = _playerPhysicalProgress;
+        _playerProgress = _playerPhysicalProgress
+                          + (singleContractRun
+                              ? _appliedContractPlayerBonus : 0f);
 
         _keepSampleTimer += Time.deltaTime;
         if (_keepSampleTimer >= keepSampleInterval)
@@ -264,7 +403,17 @@ public class AIShadowRunner : MonoBehaviour
                 Learn(ShadowAction.Keep, keepContext, false);
         }
 
-        if (!HasActiveOpponent) return;
+        if (!HasActiveOpponent)
+        {
+            int resolvedGates = _runAdaptationState != null
+                ? _runAdaptationState.resolvedGateCount : 0;
+            int gateCount = _singleContractFlow != null
+                ? _singleContractFlow.GateCount : 5;
+            CurrentStatus = singleContractRun
+                ? "AI影子 · 单契约校准 " + resolvedGates + "/" + gateCount
+                : CurrentStatus;
+            return;
+        }
 
         _laneDecisionCooldown = Mathf.Max(0f, _laneDecisionCooldown - Time.deltaTime);
         _ghostStumbleTimer = Mathf.Max(0f, _ghostStumbleTimer - Time.deltaTime);
@@ -272,9 +421,16 @@ public class AIShadowRunner : MonoBehaviour
         _ghostJumpTimer = Mathf.Max(0f, _ghostJumpTimer - Time.deltaTime);
         _ghostSlideTimer = Mathf.Max(0f, _ghostSlideTimer - Time.deltaTime);
         float stumbleSpeed = _ghostStumbleTimer > 0f ? 0.25f : 1f;
-        _ghostProgress += Mathf.Max(1f, _opponentPace)
-                          * shadowPaceMultiplier * stumbleSpeed * Time.deltaTime;
-        PlayerLead = CalculatePhysicalLead(_playerProgress, _ghostProgress);
+        float ghostSpeed = singleContractRun
+            ? CalculateSingleContractGhostSpeed(
+                _gameManager.startSpeed, _gameManager.maxSpeed,
+                _gameManager.speedIncreaseRate, _runTime,
+                _opponentPace)
+            : Mathf.Max(1f, _opponentPace) * shadowPaceMultiplier;
+        _ghostProgress += ghostSpeed * stumbleSpeed * Time.deltaTime;
+        PlayerLead = CalculatePhysicalLead(_playerProgress,
+            _ghostProgress + (singleContractRun
+                ? _appliedContractShadowBonus : 0f));
 
         _decisionTimer += Time.deltaTime;
         if (_decisionTimer >= decisionInterval)
@@ -284,7 +440,8 @@ public class AIShadowRunner : MonoBehaviour
         }
 
         ApplyObstacleReaction();
-        CurrentStatus = BuildDuelStatus();
+        CurrentStatus = singleContractRun
+            ? BuildSingleContractStatus() : BuildDuelStatus();
     }
 
     void LateUpdate()
@@ -296,7 +453,8 @@ public class AIShadowRunner : MonoBehaviour
 
         UpdateGhostPose();
         EvaluateGhostObstacle();
-        CurrentStatus = BuildDuelStatus();
+        CurrentStatus = IsSingleContractRuntime()
+            ? BuildSingleContractStatus() : BuildDuelStatus();
     }
 
     public string GetMenuStatus()
@@ -399,7 +557,8 @@ public class AIShadowRunner : MonoBehaviour
             skillFeatures[3] = styleProximity;
             AIPlayerSkillEstimator.RecordAction(action, skillFeatures);
         }
-        Learn(action, features, matchedActionObstacle);
+        LearnWithStyle(action, features, matchedActionObstacle, styleProximity,
+            timingOffset, airLaneChange, matchedActionObstacle);
         _keepSampleTimer = 0f;
     }
 
@@ -527,6 +686,41 @@ public class AIShadowRunner : MonoBehaviour
             _player != null ? _player.CurrentLane : -1);
     }
 
+    public GateTransitionResult RecordPredictionGateObstaclePassed(
+        PredictionGateObstacleBinding binding, int obstacleId)
+    {
+        return ResolvePredictionGateObstacle(
+            binding, obstacleId, false);
+    }
+
+    public GateTransitionResult RecordPredictionGateObstacleHit(
+        PredictionGateObstacleBinding binding, int obstacleId)
+    {
+        return ResolvePredictionGateObstacle(
+            binding, obstacleId, true);
+    }
+
+    private GateTransitionResult ResolvePredictionGateObstacle(
+        PredictionGateObstacleBinding binding, int obstacleId, bool hit)
+    {
+        if (!IsSingleContractRuntime() || _singleContractFlow == null
+            || !binding.IsBound
+            || binding.runId != _singleContractFlow.RunSequence)
+            return GateTransitionResult.Rejected;
+        var obstacleEvent = new GateObstacleEvent
+        {
+            gateId = binding.gateId,
+            obstacleId = obstacleId,
+            physicalLane = binding.physicalLane,
+            obstacleType = binding.obstacleType,
+            routeDistance = _gameManager != null
+                ? _gameManager.Distance : _playerPhysicalProgress
+        };
+        return hit
+            ? _singleContractFlow.ResolveObstacleHit(obstacleEvent)
+            : _singleContractFlow.ResolveObstaclePassed(obstacleEvent);
+    }
+
     public bool RecordDodge(ObstacleType obstacleType, int obstacleId = 0,
         int playerLane = -1)
     {
@@ -588,6 +782,7 @@ public class AIShadowRunner : MonoBehaviour
         EchoChallengeObstacleBinding binding = default)
     {
         ResolvePlayerObstacleOpportunities();
+        _runIdentityDraft?.RecordStyleMistake();
         if (_rewriteTracker != null)
         {
             _rewriteTracker.RecordMistake(
@@ -613,6 +808,13 @@ public class AIShadowRunner : MonoBehaviour
 
     public float[] GetModelWeightsSnapshot()
     {
+        if (IsSingleContractRuntime())
+        {
+            ActiveEchoIdentity identity = _frozenSingleContractIdentity
+                                          ?? _activeSingleContractIdentity;
+            return identity != null && identity.policyWeights != null
+                ? (float[])identity.policyWeights.Clone() : null;
+        }
         if (_activeGeneration != null
             && _activeGeneration.policyWeights != null)
             return (float[])_activeGeneration.policyWeights.Clone();
@@ -621,6 +823,18 @@ public class AIShadowRunner : MonoBehaviour
 
     public string GetSequenceStateSnapshot()
     {
+        if (IsSingleContractRuntime())
+        {
+            ActiveEchoIdentity identity = _frozenSingleContractIdentity
+                                          ?? _activeSingleContractIdentity;
+            if (identity == null) return "";
+            return JsonUtility.ToJson(new AIShadowSequenceState
+            {
+                transitions = identity.sequenceTransitions != null
+                    ? (float[])identity.sequenceTransitions.Clone() : null,
+                pairCount = identity.sequencePairCount
+            });
+        }
         if (_activeGeneration != null)
         {
             return JsonUtility.ToJson(new AIShadowSequenceState
@@ -638,7 +852,71 @@ public class AIShadowRunner : MonoBehaviour
 
     public string GetActiveGenerationSnapshotJson()
     {
+        if (IsSingleContractRuntime())
+            return _activeSingleContractIdentity != null
+                ? _activeSingleContractIdentity.ToJson() : "";
         return _activeGeneration != null ? _activeGeneration.ToJson() : "";
+    }
+
+    public string GetActiveSingleContractIdentityJson()
+    {
+        return _activeSingleContractIdentity != null
+            ? _activeSingleContractIdentity.ToJson() : "";
+    }
+
+    public bool TryGetSingleContractGate(int index,
+        out PredictionGateDefinition definition)
+    {
+        if (_singleContractFlow == null || index < 0
+            || index >= _singleContractFlow.GateCount)
+        {
+            definition = null;
+            return false;
+        }
+        definition = _singleContractFlow.GetGate(index).Definition;
+        return definition != null;
+    }
+
+    private bool TryGetSingleContractPredictionDisplay(
+        out int physicalLane, out int gateNumber, out bool gateActive)
+    {
+        physicalLane = -1;
+        gateNumber = 0;
+        gateActive = false;
+        if (_singleContractFlow == null) return false;
+
+        int gateIndex = _singleContractFlow.ActiveGateIndex;
+        if (gateIndex >= 0)
+        {
+            gateActive = true;
+        }
+        else
+        {
+            for (int index = 0;
+                 index < _singleContractFlow.GateCount; index++)
+            {
+                if (_singleContractFlow.GetGate(index).State
+                    != PredictionGateLifecycle.Scheduled)
+                    continue;
+                gateIndex = index;
+                break;
+            }
+        }
+        if (gateIndex < 0) return false;
+
+        PredictionGateDefinition definition = _singleContractFlow.GetGate(
+            gateIndex).Definition;
+        if (definition?.lanes == null) return false;
+        for (int index = 0; index < definition.lanes.Length; index++)
+        {
+            if (definition.lanes[index].role
+                != PredictionGateRole.Predicted)
+                continue;
+            physicalLane = definition.lanes[index].physicalLane;
+            gateNumber = gateIndex + 1;
+            return true;
+        }
+        return false;
     }
 
     public void SetDirectiveSource(IShadowDirectiveSource source)
@@ -648,9 +926,24 @@ public class AIShadowRunner : MonoBehaviour
 
     public void ResetTraining()
     {
+        ResetTrainingInternal(true);
+    }
+
+    public void ResetTrainingInMemory()
+    {
+        ResetTrainingInternal(false);
+    }
+
+    private void ResetTrainingInternal(bool persist)
+    {
         SetGhostActive(false);
         _profile = new ShadowProfile { version = 5 };
         _activeGeneration = null;
+        _activeSingleContractIdentity = null;
+        _frozenSingleContractIdentity = null;
+        _runIdentityDraft = null;
+        _runAdaptationState = null;
+        _singleContractFlow = null;
         _policy = new AIShadowPolicy();
         _sequencePolicy = new AIShadowSequencePolicy();
         _opponentPolicy = null;
@@ -663,6 +956,15 @@ public class AIShadowRunner : MonoBehaviour
         _liveRewriteSnapshot = null;
         _frozenRewriteSnapshot = null;
         _pendingDuelBoundary = -1f;
+        _singleContractRelearnPulseTimer = 0f;
+        _singleContractFeedback = SingleContractInstantFeedback.None;
+        _singleContractFeedbackLeadDeltaMeters = 0f;
+        _singleContractFeedbackSequence = 0;
+        _nextSingleContractSettlementIndex = 0;
+        _singleContractPresentedTelemetry.Clear();
+        _singleContractCommittedTelemetry.Clear();
+        _singleContractResolvedTelemetry.Clear();
+        _singleContractAppliedTelemetry.Clear();
         LastDecisionTrace = null;
         _runStarted = false;
         _runFinalized = false;
@@ -672,12 +974,18 @@ public class AIShadowRunner : MonoBehaviour
         LastResult = "";
         LastRunWasChallenge = false;
         LastRunWon = false;
+        LastSingleContractCommitSucceeded = false;
+        LastSingleContractIdentityPromoted = false;
+        LastRunWasTransientValidation = false;
         PolicyCorrectDecisionCount = 0;
         SafetyOverrideDecisionCount = 0;
         EmergencyReflexSaveCount = 0;
         CurrentStatus = "AI影子 · 训练已重置";
-        EchoRunSaveSystem.SaveShadowProfile("");
-        EchoRunSaveSystem.SaveLastEchoContract("");
+        if (persist)
+        {
+            EchoRunSaveSystem.SaveShadowProfile("");
+            EchoRunSaveSystem.SaveLastEchoContract("");
+        }
     }
 
     private void OnGameStateChanged(GameState state)
@@ -689,10 +997,29 @@ public class AIShadowRunner : MonoBehaviour
     private void BeginRun()
     {
         if (_runStarted) return;
+        GameManager flowManager = _gameManager != null
+            ? _gameManager : GameManager.Instance;
+        if (flowManager != null)
+            _activeGameplayFlowMode = flowManager.ActiveGameplayFlowMode;
         _runStarted = true;
         _runFinalized = false;
+        LastSingleContractCommitSucceeded = false;
+        LastSingleContractIdentityPromoted = false;
+        LastRunWasTransientValidation = false;
+        _usesTransientValidationIdentity = false;
+        _persistentIdentityJsonBeforeValidation = "";
         _runTime = 0f;
         _pendingDuelBoundary = -1f;
+        _singleContractFlow = null;
+        _singleContractRelearnPulseTimer = 0f;
+        _singleContractFeedback = SingleContractInstantFeedback.None;
+        _singleContractFeedbackLeadDeltaMeters = 0f;
+        _singleContractFeedbackSequence = 0;
+        _nextSingleContractSettlementIndex = 0;
+        _singleContractPresentedTelemetry.Clear();
+        _singleContractCommittedTelemetry.Clear();
+        _singleContractResolvedTelemetry.Clear();
+        _singleContractAppliedTelemetry.Clear();
         _runUsedTurboStart = PowerUpController.Instance != null
                              && PowerUpController.Instance.ActivePowerUp
                              == PowerUpId.TurboStart;
@@ -741,6 +1068,11 @@ public class AIShadowRunner : MonoBehaviour
         _decisionRandom = new System.Random(decisionSeed);
         _handledGhostObstacles.Clear();
         _reactedGhostObstacles.Clear();
+        if (IsSingleContractRuntime())
+        {
+            BeginSingleContractRun();
+            return;
+        }
         HasActiveOpponent = HasTrainedProfile();
         _duelFlow = new EchoDuelFlow(HasActiveOpponent);
 
@@ -771,6 +1103,175 @@ public class AIShadowRunner : MonoBehaviour
             _contractEvaluator = null;
             CurrentStatus = "AI影子 · 校准中 0%";
             SetGhostActive(false);
+        }
+    }
+
+    private void BeginSingleContractRun()
+    {
+        SingleContractValidationConfig validation = _gameManager != null
+            ? _gameManager.ActiveSingleContractValidationConfig
+            : new SingleContractValidationConfig();
+        ActiveEchoIdentity persistedIdentity =
+            EchoRunSaveSystem.GetActiveEchoIdentity();
+        _persistentIdentityJsonBeforeValidation = persistedIdentity != null
+            ? persistedIdentity.ToJson() : "";
+        _usesTransientValidationIdentity =
+            SingleContractValidationIdentity.IsEnabled(validation);
+        _activeSingleContractIdentity = _usesTransientValidationIdentity
+            ? SingleContractValidationIdentity.Create()
+            : persistedIdentity;
+        _frozenSingleContractIdentity = _activeSingleContractIdentity != null
+            ? _activeSingleContractIdentity.Clone() : null;
+        int runSequence = ResolveCurrentRunSequence();
+        _runIdentityDraft = RunIdentityDraft.Create(
+            _frozenSingleContractIdentity, runSequence);
+        _runAdaptationState = new RunAdaptationState
+        {
+            contractId = _frozenSingleContractIdentity != null
+                         && _frozenSingleContractIdentity.memoryContract != null
+                ? _frozenSingleContractIdentity.memoryContract.contractId : "",
+            hypothesisVersion = 1,
+            predictedStrategy = (int)StrategyKey.OriginalHabit
+        };
+
+        _duelFlow = null;
+        _contractEvaluator = null;
+        _rewriteTracker = null;
+        _liveRewriteSnapshot = null;
+        _frozenRewriteSnapshot = null;
+        _pendingDuelBoundary = -1f;
+        _opponentPolicy = null;
+        _opponentSequencePolicy = null;
+        bool requiresRouteCalibration = _frozenSingleContractIdentity != null
+                                        && _frozenSingleContractIdentity
+                                            .RequiresRouteCalibration;
+        HasActiveOpponent = _frozenSingleContractIdentity != null
+                            && !requiresRouteCalibration;
+
+        if (HasActiveOpponent)
+        {
+            _opponentPolicy = new AIShadowPolicy(
+                _frozenSingleContractIdentity.policyWeights);
+            _opponentSequencePolicy = new AIShadowSequencePolicy(
+                _frozenSingleContractIdentity.sequenceTransitions,
+                _frozenSingleContractIdentity.sequencePairCount);
+            _opponentStyle =
+                _frozenSingleContractIdentity.GetPlayerStyle();
+            float sourceDuration = _frozenSingleContractIdentity
+                                       .sourceCourseDuration > 0f
+                ? _frozenSingleContractIdentity.sourceCourseDuration
+                : string.IsNullOrEmpty(
+                    _frozenSingleContractIdentity.parentIdentityId)
+                    ? SingleContractFlow.CalibrationDurationSeconds
+                    : SingleContractFlow.ChallengeDurationSeconds;
+            _opponentPace = CalculateSingleContractGhostPaceScale(
+                _frozenSingleContractIdentity.pace, sourceDuration,
+                _gameManager != null ? _gameManager.startSpeed : 10f,
+                _gameManager != null ? _gameManager.maxSpeed : 40f,
+                _gameManager != null
+                    ? _gameManager.speedIncreaseRate : 0.5f);
+            CreateGhost();
+            CurrentStatus = _frozenSingleContractIdentity.memoryContract != null
+                ? _frozenSingleContractIdentity.memoryContract.BuildMemoryText()
+                : "旧回声已保留 · 正在重建路线记忆";
+        }
+        else
+        {
+            _opponentStyle = null;
+            _opponentPace = 0f;
+            SetGhostActive(false);
+            CurrentStatus = requiresRouteCalibration
+                ? _frozenSingleContractIdentity.memoryContract == null
+                    ? "旧回声已保留 · 正在重建路线记忆"
+                    : "回声记忆模糊 · 正在重建路线记忆"
+                : "AI影子 · 单契约校准中";
+        }
+
+        EchoMemoryContract memory = _frozenSingleContractIdentity != null
+            ? _frozenSingleContractIdentity.memoryContract : null;
+        int originalHabitLane = memory != null
+            ? Mathf.Clamp(memory.preferredLane, 0, 2) : 1;
+        float memoryConfidence = memory != null
+            ? Mathf.Clamp01(memory.confidence) : 0f;
+        float startSpeed = _gameManager != null
+            ? Mathf.Max(1f, _gameManager.CurrentSpeed) : 10f;
+        float maximumSpeed = _gameManager != null
+            ? Mathf.Max(startSpeed, _gameManager.maxSpeed) : 40f;
+        float acceleration = _gameManager != null
+            ? Mathf.Max(0f, _gameManager.speedIncreaseRate) : 0.5f;
+        float courseDuration = HasActiveOpponent
+            ? SingleContractFlow.ChallengeDurationSeconds
+            : SingleContractFlow.CalibrationDurationSeconds;
+        if (_runIdentityDraft != null
+            && _frozenSingleContractIdentity == null)
+        {
+            float unboostedStartSpeed = _gameManager != null
+                ? Mathf.Max(1f, _gameManager.startSpeed) : 10f;
+            float unboostedDistance =
+                EchoTimeRules.DistanceForAcceleratingRun(
+                    unboostedStartSpeed, maximumSpeed, acceleration,
+                    courseDuration);
+            _runIdentityDraft.physicalPace = CalculatePhysicalPace(
+                unboostedDistance, courseDuration);
+            _runIdentityDraft.sourceCourseDuration = courseDuration;
+        }
+        float courseDistance = _gameManager != null
+                               && _gameManager.CourseDistance > 0f
+            ? _gameManager.CourseDistance
+            : EchoTimeRules.DistanceForAcceleratingRun(
+                startSpeed, maximumSpeed, acceleration, courseDuration);
+        _singleContractFlow = new SingleContractFlow(
+            new SingleContractAcceleratingGateWindowFactory(
+                startSpeed, maximumSpeed, acceleration),
+            originalHabitLane, memoryConfidence);
+        _singleContractFlow.BeginRun(new EchoRunContext
+        {
+            mode = GameplayFlowMode.SingleContract,
+            runSequence = runSequence,
+            runSeed = _gameManager != null ? _gameManager.RunSeed : 1337,
+            generation = _frozenSingleContractIdentity != null
+                ? _frozenSingleContractIdentity.generation : 0,
+            hasOpponent = HasActiveOpponent,
+            courseDuration = courseDuration,
+            courseDistance = courseDistance,
+            validation = validation
+        });
+        if (validation.enabled)
+            LogSingleContractValidationPlan(validation);
+        RecordSingleContractEvent(AISingleContractEventType.Begin);
+        for (int gateIndex = 0;
+             gateIndex < _singleContractFlow.GateCount; gateIndex++)
+        {
+            RecordSingleContractGateEvent(
+                AISingleContractEventType.GateScheduled,
+                _singleContractFlow.GetGate(gateIndex));
+        }
+    }
+
+    private void LogSingleContractValidationPlan(
+        SingleContractValidationConfig validation)
+    {
+        Debug.Log("Single-contract validation plan: seed="
+                  + validation.fixedSeed + ", gates="
+                  + _singleContractFlow.GateCount + ", duration="
+                  + _singleContractFlow.RunDurationSeconds.ToString("0.0")
+                  + ", opponent=" + HasActiveOpponent
+                  + ", fixedIdentity="
+                  + _usesTransientValidationIdentity
+                  + ", identityId="
+                  + (_frozenSingleContractIdentity != null
+                      ? _frozenSingleContractIdentity.identityId : ""));
+        for (int index = 0; index < _singleContractFlow.GateCount; index++)
+        {
+            PredictionGateDefinition gate =
+                _singleContractFlow.GetGate(index).Definition;
+            Debug.Log("Single-contract validation gate: sequence="
+                      + gate.sequence + ", presentation="
+                      + gate.presentationDistance.ToString("0.0")
+                      + ", commit=" + gate.commitDistance.ToString("0.0")
+                      + ", resolve=" + gate.resolveDistance.ToString("0.0")
+                      + ", exit=" + gate.exitDistance.ToString("0.0")
+                      + ", final=" + gate.isFinal);
         }
     }
 
@@ -920,6 +1421,11 @@ public class AIShadowRunner : MonoBehaviour
     {
         if (!_runStarted || _runFinalized) return;
         _runFinalized = true;
+        if (IsSingleContractRuntime())
+        {
+            FinishSingleContractRun(endReason);
+            return;
+        }
         FreezeRewriteProfile();
 
         bool challengedOpponent = HasActiveOpponent;
@@ -1086,6 +1592,319 @@ public class AIShadowRunner : MonoBehaviour
         SetGhostActive(false);
     }
 
+    private void FinishSingleContractRun(RunEndReason endReason)
+    {
+        bool challengedOpponent = HasActiveOpponent;
+        bool routeCalibration = !challengedOpponent;
+        bool compatibilityCalibration = routeCalibration
+                                        && _frozenSingleContractIdentity != null;
+        int generationBefore = _frozenSingleContractIdentity != null
+            ? _frozenSingleContractIdentity.generation : 0;
+        string oldIdentityId = _frozenSingleContractIdentity != null
+            ? _frozenSingleContractIdentity.identityId : "";
+        string identityHashBefore = _frozenSingleContractIdentity != null
+            ? _frozenSingleContractIdentity.ComputeHash() : "";
+
+        _singleContractFlow?.CancelActiveGate();
+        CaptureSingleContractGateTelemetry();
+        ConsumeSingleContractSettlements();
+
+        float physicalDistance = _gameManager != null
+            ? _gameManager.Distance : _playerPhysicalProgress;
+        float elapsedTime = _gameManager != null
+            ? _gameManager.RunElapsed : _runTime;
+        if (_runIdentityDraft != null
+            && ShouldRecordPendingPace(endReason, physicalDistance,
+                elapsedTime, _runUsedTurboStart))
+        {
+            float measuredPace = CalculatePhysicalPace(
+                physicalDistance, elapsedTime);
+            _runIdentityDraft.physicalPace = _frozenSingleContractIdentity
+                                                != null
+                                            && _frozenSingleContractIdentity
+                                                .pace > 0f
+                ? BlendSingleContractNormalizedPace(
+                    _frozenSingleContractIdentity.pace,
+                    _frozenSingleContractIdentity.sourceCourseDuration,
+                    measuredPace, elapsedTime,
+                    _gameManager != null ? _gameManager.startSpeed : 10f,
+                    _gameManager != null ? _gameManager.maxSpeed : 40f,
+                    _gameManager != null
+                        ? _gameManager.speedIncreaseRate : 0.5f, 0.35f)
+                : measuredPace;
+            _runIdentityDraft.sourceCourseDuration = elapsedTime;
+        }
+
+        _playerPhysicalProgress = Mathf.Max(0f, physicalDistance);
+        _playerProgress = _playerPhysicalProgress
+                          + _appliedContractPlayerBonus;
+        if (challengedOpponent)
+        {
+            PlayerLead = CalculatePhysicalLead(_playerProgress,
+                _ghostProgress + _appliedContractShadowBonus);
+        }
+        _singleContractFlow?.FinishRun(endReason, PlayerLead);
+        _runIdentityDraft?.FinalizeStyle();
+
+        bool reachedFinish = endReason == RunEndReason.FinishReached;
+        bool playerWon = IsSingleContractVictory(
+            PlayerLead, challengedOpponent, endReason);
+        ActiveEchoIdentity promotedIdentity = null;
+        bool promotionBuilt = false;
+        if (_runIdentityDraft != null && reachedFinish)
+        {
+            if (challengedOpponent)
+            {
+                promotionBuilt = _runIdentityDraft.TryBuildChallengePromotion(
+                    playerWon, 1f, out promotedIdentity);
+            }
+            else if (compatibilityCalibration)
+            {
+                promotionBuilt = _runIdentityDraft
+                    .TryBuildCompatibilityCalibrationPromotion(
+                        true, 1f, minimumTrainingSamples,
+                        minimumActiveTrainingSamples,
+                        minimumActionCategories, minimumJumpSamples,
+                        minimumSlideSamples, out promotedIdentity);
+            }
+            else
+            {
+                promotionBuilt = _runIdentityDraft
+                    .TryBuildCalibrationPromotion(
+                        true, 1f, minimumTrainingSamples,
+                        minimumActiveTrainingSamples,
+                        minimumActionCategories, minimumJumpSamples,
+                        minimumSlideSamples, out promotedIdentity);
+            }
+        }
+
+        LastRunWasChallenge = challengedOpponent;
+        LastRunWon = playerWon;
+        string intendedResult = BuildSingleContractResult(
+            endReason, challengedOpponent, playerWon, promotionBuilt,
+            promotedIdentity, generationBefore);
+        LastResult = intendedResult;
+
+        int runSequence = _runIdentityDraft != null
+            ? _runIdentityDraft.runSequence : ResolveCurrentRunSequence();
+        string transactionId = "single-contract-run-" + runSequence;
+        var commit = new RunSettlementCommit
+        {
+            transactionId = transactionId,
+            runSequence = runSequence,
+            endReason = endReason,
+            hasActiveOpponent = challengedOpponent,
+            calibrationCompleted = routeCalibration && promotionBuilt,
+            playerWon = playerWon,
+            playerLead = challengedOpponent ? PlayerLead : 0f,
+            resultMessage = intendedResult,
+            promotedIdentity = promotionBuilt ? promotedIdentity : null
+        };
+        if (_usesTransientValidationIdentity)
+        {
+            FinishTransientValidationRun(endReason, challengedOpponent,
+                playerWon, generationBefore, oldIdentityId, transactionId);
+            return;
+        }
+        SaveCommitResult saveResult =
+            EchoRunSaveSystem.TryCommitSingleContractSettlement(commit);
+        LastSingleContractCommitSucceeded = saveResult.succeeded;
+        LastSingleContractIdentityPromoted = saveResult.succeeded
+                                               && saveResult.identityPromoted;
+        string identityHashAfter = identityHashBefore;
+        string newIdentityId = oldIdentityId;
+        if (saveResult.succeeded)
+        {
+            _activeSingleContractIdentity = saveResult.activeIdentity != null
+                ? saveResult.activeIdentity.Clone() : null;
+            newIdentityId = _activeSingleContractIdentity != null
+                ? _activeSingleContractIdentity.identityId : "";
+            identityHashAfter = _activeSingleContractIdentity != null
+                ? _activeSingleContractIdentity.ComputeHash() : "";
+            if (promotionBuilt)
+            {
+                RecordSingleContractIdentityEvent(
+                    AISingleContractEventType.IdentityPromoted,
+                    oldIdentityId, newIdentityId, transactionId,
+                    saveResult.alreadyCommitted ? "already_committed" : "committed",
+                    identityHashBefore, identityHashAfter);
+            }
+        }
+        else
+        {
+            LastResult = BuildSingleContractSaveFailureResult(
+                endReason, challengedOpponent, playerWon,
+                generationBefore);
+            RecordSingleContractIdentityEvent(
+                AISingleContractEventType.IdentityCommitFailed,
+                oldIdentityId, newIdentityId, transactionId,
+                saveResult.error, identityHashBefore, identityHashAfter);
+        }
+
+        if (!promotionBuilt || !saveResult.succeeded)
+        {
+            RecordSingleContractIdentityEvent(
+                AISingleContractEventType.IdentityDraftDiscarded,
+                oldIdentityId, newIdentityId, transactionId,
+                saveResult.succeeded ? "discarded" : "commit_failed",
+                identityHashBefore, identityHashAfter);
+        }
+        RecordSingleContractIdentityEvent(
+            AISingleContractEventType.Result,
+            oldIdentityId, newIdentityId, transactionId,
+            saveResult.succeeded ? (playerWon ? "won" : "settled") : "failed",
+            identityHashBefore, identityHashAfter);
+
+        CurrentStatus = LastResult;
+        AIRunTelemetry.RecordEvent("shadow_result",
+            challengedOpponent ? (playerWon ? 1 : -1) : 0,
+            _ghostLane, PlayerLead,
+            _ghostMistakes);
+        HasActiveOpponent = false;
+        SetGhostActive(false);
+        DiscardSingleContractRunState();
+    }
+
+    private void FinishTransientValidationRun(RunEndReason endReason,
+        bool challengedOpponent, bool playerWon, int generationBefore,
+        string validationIdentityId, string transactionId)
+    {
+        ActiveEchoIdentity persistedIdentity =
+            EchoRunSaveSystem.GetActiveEchoIdentity();
+        string persistentIdentityJsonAfter = persistedIdentity != null
+            ? persistedIdentity.ToJson() : "";
+        bool identityUnchanged = string.Equals(
+            _persistentIdentityJsonBeforeValidation,
+            persistentIdentityJsonAfter, StringComparison.Ordinal);
+        string persistentHashBefore = string.IsNullOrEmpty(
+            _persistentIdentityJsonBeforeValidation)
+            ? "" : StableHash.ComputeHex(
+                _persistentIdentityJsonBeforeValidation);
+        string persistentHashAfter = string.IsNullOrEmpty(
+            persistentIdentityJsonAfter)
+            ? "" : StableHash.ComputeHex(persistentIdentityJsonAfter);
+
+        LastRunWasTransientValidation = true;
+        LastSingleContractCommitSucceeded = false;
+        LastSingleContractIdentityPromoted = false;
+        LastResult = identityUnchanged
+            ? BuildSingleContractValidationResult(endReason,
+                challengedOpponent, playerWon, generationBefore)
+            : "固定验收隔离失败\n真实身份档发生意外变化";
+        if (identityUnchanged)
+        {
+            Debug.Log("Single-contract validation settlement isolated: "
+                      + "persistedIdentityUnchanged=true");
+        }
+        else
+        {
+            Debug.LogError("Single-contract validation changed the persisted "
+                           + "identity unexpectedly.");
+        }
+
+        RecordSingleContractIdentityEvent(
+            AISingleContractEventType.IdentityDraftDiscarded,
+            validationIdentityId, validationIdentityId, transactionId,
+            identityUnchanged ? "validation_not_persisted"
+                              : "validation_isolation_failed",
+            persistentHashBefore, persistentHashAfter);
+        RecordSingleContractIdentityEvent(
+            AISingleContractEventType.Result,
+            validationIdentityId, validationIdentityId, transactionId,
+            identityUnchanged ? (playerWon ? "validation_won"
+                                           : "validation_settled")
+                              : "validation_isolation_failed",
+            persistentHashBefore, persistentHashAfter);
+
+        CurrentStatus = LastResult;
+        AIRunTelemetry.RecordEvent("shadow_result",
+            challengedOpponent ? (playerWon ? 1 : -1) : 0,
+            _ghostLane, PlayerLead, _ghostMistakes);
+        HasActiveOpponent = false;
+        SetGhostActive(false);
+        DiscardSingleContractRunState();
+    }
+
+    public static string BuildSingleContractValidationResult(
+        RunEndReason endReason, bool challengedOpponent, bool playerWon,
+        int generationBefore)
+    {
+        if (endReason != RunEndReason.FinishReached)
+            return "固定验收局中断\n真实身份档未修改";
+        if (!challengedOpponent)
+            return "固定校准局完成\n真实身份档未修改";
+        int generation = Mathf.Max(1, generationBefore);
+        return playerWon
+            ? "你跑赢了第" + generation
+              + "代固定回声\n固定验收模式 · 身份档未修改"
+            : "第" + generation
+              + "代固定回声胜出\n固定验收模式 · 身份档未修改";
+    }
+
+    public static string BuildSingleContractSaveFailureResult(
+        RunEndReason endReason, bool challengedOpponent, bool playerWon,
+        int generationBefore)
+    {
+        int generation = Mathf.Max(1, generationBefore);
+        if (!challengedOpponent)
+        {
+            return endReason == RunEndReason.FinishReached
+                ? "校准结算保存失败\n本局不会改写当前回声\n请重新完成短校准"
+                : "校准中断且结算保存失败\n本局身份草稿已丢弃\n请重新校准";
+        }
+
+        if (playerWon && endReason == RunEndReason.FinishReached)
+        {
+            return "你跑赢了第" + generation
+                   + "代回声\n身份结算保存失败\n下一代未形成，当前回声保持不变";
+        }
+        return "第" + generation
+               + "代回声胜出\n身份结算保存失败\n当前回声保持不变";
+    }
+
+    private static string BuildSingleContractResult(RunEndReason endReason,
+        bool challengedOpponent, bool playerWon, bool promotionBuilt,
+        ActiveEchoIdentity promotedIdentity, int generationBefore)
+    {
+        if (endReason != RunEndReason.FinishReached)
+        {
+            if (challengedOpponent)
+            {
+                return "第" + Mathf.Max(1, generationBefore)
+                       + "代回声胜出\n相同记忆等待重试\n本局追学不会保留";
+            }
+            return endReason == RunEndReason.Collision
+                ? "校准中断 · 未到达终点\n本局身份草稿已丢弃"
+                : "校准已放弃\n本局身份草稿已丢弃";
+        }
+
+        if (!challengedOpponent)
+        {
+            if (!promotionBuilt || promotedIdentity == null)
+            {
+                return "回声记忆模糊\n你的选择尚未形成稳定模式\n请再完成一次短校准";
+            }
+            return "校准完成\n第" + promotedIdentity.generation
+                   + "代回声已经形成\n它记住了："
+                   + promotedIdentity.memoryContract.BuildMemoryText();
+        }
+
+        if (!playerWon)
+        {
+            return "第" + Mathf.Max(1, generationBefore)
+                   + "代回声胜出\n相同记忆等待重试\n本局追学不会保留";
+        }
+        if (!promotionBuilt || promotedIdentity == null)
+        {
+            return "你跑赢了第" + Mathf.Max(1, generationBefore)
+                   + "代回声\n下一代身份证据不足，当前回声保持不变";
+        }
+        return "你跑赢了第" + Mathf.Max(1, generationBefore)
+               + "代回声\n第" + promotedIdentity.generation
+               + "代回声已经形成\n它记住了："
+               + promotedIdentity.memoryContract.BuildMemoryText();
+    }
+
     private void PromotePendingGeneration(int generation, float clarity)
     {
         AIShadowSequenceState sequence = _sequencePolicy != null
@@ -1132,10 +1951,23 @@ public class AIShadowRunner : MonoBehaviour
     private void Learn(ShadowAction action, float[] features,
         bool effectiveRewriteSample)
     {
+        LearnWithStyle(action, features, effectiveRewriteSample,
+            0f, 0f, false, false);
+    }
+
+    private void LearnWithStyle(ShadowAction action, float[] features,
+        bool effectiveRewriteSample, float styleProximity,
+        float jumpTimingOffset, bool airLaneChange,
+        bool matchedActionObstacle)
+    {
         int lane = features != null && features.Length > 1
             ? Mathf.RoundToInt(features[1] + 1f)
             : 1;
-        float confidence = _policy != null ? _policy.Confidence(features) : 0f;
+        AIShadowPolicy trainingPolicy = IsSingleContractRuntime()
+            ? _runIdentityDraft != null ? _runIdentityDraft.policy : null
+            : _policy;
+        float confidence = trainingPolicy != null
+            ? trainingPolicy.Confidence(features) : 0f;
         AIRunTelemetry.RecordShadowSample(
             action, lane, features, false, confidence, (int)action,
             0f, 0f);
@@ -1145,6 +1977,23 @@ public class AIShadowRunner : MonoBehaviour
         float sampleLearningRate = (action == ShadowAction.Keep
             ? learningRate * 0.25f
             : learningRate) * rewriteWeight;
+        if (IsSingleContractRuntime())
+        {
+            if (_runIdentityDraft == null || _runIdentityDraft.policy == null
+                || _runIdentityDraft.sequence == null)
+                return;
+            _runIdentityDraft.policy.Learn(
+                (int)action, features, sampleLearningRate);
+            if (action != ShadowAction.Keep)
+            {
+                _runIdentityDraft.sequence.Learn(
+                    _lastTrainingAction, (int)action);
+                _lastTrainingAction = (int)action;
+            }
+            _runIdentityDraft.RecordSample(action, lane, styleProximity,
+                jumpTimingOffset, airLaneChange, matchedActionObstacle);
+            return;
+        }
         _policy.Learn((int)action, features, sampleLearningRate);
         if (action != ShadowAction.Keep)
         {
@@ -1589,17 +2438,29 @@ public class AIShadowRunner : MonoBehaviour
                 type, obstacleId, detectionDistance, out bool usedAction))
         {
             StyleTracker.RecordObstacleOpportunity(obstacleType, usedAction);
-            if (tracker.LastResolvedByPass && usedAction
-                && RecordDodge(obstacleType,
-                    tracker.LastResolvedId,
-                    tracker.LastResolvedLane,
-                    TrackManager.Instance.GetChallengeBinding(
-                        tracker.LastResolvedId)))
+            _runIdentityDraft?.RecordStyleObstacleOpportunity(
+                obstacleType, usedAction);
+            if (tracker.LastResolvedByPass && usedAction)
             {
-                AIPlayerSkillEstimator.RecordObstacleOutcome(
-                    obstacleType, true);
-                AITrackDirector.Instance?.RecordDodge();
-                AudioManager.Instance?.PlayDodgeObstacle();
+                PredictionGateObstacleBinding gateBinding =
+                    TrackManager.Instance.GetPredictionGateBinding(
+                        tracker.LastResolvedId);
+                if (gateBinding.IsBound)
+                {
+                    RecordPredictionGateObstaclePassed(
+                        gateBinding, tracker.LastResolvedId);
+                }
+                if (RecordDodge(obstacleType,
+                        tracker.LastResolvedId,
+                        tracker.LastResolvedLane,
+                        TrackManager.Instance.GetChallengeBinding(
+                            tracker.LastResolvedId)))
+                {
+                    AIPlayerSkillEstimator.RecordObstacleOutcome(
+                        obstacleType, true);
+                    AITrackDirector.Instance?.RecordDodge();
+                    AudioManager.Instance?.PlayDodgeObstacle();
+                }
             }
         }
     }
@@ -1608,7 +2469,11 @@ public class AIShadowRunner : MonoBehaviour
     {
         _jumpOpportunityTracker.Resolve(out _);
         if (_slideOpportunityTracker.Resolve(out bool usedSlide))
+        {
             StyleTracker.RecordObstacleOpportunity(ObstacleType.Low, usedSlide);
+            _runIdentityDraft?.RecordStyleObstacleOpportunity(
+                ObstacleType.Low, usedSlide);
+        }
     }
 
     private string BuildDuelStatus()
@@ -1646,6 +2511,13 @@ public class AIShadowRunner : MonoBehaviour
                && challengedOpponent && contractCompleted && playerLead >= 0f;
     }
 
+    public static bool IsSingleContractVictory(float playerLead,
+        bool hasActiveOpponent, RunEndReason endReason)
+    {
+        return endReason == RunEndReason.FinishReached
+               && hasActiveOpponent && playerLead >= 0f;
+    }
+
     public static bool ShouldAdvanceGeneration(bool challengedOpponent,
         bool reachedFinish, bool playerWon, bool calibrationCompleted)
     {
@@ -1675,6 +2547,249 @@ public class AIShadowRunner : MonoBehaviour
         _ghostProgress = Mathf.Max(0f,
             _ghostProgress + shadowDelta - playerDelta);
         PlayerLead = CalculatePhysicalLead(_playerProgress, _ghostProgress);
+    }
+
+    private void ConsumeSingleContractSettlements()
+    {
+        if (_singleContractFlow == null) return;
+        while (_nextSingleContractSettlementIndex
+               < _singleContractFlow.SettlementCount)
+        {
+            int settlementIndex = _nextSingleContractSettlementIndex++;
+            if (!_singleContractFlow.TryConsumeSettlement(
+                    settlementIndex,
+                    out PredictionGateSettlement settlement))
+                continue;
+
+            PredictionGateController gate = FindSingleContractGate(
+                settlement.gateId);
+            GateAttempt attempt = gate != null
+                ? gate.BuildAttempt() : null;
+            if (attempt != null && attempt.committedLane >= 0)
+            {
+                _runIdentityDraft?.RecordFormalGateChoice(
+                    settlement.gateId, attempt.committedLane,
+                    settlement.execution == GateExecutionOutcome.Success);
+            }
+
+            if (_runAdaptationState != null)
+            {
+                _runAdaptationState.resolvedGateCount++;
+                _runAdaptationState.consecutiveSuccessfulCounters =
+                    settlement.IsCounterSuccess
+                        ? _runAdaptationState
+                              .consecutiveSuccessfulCounters + 1
+                        : 0;
+            }
+
+            ApplyPredictionGateSettlement(settlement, gate);
+            EchoRelearnResult relearn =
+                _singleContractFlow.LastRelearnResult;
+            if (relearn.triggered && _runAdaptationState != null
+                && !_runAdaptationState.relearnUsed)
+            {
+                _runAdaptationState.relearnUsed = true;
+                _runAdaptationState.hypothesisVersion =
+                    relearn.hypothesisVersion;
+                _runAdaptationState.predictedStrategy =
+                    (int)StrategyKey.AvoidOriginal;
+                _singleContractRelearnPulseTimer = 1.25f;
+                SetSingleContractFeedback(
+                    SingleContractInstantFeedback.EchoRelearned);
+                RecordSingleContractGateEvent(
+                    AISingleContractEventType.EchoRelearned, gate,
+                    settlement, PlayerLead, PlayerLead, true);
+            }
+        }
+    }
+
+    private void ApplyPredictionGateSettlement(
+        PredictionGateSettlement settlement,
+        PredictionGateController gate)
+    {
+        float leadBefore = PlayerLead;
+        if (HasActiveOpponent)
+        {
+            _appliedContractPlayerBonus +=
+                Mathf.Max(0f, settlement.playerLeadMeters);
+            _appliedContractShadowBonus +=
+                Mathf.Max(0f, settlement.echoLeadMeters);
+            float playerDistance = _gameManager != null
+                ? _gameManager.Distance : _playerPhysicalProgress;
+            _playerPhysicalProgress = Mathf.Max(0f, playerDistance);
+            _playerProgress = _playerPhysicalProgress
+                              + _appliedContractPlayerBonus;
+            PlayerLead = CalculatePhysicalLead(_playerProgress,
+                _ghostProgress + _appliedContractShadowBonus);
+        }
+
+        SetSingleContractFeedback(FeedbackForSingleContractSettlement(
+            HasActiveOpponent, settlement), settlement.signedLeadMeters);
+
+        RecordSingleContractGateEvent(
+            AISingleContractEventType.GateApplied, gate, settlement,
+            leadBefore, PlayerLead);
+    }
+
+    public static SingleContractInstantFeedback
+        FeedbackForSingleContractSettlement(bool hasActiveOpponent,
+            PredictionGateSettlement settlement)
+    {
+        if (settlement.execution == GateExecutionOutcome.Cancelled
+            || settlement.execution == GateExecutionOutcome.None)
+            return SingleContractInstantFeedback.None;
+        if (!hasActiveOpponent)
+        {
+            return settlement.execution == GateExecutionOutcome.Success
+                ? SingleContractInstantFeedback.SafePass
+                : SingleContractInstantFeedback.None;
+        }
+        if (settlement.execution == GateExecutionOutcome.Hit)
+            return SingleContractInstantFeedback.CounterFailed;
+        if (settlement.chosenRole == PredictionGateRole.Counter)
+            return SingleContractInstantFeedback.RewriteSucceeded;
+        if (settlement.chosenRole == PredictionGateRole.Predicted)
+            return SingleContractInstantFeedback.PredictionHit;
+        return SingleContractInstantFeedback.SafePass;
+    }
+
+    private void CaptureSingleContractGateTelemetry()
+    {
+        if (_singleContractFlow == null) return;
+        for (int index = 0; index < _singleContractFlow.GateCount; index++)
+        {
+            PredictionGateController gate = _singleContractFlow.GetGate(index);
+            int gateId = gate.Definition.gateId;
+            if (gate.State != PredictionGateLifecycle.Scheduled
+                && _singleContractPresentedTelemetry.Add(gateId))
+            {
+                RecordSingleContractGateEvent(
+                    AISingleContractEventType.GatePresented, gate);
+            }
+            if (gate.HasChoice
+                && _singleContractCommittedTelemetry.Add(gateId))
+            {
+                RecordSingleContractGateEvent(
+                    AISingleContractEventType.GateCommitted, gate);
+            }
+            if (gate.ExecutionOutcome != GateExecutionOutcome.None
+                && _singleContractResolvedTelemetry.Add(gateId))
+            {
+                gate.TryGetSettlement(
+                    out PredictionGateSettlement settlement);
+                RecordSingleContractGateEvent(
+                    AISingleContractEventType.GateResolved, gate,
+                    settlement);
+            }
+        }
+    }
+
+    private PredictionGateController FindSingleContractGate(int gateId)
+    {
+        if (_singleContractFlow == null) return null;
+        for (int index = 0; index < _singleContractFlow.GateCount; index++)
+        {
+            PredictionGateController gate = _singleContractFlow.GetGate(index);
+            if (gate.Definition.gateId == gateId) return gate;
+        }
+        return null;
+    }
+
+    private void SetSingleContractFeedback(
+        SingleContractInstantFeedback feedback,
+        float leadDeltaMeters = 0f)
+    {
+        _singleContractFeedback = feedback;
+        _singleContractFeedbackLeadDeltaMeters = leadDeltaMeters;
+        _singleContractFeedbackSequence++;
+    }
+
+    private string BuildSingleContractStatus()
+    {
+        string lead = PlayerLead >= 0f
+            ? "玩家领先 " + PlayerLead.ToString("0.0") + "m"
+            : "回声领先 " + Mathf.Abs(PlayerLead).ToString("0.0") + "m";
+        return SingleContractMemoryText + " · " + lead;
+    }
+
+    private void RecordSingleContractEvent(string type)
+    {
+        AIRunTelemetry.RecordSingleContractEvent(
+            new AISingleContractEventSample
+            {
+                type = type,
+                generation = _frozenSingleContractIdentity != null
+                    ? _frozenSingleContractIdentity.generation : 0
+            });
+    }
+
+    private void RecordSingleContractIdentityEvent(string type,
+        string oldIdentityId, string newIdentityId, string transactionId,
+        string commitResult, string identityHashBefore,
+        string identityHashAfter)
+    {
+        AIRunTelemetry.RecordSingleContractEvent(
+            new AISingleContractEventSample
+            {
+                type = type,
+                generation = _frozenSingleContractIdentity != null
+                    ? _frozenSingleContractIdentity.generation : 0,
+                oldIdentityId = oldIdentityId ?? "",
+                newIdentityId = newIdentityId ?? "",
+                transactionId = transactionId ?? "",
+                commitResult = commitResult ?? "",
+                identityHashBefore = identityHashBefore ?? "",
+                identityHashAfter = identityHashAfter ?? ""
+            });
+    }
+
+    private void RecordSingleContractGateEvent(string type,
+        PredictionGateController gate,
+        PredictionGateSettlement settlement = default,
+        float leadBefore = 0f, float leadAfter = 0f,
+        bool relearned = false)
+    {
+        if (gate == null)
+        {
+            RecordSingleContractEvent(type);
+            return;
+        }
+        PredictionGateDefinition definition = gate.Definition;
+        GateAttempt attempt = gate.BuildAttempt();
+        int predictedLane = -1;
+        if (definition.lanes != null)
+        {
+            for (int index = 0; index < definition.lanes.Length; index++)
+            {
+                if (definition.lanes[index].role
+                    != PredictionGateRole.Predicted)
+                    continue;
+                predictedLane = definition.lanes[index].physicalLane;
+                break;
+            }
+        }
+        AIRunTelemetry.RecordSingleContractEvent(
+            new AISingleContractEventSample
+            {
+                type = type,
+                generation = _frozenSingleContractIdentity != null
+                    ? _frozenSingleContractIdentity.generation : 0,
+                gateId = definition.gateId,
+                sequence = definition.sequence,
+                hypothesisVersion = definition.hypothesisVersion,
+                predictedLane = predictedLane,
+                committedLane = attempt.committedLane,
+                chosenRole = attempt.chosenRole,
+                strategyKey = attempt.strategyKey,
+                execution = attempt.execution,
+                reactionTime = attempt.reactionTime,
+                speedAtResolution = settlement.speedAtResolution,
+                secondsDelta = settlement.signedLeadSeconds,
+                metersDelta = settlement.signedLeadMeters,
+                leadBefore = leadBefore,
+                leadAfter = leadAfter,
+                relearned = relearned
+            });
     }
 
     public static bool CanAvoidObstacle(ObstacleType obstacleType,
@@ -1717,6 +2832,53 @@ public class AIShadowRunner : MonoBehaviour
         return Mathf.Max(0f, physicalDistance) / Mathf.Max(1f, elapsedTime);
     }
 
+    public static float CalculateSingleContractGhostPaceScale(
+        float recordedPace, float sourceCourseDuration, float startSpeed,
+        float maximumSpeed, float acceleration)
+    {
+        float duration = Mathf.Max(1f, sourceCourseDuration);
+        float referencePace = EchoTimeRules.DistanceForAcceleratingRun(
+                                  Mathf.Max(1f, startSpeed),
+                                  Mathf.Max(startSpeed, maximumSpeed),
+                                  Mathf.Max(0f, acceleration), duration)
+                              / duration;
+        return Mathf.Clamp(Mathf.Max(0f, recordedPace)
+                           / Mathf.Max(1f, referencePace), 0.75f, 1.25f);
+    }
+
+    public static float CalculateSingleContractGhostSpeed(float startSpeed,
+        float maximumSpeed, float acceleration, float elapsedTime,
+        float learnedPaceScale)
+    {
+        float baseline = Mathf.Min(Mathf.Max(startSpeed, maximumSpeed),
+            Mathf.Max(1f, startSpeed)
+            + Mathf.Max(0f, acceleration) * Mathf.Max(0f, elapsedTime));
+        return baseline * Mathf.Clamp(learnedPaceScale, 0.75f, 1.25f);
+    }
+
+    public static float BlendSingleContractNormalizedPace(float oldPace,
+        float oldCourseDuration, float measuredPace,
+        float measuredCourseDuration, float startSpeed,
+        float maximumSpeed, float acceleration, float blendWeight)
+    {
+        float duration = Mathf.Max(1f, measuredCourseDuration);
+        float referencePace = EchoTimeRules.DistanceForAcceleratingRun(
+                                  Mathf.Max(1f, startSpeed),
+                                  Mathf.Max(startSpeed, maximumSpeed),
+                                  Mathf.Max(0f, acceleration), duration)
+                              / duration;
+        if (oldCourseDuration <= 0f)
+            return Mathf.Max(0f, measuredPace);
+        float oldScale = CalculateSingleContractGhostPaceScale(
+            oldPace, oldCourseDuration, startSpeed, maximumSpeed,
+            acceleration);
+        float measuredScale = Mathf.Clamp(
+            Mathf.Max(0f, measuredPace) / Mathf.Max(1f, referencePace),
+            0.75f, 1.25f);
+        return referencePace * Mathf.Lerp(oldScale, measuredScale,
+            Mathf.Clamp01(blendWeight));
+    }
+
     public static float CalculateActionTimingOffset(float obstacleDistance,
         float idealDistance)
     {
@@ -1741,6 +2903,59 @@ public class AIShadowRunner : MonoBehaviour
                && _activeGeneration.generation > 0
                && _activeGeneration.pace > 0f
                && _activeGeneration.clarity >= 0.2f;
+    }
+
+    private bool IsSingleContractRuntime()
+    {
+        if (_activeGameplayFlowMode == GameplayFlowMode.SingleContract)
+            return true;
+        GameManager manager = _gameManager != null
+            ? _gameManager : GameManager.Instance;
+        if (manager == null) return false;
+        return manager.State == GameState.Menu
+            ? manager.ConfiguredGameplayFlowMode
+              == GameplayFlowMode.SingleContract
+            : manager.ActiveGameplayFlowMode
+              == GameplayFlowMode.SingleContract;
+    }
+
+    private int GetDraftActionSampleCount(ShadowAction action)
+    {
+        int index = (int)action;
+        return _runIdentityDraft != null
+               && _runIdentityDraft.actionCounts != null
+               && index >= 0
+               && index < _runIdentityDraft.actionCounts.Length
+            ? _runIdentityDraft.actionCounts[index] : 0;
+    }
+
+    private static int ResolveCurrentRunSequence()
+    {
+        AIRunTelemetryData activeRun = AIRunTelemetry.ActiveRun;
+        if (activeRun != null && !string.IsNullOrEmpty(activeRun.runId))
+        {
+            int separator = activeRun.runId.LastIndexOf('-');
+            if (separator >= 0 && separator + 1 < activeRun.runId.Length
+                && int.TryParse(activeRun.runId.Substring(separator + 1),
+                    out int sequence))
+                return Mathf.Max(1, sequence);
+        }
+        EchoSingleContractSaveData archive =
+            EchoRunSaveSystem.GetSingleContractSaveData();
+        return Mathf.Max(1, archive.lastCommittedRunSequence + 1);
+    }
+
+    private void DiscardSingleContractRunState()
+    {
+        _runIdentityDraft?.Discard();
+        _runIdentityDraft = null;
+        _runAdaptationState = null;
+        _frozenSingleContractIdentity = null;
+        _singleContractFlow = null;
+        _opponentPolicy = null;
+        _opponentSequencePolicy = null;
+        _usesTransientValidationIdentity = false;
+        _persistentIdentityJsonBeforeValidation = "";
     }
 
     public static bool HasCalibrationSamples(int totalSamples, int activeSamples,
@@ -1941,6 +3156,11 @@ public class AIShadowRunner : MonoBehaviour
         _policy = new AIShadowPolicy(_profile.weights);
         _sequencePolicy = new AIShadowSequencePolicy(_profile.sequenceTransitions,
             _profile.sequencePairCount);
+        _activeSingleContractIdentity =
+            EchoRunSaveSystem.GetActiveEchoIdentity();
+        _frozenSingleContractIdentity = null;
+        _runIdentityDraft = null;
+        _runAdaptationState = null;
     }
 
     private void SaveProfile()
@@ -2006,7 +3226,10 @@ public class AIShadowRunner : MonoBehaviour
 
     void OnDestroy()
     {
-        SaveProfile();
+        if (IsSingleContractRuntime())
+            DiscardSingleContractRunState();
+        else
+            SaveProfile();
         if (_ghostMaterial != null) Destroy(_ghostMaterial);
         if (_gameManager != null)
             _gameManager.OnStateChanged.RemoveListener(OnGameStateChanged);

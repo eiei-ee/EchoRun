@@ -12,6 +12,12 @@ public struct EchoEncounterLaneChoice
 public class TrackManager : MonoBehaviour
 {
     public const float ChallengeSettlementMargin = 7f;
+    public const float PredictionGateMinimumObstacleClearance = 12f;
+    public const float PredictionGateRibbonWidth = 1.15f;
+    public const float PredictionGateRibbonLength = 2.4f;
+    public const float PredictionGateDecisionBandWidth = 1.45f;
+    public const string PredictionGateVisualRootName =
+        "PredictionGateVisual";
     public static TrackManager Instance { get; private set; }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -101,6 +107,7 @@ public class TrackManager : MonoBehaviour
     private AITrackDirector _aiDirector;
     private GameObject _finishMarker;
     private Material _finishMarkerMaterial;
+    private Material _predictionGateMaterial;
     private Light[] _finishMarkerLights;
 
     public int ObstacleRowsSpawned { get; private set; }
@@ -110,6 +117,7 @@ public class TrackManager : MonoBehaviour
     public int SlideOpportunityRows { get; private set; }
     public int ChallengeRowsSpawned { get; private set; }
     public int ChallengeRowsMissed { get; private set; }
+    public int PredictionGateRowsSpawned { get; private set; }
     public float LongestObstacleRowGap { get; private set; }
     public float MinimumChallengeWarningSeconds { get; private set; }
         = float.PositiveInfinity;
@@ -162,16 +170,20 @@ public class TrackManager : MonoBehaviour
         return Mathf.Max(12, configuredPoolSize);
     }
 
-    public static float ContentLookaheadDistance(float routeSegmentLength)
+    public static float ContentLookaheadDistance(float routeSegmentLength,
+        int planningPoolSize = 12)
     {
-        return Mathf.Max(1f, routeSegmentLength) * 3f;
+        float safeLength = Mathf.Max(1f, routeSegmentLength);
+        return safeLength * Mathf.Max(2, planningPoolSize / 2);
     }
 
     public static bool ShouldPrepareSegmentContent(float segmentRouteDistance,
-        float playerRouteDistance, float routeSegmentLength)
+        float playerRouteDistance, float routeSegmentLength,
+        int planningPoolSize = 12)
     {
         return segmentRouteDistance - playerRouteDistance
-               < ContentLookaheadDistance(routeSegmentLength);
+               < ContentLookaheadDistance(routeSegmentLength,
+                   planningPoolSize);
     }
 
     void Awake()
@@ -214,12 +226,21 @@ public class TrackManager : MonoBehaviour
         if (trackSegmentPrefab == null) return;
 
         float playerRouteDistance = GameManager.Instance.Distance;
-        UpdateChallengeRows(playerRouteDistance);
+        bool singleContractRun = IsSingleContractRun();
+        if (!singleContractRun) UpdateChallengeRows(playerRouteDistance);
         AIShadowRunner shadow = AIShadowRunner.Instance;
-        EchoDuelPhase planningPhase = shadow != null
+        // Scene-reload auto-start can enter Playing before AIShadowRunner.Start
+        // subscribes to the state event. Do not author any content until its
+        // immutable gate plan exists, otherwise the first gate window can be
+        // permanently marked as ordinary content.
+        if (singleContractRun
+            && (shadow == null || shadow.SingleContractRuntime == null))
+            return;
+        EchoDuelPhase planningPhase = !singleContractRun && shadow != null
                                       && shadow.DuelTransitionPending
             ? shadow.PendingDuelPhase
-            : shadow != null ? shadow.DuelPhase : EchoDuelPhase.None;
+            : !singleContractRun && shadow != null
+                ? shadow.DuelPhase : EchoDuelPhase.None;
         int lookaheadPoolSize = PlanningLookaheadPoolSize(
             poolSize, planningPhase);
         int spawnBudget = Mathf.Max(1, lookaheadPoolSize);
@@ -229,7 +250,8 @@ public class TrackManager : MonoBehaviour
         {
             SpawnSegment();
         }
-        PopulatePreparedSegmentContent(playerRouteDistance);
+        PopulatePreparedSegmentContent(playerRouteDistance,
+            lookaheadPoolSize);
         _aiDirector?.ActivatePlanForDistance(playerRouteDistance);
 
         while (_activeSegments.Count > 0)
@@ -409,6 +431,23 @@ public class TrackManager : MonoBehaviour
         return default;
     }
 
+    public PredictionGateObstacleBinding GetPredictionGateBinding(
+        int obstacleId)
+    {
+        if (obstacleId == 0) return default;
+        for (int i = 0; i < _dynamicObjects.Count; i++)
+        {
+            GameObject instance = _dynamicObjects[i].instance;
+            if (instance == null || !instance.activeInHierarchy
+                || GetObstacleTrackingId(instance) != obstacleId)
+                continue;
+            PredictionGateObstacleTag tag =
+                instance.GetComponent<PredictionGateObstacleTag>();
+            return tag != null ? tag.Binding : default;
+        }
+        return default;
+    }
+
     public bool TryGetUpcomingChallengeObstacle(Vector3 position,
         Vector3 forward, int challengeStepId, out float obstacleDistance)
     {
@@ -578,14 +617,18 @@ public class TrackManager : MonoBehaviour
     void SpawnSegment()
     {
         float baseDifficulty = CalculateBaseDifficulty();
+        bool reservedSingleContractStraight = IsSingleContractRun()
+            && IsSingleContractProtectedSegment(
+                _plannedDistance, _plannedDistance + segmentLength);
         bool canTurn = _straightSegmentsSinceLastTurn >= minStraightBeforeTurn
-                       && turnLeftPrefab != null && turnRightPrefab != null;
+                       && turnLeftPrefab != null && turnRightPrefab != null
+                       && !reservedSingleContractStraight;
         AITrackPlan plan = _aiDirector != null && _aiDirector.useAI
             ? _aiDirector.CreatePlan(baseDifficulty, obstacleChance, coinChance,
                 turnChance, _lastSafeLane, canTurn, _plannedDistance,
                 _plannedDistance + segmentLength)
             : CreateFallbackPlan(baseDifficulty, canTurn);
-        RunDifficultyLevel runDifficulty = RunDifficultySettings.Current;
+        RunDifficultyLevel runDifficulty = ActiveRunDifficulty();
         plan.difficulty = RunDifficultySettings.AdjustDifficulty(
             plan.difficulty, runDifficulty);
         plan.obstacleChance = RunDifficultySettings.AdjustObstacleChance(
@@ -602,7 +645,8 @@ public class TrackManager : MonoBehaviour
                                && courseDistance <= _plannedDistance + segmentLength;
         bool shouldTurn = ShouldSpawnTurn(canTurn, plan.shouldTurn,
                               _straightSegmentsSinceLastTurn)
-                          && !isFinishSegment;
+                          && !isFinishSegment
+                          && !reservedSingleContractStraight;
 
         GameObject prefab;
         TrackSegmentType segType;
@@ -685,8 +729,10 @@ public class TrackManager : MonoBehaviour
         _plannedDistance += segmentLength;
     }
 
-    private void PopulatePreparedSegmentContent(float playerRouteDistance)
+    private void PopulatePreparedSegmentContent(float playerRouteDistance,
+        int lookaheadPoolSize)
     {
+        bool singleContractRun = IsSingleContractRun();
         for (int segmentIndex = 0;
              segmentIndex < _activeSegments.Count; segmentIndex++)
         {
@@ -694,9 +740,19 @@ public class TrackManager : MonoBehaviour
             if (segment == null || !segment.activeSelf) continue;
             TrackSegmentData data = segment.GetComponent<TrackSegmentData>();
             if (data == null || data.contentSpawned) continue;
-            if (!ShouldPrepareSegmentContent(data.routeDistance,
-                    playerRouteDistance, segmentLength))
+            if (!ShouldPrepareContentForRun(data.routeDistance,
+                    playerRouteDistance, singleContractRun,
+                    lookaheadPoolSize))
                 break;
+
+            if (singleContractRun
+                && TryPopulateSingleContractSegment(segment, data))
+            {
+                _contentPreparedDistance = Mathf.Max(
+                    _contentPreparedDistance,
+                    data.routeDistance + segmentLength);
+                continue;
+            }
 
             AITrackPlan contentPlan = RefreshPlanForPreparedContent(
                 data.trackPlan, data.routeDistance);
@@ -709,6 +765,286 @@ public class TrackManager : MonoBehaviour
             _contentPreparedDistance = Mathf.Max(_contentPreparedDistance,
                 data.routeDistance + segmentLength);
         }
+    }
+
+    private bool ShouldPrepareContentForRun(float segmentRouteDistance,
+        float playerRouteDistance, bool singleContractRun,
+        int lookaheadPoolSize)
+    {
+        float lookahead = ContentLookaheadDistance(segmentLength,
+            lookaheadPoolSize);
+        if (singleContractRun && GameManager.Instance != null)
+        {
+            lookahead = Mathf.Max(lookahead,
+                GameManager.Instance.maxSpeed * 2.5f);
+        }
+        return segmentRouteDistance - playerRouteDistance < lookahead;
+    }
+
+    private bool TryPopulateSingleContractSegment(GameObject segment,
+        TrackSegmentData data)
+    {
+        float segmentStart = data.routeDistance;
+        float segmentEnd = segmentStart + segmentLength;
+        if (segmentStart < SingleContractOpeningMemoryDistance())
+        {
+            data.contentSpawned = true;
+            return true;
+        }
+
+        if (!TryGetSingleContractGateForSegment(
+                segmentStart, segmentEnd,
+                out PredictionGateDefinition gate,
+                out bool containsGateContent))
+            return false;
+
+        if (!containsGateContent)
+        {
+            data.contentSpawned = true;
+            return true;
+        }
+        // Materialize the frozen gate while its road shell is prewarmed.
+        // The flow still enters Presented only at presentationDistance; these
+        // are separate concerns. Waiting here makes obstacles visibly pop in
+        // after a turn reveals the next straight.
+        data.contentSpawned = true;
+        SpawnPredictionGateContent(segment, gate);
+        return true;
+    }
+
+    private bool IsSingleContractProtectedSegment(float segmentStart,
+        float segmentEnd)
+    {
+        if (segmentStart < SingleContractOpeningMemoryDistance())
+            return true;
+        return TryGetSingleContractGateForSegment(
+            segmentStart, segmentEnd, out _, out _);
+    }
+
+    private bool TryGetSingleContractGateForSegment(float segmentStart,
+        float segmentEnd, out PredictionGateDefinition definition,
+        out bool containsGateContent)
+    {
+        definition = null;
+        containsGateContent = false;
+        AIShadowRunner shadow = AIShadowRunner.Instance;
+        SingleContractFlow flow = shadow != null
+            ? shadow.SingleContractRuntime : null;
+        if (flow == null) return false;
+
+        for (int index = 0; index < flow.GateCount; index++)
+        {
+            PredictionGateDefinition candidate =
+                flow.GetGate(index).Definition;
+            bool overlaps = segmentStart < candidate.exitDistance - 0.01f
+                            && segmentEnd
+                            > candidate.presentationDistance + 0.01f;
+            if (!overlaps) continue;
+            definition = candidate;
+            containsGateContent = candidate.resolveDistance
+                                  >= segmentStart - 0.01f
+                                  && candidate.resolveDistance
+                                  < segmentEnd - 0.01f;
+            return true;
+        }
+        return false;
+    }
+
+    private float SingleContractOpeningMemoryDistance()
+    {
+        GameManager manager = GameManager.Instance;
+        if (manager == null) return 0f;
+        float start = Mathf.Max(1f, manager.CurrentSpeed > 0f
+            ? manager.CurrentSpeed : manager.startSpeed);
+        return EchoTimeRules.DistanceForAcceleratingRun(
+            start, Mathf.Max(start, manager.maxSpeed),
+            manager.speedIncreaseRate,
+            SingleContractFlow.OpeningMemoryDurationSeconds);
+    }
+
+    private void SpawnPredictionGateContent(GameObject segment,
+        PredictionGateDefinition gate)
+    {
+        if (segment == null || gate == null || gate.lanes == null)
+            return;
+        TrackSegmentData data = segment.GetComponent<TrackSegmentData>();
+        float segmentStart = data != null ? data.routeDistance : 0f;
+        SpawnPredictionGateVisual(segment, gate, segmentStart);
+        float obstacleZ = Mathf.Clamp(
+            gate.resolveDistance - segmentStart, 4f, segmentLength - 4f);
+        var spawnedObstacles = new List<SpawnedObstacleInfo>(1);
+
+        for (int laneIndex = 0;
+             laneIndex < gate.lanes.Length; laneIndex++)
+        {
+            PredictionGateLane lane = gate.lanes[laneIndex];
+            if (!lane.obstacle.isRequired) continue;
+            PredictionGateObstacleBinding binding =
+                new PredictionGateObstacleBinding
+                {
+                    runId = gate.runId,
+                    gateId = gate.gateId,
+                    physicalLane = lane.physicalLane,
+                    obstacleType = lane.obstacle.obstacleType
+                };
+            if (SpawnPredictionGateObstacle(segment,
+                    lane.physicalLane, obstacleZ, binding,
+                    lane.obstacle.prefabIndex) == null)
+                continue;
+            spawnedObstacles.Add(new SpawnedObstacleInfo
+            {
+                lane = lane.physicalLane,
+                z = obstacleZ,
+                type = lane.obstacle.obstacleType,
+                challengeRole = EchoChallengeObstacleRole.None
+            });
+        }
+
+        PlayerController playerController = _player != null
+            ? _player.GetComponent<PlayerController>() : null;
+        float jumpHeight = playerController != null
+            ? playerController.jumpHeight : 3f;
+        for (int laneIndex = 0;
+             laneIndex < gate.lanes.Length; laneIndex++)
+        {
+            PredictionGateLane lane = gate.lanes[laneIndex];
+            int count = Mathf.Max(0, lane.coinCount);
+            float span = Mathf.Max(0f, count - 1)
+                         * TrackSpawnRules.CoinSpacing;
+            float startZ = lane.obstacle.isRequired
+                ? obstacleZ - span * 0.5f
+                : TrackSpawnRules.CoinSegmentMargin;
+            startZ = Mathf.Clamp(startZ,
+                TrackSpawnRules.CoinSegmentMargin,
+                Mathf.Max(TrackSpawnRules.CoinSegmentMargin,
+                    segmentLength - TrackSpawnRules.CoinSegmentMargin
+                    - span));
+            SpawnCoinTrail(segment, lane.physicalLane, startZ, count,
+                spawnedObstacles, jumpHeight);
+        }
+
+        PredictionGateRowsSpawned++;
+        AIRunTelemetry.RecordEvent("prediction_gate_spawned",
+            gate.gateId, gate.sequence, gate.resolveDistance,
+            gate.isFinal ? 1f : 0f);
+    }
+
+    private void SpawnPredictionGateVisual(GameObject segment,
+        PredictionGateDefinition gate, float segmentStart)
+    {
+        if (segment == null || gate?.lanes == null) return;
+        ClearPredictionGateVisual(segment);
+        EnsurePredictionGateMaterial();
+
+        var root = new GameObject(PredictionGateVisualRootName);
+        root.transform.SetParent(segment.transform, false);
+        root.transform.localPosition = new Vector3(0f, 0f,
+            PredictionGateVisualLocalZ(gate.commitDistance,
+                gate.resolveDistance, segmentStart, segmentLength));
+
+        float finalScale = gate.isFinal ? 1.12f : 1f;
+        for (int index = 0; index < gate.lanes.Length; index++)
+        {
+            PredictionGateLane lane = gate.lanes[index];
+            var laneRoot = new GameObject(
+                "Lane_" + lane.physicalLane + "_" + lane.role);
+            laneRoot.transform.SetParent(root.transform, false);
+            laneRoot.transform.localPosition = new Vector3(
+                (lane.physicalLane - 1) * laneDistance, 0f, 0f);
+            laneRoot.transform.localScale = Vector3.one * finalScale;
+            Color color = PredictionGateRoleColor(lane.role);
+            CreatePredictionGatePart(laneRoot.transform, "ApproachRibbon",
+                new Vector3(0f, 0.028f,
+                    -PredictionGateRibbonLength * 0.5f),
+                new Vector3(PredictionGateRibbonWidth, 0.045f,
+                    PredictionGateRibbonLength), color);
+            CreatePredictionGatePart(laneRoot.transform, "DecisionBand",
+                new Vector3(0f, 0.05f, 0f),
+                new Vector3(PredictionGateDecisionBandWidth, 0.065f,
+                    0.24f), color);
+        }
+    }
+
+    public static float PredictionGateVisualLocalZ(float commitDistance,
+        float resolveDistance, float segmentStart, float routeSegmentLength)
+    {
+        float safeLength = Mathf.Max(8f, routeSegmentLength);
+        float obstacleLocalZ = Mathf.Clamp(resolveDistance - segmentStart,
+            4f, safeLength - 4f);
+        float authoredCommitLocalZ = commitDistance - segmentStart;
+        return Mathf.Min(authoredCommitLocalZ,
+            obstacleLocalZ - PredictionGateMinimumObstacleClearance);
+    }
+
+    public static Color PredictionGateRoleColor(PredictionGateRole role)
+    {
+        switch (role)
+        {
+            case PredictionGateRole.Predicted:
+                return new Color(1f, 0.12f, 0.08f, 1f);
+            case PredictionGateRole.Counter:
+                return new Color(0.05f, 0.92f, 1f, 1f);
+            default:
+                return new Color(0.92f, 0.96f, 1f, 1f);
+        }
+    }
+
+    private void EnsurePredictionGateMaterial()
+    {
+        if (_predictionGateMaterial != null) return;
+        Shader shader = Shader.Find("EchoRun/FinishGate");
+        if (shader == null) shader = Shader.Find("Unlit/Color");
+        if (shader == null) shader = Shader.Find("Standard");
+        if (shader == null) shader = Shader.Find("Mobile/Diffuse");
+        if (shader == null) return;
+        _predictionGateMaterial = new Material(shader)
+        {
+            name = "EchoPredictionGate_Runtime"
+        };
+    }
+
+    private void CreatePredictionGatePart(Transform parent, string name,
+        Vector3 localPosition, Vector3 localScale, Color color)
+    {
+        GameObject part = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        part.name = name;
+        part.transform.SetParent(parent, false);
+        part.transform.localPosition = localPosition;
+        part.transform.localScale = localScale;
+        Collider collider = part.GetComponent<Collider>();
+        if (collider != null)
+        {
+            collider.enabled = false;
+            DestroyRuntimeObject(collider);
+        }
+        Renderer renderer = part.GetComponent<Renderer>();
+        if (renderer == null || _predictionGateMaterial == null) return;
+        renderer.sharedMaterial = _predictionGateMaterial;
+        var properties = new MaterialPropertyBlock();
+        properties.SetFloat("_GateRole", 2f);
+        properties.SetFloat("_GateProgress", 1f);
+        properties.SetColor("_CoreColor", color);
+        properties.SetColor("_SignalColor", color);
+        properties.SetColor("_StructureColor", color * 0.45f);
+        properties.SetColor("_Color", color);
+        renderer.SetPropertyBlock(properties);
+    }
+
+    private static void ClearPredictionGateVisual(GameObject segment)
+    {
+        if (segment == null) return;
+        Transform existing = segment.transform.Find(
+            PredictionGateVisualRootName);
+        if (existing == null) return;
+        existing.SetParent(null, false);
+        DestroyRuntimeObject(existing.gameObject);
+    }
+
+    private static void DestroyRuntimeObject(Object target)
+    {
+        if (target == null) return;
+        if (Application.isPlaying) Destroy(target);
+        else DestroyImmediate(target);
     }
 
     public static bool ShouldDeferChallengeContent(AITrackPlan plan)
@@ -765,6 +1101,7 @@ public class TrackManager : MonoBehaviour
     private AITrackPlan RefreshPlanForPreparedContent(AITrackPlan plan,
         float segmentRouteDistance)
     {
+        if (IsSingleContractRun()) return plan;
         AIShadowRunner shadow = AIShadowRunner.Instance;
         EchoContractData contract = shadow != null
             ? shadow.ActiveContract : null;
@@ -801,6 +1138,22 @@ public class TrackManager : MonoBehaviour
         const int maxStraightSegments = 7;
         return canTurn && (planShouldTurn
                            || straightSegmentsSinceLastTurn >= maxStraightSegments);
+    }
+
+    private static bool IsSingleContractRun()
+    {
+        GameManager manager = GameManager.Instance;
+        return manager != null
+               && manager.ActiveGameplayFlowMode
+               == GameplayFlowMode.SingleContract;
+    }
+
+    private static RunDifficultyLevel ActiveRunDifficulty()
+    {
+        GameManager manager = GameManager.Instance;
+        return manager != null && manager.State != GameState.Menu
+            ? manager.ActiveRunDifficulty
+            : RunDifficultySettings.Current;
     }
 
     private void UpdateFinishMarker()
@@ -952,6 +1305,7 @@ public class TrackManager : MonoBehaviour
         // Clear cached turn if this is the one being recycled
         if (data != null && data == CurrentTurnSegment)
             CurrentTurnSegment = null;
+        ClearPredictionGateVisual(segment);
 
         // Return dynamic objects owned by this segment to their pools.
         for (int i = _dynamicObjects.Count - 1; i >= 0; i--)
@@ -1136,7 +1490,7 @@ public class TrackManager : MonoBehaviour
                     warmupSegments,
                     RunDifficultySettings.ResolveMaxFreeSegments(
                         maxConsecutiveObstacleFreeStraights,
-                        RunDifficultySettings.Current),
+                        ActiveRunDifficulty()),
                     plan.obstacleChance, AIRunRandom.Value));
         if (shouldSpawnObstacles)
         {
@@ -1162,7 +1516,7 @@ public class TrackManager : MonoBehaviour
             float minimumSpacing = TrackSpawnRules.MinimumObstacleRowSpacing(
                 currentSpeed, jumpDuration, segmentLength,
                 RunDifficultySettings.ObstacleRecoverySeconds(
-                    RunDifficultySettings.Current))
+                    ActiveRunDifficulty()))
                 * EchoObstacleSpacingMultiplier(plan);
             if (TrackSpawnRules.CanSpawnObstacleRow(
                     firstObstacleRouteDistance, _lastObstacleRouteDistance,
@@ -1545,6 +1899,7 @@ public class TrackManager : MonoBehaviour
         GameObject instance = SpawnDynamic(
             obstaclePrefabs[prefabIndex], segment, wp, rot);
         if (instance == null) return null;
+        instance.GetComponent<PredictionGateObstacleTag>()?.Clear();
         EchoChallengeObstacleTag tag = instance.GetComponent<
             EchoChallengeObstacleTag>();
         if (binding.IsBound)
@@ -1556,6 +1911,21 @@ public class TrackManager : MonoBehaviour
         {
             tag?.Clear();
         }
+        return instance;
+    }
+
+    private GameObject SpawnPredictionGateObstacle(GameObject segment,
+        int lane, float z, PredictionGateObstacleBinding binding,
+        int prefabIndex)
+    {
+        GameObject instance = SpawnObstacleAtWithBinding(
+            segment, lane, z, prefabIndex, default);
+        if (instance == null) return null;
+        PredictionGateObstacleTag tag =
+            instance.GetComponent<PredictionGateObstacleTag>();
+        if (tag == null)
+            tag = instance.AddComponent<PredictionGateObstacleTag>();
+        tag.Configure(binding);
         return instance;
     }
 
@@ -2006,6 +2376,16 @@ public class TrackManager : MonoBehaviour
         if (instance != null)
         {
             instance.GetComponent<EchoChallengeObstacleTag>()?.Clear();
+            PredictionGateObstacleTag predictionTag =
+                instance.GetComponent<PredictionGateObstacleTag>();
+            PredictionGateObstacleBinding predictionBinding =
+                predictionTag != null ? predictionTag.Binding : default;
+            if (predictionBinding.IsBound)
+            {
+                AIShadowRunner.Instance?.SingleContractRuntime
+                    ?.RecycleGate(predictionBinding.gateId);
+            }
+            predictionTag?.Clear();
             instance.GetComponent<Coin>()?.ConfigureEchoContractMarker(false);
             instance.SetActive(false);
         }
@@ -2018,6 +2398,16 @@ public class TrackManager : MonoBehaviour
             _player.GetComponent<PlayerController>()
                 ?.ForgetResolvedObstacle(entry.instance);
         entry.instance.GetComponent<EchoChallengeObstacleTag>()?.Clear();
+        PredictionGateObstacleTag predictionTag =
+            entry.instance.GetComponent<PredictionGateObstacleTag>();
+        PredictionGateObstacleBinding predictionBinding =
+            predictionTag != null ? predictionTag.Binding : default;
+        if (predictionBinding.IsBound)
+        {
+            AIShadowRunner.Instance?.SingleContractRuntime
+                ?.RecycleGate(predictionBinding.gateId);
+        }
+        predictionTag?.Clear();
         entry.instance.GetComponent<Coin>()?.ConfigureEchoContractMarker(false);
         entry.instance.SetActive(false);
        entry.instance.transform.SetParent(transform, false);
@@ -2247,7 +2637,8 @@ public class TrackManager : MonoBehaviour
 
     void OnDestroy()
     {
-        if (_finishMarkerMaterial != null) Destroy(_finishMarkerMaterial);
+        DestroyRuntimeObject(_finishMarkerMaterial);
+        DestroyRuntimeObject(_predictionGateMaterial);
         if (Instance == this) Instance = null;
     }
 }

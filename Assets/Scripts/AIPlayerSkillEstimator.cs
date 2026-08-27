@@ -214,12 +214,22 @@ public static class AIPlayerSkillEstimator
 
     public static void ResetTraining()
     {
+        ResetTrainingInternal(true);
+    }
+
+    public static void ResetTrainingInMemory()
+    {
+        ResetTrainingInternal(false);
+    }
+
+    private static void ResetTrainingInternal(bool persist)
+    {
         _profile = new AIPlayerSkillProfile();
         _profile.Normalize();
         _initialized = true;
         _runActive = false;
         _lastJumpProximity = -1f;
         _lastSlideProximity = -1f;
-        EchoRunSaveSystem.SaveSkillProfile("");
+        if (persist) EchoRunSaveSystem.SaveSkillProfile("");
     }
 }

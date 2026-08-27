@@ -312,6 +312,8 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         }
 
         _decisionCount++;
+        bool singleContractRun = IsSingleContractRun();
+        bool freezeDirector = IsDirectorFrozenForRun();
 
         float[] context = BuildContext();
         AIDirectorIntent intent;
@@ -320,7 +322,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         float policyUncertainty = 0f;
         bool safetyAdjusted = false;
         int selectedAction = -1;
-        if (!useAI || IsObservationSegment(segmentStartDistance,
+        if (freezeDirector || !useAI || IsObservationSegment(segmentStartDistance,
                 segmentEndDistance, observationSegments))
         {
             intent = AIDirectorIntent.Observe;
@@ -342,17 +344,23 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         AITrackPlan plan = BuildPlan(intent, baseDifficulty, baseObstacleChance,
             baseCoinChance, baseTurnChance, previousSafeLane, canTurn);
         plan.echoEncounterStep = PositiveModulo(_decisionCount, 1024);
-        EchoContractData activeContract = AIShadowRunner.Instance != null
+        EchoContractData activeContract = !singleContractRun
+                                           && AIShadowRunner.Instance != null
             ? AIShadowRunner.Instance.ActiveContract : null;
-        EchoDuelPhase phaseOverride = ScheduledEchoPhase != EchoDuelPhase.None
+        EchoDuelPhase phaseOverride = !singleContractRun
+                                      && ScheduledEchoPhase != EchoDuelPhase.None
                                       && segmentStartDistance + 0.01f
                                       >= ScheduledEchoBoundary
             ? ScheduledEchoPhase
             : EchoDuelPhase.None;
-        EchoChallengeStep challengeStep = AIShadowRunner.Instance != null
+        EchoChallengeStep challengeStep = !singleContractRun
+                                          && AIShadowRunner.Instance != null
             ? AIShadowRunner.Instance.ActiveChallengeStep : default;
-        plan = ApplyEchoContract(plan, activeContract, _decisionCount,
-            phaseOverride, challengeStep);
+        if (!singleContractRun)
+        {
+            plan = ApplyEchoContract(plan, activeContract, _decisionCount,
+                phaseOverride, challengeStep);
+        }
         ShadowAIDirective directive = BuildShadowDirective(intent);
         int telemetryDecisionId =
             AIRunTelemetry.RecordDirectorDecision(
@@ -373,8 +381,10 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
                 segmentEndDistance),
             telemetryDecisionId = telemetryDecisionId,
             policyUpdateEligible = selectedAction >= 0
-                                   && IsPolicyAttributionEligible(
-                                       activeContract)
+                                   && !freezeDirector
+                                   && (singleContractRun
+                                       || IsPolicyAttributionEligible(
+                                           activeContract))
         });
         _lastPlannedHitCount = _hits;
         return plan;
@@ -423,6 +433,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
     public void ScheduleEchoPhase(EchoDuelPhase phase, float routeBoundary,
         float routeLength)
     {
+        if (IsSingleContractRun()) return;
         if (phase == EchoDuelPhase.None) return;
         ScheduledEchoPhase = phase;
         ScheduledEchoBoundary = Mathf.Max(0f, routeBoundary);
@@ -431,6 +442,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
 
     public void CommitScheduledEchoPhase(EchoDuelPhase phase)
     {
+        if (IsSingleContractRun()) return;
         if (ScheduledEchoPhase != phase) return;
         _activeEchoPhase = phase;
         _activeEchoPhaseBoundary = ScheduledEchoBoundary;
@@ -518,6 +530,16 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
 
     public void ResetTraining()
     {
+        ResetTrainingInternal(true);
+    }
+
+    public void ResetTrainingInMemory()
+    {
+        ResetTrainingInternal(false);
+    }
+
+    private void ResetTrainingInternal(bool persist)
+    {
         _sessionPolicy = new AILinUcbPolicy();
         ModelUpdateCount = 0;
         LastPolicyMean = 0f;
@@ -539,7 +561,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         _laneVisits[0] = 0;
         _laneVisits[1] = 1;
         _laneVisits[2] = 0;
-        EchoRunSaveSystem.SaveDirector(null, 0, "");
+        if (persist) EchoRunSaveSystem.SaveDirector(null, 0, "");
     }
 
     private int ApplySafetyConstraints(int proposedAction, float[] context)
@@ -575,8 +597,30 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         {
             float distance = _gameManager != null ? _gameManager.Distance : 0f;
             FinalizeActivePlanForRunEnd(distance);
-            SaveDirectorModel();
+            if (!IsDirectorFrozenForRun()) SaveDirectorModel();
         }
+    }
+
+    private bool IsSingleContractRun()
+    {
+        GameManager manager = _gameManager != null
+            ? _gameManager : GameManager.Instance;
+        return manager != null
+               && manager.ActiveGameplayFlowMode
+               == GameplayFlowMode.SingleContract;
+    }
+
+    private bool IsDirectorFrozenForRun()
+    {
+        GameManager manager = _gameManager != null
+            ? _gameManager : GameManager.Instance;
+        if (manager == null
+            || manager.ActiveGameplayFlowMode
+            != GameplayFlowMode.SingleContract)
+            return false;
+        SingleContractValidationConfig validation =
+            manager.ActiveSingleContractValidationConfig;
+        return validation.enabled && validation.freezeDirector;
     }
 
     private float[] BuildContext()

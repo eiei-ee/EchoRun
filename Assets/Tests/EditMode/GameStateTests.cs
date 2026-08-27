@@ -2933,6 +2933,71 @@ public class GameStateTests
     }
 
     [Test]
+    public void PredictionGateObstacleIsPrewarmedBeforePresentationDistance()
+    {
+        TrackManager manager = Create<TrackManager>("TrackManager");
+        if (TrackManager.Instance != manager)
+            InvokePrivate(manager, "Awake");
+        manager.segmentLength = 20f;
+        GameObject low = CreateObstaclePrefab("Low", ObstacleType.Low);
+        GameObject high = CreateObstaclePrefab("High", ObstacleType.High);
+        GameObject barrier = CreateObstaclePrefab(
+            "Barrier", ObstacleType.Barrier);
+        manager.obstaclePrefabs = new[] { low, high, barrier };
+
+        var windows = new PredictionGateDistanceWindow[6];
+        for (int i = 0; i < windows.Length; i++)
+        {
+            float presentation = 100f * (i + 1);
+            windows[i] = new PredictionGateDistanceWindow
+            {
+                presentationDistance = presentation,
+                commitDistance = presentation + 10f,
+                resolveDistance = presentation + 20f,
+                exitDistance = presentation + 30f
+            };
+        }
+        var flow = new SingleContractFlow(
+            new SingleContractFixedGateWindowFactory(windows), 2, 1f);
+        flow.BeginRun(new EchoRunContext
+        {
+            mode = GameplayFlowMode.SingleContract,
+            hasOpponent = true,
+            courseDistance = 950f,
+            runSequence = 7,
+            runSeed = 424242,
+            generation = 3
+        });
+        AIShadowRunner runner = manager.GetComponent<AIShadowRunner>();
+        Assert.IsNotNull(runner);
+        PropertyInfo runnerInstance = typeof(AIShadowRunner).GetProperty(
+            "Instance", BindingFlags.Static | BindingFlags.Public);
+        Assert.IsNotNull(runnerInstance);
+        runnerInstance.SetValue(null, runner);
+        SetPrivateField(runner, "_singleContractFlow", flow);
+
+        GameObject segment = new GameObject("GateSegment");
+        _objects.Add(segment);
+        TrackSegmentData data = segment.AddComponent<TrackSegmentData>();
+        data.segmentType = TrackSegmentType.Straight;
+        data.routeDistance = 115f;
+
+        bool handled = (bool)InvokePrivate(manager,
+            "TryPopulateSingleContractSegment", segment, data);
+
+        Assert.IsTrue(handled);
+        Assert.IsTrue(data.contentSpawned);
+        Assert.AreEqual(PredictionGateLifecycle.Scheduled,
+            flow.GetGate(0).State,
+            "Physical prewarming must not present the gate early.");
+        Assert.AreEqual(1, manager.PredictionGateRowsSpawned);
+        Assert.IsNotNull(segment.GetComponentInChildren<
+            PredictionGateObstacleTag>(true),
+            "The obstacle must already exist before the player reaches the "
+            + "presentation distance.");
+    }
+
+    [Test]
     public void SlideDroneIsUpcomingOnlyInItsLane()
     {
         TrackManager manager = Create<TrackManager>("TrackManager");

@@ -11,6 +11,9 @@ public class GameManager : MonoBehaviour
     public static GameManager Instance { get; private set; }
     private static bool _startAfterSceneLoad;
     private static int? _nextRunSeed;
+    private static GameplayFlowMode? _gameplayFlowAfterSceneLoad;
+    private static SingleContractValidationConfig
+        _validationAfterSceneLoad;
 
     [Header("Speed")]
     public float startSpeed = 10f;
@@ -19,6 +22,12 @@ public class GameManager : MonoBehaviour
 
     [Header("Score")]
     public int coinScore = 10;
+
+    [Header("Gameplay Flow")]
+    [SerializeField] private GameplayFlowMode gameplayFlowMode =
+        GameplayFlowMode.SingleContract;
+    [SerializeField] private SingleContractValidationConfig
+        singleContractValidationConfig = new SingleContractValidationConfig();
 
     public float CurrentSpeed { get; private set; }
     public GameState State { get; private set; } = GameState.Menu;
@@ -32,6 +41,7 @@ public class GameManager : MonoBehaviour
     public int RunSeed { get; private set; }
     public float CourseDistance { get; private set; }
     public float CourseTargetDuration { get; private set; }
+    public int FinishScheduleCount { get; private set; }
     public float RunElapsed { get; private set; }
     public float RemainingDistance => Mathf.Max(0f, CourseDistance - Distance);
     public RunEndReason LastEndReason { get; private set; }
@@ -42,6 +52,21 @@ public class GameManager : MonoBehaviour
     public float CollisionRecoveryDuration => 1.25f;
     public float CollisionRecoveryTimeRemaining { get; private set; }
     public int ContractMarkerCount { get; private set; }
+    public GameplayFlowMode ConfiguredGameplayFlowMode => gameplayFlowMode;
+    public GameplayFlowMode ActiveGameplayFlowMode { get; private set; } =
+        GameplayFlowMode.SixPhaseLegacy;
+    public SingleContractValidationConfig
+        ConfiguredSingleContractValidationConfig =>
+            SingleContractValidationConfig.CopyOf(
+                singleContractValidationConfig);
+    public SingleContractValidationConfig
+        ActiveSingleContractValidationConfig =>
+            SingleContractValidationConfig.CopyOf(
+                _activeSingleContractValidationConfig);
+    public bool IsSingleContractRun =>
+        ActiveGameplayFlowMode == GameplayFlowMode.SingleContract;
+    public RunDifficultyLevel ActiveRunDifficulty { get; private set; } =
+        RunDifficultySettings.DefaultLevel;
 
     [Header("Buff (runtime)")]
     public float BuffTimeRemaining;
@@ -60,6 +85,9 @@ public class GameManager : MonoBehaviour
     private int _lastBaseScore;
     private float _powerUpBonusScore;
     private bool _telemetryFinished;
+    private SingleContractValidationConfig
+        _activeSingleContractValidationConfig =
+            new SingleContractValidationConfig();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeInstance()
@@ -72,6 +100,17 @@ public class GameManager : MonoBehaviour
     {
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
+        if (_gameplayFlowAfterSceneLoad.HasValue)
+        {
+            gameplayFlowMode = _gameplayFlowAfterSceneLoad.Value;
+            singleContractValidationConfig =
+                SingleContractValidationConfig.CopyOf(
+                    _validationAfterSceneLoad);
+            _gameplayFlowAfterSceneLoad = null;
+            _validationAfterSceneLoad = null;
+        }
+        ApplySingleContractValidationLaunchOptions(
+            System.Environment.GetCommandLineArgs());
         EnsureSceneRuntimeServices();
         EchoRunSaveSystem.EnsureInitialized();
         GameplayBalance balance = GameBalanceConfig.Current.gameplay;
@@ -156,7 +195,9 @@ public class GameManager : MonoBehaviour
         HighScore = PlayerPrefs.GetInt("HighScore", 0);
         TotalCoins = EchoRunSaveSystem.TotalCoins;
 
-        if (_startAfterSceneLoad)
+        bool autoStartValidation = singleContractValidationConfig.enabled
+                                   && singleContractValidationConfig.autoStart;
+        if (_startAfterSceneLoad || autoStartValidation)
         {
             _startAfterSceneLoad = false;
             StartGame();
@@ -222,14 +263,33 @@ public class GameManager : MonoBehaviour
     {
         if (State != GameState.Menu) return;
 
+        FreezeGameplayFlowConfiguration();
+
         int runSequence = EchoRunSaveSystem.ReserveRunSequence();
-        RunSeed = _nextRunSeed ?? CreateRunSeed(runSequence);
+        bool fixedSingleContractRun = IsSingleContractRun
+                                      && _activeSingleContractValidationConfig.enabled;
+        if (fixedSingleContractRun)
+        {
+            Debug.Log("Single-contract validation run started: seed="
+                      + _activeSingleContractValidationConfig.fixedSeed);
+        }
+        RunSeed = fixedSingleContractRun
+            ? _activeSingleContractValidationConfig.fixedSeed
+            : _nextRunSeed ?? CreateRunSeed(runSequence);
         _nextRunSeed = null;
+        bool fixedValidationIdentity = fixedSingleContractRun
+                                       && SingleContractValidationIdentity
+                                           .IsEnabled(
+                                               _activeSingleContractValidationConfig);
+        int runGeneration = fixedValidationIdentity
+            ? SingleContractValidationIdentity.Generation
+            : AIShadowRunner.Instance != null
+                ? AIShadowRunner.Instance.Generation : 0;
         AIRunRandom.BeginRun(RunSeed);
         AIPlayerSkillEstimator.BeginRun();
         StyleTracker.BeginRun();
         AIRunTelemetry.BeginRun(RunSeed, runSequence, HighScore,
-            AIShadowRunner.Instance != null ? AIShadowRunner.Instance.Generation : 0,
+            runGeneration,
             AITrackDirector.Instance != null
                 ? AITrackDirector.Instance.ModelUpdateCount
                 : EchoRunSaveSystem.DirectorModelUpdateCount,
@@ -247,7 +307,9 @@ public class GameManager : MonoBehaviour
                 : "");
 
         Time.timeScale = 1f;
-        PowerUpController.Instance?.BeginRun();
+        bool disablePowerUps = fixedSingleContractRun
+                               && _activeSingleContractValidationConfig.disablePowerUps;
+        PowerUpController.Instance?.BeginRun(!disablePowerUps);
         float turboBonus = PowerUpController.Instance != null
             ? PowerUpController.Instance.GetTurboStartBonus()
             : 0f;
@@ -268,13 +330,19 @@ public class GameManager : MonoBehaviour
         CollisionRecoveryTimeRemaining = 0f;
         _telemetryFinished = false;
         GameplayBalance balance = GameBalanceConfig.Current.gameplay;
-        int generation = AIShadowRunner.Instance != null
-            ? AIShadowRunner.Instance.Generation
-            : 0;
-        CourseTargetDuration = SelectCourseDuration(generation,
-            balance.calibrationDuration, balance.challengeDuration);
+        ActiveEchoIdentity singleContractIdentity = IsSingleContractRun
+            ? EchoRunSaveSystem.GetActiveEchoIdentity() : null;
+        bool hasSingleContractOpponent = fixedValidationIdentity
+                                         || singleContractIdentity != null
+                                         && !singleContractIdentity
+                                             .RequiresRouteCalibration;
+        CourseTargetDuration = IsSingleContractRun
+            ? SingleContractCourseDuration(hasSingleContractOpponent)
+            : SelectCourseDuration(runGeneration,
+                balance.calibrationDuration, balance.challengeDuration);
         CourseDistance = EchoTimeRules.DistanceForAcceleratingRun(
             CurrentSpeed, maxSpeed, speedIncreaseRate, CourseTargetDuration);
+        FinishScheduleCount = 1;
         _telemetryPlayer = null;
         State = GameState.Playing;
         OnStateChanged.Invoke(State);
@@ -284,6 +352,61 @@ public class GameManager : MonoBehaviour
         OnDistanceChanged.Invoke(0);
         InputManager.Instance?.ClearInput();
         AudioManager.Instance?.StartFootsteps();
+    }
+
+    public bool TryConfigureGameplayFlow(GameplayFlowMode mode,
+        SingleContractValidationConfig validation = null)
+    {
+        if (State != GameState.Menu) return false;
+        gameplayFlowMode = NormalizeGameplayFlowMode(mode);
+        singleContractValidationConfig =
+            SingleContractValidationConfig.CopyOf(validation);
+        return true;
+    }
+
+    private void ApplySingleContractValidationLaunchOptions(
+        string[] arguments)
+    {
+        if (SingleContractValidationLaunchOptions.TryParse(arguments,
+                out SingleContractValidationConfig validation,
+                out string error))
+        {
+            gameplayFlowMode = GameplayFlowMode.SingleContract;
+            singleContractValidationConfig = validation;
+            Debug.Log("Single-contract validation launch enabled: seed="
+                      + validation.fixedSeed
+                      + ", directorFrozen=true, powerUps=false, difficulty=Standard"
+                      + ", autoStart=" + validation.autoStart
+                      + ", fixedIdentity=" + validation.useFixedIdentity);
+        }
+        else if (!string.IsNullOrEmpty(error))
+        {
+            Debug.LogError(error);
+        }
+    }
+
+    private void FreezeGameplayFlowConfiguration()
+    {
+        ActiveGameplayFlowMode = NormalizeGameplayFlowMode(gameplayFlowMode);
+        _activeSingleContractValidationConfig =
+            SingleContractValidationConfig.CopyOf(
+                singleContractValidationConfig);
+        bool forceStandard = ActiveGameplayFlowMode
+                             == GameplayFlowMode.SingleContract
+                             && _activeSingleContractValidationConfig.enabled
+                             && _activeSingleContractValidationConfig
+                                 .forceStandardDifficulty;
+        ActiveRunDifficulty = forceStandard
+            ? RunDifficultyLevel.Standard
+            : RunDifficultySettings.Current;
+    }
+
+    private static GameplayFlowMode NormalizeGameplayFlowMode(
+        GameplayFlowMode mode)
+    {
+        return mode == GameplayFlowMode.SingleContract
+            ? GameplayFlowMode.SingleContract
+            : GameplayFlowMode.SixPhaseLegacy;
     }
 
     public void Pause()
@@ -318,6 +441,7 @@ public class GameManager : MonoBehaviour
             ? RunEndReason.Abandoned
             : LastEndReason);
         EchoRunSaveSystem.SaveLegacyState();
+        PreserveGameplayFlowAcrossSceneLoad();
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
@@ -387,8 +511,17 @@ public class GameManager : MonoBehaviour
             ? RunEndReason.Abandoned
             : LastEndReason);
         EchoRunSaveSystem.SaveLegacyState();
+        PreserveGameplayFlowAcrossSceneLoad();
         _startAfterSceneLoad = true;
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+    }
+
+    private void PreserveGameplayFlowAcrossSceneLoad()
+    {
+        _gameplayFlowAfterSceneLoad = gameplayFlowMode;
+        _validationAfterSceneLoad =
+            SingleContractValidationConfig.CopyOf(
+                singleContractValidationConfig);
     }
 
     public void AddCoins(int amount)
@@ -452,10 +585,12 @@ public class GameManager : MonoBehaviour
     public float ScheduleCourseFinishAfter(float seconds)
     {
         if (State != GameState.Playing) return CourseDistance;
+        if (IsSingleContractRun) return CourseDistance;
         float window = Mathf.Max(0f, seconds);
         CourseDistance = CalculateScheduledCourseDistance(
             Distance, CurrentSpeed, maxSpeed, speedIncreaseRate, window);
         CourseTargetDuration = RunElapsed + window;
+        FinishScheduleCount++;
         return CourseDistance;
     }
 
@@ -475,6 +610,11 @@ public class GameManager : MonoBehaviour
         return generation <= 0
             ? calibration
             : Mathf.Max(calibration, challengeDuration);
+    }
+
+    public static float SingleContractCourseDuration(bool hasActiveOpponent)
+    {
+        return hasActiveOpponent ? 95f : 55f;
     }
 
     private static int CreateRunSeed(int sequence)

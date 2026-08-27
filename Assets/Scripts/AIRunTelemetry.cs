@@ -29,6 +29,60 @@ public sealed class AIRunEventSample
     public float value2;
 }
 
+public static class AISingleContractEventType
+{
+    public const string Begin = "single_contract_begin";
+    public const string GateScheduled = "prediction_gate_scheduled";
+    public const string GatePresented = "prediction_gate_presented";
+    public const string GateCommitted = "prediction_gate_committed";
+    public const string GateResolved = "prediction_gate_resolved";
+    public const string GateApplied = "prediction_gate_applied";
+    public const string EchoRelearned = "echo_relearned";
+    public const string IdentityDraftDiscarded = "identity_draft_discarded";
+    public const string IdentityPromoted = "identity_promoted";
+    public const string IdentityCommitFailed = "identity_commit_failed";
+    public const string Result = "single_contract_result";
+}
+
+[Serializable]
+public sealed class AISingleContractEventSample
+{
+    public float time;
+    public float distance;
+    public string type = "";
+
+    public int runSequence;
+    public int seed;
+    public int generation;
+    public int gateId;
+    public int sequence;
+    public int hypothesisVersion;
+    public int predictedLane = -1;
+    public int committedLane = -1;
+    public PredictionGateRole chosenRole;
+    public StrategyKey strategyKey;
+    public GateExecutionOutcome execution;
+    public float reactionTime;
+    public float speedAtResolution;
+    public float secondsDelta;
+    public float metersDelta;
+    public float leadBefore;
+    public float leadAfter;
+    public bool relearned;
+
+    public string oldIdentityId = "";
+    public string newIdentityId = "";
+    public string transactionId = "";
+    public string commitResult = "";
+    public string identityHashBefore = "";
+    public string identityHashAfter = "";
+
+    public AISingleContractEventSample Clone()
+    {
+        return (AISingleContractEventSample)MemberwiseClone();
+    }
+}
+
 [Serializable]
 public sealed class AIDirectorDecisionSample
 {
@@ -135,6 +189,7 @@ public sealed class AIRunTelemetryData
     public int schemaVersion = AIRunTelemetry.SchemaVersion;
     public string runId;
     public int seed;
+    public int runSequence;
     public long startedUtcTicks;
     public long endedUtcTicks;
     public string buildVersion;
@@ -167,6 +222,8 @@ public sealed class AIRunTelemetryData
     public AIRunCapsule runCapsule;
     public List<AIRunStateSample> states = new List<AIRunStateSample>();
     public List<AIRunEventSample> events = new List<AIRunEventSample>();
+    public List<AISingleContractEventSample> singleContractEvents =
+        new List<AISingleContractEventSample>();
     public List<AIDirectorDecisionSample> directorDecisions =
         new List<AIDirectorDecisionSample>();
     public List<AIShadowTrainingSample> shadowSamples =
@@ -177,12 +234,13 @@ public sealed class AIRunTelemetryData
 
 public static class AIRunTelemetry
 {
-    public const int SchemaVersion = 8;
+    public const int SchemaVersion = 9;
     public const float StateSampleInterval = 0.25f;
     public const string CompletedTrainingReason = "finish_reached";
 
     private const int MaxStateSamples = 7200;
     private const int MaxEventSamples = 4096;
+    private const int MaxSingleContractEventSamples = 4096;
     private const int MaxShadowSamples = 8192;
     private const int MaxObstacleContactSamples = 2048;
     private const int MaxInputSamples = 4096;
@@ -203,6 +261,15 @@ public static class AIRunTelemetry
 
     public static AIRunTelemetryData ActiveRun => _active;
     public static bool IsRecording => _active != null && !_active.completed;
+
+    public static void ResetTrainingInMemory()
+    {
+        _active = null;
+        _nextStateSampleTime = 0f;
+        _runStartTime = 0f;
+        _runStartUnscaledTime = 0f;
+        _nextDecisionId = 0;
+    }
 
     public static bool IsCompletedTrainingReason(string reason)
     {
@@ -229,6 +296,7 @@ public static class AIRunTelemetry
         {
             runId = runId,
             seed = seed,
+            runSequence = Mathf.Max(0, sequence),
             startedUtcTicks = now,
             buildVersion = buildVersion,
             platform = platform,
@@ -302,6 +370,41 @@ public static class AIRunTelemetry
             value = value,
             value2 = value2
         });
+    }
+
+    public static void RecordSingleContractEvent(
+        AISingleContractEventSample sample)
+    {
+        if (!IsRecording || sample == null
+            || _active.singleContractEvents.Count
+            >= MaxSingleContractEventSamples)
+            return;
+
+        AISingleContractEventSample recorded = sample.Clone();
+        recorded.time = ElapsedTime();
+        recorded.distance = CurrentDistance();
+        recorded.type = recorded.type ?? "";
+        recorded.runSequence = _active.runSequence;
+        recorded.seed = _active.seed;
+        recorded.generation = Mathf.Max(0, recorded.generation);
+        recorded.gateId = Mathf.Max(0, recorded.gateId);
+        recorded.sequence = Mathf.Max(0, recorded.sequence);
+        recorded.hypothesisVersion = Mathf.Max(0,
+            recorded.hypothesisVersion);
+        recorded.predictedLane = NormalizeTelemetryLane(
+            recorded.predictedLane);
+        recorded.committedLane = NormalizeTelemetryLane(
+            recorded.committedLane);
+        recorded.reactionTime = Mathf.Max(0f, recorded.reactionTime);
+        recorded.speedAtResolution = Mathf.Max(0f,
+            recorded.speedAtResolution);
+        recorded.oldIdentityId = recorded.oldIdentityId ?? "";
+        recorded.newIdentityId = recorded.newIdentityId ?? "";
+        recorded.transactionId = recorded.transactionId ?? "";
+        recorded.commitResult = recorded.commitResult ?? "";
+        recorded.identityHashBefore = recorded.identityHashBefore ?? "";
+        recorded.identityHashAfter = recorded.identityHashAfter ?? "";
+        _active.singleContractEvents.Add(recorded);
     }
 
     public static void RecordInputQueued(BufferedSwipeCommand command)
@@ -536,6 +639,8 @@ public static class AIRunTelemetry
         if (data == null || data.schemaVersion <= 0) return null;
         data.states = data.states ?? new List<AIRunStateSample>();
         data.events = data.events ?? new List<AIRunEventSample>();
+        data.singleContractEvents = data.singleContractEvents
+                                    ?? new List<AISingleContractEventSample>();
         data.directorDecisions = data.directorDecisions
                                  ?? new List<AIDirectorDecisionSample>();
         data.shadowSamples = data.shadowSamples ?? new List<AIShadowTrainingSample>();
@@ -588,6 +693,11 @@ public static class AIRunTelemetry
     private static float RelativeUnscaledTime(float timestamp)
     {
         return Mathf.Max(0f, timestamp - _runStartUnscaledTime);
+    }
+
+    private static int NormalizeTelemetryLane(int lane)
+    {
+        return lane >= 0 && lane <= 2 ? lane : -1;
     }
 
     private static string FingerprintModel(int revision, float[] weights,

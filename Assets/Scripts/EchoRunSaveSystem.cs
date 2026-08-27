@@ -43,20 +43,43 @@ public static class EchoRunSaveSystem
     public const string SaveSlotAKey = "EchoRunSaveV1.A";
     public const string SaveSlotBKey = "EchoRunSaveV1.B";
     public const string ActiveSaveSlotKey = "EchoRunSaveV1.ActiveSlot";
+    public const string SingleContractSaveSlotAKey =
+        "EchoRunSingleContractV1.A";
+    public const string SingleContractSaveSlotBKey =
+        "EchoRunSingleContractV1.B";
+    public const string SingleContractActiveSaveSlotKey =
+        "EchoRunSingleContractV1.ActiveSlot";
+    public const string TrainingResetPendingKey =
+        "EchoRunTrainingResetV1.Pending";
     public const string TelemetryKey = "EchoRunLastTelemetryV1";
     public const int CurrentVersion = 9;
 
     private const string ShadowProfileKey = "AIShadowProfileV1";
     private const int SaveEnvelopeVersion = 1;
+    private const int SingleContractSaveEnvelopeVersion = 2;
+    private const int LegacySingleContractSaveEnvelopeVersion = 1;
+    private const string NoLegacyIdentityTombstone = "v9:none";
+    private const string CorruptSingleContractArchiveTombstone =
+        "v9:single-contract-archive-corrupt";
+    private const string TrainingResetFingerprint = "v9:training-reset";
 
     private static EchoRunSaveData _data;
     private static bool _initialized;
     private static int _activeSlot = -1;
     private static long _generation;
+    private static EchoSingleContractSaveData _singleContractData;
+    private static bool _singleContractInitialized;
+    private static int _singleContractActiveSlot = -1;
+    private static long _singleContractGeneration;
+    private static bool _trainingResetInProgress;
+    private static bool _trainingWritesEnabled = true;
 
     public static bool LoadedExistingArchive { get; private set; }
     public static bool MigratedLegacyData { get; private set; }
     public static bool RecoveredFromBackup { get; private set; }
+    public static bool LoadedExistingSingleContractArchive { get; private set; }
+    public static bool MigratedLegacySingleContractIdentity { get; private set; }
+    public static bool RecoveredSingleContractFromBackup { get; private set; }
 
     public static int DirectorModelUpdateCount
     {
@@ -89,7 +112,11 @@ public static class EchoRunSaveSystem
 
     public static void EnsureInitialized()
     {
-        if (_initialized) return;
+        if (_initialized)
+        {
+            EnsurePendingTrainingResetCompleted();
+            return;
+        }
         _initialized = true;
         LoadedExistingArchive = false;
         MigratedLegacyData = false;
@@ -110,6 +137,7 @@ public static class EchoRunSaveSystem
             PlayerPrefs.SetInt(ActiveSaveSlotKey, _activeSlot);
             if (movedTelemetry) WriteArchive(true);
             else PlayerPrefs.Save();
+            EnsurePendingTrainingResetCompleted();
             return;
         }
 
@@ -121,6 +149,7 @@ public static class EchoRunSaveSystem
             RestoreLegacyKeys();
             MoveTelemetryOutOfArchive();
             WriteArchive(true);
+            EnsurePendingTrainingResetCompleted();
             return;
         }
 
@@ -128,6 +157,7 @@ public static class EchoRunSaveSystem
         _data = new EchoRunSaveData();
         CaptureLegacyKeys();
         WriteArchive(true);
+        EnsurePendingTrainingResetCompleted();
     }
 
     public static string GetShadowProfileJson()
@@ -139,6 +169,7 @@ public static class EchoRunSaveSystem
     public static void SaveShadowProfile(string profileJson)
     {
         EnsureInitialized();
+        if (!_trainingWritesEnabled) return;
         _data.shadowProfileJson = profileJson ?? "";
         PlayerPrefs.SetString(ShadowProfileKey, _data.shadowProfileJson);
         CaptureLegacyKeys();
@@ -148,7 +179,9 @@ public static class EchoRunSaveSystem
     public static float[] GetDirectorWeights()
     {
         EnsureInitialized();
-        return Clone(_data.directorWeights);
+        return _data.directorWeights == null
+               || _data.directorWeights.Length == 0
+            ? null : Clone(_data.directorWeights);
     }
 
     public static string GetDirectorPolicyJson()
@@ -161,6 +194,7 @@ public static class EchoRunSaveSystem
         string policyJson = null)
     {
         EnsureInitialized();
+        if (!_trainingWritesEnabled) return;
         _data.directorWeights = Clone(weights);
         _data.directorModelUpdateCount = Mathf.Max(0, modelUpdateCount);
         if (policyJson != null)
@@ -172,6 +206,7 @@ public static class EchoRunSaveSystem
     public static int ReserveRunSequence()
     {
         EnsureInitialized();
+        _trainingWritesEnabled = true;
         _data.runSequence = Mathf.Max(0, _data.runSequence) + 1;
         WriteArchive(true);
         return _data.runSequence;
@@ -187,6 +222,7 @@ public static class EchoRunSaveSystem
     public static void SaveLastRunTelemetry(string telemetryJson)
     {
         EnsureInitialized();
+        if (!_trainingWritesEnabled) return;
         _data.lastRunTelemetryJson = "";
         string normalized = telemetryJson ?? "";
         if (string.IsNullOrEmpty(normalized))
@@ -205,6 +241,7 @@ public static class EchoRunSaveSystem
     public static void SaveSkillProfile(string profileJson)
     {
         EnsureInitialized();
+        if (!_trainingWritesEnabled) return;
         _data.skillProfileJson = profileJson ?? "";
         WriteArchive(true);
     }
@@ -218,6 +255,7 @@ public static class EchoRunSaveSystem
     public static void SavePlayerStyle(string profileJson)
     {
         EnsureInitialized();
+        if (!_trainingWritesEnabled) return;
         _data.playerStyleJson = profileJson ?? "";
         WriteArchive(true);
     }
@@ -231,8 +269,202 @@ public static class EchoRunSaveSystem
     public static void SaveLastEchoContract(string contractJson)
     {
         EnsureInitialized();
+        if (!_trainingWritesEnabled) return;
         _data.lastEchoContractJson = contractJson ?? "";
         WriteArchive(true);
+    }
+
+    public static void EnsureSingleContractInitialized()
+    {
+        EnsureInitialized();
+        if (_singleContractInitialized) return;
+        _singleContractInitialized = true;
+        LoadedExistingSingleContractArchive = false;
+        MigratedLegacySingleContractIdentity = false;
+        RecoveredSingleContractFromBackup = false;
+        _singleContractActiveSlot = -1;
+        _singleContractGeneration = 0;
+
+        if (TryLoadBestSingleContractSlot(
+                out EchoSingleContractSaveData slotData,
+                out int slot, out long generation, out bool recovered))
+        {
+            _singleContractData = slotData;
+            _singleContractActiveSlot = slot;
+            _singleContractGeneration = generation;
+            LoadedExistingSingleContractArchive = true;
+            RecoveredSingleContractFromBackup = recovered;
+            PlayerPrefs.SetInt(SingleContractActiveSaveSlotKey, slot);
+            PlayerPrefs.Save();
+            return;
+        }
+
+        bool hadSingleContractArchive =
+            PlayerPrefs.HasKey(SingleContractSaveSlotAKey)
+            || PlayerPrefs.HasKey(SingleContractSaveSlotBKey);
+        EchoSingleContractSaveData initial =
+            CreateInitialSingleContractData(!hadSingleContractArchive);
+        if (!TrySeedBothSingleContractSlots(initial, out string error))
+        {
+            _singleContractData = initial;
+            Debug.LogError("Single-contract archive could not be initialized: "
+                           + error);
+        }
+    }
+
+    public static EchoSingleContractSaveData GetSingleContractSaveData()
+    {
+        EnsureSingleContractInitialized();
+        return _singleContractData != null
+            ? _singleContractData.Clone() : new EchoSingleContractSaveData();
+    }
+
+    public static ActiveEchoIdentity GetActiveEchoIdentity()
+    {
+        EnsureSingleContractInitialized();
+        return _singleContractData != null
+               && _singleContractData.activeIdentity != null
+            ? _singleContractData.activeIdentity.Clone() : null;
+    }
+
+    public static SaveCommitResult TryCommitSingleContractSettlement(
+        RunSettlementCommit settlement)
+    {
+        EnsureSingleContractInitialized();
+        if (!_trainingWritesEnabled)
+            return SaveCommitResult.Failed(
+                "Training writes are closed until the next run begins.");
+        if (settlement == null)
+            return SaveCommitResult.Failed("Settlement is required.");
+        if (string.IsNullOrEmpty(settlement.transactionId))
+            return SaveCommitResult.Failed("Transaction id is required.");
+        if (settlement.runSequence <= 0)
+            return SaveCommitResult.Failed("Run sequence must be positive.");
+        if (!Enum.IsDefined(typeof(RunEndReason), settlement.endReason)
+            || settlement.endReason == RunEndReason.None)
+            return SaveCommitResult.Failed("Run end reason is invalid.");
+        if (float.IsNaN(settlement.playerLead)
+            || float.IsInfinity(settlement.playerLead))
+            return SaveCommitResult.Failed("Player lead must be finite.");
+        if (_singleContractData == null)
+            return SaveCommitResult.Failed(
+                "Single-contract archive is not available.");
+
+        if (_singleContractData.lastCommittedRunSequence
+            == settlement.runSequence)
+        {
+            if (string.Equals(_singleContractData.lastTransactionId,
+                    settlement.transactionId, StringComparison.Ordinal))
+            {
+                bool originalCommitPromoted =
+                    _singleContractData.lastResult != null
+                    && _singleContractData.lastResult.generationAfter
+                    > _singleContractData.lastResult.generationBefore;
+                return SaveCommitResult.Committed(
+                    _singleContractData.activeIdentity, true,
+                    originalCommitPromoted);
+            }
+            return SaveCommitResult.Failed(
+                "Run sequence was already committed by another transaction.");
+        }
+        if (settlement.runSequence
+            < _singleContractData.lastCommittedRunSequence)
+            return SaveCommitResult.Failed("Run sequence is stale.");
+        if (string.Equals(_singleContractData.lastTransactionId,
+                settlement.transactionId, StringComparison.Ordinal))
+            return SaveCommitResult.Failed(
+                "Transaction id was already used by another run.");
+
+        EchoSingleContractSaveData candidate = _singleContractData.Clone();
+        string identityBefore = candidate.activeIdentity != null
+            ? candidate.activeIdentity.ToJson() : "";
+        int generationBefore = candidate.activeIdentity != null
+            ? candidate.activeIdentity.generation : 0;
+        bool promotesIdentity = settlement.promotedIdentity != null;
+        bool requiresCalibration = candidate.activeIdentity == null
+                                   || candidate.activeIdentity
+                                       .RequiresRouteCalibration;
+        bool expectedActiveOpponent = !requiresCalibration;
+        if (settlement.hasActiveOpponent != expectedActiveOpponent)
+        {
+            return SaveCommitResult.Failed(expectedActiveOpponent
+                ? "A formal identity settlement requires an active opponent."
+                : "Calibration settlement cannot claim an active opponent.");
+        }
+        bool reachedFinish = settlement.endReason
+                             == RunEndReason.FinishReached;
+        bool completedCalibration = requiresCalibration && reachedFinish
+                                    && settlement.calibrationCompleted;
+        bool wonChallenge = !requiresCalibration && reachedFinish
+                            && settlement.playerLead >= 0f;
+        if (settlement.playerWon != wonChallenge)
+        {
+            return SaveCommitResult.Failed(
+                "Claimed victory does not match opponent, finish, and physical lead.");
+        }
+        bool earnedPromotion = completedCalibration || wonChallenge;
+        if (settlement.calibrationCompleted && !requiresCalibration)
+        {
+            return SaveCommitResult.Failed(
+                "Calibration promotion requires an identity without formal route memory.");
+        }
+        if (promotesIdentity != earnedPromotion)
+        {
+            return SaveCommitResult.Failed(earnedPromotion
+                ? "A completed winning run must promote exactly one identity."
+                : "Only a completed calibration or winning challenge may promote identity.");
+        }
+
+        if (promotesIdentity)
+        {
+            ActiveEchoIdentity promoted = settlement.promotedIdentity.Clone();
+            if (!ValidatePromotion(candidate.activeIdentity, promoted,
+                    settlement.runSequence, out string promotionError))
+                return SaveCommitResult.Failed(promotionError);
+            candidate.activeIdentity = promoted;
+            candidate.retryState = new EchoRetryState();
+        }
+        else
+        {
+            ApplyFailedAttempt(candidate);
+        }
+
+        int generationAfter = candidate.activeIdentity != null
+            ? candidate.activeIdentity.generation : 0;
+        candidate.lastTransactionId = settlement.transactionId;
+        candidate.lastCommittedRunSequence = settlement.runSequence;
+        candidate.lastResult = new RunResultSummary
+        {
+            transactionId = settlement.transactionId,
+            runSequence = settlement.runSequence,
+            endReason = settlement.endReason,
+            playerWon = wonChallenge,
+            playerLead = settlement.playerLead,
+            generationBefore = generationBefore,
+            generationAfter = generationAfter,
+            activeIdentityId = candidate.activeIdentity != null
+                ? candidate.activeIdentity.identityId : "",
+            message = settlement.resultMessage ?? ""
+        };
+        candidate.Normalize();
+
+        if (!candidate.IsSemanticallyValid())
+            return SaveCommitResult.Failed(
+                "Candidate archive failed semantic validation.");
+        if (!promotesIdentity)
+        {
+            string identityAfter = candidate.activeIdentity != null
+                ? candidate.activeIdentity.ToJson() : "";
+            if (!string.Equals(identityBefore, identityAfter,
+                    StringComparison.Ordinal))
+                return SaveCommitResult.Failed(
+                    "Failed settlement attempted to mutate active identity.");
+        }
+        if (!TryWriteSingleContractCandidate(candidate, out string writeError))
+            return SaveCommitResult.Failed(writeError);
+
+        return SaveCommitResult.Committed(
+            _singleContractData.activeIdentity, false, promotesIdentity);
     }
 
     public static int[] GetPowerUpInventory()
@@ -299,20 +531,29 @@ public static class EchoRunSaveSystem
         return true;
     }
 
+    public static bool CommitTrainingReset()
+    {
+        bool wasPending = PlayerPrefs.GetInt(
+            TrainingResetPendingKey, 0) != 0;
+        try
+        {
+            EnsureInitialized();
+            if (wasPending)
+                return PlayerPrefs.GetInt(TrainingResetPendingKey, 0) == 0;
+            EnsureSingleContractInitialized();
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+        PlayerPrefs.SetInt(TrainingResetPendingKey, 1);
+        PlayerPrefs.Save();
+        return TryCompletePendingTrainingReset();
+    }
+
     public static void ResetAITraining()
     {
-        EnsureInitialized();
-        _data.shadowProfileJson = "";
-        _data.directorWeights = null;
-        _data.directorModelUpdateCount = 0;
-        _data.directorPolicyJson = "";
-        _data.lastRunTelemetryJson = "";
-        _data.skillProfileJson = "";
-        _data.playerStyleJson = "";
-        _data.lastEchoContractJson = "";
-        PlayerPrefs.DeleteKey(ShadowProfileKey);
-        PlayerPrefs.DeleteKey(TelemetryKey);
-        WriteArchive(true);
+        CommitTrainingReset();
     }
 
     public static void SaveProgress(int highScore, int totalCoins)
@@ -396,6 +637,9 @@ public static class EchoRunSaveSystem
             _data.runDifficulty);
         _data.shadowProfileJson = _data.shadowProfileJson ?? "";
         _data.directorWeights = Clone(_data.directorWeights);
+        if (_data.directorWeights != null
+            && _data.directorWeights.Length == 0)
+            _data.directorWeights = null;
         _data.directorModelUpdateCount = Mathf.Max(0, _data.directorModelUpdateCount);
         _data.directorPolicyJson = _data.directorPolicyJson ?? "";
         _data.runSequence = Mathf.Max(0, _data.runSequence);
@@ -600,6 +844,556 @@ public static class EchoRunSaveSystem
             Debug.LogError("EchoRun archive could not be committed: "
                            + exception.Message);
         }
+    }
+
+    private static bool TryCompletePendingTrainingReset()
+    {
+        if (_trainingResetInProgress)
+            return false;
+        if (PlayerPrefs.GetInt(TrainingResetPendingKey, 0) == 0)
+            return true;
+        if (!_initialized || _data == null)
+            return false;
+
+        _trainingResetInProgress = true;
+        try
+        {
+            PrepareSingleContractCacheForTrainingReset();
+            ClearLegacyTrainingFields(_data);
+            PlayerPrefs.DeleteKey(ShadowProfileKey);
+            PlayerPrefs.DeleteKey(TelemetryKey);
+
+            // Write twice so both recovery slots contain the reset state. A
+            // later checksum failure must never resurrect pre-reset training.
+            if (!TryRewriteBothLegacySlotsWithResetState(out string legacyError))
+            {
+                Debug.LogError("EchoRun training reset could not clear the "
+                               + "legacy archive: " + legacyError);
+                return false;
+            }
+
+            var emptySingleContract = new EchoSingleContractSaveData
+            {
+                importedLegacyFingerprint = TrainingResetFingerprint
+            };
+            emptySingleContract.Normalize();
+            if (!TryRewriteBothSingleContractSlotsWithResetState(
+                    emptySingleContract, out string singleContractError))
+            {
+                Debug.LogError("EchoRun training reset could not clear the "
+                               + "single-contract archive: "
+                               + singleContractError);
+                return false;
+            }
+
+            PlayerPrefs.DeleteKey(ShadowProfileKey);
+            PlayerPrefs.DeleteKey(TelemetryKey);
+            _trainingWritesEnabled = false;
+            PlayerPrefs.DeleteKey(TrainingResetPendingKey);
+            PlayerPrefs.Save();
+            return true;
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError("EchoRun training reset could not be completed: "
+                           + exception.Message);
+            return false;
+        }
+        finally
+        {
+            _trainingResetInProgress = false;
+        }
+    }
+
+    private static void EnsurePendingTrainingResetCompleted()
+    {
+        if (TryCompletePendingTrainingReset()) return;
+        throw new InvalidOperationException(
+            "Training reset is pending and no training archive may be read "
+            + "or written until recovery succeeds.");
+    }
+
+    private static void PrepareSingleContractCacheForTrainingReset()
+    {
+        if (_singleContractInitialized) return;
+
+        LoadedExistingSingleContractArchive = false;
+        MigratedLegacySingleContractIdentity = false;
+        RecoveredSingleContractFromBackup = false;
+        _singleContractActiveSlot = -1;
+        _singleContractGeneration = 0;
+        if (TryLoadBestSingleContractSlot(
+                out EchoSingleContractSaveData data,
+                out int slot, out long generation, out bool recovered))
+        {
+            _singleContractData = data;
+            _singleContractActiveSlot = slot;
+            _singleContractGeneration = generation;
+            LoadedExistingSingleContractArchive = true;
+            RecoveredSingleContractFromBackup = recovered;
+        }
+        else
+        {
+            _singleContractData = new EchoSingleContractSaveData
+            {
+                importedLegacyFingerprint = TrainingResetFingerprint
+            };
+        }
+        _singleContractInitialized = true;
+    }
+
+    private static void ClearLegacyTrainingFields(EchoRunSaveData data)
+    {
+        data.shadowProfileJson = "";
+        data.directorWeights = null;
+        data.directorModelUpdateCount = 0;
+        data.directorPolicyJson = "";
+        data.lastRunTelemetryJson = "";
+        data.skillProfileJson = "";
+        data.playerStyleJson = "";
+        data.lastEchoContractJson = "";
+    }
+
+    private static bool TryRewriteBothLegacySlotsWithResetState(
+        out string error)
+    {
+        error = "";
+        for (int writeIndex = 0; writeIndex < 2; writeIndex++)
+        {
+            long generationBefore = _generation;
+            WriteArchive(true);
+            if (_generation <= generationBefore)
+            {
+                error = "archive generation did not advance";
+                return false;
+            }
+        }
+
+        if (!TryReadSlot(SaveSlotAKey, out EchoRunSaveData slotA, out _)
+            || !TryReadSlot(SaveSlotBKey, out EchoRunSaveData slotB, out _)
+            || !IsLegacyTrainingEmpty(slotA)
+            || !IsLegacyTrainingEmpty(slotB)
+            || PlayerPrefs.HasKey(ShadowProfileKey)
+            || PlayerPrefs.HasKey(TelemetryKey))
+        {
+            error = "verified slots still contain training data";
+            return false;
+        }
+        return true;
+    }
+
+    private static bool TryRewriteBothSingleContractSlotsWithResetState(
+        EchoSingleContractSaveData resetState, out string error)
+    {
+        if (!TrySeedBothSingleContractSlots(resetState, out error))
+            return false;
+
+        if (!TryReadSingleContractSlot(SingleContractSaveSlotAKey,
+                out EchoSingleContractSaveData slotA, out _)
+            || !TryReadSingleContractSlot(SingleContractSaveSlotBKey,
+                out EchoSingleContractSaveData slotB, out _)
+            || !IsSingleContractTrainingEmpty(slotA)
+            || !IsSingleContractTrainingEmpty(slotB))
+        {
+            error = "verified slots still contain identity data";
+            return false;
+        }
+        return true;
+    }
+
+    private static bool TrySeedBothSingleContractSlots(
+        EchoSingleContractSaveData seed, out string error)
+    {
+        error = "";
+        EchoSingleContractSaveData normalizedSeed = seed != null
+            ? seed.Clone() : null;
+        string expectedPayload = JsonUtility.ToJson(normalizedSeed);
+        for (int writeIndex = 0; writeIndex < 2; writeIndex++)
+        {
+            if (!TryWriteSingleContractCandidate(normalizedSeed,
+                    out string writeError))
+            {
+                error = writeError;
+                return false;
+            }
+        }
+
+        if (!TryReadSingleContractSlot(SingleContractSaveSlotAKey,
+                out EchoSingleContractSaveData slotA, out _)
+            || !TryReadSingleContractSlot(SingleContractSaveSlotBKey,
+                out EchoSingleContractSaveData slotB, out _)
+            || !string.Equals(expectedPayload, JsonUtility.ToJson(slotA),
+                StringComparison.Ordinal)
+            || !string.Equals(expectedPayload, JsonUtility.ToJson(slotB),
+                StringComparison.Ordinal))
+        {
+            error = "both archive slots could not be verified";
+            return false;
+        }
+        return true;
+    }
+
+    private static bool IsLegacyTrainingEmpty(EchoRunSaveData data)
+    {
+        return data != null
+               && string.IsNullOrEmpty(data.shadowProfileJson)
+               && (data.directorWeights == null
+                   || data.directorWeights.Length == 0)
+               && data.directorModelUpdateCount == 0
+               && string.IsNullOrEmpty(data.directorPolicyJson)
+               && string.IsNullOrEmpty(data.lastRunTelemetryJson)
+               && string.IsNullOrEmpty(data.skillProfileJson)
+               && string.IsNullOrEmpty(data.playerStyleJson)
+               && string.IsNullOrEmpty(data.lastEchoContractJson);
+    }
+
+    private static bool IsSingleContractTrainingEmpty(
+        EchoSingleContractSaveData data)
+    {
+        if (data == null || data.activeIdentity != null
+            || data.lastResult != null
+            || !string.IsNullOrEmpty(data.lastTransactionId)
+            || data.lastCommittedRunSequence != 0)
+            return false;
+        EchoRetryState retry = data.retryState;
+        return retry == null
+               || string.IsNullOrEmpty(retry.identityId)
+               && string.IsNullOrEmpty(retry.contractId)
+               && retry.attemptCount == 0;
+    }
+
+    private static EchoSingleContractSaveData CreateInitialSingleContractData(
+        bool allowLegacyMigration)
+    {
+        var data = new EchoSingleContractSaveData
+        {
+            importedLegacyFingerprint = allowLegacyMigration
+                ? NoLegacyIdentityTombstone
+                : CorruptSingleContractArchiveTombstone
+        };
+        if (!allowLegacyMigration) return data;
+
+        string legacyProfileJson = _data != null
+            ? _data.shadowProfileJson ?? "" : "";
+        if (string.IsNullOrEmpty(legacyProfileJson)) return data;
+
+        LegacyShadowProfileV5MigrationData legacy;
+        try
+        {
+            legacy = JsonUtility.FromJson<LegacyShadowProfileV5MigrationData>(
+                legacyProfileJson);
+        }
+        catch (Exception)
+        {
+            data.importedLegacyFingerprint = "v9:invalid-profile:"
+                + StableHash.ComputeHex(legacyProfileJson).ToLowerInvariant();
+            return data;
+        }
+
+        string frozenJson = legacy != null
+            ? legacy.activeGenerationJson ?? "" : "";
+        if (string.IsNullOrEmpty(frozenJson)) return data;
+
+        EchoGenerationSnapshot snapshot =
+            EchoGenerationSnapshot.FromJson(frozenJson);
+        if (snapshot == null)
+        {
+            data.importedLegacyFingerprint = "v9:invalid-snapshot:"
+                + StableHash.ComputeHex(frozenJson).ToLowerInvariant();
+            return data;
+        }
+
+        string normalizedFrozenJson = snapshot.ToJson();
+        data.importedLegacyFingerprint = "v9:"
+            + StableHash.ComputeHex(normalizedFrozenJson).ToLowerInvariant();
+        ActiveEchoIdentity identity = ActiveEchoIdentity.FromLegacySnapshot(
+            snapshot, _data != null ? _data.runSequence : 0);
+        if (identity == null) return data;
+
+        identity.policyWeights = new AIShadowPolicy(
+            identity.policyWeights).ExportWeights();
+        var sequence = new AIShadowSequencePolicy(
+            identity.sequenceTransitions, identity.sequencePairCount);
+        AIShadowSequenceState sequenceState = sequence.ExportState();
+        identity.sequenceTransitions = sequenceState.transitions;
+        identity.sequencePairCount = sequenceState.pairCount;
+        identity.Normalize();
+
+        var probe = new EchoSingleContractSaveData
+        {
+            activeIdentity = identity,
+            importedLegacyFingerprint = data.importedLegacyFingerprint
+        };
+        probe.Normalize();
+        if (!probe.IsSemanticallyValid()) return data;
+
+        data.activeIdentity = identity;
+        MigratedLegacySingleContractIdentity = true;
+        return data;
+    }
+
+    private static void ApplyFailedAttempt(
+        EchoSingleContractSaveData candidate)
+    {
+        ActiveEchoIdentity identity = candidate.activeIdentity;
+        EchoMemoryContract contract = identity != null
+            ? identity.memoryContract : null;
+        if (identity == null || contract == null
+            || string.IsNullOrEmpty(contract.contractId))
+        {
+            candidate.retryState = new EchoRetryState();
+            return;
+        }
+
+        EchoRetryState retry = candidate.retryState ?? new EchoRetryState();
+        bool sameContract = string.Equals(retry.identityId,
+                                identity.identityId,
+                                StringComparison.Ordinal)
+                            && string.Equals(retry.contractId,
+                                contract.contractId,
+                                StringComparison.Ordinal);
+        candidate.retryState = new EchoRetryState
+        {
+            identityId = identity.identityId,
+            contractId = contract.contractId,
+            attemptCount = sameContract
+                ? retry.attemptCount == int.MaxValue
+                    ? int.MaxValue : retry.attemptCount + 1
+                : 1
+        };
+    }
+
+    private static bool ValidatePromotion(ActiveEchoIdentity current,
+        ActiveEchoIdentity promoted, int runSequence, out string error)
+    {
+        error = "";
+        if (promoted == null || promoted.memoryContract == null)
+        {
+            error = "Promoted identity must own a memory contract.";
+            return false;
+        }
+        promoted.Normalize();
+        if (promoted.sourceRunSequence != runSequence)
+        {
+            error = "Promoted identity source run does not match settlement.";
+            return false;
+        }
+
+        int expectedGeneration = current != null
+            ? current.generation + 1 : 1;
+        string expectedParent = current != null ? current.identityId : "";
+        if (promoted.generation != expectedGeneration
+            || !string.Equals(promoted.parentIdentityId,
+                expectedParent, StringComparison.Ordinal))
+        {
+            error = "Promoted identity generation or parent is invalid.";
+            return false;
+        }
+        if (!string.Equals(promoted.identityId,
+                ActiveEchoIdentity.CreateIdentityId(promoted),
+                StringComparison.Ordinal))
+        {
+            error = "Promoted identity id does not match its contents.";
+            return false;
+        }
+
+        var probe = new EchoSingleContractSaveData
+        {
+            activeIdentity = promoted,
+            importedLegacyFingerprint = "validation"
+        };
+        probe.Normalize();
+        if (!probe.IsSemanticallyValid())
+        {
+            error = "Promoted identity failed semantic validation.";
+            return false;
+        }
+        return true;
+    }
+
+    private static bool TryLoadBestSingleContractSlot(
+        out EchoSingleContractSaveData data, out int slot,
+        out long generation, out bool recovered)
+    {
+        bool validA = TryReadSingleContractSlot(SingleContractSaveSlotAKey,
+            out EchoSingleContractSaveData dataA, out long generationA);
+        bool validB = TryReadSingleContractSlot(SingleContractSaveSlotBKey,
+            out EchoSingleContractSaveData dataB, out long generationB);
+        bool hasPublishedSlot = PlayerPrefs.HasKey(
+            SingleContractActiveSaveSlotKey);
+        int preferred = hasPublishedSlot
+            ? PlayerPrefs.GetInt(SingleContractActiveSaveSlotKey, -1) : -1;
+        recovered = false;
+
+        if (!validA && !validB)
+        {
+            data = null;
+            slot = -1;
+            generation = 0;
+            return false;
+        }
+        if (preferred == 0 && validA)
+        {
+            slot = 0;
+        }
+        else if (preferred == 1 && validB)
+        {
+            slot = 1;
+        }
+        else if (validA && validB)
+        {
+            slot = generationA >= generationB ? 0 : 1;
+        }
+        else
+        {
+            slot = validA ? 0 : 1;
+        }
+
+        data = slot == 0 ? dataA : dataB;
+        generation = slot == 0 ? generationA : generationB;
+        recovered = hasPublishedSlot
+                    && (preferred != slot
+                        || preferred == 0 && !validA
+                        || preferred == 1 && !validB
+                        || preferred != 0 && preferred != 1);
+        return true;
+    }
+
+    private static bool TryReadSingleContractSlot(string key,
+        out EchoSingleContractSaveData data, out long generation)
+    {
+        data = null;
+        generation = 0;
+        string json = PlayerPrefs.GetString(key, "");
+        if (string.IsNullOrEmpty(json)) return false;
+        try
+        {
+            EchoSingleContractSaveEnvelope envelope =
+                JsonUtility.FromJson<EchoSingleContractSaveEnvelope>(json);
+            if (envelope == null
+                || envelope.schemaVersion
+                != LegacySingleContractSaveEnvelopeVersion
+                && envelope.schemaVersion
+                != SingleContractSaveEnvelopeVersion
+                || envelope.generation <= 0
+                || string.IsNullOrEmpty(envelope.payload)
+                || !string.Equals(envelope.checksum,
+                    ComputeSingleContractEnvelopeChecksum(envelope),
+                    StringComparison.Ordinal))
+                return false;
+
+            EchoSingleContractSaveData parsed =
+                JsonUtility.FromJson<EchoSingleContractSaveData>(
+                    envelope.payload);
+            if (parsed == null
+                || parsed.schemaVersion
+                != EchoSingleContractSaveData.CurrentSchemaVersion
+                || parsed.gameplayModeVersion
+                != EchoSingleContractSaveData.CurrentGameplayModeVersion)
+                return false;
+            parsed.Normalize();
+            if (!parsed.IsSemanticallyValid()) return false;
+            data = parsed;
+            generation = envelope.generation;
+            return true;
+        }
+        catch (Exception)
+        {
+            data = null;
+            generation = 0;
+            return false;
+        }
+    }
+
+    private static bool TryWriteSingleContractCandidate(
+        EchoSingleContractSaveData candidate, out string error)
+    {
+        error = "";
+        if (candidate == null)
+        {
+            error = "Candidate archive is missing.";
+            return false;
+        }
+
+        EchoSingleContractSaveData normalized = candidate.Clone();
+        if (!normalized.TryValidateSemantics(out string semanticError))
+        {
+            error = "Candidate archive failed semantic validation: "
+                    + semanticError;
+            return false;
+        }
+
+        if (_singleContractGeneration < 0
+            || _singleContractGeneration == long.MaxValue)
+        {
+            error = "Archive generation cannot advance safely.";
+            return false;
+        }
+
+        string payload = JsonUtility.ToJson(normalized);
+        long nextGeneration = _singleContractGeneration + 1;
+        var envelope = new EchoSingleContractSaveEnvelope
+        {
+            schemaVersion = SingleContractSaveEnvelopeVersion,
+            generation = nextGeneration,
+            payload = payload
+        };
+        envelope.checksum = ComputeSingleContractEnvelopeChecksum(envelope);
+        int targetSlot = _singleContractActiveSlot == 0 ? 1 : 0;
+        string targetKey = targetSlot == 0
+            ? SingleContractSaveSlotAKey : SingleContractSaveSlotBKey;
+
+        bool hadPublishedSlot = PlayerPrefs.HasKey(
+            SingleContractActiveSaveSlotKey);
+        int previousPublishedSlot = PlayerPrefs.GetInt(
+            SingleContractActiveSaveSlotKey, -1);
+        try
+        {
+            PlayerPrefs.SetString(targetKey, JsonUtility.ToJson(envelope));
+            PlayerPrefs.Save();
+            if (!TryReadSingleContractSlot(targetKey,
+                    out EchoSingleContractSaveData written,
+                    out long writtenGeneration)
+                || writtenGeneration != nextGeneration
+                || !string.Equals(payload, JsonUtility.ToJson(written),
+                    StringComparison.Ordinal))
+            {
+                error = "Candidate archive could not be verified after write.";
+                return false;
+            }
+
+            PlayerPrefs.SetInt(SingleContractActiveSaveSlotKey, targetSlot);
+            PlayerPrefs.Save();
+            _singleContractData = written;
+            _singleContractActiveSlot = targetSlot;
+            _singleContractGeneration = nextGeneration;
+            return true;
+        }
+        catch (Exception exception)
+        {
+            if (hadPublishedSlot)
+                PlayerPrefs.SetInt(SingleContractActiveSaveSlotKey,
+                    previousPublishedSlot);
+            else
+                PlayerPrefs.DeleteKey(SingleContractActiveSaveSlotKey);
+            error = exception.Message;
+            return false;
+        }
+    }
+
+    private static string ComputeSingleContractEnvelopeChecksum(
+        EchoSingleContractSaveEnvelope envelope)
+    {
+        if (envelope == null) return "";
+        if (envelope.schemaVersion
+            == LegacySingleContractSaveEnvelopeVersion)
+            return StableHash.ComputeHex(envelope.payload ?? "");
+        if (envelope.schemaVersion != SingleContractSaveEnvelopeVersion)
+            return "";
+        return StableHash.ComputeHex(
+            envelope.schemaVersion.ToString()
+            + "\n" + envelope.generation.ToString()
+            + "\n" + (envelope.payload ?? ""));
     }
 
     private static float[] Clone(float[] values)

@@ -21,6 +21,8 @@ public sealed class AIShadowRuntimeTests
         AIShadowRunner runner = AIShadowRunner.Instance;
         Assert.IsNotNull(gameManager);
         Assert.IsNotNull(runner);
+        Assert.IsTrue(gameManager.TryConfigureGameplayFlow(
+            GameplayFlowMode.SixPhaseLegacy));
 
         runner.ResetTraining();
         StyleTracker.ResetTraining();
@@ -92,6 +94,8 @@ public sealed class AIShadowRuntimeTests
         AIShadowRunner runner = AIShadowRunner.Instance;
         Assert.IsNotNull(gameManager);
         Assert.IsNotNull(runner);
+        Assert.IsTrue(gameManager.TryConfigureGameplayFlow(
+            GameplayFlowMode.SixPhaseLegacy));
 
         runner.ResetTraining();
         StyleTracker.ResetTraining();
