@@ -2,7 +2,7 @@ body { padding: 0; margin: 0 }
 #tuanjie-container { position: absolute }
 #tuanjie-container.tuanjie-desktop { left: 50%; top: 50%; transform: translate(-50%, -50%) }
 #tuanjie-container.tuanjie-mobile { position: fixed; width: 100%; height: 100% }
-#tuanjie-canvas { background: #231F20 }
+#tuanjie-canvas { background: #FFFFFF }
 .tuanjie-mobile #tuanjie-canvas { width: 100%; height: 100% }
 #tuanjie-loading-bar { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: none }
 #tuanjie-logo { width: 154px; height: 130px; background: url('tuanjie-logo-dark.png') no-repeat center }
