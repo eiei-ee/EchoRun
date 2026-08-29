@@ -664,8 +664,10 @@ MonoBehaviour:
   uiConfirmClip: {fileID: 0}
   uiErrorClip: {fileID: 0}
   bgmClip: {fileID: 0}
+  masterVolume: 1
   musicVolume: 0.5
   sfxVolume: 1
+  muted: 0
   footstepInterval: 0.35
 --- !u!4 &839351752
 Transform:
@@ -838,6 +840,68 @@ MonoBehaviour:
   target: {fileID: 195782155}
   offset: {x: 0, y: 4.6, z: -8.2}
   smoothSpeed: 8
+--- !u!1 &964505397
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 7
+  m_Component:
+  - component: {fileID: 964505399}
+  - component: {fileID: 964505398}
+  m_Layer: 0
+  m_HasEditorInfo: 1
+  m_Name: TrackManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &964505398
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 964505397}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 22d3aafbcb8ddab40af867b8817816bd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  trackSegmentPrefab: {fileID: 7999235857789927696, guid: b2bfc4bfd11c1d24ba303e6ee751aa48, type: 3}
+  segmentLength: 20
+  poolSize: 10
+  turnLeftPrefab: {fileID: 9033311702306260771, guid: 54fa7b11629feca44b15b9ef7feeafd5, type: 3}
+  turnRightPrefab: {fileID: 6133432071830748803, guid: c3774cf48e4b8d54889a24f581fca740, type: 3}
+  turnChance: 0.15
+  minStraightBeforeTurn: 4
+  laneDistance: 3
+  obstaclePrefabs:
+  - {fileID: 1008476663513319628, guid: b9d906a74ac779e478ad3201d5d2c0e9, type: 3}
+  - {fileID: 3624237311848723402, guid: 153dce41524030b4fa2a8ae20bdf2ff7, type: 3}
+  - {fileID: 3542207286019449681, guid: 7c137da1fc95ff645988bb152989829b, type: 3}
+  coinPrefab: {fileID: 3388661057334517915, guid: 00ab5eacdf72cb84e9365a09b07584d7, type: 3}
+  obstacleChance: 0.4
+  coinChance: 0.6
+  maxConsecutiveObstacleFreeStraights: 2
+  useAITrackDirector: 1
+--- !u!4 &964505399
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 964505397}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1095428527
 GameObject:
   m_ObjectHideFlags: 0
@@ -1077,6 +1141,15 @@ MonoBehaviour:
   maxSpeed: 40
   speedIncreaseRate: 0.5
   coinScore: 10
+  gameplayFlowMode: 1
+  singleContractValidationConfig:
+    enabled: 0
+    fixedSeed: 1337
+    freezeDirector: 0
+    disablePowerUps: 0
+    forceStandardDifficulty: 0
+    autoStart: 0
+    useFixedIdentity: 0
   BuffTimeRemaining: 0
   BuffName: 
   OnStateChanged:
@@ -1086,6 +1159,9 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls: []
   OnCoinsChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  OnContractMarkerChanged:
     m_PersistentCalls:
       m_Calls: []
   OnBankedCoinsChanged:
@@ -1124,3 +1200,4 @@ SceneRoots:
   - {fileID: 1095428529}
   - {fileID: 839351752}
   - {fileID: 1825874342}
+  - {fileID: 964505399}

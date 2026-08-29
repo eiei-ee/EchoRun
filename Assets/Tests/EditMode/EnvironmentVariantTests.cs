@@ -41,7 +41,18 @@ public class EnvironmentVariantTests
         Assert.NotNull(environment.Find("HighQualityOnly"));
         Transform variants = environment.Find("VisualVariants");
         Assert.NotNull(variants);
-        Assert.AreEqual(expectedVariants, variants.childCount);
+        int formalExpected = expectedVariants;
+        if (prefabPath == "Assets/Prefabs/TrackSegment.prefab"
+            && Resources.Load<GameObject>(WorldStyler
+                .ColdWhiteFortressStraight00ResourcePath) != null
+            && Resources.Load<GameObject>(WorldStyler
+                .ColdWhiteFortressStraight40ResourcePath) != null)
+            formalExpected = 3;
+        else if (prefabPath == "Assets/Prefabs/TurnSegment_Right.prefab"
+                 && Resources.Load<GameObject>(WorldStyler
+                     .ColdWhiteFortressTurnRight20ResourcePath) != null)
+            formalExpected = 1;
+        Assert.AreEqual(formalExpected, variants.childCount);
         Assert.NotNull(environment.GetComponent<EchoEnvironmentVariantSet>());
         Assert.AreEqual(0,
             environment.GetComponentsInChildren<Collider>(true).Length);
@@ -60,7 +71,7 @@ public class EnvironmentVariantTests
     }
 
     [Test]
-    public void StraightSegmentPrebuildsThreeExclusiveVisualVariants()
+    public void StraightSegmentPrebuildsExclusiveVisualVariants()
     {
         WorldStyler styler = CreateStyler();
         _segment = new GameObject("TrackSegment_Test");
@@ -74,12 +85,22 @@ public class EnvironmentVariantTests
         Assert.NotNull(environment.Find("HighQualityOnly"));
         Transform variants = environment.Find("VisualVariants");
         Assert.NotNull(variants);
-        Assert.AreEqual(3, variants.childCount);
+        bool hasFortressStraights = Resources.Load<GameObject>(WorldStyler
+                                       .ColdWhiteFortressStraight00ResourcePath)
+                                   != null
+                                   && Resources.Load<GameObject>(WorldStyler
+                                       .ColdWhiteFortressStraight40ResourcePath)
+                                   != null;
+        const int expectedVariantCount = 3;
+        Assert.AreEqual(expectedVariantCount, variants.childCount);
 
         EchoEnvironmentVariantSet set =
             environment.GetComponent<EchoEnvironmentVariantSet>();
-        Assert.AreEqual(3, set.VariantCount);
+        Assert.AreEqual(expectedVariantCount, set.VariantCount);
         Assert.AreEqual(1, CountActiveChildren(variants));
+        if (hasFortressStraights)
+            Assert.That(set.ActiveVariantIndex, Is.InRange(0, 1),
+                "The scan gate must not repeat as random roadside dressing.");
         Assert.AreEqual(0,
             environment.GetComponentsInChildren<Collider>(true).Length);
     }
@@ -104,9 +125,25 @@ public class EnvironmentVariantTests
             foreach (Material material in renderer.sharedMaterials)
             {
                 Assert.NotNull(material, renderer.name);
+                if (material.name.StartsWith("ColdWhiteFortress_")
+                    && material.name != WorldStyler
+                        .ColdWhiteFortressPhaseAccentMaterialName)
+                {
+                    Assert.IsTrue(AssetDatabase.Contains(material),
+                        renderer.name + " neutral fortress materials stay authored.");
+                    continue;
+                }
+                if (material.name == "EchoRoad")
+                {
+                    Assert.IsTrue(AssetDatabase.Contains(material),
+                        renderer.name + " keeps the shared formal road material.");
+                    continue;
+                }
                 Assert.IsFalse(AssetDatabase.Contains(material),
                     renderer.name + " must use the runtime phase palette.");
-                StringAssert.StartsWith("Echo", material.name);
+                Assert.IsTrue(material.name.StartsWith("Echo")
+                              || material.name == WorldStyler
+                                  .ColdWhiteFortressPhaseAccentMaterialName);
             }
         }
     }
@@ -119,6 +156,17 @@ public class EnvironmentVariantTests
         Assert.NotNull(prefab);
         Transform environment = prefab.transform.Find("EchoEnvironment");
         Assert.NotNull(environment);
+
+        if (FindDescendant(environment, "FinalScanRing") != null)
+        {
+            Assert.NotNull(FindDescendant(environment, "RoadVisual"));
+            Assert.NotNull(FindDescendant(environment, "RightArchiveTower"));
+            Assert.IsNull(FindDescendant(environment, "OverhangLead"),
+                "The authored opening variant must keep the first view open.");
+            Assert.AreEqual(0,
+                environment.GetComponentsInChildren<Collider>(true).Length);
+            return;
+        }
 
         int authoredStationCount = 0;
         int authoredDistrictCount = 0;
@@ -222,6 +270,14 @@ public class EnvironmentVariantTests
         Assert.NotNull(prefab, prefabPath);
         Assert.IsNull(prefab.transform.Find(
             "EchoEnvironment/HighQualityOnly/CornerSilhouette"), prefabPath);
+        Transform environment = prefab.transform.Find("EchoEnvironment");
+        if (FindDescendant(environment, "OuterMemorySilo") != null)
+        {
+            Assert.NotNull(FindDescendant(environment, "RoadVisual"));
+            Assert.AreEqual(0,
+                environment.GetComponentsInChildren<Collider>(true).Length);
+            return;
+        }
         Assert.NotNull(prefab.transform.Find(
             "EchoEnvironment/VisualVariants/Variant_A_CornerCity/MegacityDistrictA"),
             prefabPath + " must use the authored city district.");
@@ -231,7 +287,7 @@ public class EnvironmentVariantTests
     }
 
     [Test]
-    public void TurnSegmentUsesTwoDedicatedVariantsAndQualityGate()
+    public void TurnSegmentUsesDedicatedVariantsAndQualityGate()
     {
         WorldStyler styler = CreateStyler();
         _segment = new GameObject("TurnSegment_Test");
@@ -241,7 +297,9 @@ public class EnvironmentVariantTests
         Transform environment = _segment.transform.Find("EchoEnvironment");
         EchoEnvironmentVariantSet set =
             environment.GetComponent<EchoEnvironmentVariantSet>();
-        Assert.AreEqual(2, set.VariantCount);
+        int expectedVariantCount = Resources.Load<GameObject>(WorldStyler
+            .ColdWhiteFortressTurnRight20ResourcePath) != null ? 1 : 2;
+        Assert.AreEqual(expectedVariantCount, set.VariantCount);
         Assert.AreEqual(1, CountActiveChildren(environment.Find("VisualVariants")));
 
         GameObject highOnly = environment.Find("HighQualityOnly").gameObject;
@@ -267,5 +325,14 @@ public class EnvironmentVariantTests
         for (int i = 0; i < parent.childCount; i++)
             if (parent.GetChild(i).gameObject.activeSelf) active++;
         return active;
+    }
+
+    private static Transform FindDescendant(Transform root, string name)
+    {
+        if (root == null) return null;
+        Transform[] descendants = root.GetComponentsInChildren<Transform>(true);
+        for (int index = 0; index < descendants.Length; index++)
+            if (descendants[index].name == name) return descendants[index];
+        return null;
     }
 }

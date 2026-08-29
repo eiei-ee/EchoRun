@@ -44,6 +44,8 @@ public class AudioManager : MonoBehaviour
     private float _footstepTimer;
     private bool _isPlayingFootsteps;
     private int _footstepIndex;
+    private float _lastCoinPickupTime = -10f;
+    private int _coinChainIndex;
 
     // Procedural audio cache
     private Dictionary<string, AudioClip> _procClips = new Dictionary<string, AudioClip>();
@@ -111,7 +113,14 @@ public class AudioManager : MonoBehaviour
 
     public void PlayJump()  => PlaySFX(jumpClip, 1f, "jump");
     public void PlaySlide() => PlaySFX(slideClip, 0.6f, "slide");
-    public void PlayCoin()  => PlaySFX(coinClip, 0.7f, "coin");
+    public void PlayCoin()
+    {
+        _coinChainIndex = Time.unscaledTime - _lastCoinPickupTime <= 0.34f
+            ? Mathf.Min(4, _coinChainIndex + 1)
+            : 0;
+        _lastCoinPickupTime = Time.unscaledTime;
+        PlaySFX(coinClip, 0.64f, "memoryPulse" + _coinChainIndex);
+    }
     public void PlayDodgeObstacle() => PlaySFX(dodgeObstacleClip, 0.6f, "dodge");
     public void PlayDeath() => PlaySFX(deathClip, 0.9f, "death");
     public void PlayCollision() => PlaySFX(collisionClip, 0.82f, "death");
@@ -181,7 +190,9 @@ public class AudioManager : MonoBehaviour
     private void LoadBundledAudio()
     {
         if (bgmClip == null) bgmClip = Resources.Load<AudioClip>("Audio/bgm_transit");
-        if (coinClip == null) coinClip = Resources.Load<AudioClip>("Audio/coin");
+        // The legacy bundled coin clip is intentionally not auto-loaded. The
+        // in-world object is memory data, so the default is a restrained
+        // glass/digital pulse rather than a traditional coin chime.
         if (collisionClip == null) collisionClip = Resources.Load<AudioClip>("Audio/collision");
         if (uiClickClip == null) uiClickClip = Resources.Load<AudioClip>("Audio/ui_click");
         if (uiConfirmClip == null) uiConfirmClip = Resources.Load<AudioClip>("Audio/ui_confirm");
@@ -200,19 +211,57 @@ public class AudioManager : MonoBehaviour
         if (_procClips.TryGetValue(key, out AudioClip cached))
             return cached;
 
+        if (key.StartsWith("memoryPulse"))
+        {
+            int chain = 0;
+            int.TryParse(key.Substring("memoryPulse".Length), out chain);
+            AudioClip memoryPulse = GenerateMemoryPulse(Mathf.Clamp(chain, 0, 4));
+            _procClips[key] = memoryPulse;
+            return memoryPulse;
+        }
+
         AudioClip proc = key switch
         {
             "bgm"      => GenerateTransitLoop(),
             "footstep" => GenerateFootstep(),
             "jump"     => GenerateToneSweep(260f, 620f, 0.18f),
             "slide"    => GenerateNoiseBurst(0.18f, 0.18f),
-            "coin"     => GenerateToneSweep(760f, 1320f, 0.13f),
+            "coin"     => GenerateMemoryPulse(0),
             "dodge"    => GenerateToneSweep(520f, 240f, 0.14f),
             "death"    => GenerateToneSweep(360f, 52f, 0.48f),
             _           => GenerateNoiseBurst(0.06f, 0.12f),
         };
         _procClips[key] = proc;
         return proc;
+    }
+
+    AudioClip GenerateMemoryPulse(int chain)
+    {
+        const float duration = 0.16f;
+        int samples = Mathf.CeilToInt(SampleRate * duration);
+        float[] data = new float[samples];
+        float pulseFrequency = 205f + chain * 18f;
+        float glassFrequency = 940f + chain * 72f;
+        for (int index = 0; index < samples; index++)
+        {
+            float t = (float)index / SampleRate;
+            float normalized = Mathf.Clamp01(t / duration);
+            float attack = Mathf.Clamp01(normalized / 0.025f);
+            float pulseEnvelope = attack * Mathf.Pow(1f - normalized, 2.2f);
+            float glassEnvelope = attack * Mathf.Exp(-20f * t);
+            float pulse = Mathf.Sin(2f * Mathf.PI
+                * (pulseFrequency - normalized * 36f) * t) * 0.22f;
+            float glass = Mathf.Sin(2f * Mathf.PI * glassFrequency * t)
+                * 0.12f;
+            float digital = Mathf.Sin(2f * Mathf.PI
+                * (glassFrequency * 1.51f) * t) * 0.035f;
+            data[index] = pulse * pulseEnvelope
+                + (glass + digital) * glassEnvelope;
+        }
+        AudioClip clip = AudioClip.Create("memory_pulse_" + chain,
+            samples, 1, SampleRate, false);
+        clip.SetData(data, 0);
+        return clip;
     }
 
     AudioClip GenerateToneSweep(float freqStart, float freqEnd, float duration)

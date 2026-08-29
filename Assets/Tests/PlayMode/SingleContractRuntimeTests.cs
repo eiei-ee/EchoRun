@@ -751,6 +751,9 @@ public sealed class SingleContractRuntimeTests
             new Vector2(1080f, 1920f),
             new Vector2(2560f, 1080f)
         };
+        RectTransform pauseButton = Find(hud,
+            "HudDynamicCanvas/PauseButton").GetComponent<RectTransform>();
+        pauseButton.sizeDelta = new Vector2(104f, 104f);
         string[] signalPaths =
         {
             "HudStaticCanvas/StatsPlate",
@@ -760,7 +763,8 @@ public sealed class SingleContractRuntimeTests
             "HudDynamicCanvas/Announcement",
             "HudDynamicCanvas/Prediction",
             "HudDynamicCanvas/Feedback",
-            "HudDynamicCanvas/BuffGroup"
+            "HudDynamicCanvas/BuffGroup",
+            "HudDynamicCanvas/PauseButton"
         };
         Assert.IsFalse(Find(hud, "HudDynamicCanvas/Directive")
             .activeInHierarchy);

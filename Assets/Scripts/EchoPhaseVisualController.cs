@@ -116,11 +116,11 @@ public sealed class EchoPhaseVisualController : MonoBehaviour
         switch (state)
         {
             case SingleContractVisualState.Calibration:
-                return Make(new Color(0.18f, 0.48f, 0.78f),
+                return Make(new Color(0.29f, 0.56f, 0.77f),
                     0.24f, 0f, 0f, 0f);
             case SingleContractVisualState.Challenge:
-                return Make(new Color(0.29f, 0.58f, 0.98f),
-                    0.44f, 0.12f, 0.03f, 0.02f);
+                return Make(new Color(0.08f, 0.70f, 0.70f),
+                    0.42f, 0.08f, 0.03f, 0.02f);
             case SingleContractVisualState.RelearnPulse:
                 return reducedMotion
                     ? Make(new Color(1f, 0.20f, 0.12f),
@@ -128,10 +128,10 @@ public sealed class EchoPhaseVisualController : MonoBehaviour
                     : Make(new Color(1f, 0.20f, 0.12f),
                         0.50f, 0.70f, 0.04f, 0.025f);
             case SingleContractVisualState.Finale:
-                return Make(new Color(1f, 0.55f, 0.08f),
+                return Make(new Color(0.88f, 0.57f, 0.10f),
                     0.55f, 0.88f, 0.08f, 0.045f);
             default:
-                return Make(new Color(0.18f, 0.48f, 0.78f),
+                return Make(new Color(0.29f, 0.56f, 0.77f),
                     0.24f, 0f, 0f, 0f);
         }
     }

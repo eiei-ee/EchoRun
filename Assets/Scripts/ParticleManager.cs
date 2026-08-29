@@ -5,6 +5,7 @@ public class ParticleManager : MonoBehaviour
     public static ParticleManager Instance { get; private set; }
 
     private ParticleSystem _coinPS;
+    private ParticleSystem _coinAbsorbPS;
     private ParticleSystem _dustPS;
     private ParticleSystem _deathPS;
     private ParticleSystem _trailPS;
@@ -22,7 +23,17 @@ public class ParticleManager : MonoBehaviour
         if (s == null) s = Shader.Find("Mobile/Particles/Additive");
         _defaultMat = s != null ? new Material(s) : null;
 
-        _coinPS  = CreateParticleSystem("CoinFX",  new Color(0.18f, 0.86f, 1f), 0.18f, 2.5f, 18);
+        _coinPS  = CreateParticleSystem("MemoryFragmentFX",
+            new Color(0.0f, 0.86f, 0.92f), 0.16f, 2.2f, 18);
+        _coinAbsorbPS = CreateParticleSystem("MemoryAbsorbFX",
+            new Color(0.72f, 0.98f, 1f), 0.16f, 0f, 4);
+        var absorbMain = _coinAbsorbPS.main;
+        absorbMain.startSize = 0.16f;
+        ParticleSystemRenderer absorbRenderer =
+            _coinAbsorbPS.GetComponent<ParticleSystemRenderer>();
+        absorbRenderer.renderMode = ParticleSystemRenderMode.Stretch;
+        absorbRenderer.lengthScale = 2.4f;
+        absorbRenderer.velocityScale = 0.18f;
         _dustPS  = CreateParticleSystem("DustFX",  new Color(0.16f, 0.32f, 0.42f), 0.25f, 1.5f, 5);
         _deathPS = CreateParticleSystem("DeathFX", new Color(1f, 0.34f, 0.30f), 0.5f, 4f, 30);
         _trailPS = CreateParticleSystem("TrailFX", new Color(0.12f, 0.76f, 1f), 0.62f, 1f, 12);
@@ -69,7 +80,43 @@ public class ParticleManager : MonoBehaviour
         return ps;
     }
 
-    public void EmitCoin(Vector3 pos)    { _coinPS.transform.position = pos;  _coinPS.Emit(10); }
+    public void EmitCoin(Vector3 pos)
+    {
+        EmitCoin(pos, pos + Vector3.up * 0.7f);
+    }
+
+    public void EmitCoin(Vector3 pos, Vector3 target)
+    {
+        if (_coinPS == null || _coinAbsorbPS == null) return;
+
+        for (int index = 0; index < 5; index++)
+        {
+            Vector3 radial = Random.onUnitSphere;
+            radial.y = Mathf.Abs(radial.y) * 0.65f + 0.15f;
+            var fragment = new ParticleSystem.EmitParams
+            {
+                position = pos,
+                velocity = radial.normalized * Random.Range(1.8f, 3.0f),
+                startLifetime = Random.Range(0.12f, 0.19f),
+                startSize = Random.Range(0.055f, 0.09f),
+                startColor = index == 0
+                    ? new Color(1f, 0.42f, 0.08f, 1f)
+                    : new Color(0.0f, 0.86f, 0.92f, 1f)
+            };
+            _coinPS.Emit(fragment, 1);
+        }
+
+        const float absorbLifetime = 0.16f;
+        var absorb = new ParticleSystem.EmitParams
+        {
+            position = pos,
+            velocity = (target - pos) / absorbLifetime,
+            startLifetime = absorbLifetime,
+            startSize = 0.17f,
+            startColor = new Color(0.72f, 0.98f, 1f, 1f)
+        };
+        _coinAbsorbPS.Emit(absorb, 1);
+    }
     public void EmitDust(Vector3 pos)    { _dustPS.transform.position = pos;  _dustPS.Emit(2); }
     public void EmitTrail(Vector3 pos)
     {

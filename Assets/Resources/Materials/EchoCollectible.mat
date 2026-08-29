@@ -22,13 +22,22 @@ Material:
   m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
-    m_TexEnvs: []
+    m_TexEnvs:
+    - _MainTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
     - _ContractMarker: 0
-    - _EmissionStrength: 1.35
+    - _EmissionStrength: 1.65
+    - _ScanPeriod: 1.5
     m_Colors:
+    - _AccentColor: {r: 1, g: 0.47058824, b: 0.1254902, a: 1}
     - _ContractColor: {r: 1, g: 0.34, b: 0.3, a: 1}
-    - _CoreColor: {r: 0.12, g: 0.82, b: 1, a: 1}
+    - _CoreColor: {r: 0, g: 0.8627451, b: 0.92156863, a: 1}
+    - _CoreEdgeColor: {r: 0.72156864, g: 0.98039216, b: 1, a: 1}
+    - _FrameColor: {r: 0.09411765, g: 0.12941177, b: 0.15294118, a: 1}
+    - _FrameHighlight: {r: 0.34901962, g: 0.4, b: 0.42745098, a: 1}
     - _RingColor: {r: 0.94, g: 0.68, b: 0.24, a: 1}
   m_BuildTextureStacks: []

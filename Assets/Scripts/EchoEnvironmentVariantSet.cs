@@ -16,9 +16,13 @@ public sealed class EchoEnvironmentVariantSet : MonoBehaviour
         ApplyQuality(VisualQualityController.Current);
     }
 
-    public void SelectFor(int runSeed, float routeDistance)
+    public void SelectFor(int runSeed, float routeDistance,
+        int preferredVariantIndex = -1)
     {
-        int selected = SelectVariantIndex(runSeed, routeDistance, VariantCount);
+        int selected = preferredVariantIndex >= 0
+                       && preferredVariantIndex < VariantCount
+            ? preferredVariantIndex
+            : SelectVariantIndex(runSeed, routeDistance, VariantCount);
         ActiveVariantIndex = selected;
         if (variants == null) return;
         for (int i = 0; i < variants.Length; i++)
@@ -51,7 +55,8 @@ public sealed class EchoEnvironmentVariantSet : MonoBehaviour
         int variantCount)
     {
         if (variantCount <= 0) return -1;
-        int segmentIndex = Mathf.RoundToInt(routeDistance / 20f);
+        int segmentIndex = Mathf.RoundToInt(routeDistance
+            / TrackGeometryStandards.StandardSegmentLength);
         uint hash = unchecked((uint)runSeed);
         hash ^= unchecked((uint)segmentIndex) + 0x9E3779B9u
                 + (hash << 6) + (hash >> 2);

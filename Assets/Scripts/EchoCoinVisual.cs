@@ -1,13 +1,16 @@
-using System.Collections.Generic;
 using UnityEngine;
 
 [DisallowMultipleComponent]
 public sealed class EchoCoinVisual : MonoBehaviour
 {
+    private const string FormalVisualPath =
+        "Art/Pickups/MemoryPulseShard_B";
     private const string MaterialPath = "Materials/EchoCollectible";
     private static readonly int ContractMarkerId =
         Shader.PropertyToID("_ContractMarker");
-    private static Mesh _sharedMesh;
+    private static Mesh _formalMesh;
+    private static Quaternion _formalRotation = Quaternion.identity;
+    private static Vector3 _formalScale = Vector3.one;
     private static Material _sharedMaterial;
     private static bool _ownsMaterial;
 
@@ -19,7 +22,9 @@ public sealed class EchoCoinVisual : MonoBehaviour
         if (filter == null) filter = gameObject.AddComponent<MeshFilter>();
         _renderer = GetComponent<MeshRenderer>();
         if (_renderer == null) _renderer = gameObject.AddComponent<MeshRenderer>();
-        filter.sharedMesh = GetOrCreateMesh();
+        filter.sharedMesh = GetFormalMesh();
+        transform.localRotation = _formalRotation;
+        transform.localScale = _formalScale;
         _renderer.sharedMaterial = GetOrCreateMaterial();
         _renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         _renderer.receiveShadows = false;
@@ -35,25 +40,23 @@ public sealed class EchoCoinVisual : MonoBehaviour
         _renderer.SetPropertyBlock(properties);
     }
 
-    private static Mesh GetOrCreateMesh()
+    private static Mesh GetFormalMesh()
     {
-        if (_sharedMesh != null) return _sharedMesh;
-        var vertices = new List<Vector3>(256);
-        var normals = new List<Vector3>(256);
-        var colors = new List<Color>(256);
-        var triangles = new List<int>(768);
-        AppendTorus(vertices, normals, colors, triangles,
-            0.43f, 0.085f, 24, 6, new Color(1f, 0f, 0f, 1f));
-        AppendCore(vertices, normals, colors, triangles,
-            0.31f, 0.12f, 20, new Color(0f, 1f, 0f, 1f));
-        _sharedMesh = new Mesh { name = "EchoCollectible_Combined" };
-        _sharedMesh.SetVertices(vertices);
-        _sharedMesh.SetNormals(normals);
-        _sharedMesh.SetColors(colors);
-        _sharedMesh.SetTriangles(triangles, 0);
-        _sharedMesh.RecalculateBounds();
-        _sharedMesh.UploadMeshData(true);
-        return _sharedMesh;
+        if (_formalMesh != null) return _formalMesh;
+        GameObject visual = Resources.Load<GameObject>(FormalVisualPath);
+        MeshFilter source = visual != null
+            ? visual.GetComponentInChildren<MeshFilter>(true)
+            : null;
+        _formalMesh = source != null ? source.sharedMesh : null;
+        if (source != null)
+        {
+            _formalRotation = source.transform.localRotation;
+            _formalScale = source.transform.localScale;
+        }
+        if (_formalMesh == null)
+            Debug.LogError("Missing formal memory pulse shard visual at Resources/"
+                + FormalVisualPath + ".");
+        return _formalMesh;
     }
 
     private static Material GetOrCreateMaterial()
@@ -70,75 +73,6 @@ public sealed class EchoCoinVisual : MonoBehaviour
         };
         _ownsMaterial = true;
         return _sharedMaterial;
-    }
-
-    private static void AppendTorus(List<Vector3> vertices,
-        List<Vector3> normals, List<Color> colors, List<int> triangles,
-        float majorRadius, float minorRadius, int majorSegments,
-        int minorSegments, Color color)
-    {
-        int start = vertices.Count;
-        for (int major = 0; major < majorSegments; major++)
-        {
-            float majorAngle = major * Mathf.PI * 2f / majorSegments;
-            Vector3 radial = new Vector3(Mathf.Cos(majorAngle),
-                Mathf.Sin(majorAngle), 0f);
-            for (int minor = 0; minor < minorSegments; minor++)
-            {
-                float minorAngle = minor * Mathf.PI * 2f / minorSegments;
-                Vector3 normal = radial * Mathf.Cos(minorAngle)
-                                 + Vector3.forward * Mathf.Sin(minorAngle);
-                vertices.Add(radial * (majorRadius
-                    + minorRadius * Mathf.Cos(minorAngle))
-                    + Vector3.forward * (minorRadius * Mathf.Sin(minorAngle)));
-                normals.Add(normal.normalized);
-                colors.Add(color);
-            }
-        }
-        for (int major = 0; major < majorSegments; major++)
-        {
-            int nextMajor = (major + 1) % majorSegments;
-            for (int minor = 0; minor < minorSegments; minor++)
-            {
-                int nextMinor = (minor + 1) % minorSegments;
-                int a = start + major * minorSegments + minor;
-                int b = start + nextMajor * minorSegments + minor;
-                int c = start + nextMajor * minorSegments + nextMinor;
-                int d = start + major * minorSegments + nextMinor;
-                triangles.Add(a); triangles.Add(b); triangles.Add(c);
-                triangles.Add(a); triangles.Add(c); triangles.Add(d);
-            }
-        }
-    }
-
-    private static void AppendCore(List<Vector3> vertices,
-        List<Vector3> normals, List<Color> colors, List<int> triangles,
-        float radius, float halfDepth, int segments, Color color)
-    {
-        int frontTip = vertices.Count;
-        vertices.Add(new Vector3(0f, 0f, -halfDepth));
-        normals.Add(Vector3.back);
-        colors.Add(color);
-        int backTip = vertices.Count;
-        vertices.Add(new Vector3(0f, 0f, halfDepth));
-        normals.Add(Vector3.forward);
-        colors.Add(color);
-        int ringStart = vertices.Count;
-        for (int i = 0; i < segments; i++)
-        {
-            float angle = i * Mathf.PI * 2f / segments;
-            Vector3 radial = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0f);
-            vertices.Add(radial * radius);
-            normals.Add(radial);
-            colors.Add(color);
-        }
-        for (int i = 0; i < segments; i++)
-        {
-            int current = ringStart + i;
-            int next = ringStart + (i + 1) % segments;
-            triangles.Add(frontTip); triangles.Add(next); triangles.Add(current);
-            triangles.Add(backTip); triangles.Add(current); triangles.Add(next);
-        }
     }
 
     private void OnDestroy()

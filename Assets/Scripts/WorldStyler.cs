@@ -26,24 +26,34 @@ public class WorldStyler : MonoBehaviour
     public const string SeamlessSkyShaderName = "EchoRun/SeamlessPanoramicSky";
     public const float StructureMetallic = 0.16f;
     public const float StructureSmoothness = 0.30f;
-    public const float HighFillLightIntensity = 0.27f;
+    public const float HighFillLightIntensity = 0.43f;
     public const float HighReflectionIntensity = 0.24f;
-    public const float KeyLightIntensity = 1.02f;
+    public const float KeyLightIntensity = 1.13f;
+    public const float SkyExposure = 0.72f;
+    public const float SkySaturation = 0.22f;
     public const string SideEnergyStationResourcePath =
         "Art/Environment/EchoSideEnergyStation";
     public const string MegacityDistrictAResourcePath =
         "Art/Environment/EchoMegacityDistrictA";
     public const string MegacityDistrictBResourcePath =
         "Art/Environment/EchoMegacityDistrictB";
+    public const string ColdWhiteFortressStraight00ResourcePath =
+        "Art/Environment/ColdWhiteMemoryFortress/Sample_Straight_00";
+    public const string ColdWhiteFortressTurnRight20ResourcePath =
+        "Art/Environment/ColdWhiteMemoryFortress/Sample_TurnRight_20";
+    public const string ColdWhiteFortressStraight40ResourcePath =
+        "Art/Environment/ColdWhiteMemoryFortress/Sample_Straight_40";
+    public const string ColdWhiteFortressPhaseAccentMaterialName =
+        "ColdWhiteFortress_PhaseAccent";
 
-    private static readonly Color BaseFog = new Color(0.055f, 0.105f, 0.17f);
-    private static readonly Color BaseAmbientSky = new Color(0.16f, 0.23f, 0.34f);
-    private static readonly Color BaseAmbientEquator = new Color(0.075f, 0.12f, 0.19f);
-    private static readonly Color BaseAmbientGround = new Color(0.02f, 0.035f, 0.06f);
-    private static readonly Color BaseSkyTint = new Color(0.52f, 0.60f, 0.70f, 1f);
-    private static readonly Color BaseKeyLight = new Color(1f, 0.93f, 0.84f);
-    private static readonly Color BaseFillLight = new Color(0.34f, 0.69f, 0.96f);
-    private static readonly Color BaseStructure = new Color(0.14f, 0.20f, 0.29f);
+    private static readonly Color BaseFog = new Color(0.42f, 0.46f, 0.48f);
+    private static readonly Color BaseAmbientSky = new Color(0.38f, 0.42f, 0.46f);
+    private static readonly Color BaseAmbientEquator = new Color(0.24f, 0.27f, 0.30f);
+    private static readonly Color BaseAmbientGround = new Color(0.10f, 0.12f, 0.14f);
+    private static readonly Color BaseSkyTint = new Color(0.78f, 0.82f, 0.84f, 1f);
+    private static readonly Color BaseKeyLight = new Color(0.98f, 0.99f, 1f);
+    private static readonly Color BaseFillLight = new Color(0.78f, 0.84f, 0.90f);
+    private static readonly Color BaseStructure = new Color(0.62f, 0.66f, 0.68f);
     private static readonly Color BaseStructureEmission = new Color(0.008f, 0.018f, 0.034f);
     private static readonly Color BaseDepth = new Color(0.055f, 0.085f, 0.14f);
     private static readonly Color BaseDepthEmission = new Color(0.004f, 0.010f, 0.020f);
@@ -61,10 +71,14 @@ public class WorldStyler : MonoBehaviour
     private Material _cyanMaterial;
     private Material _coralMaterial;
     private Material _goldMaterial;
+    private Material _fortressPhaseAccentMaterial;
     private Material _skyMaterial;
     private GameObject _sideEnergyStationPrefab;
     private GameObject _megacityDistrictAPrefab;
     private GameObject _megacityDistrictBPrefab;
+    private GameObject _coldWhiteFortressStraight00Prefab;
+    private GameObject _coldWhiteFortressTurnRight20Prefab;
+    private GameObject _coldWhiteFortressStraight40Prefab;
     private Light _keyLight;
     private Light _fillLight;
     private Vector2Int _lastCameraScreenSize;
@@ -167,13 +181,68 @@ public class WorldStyler : MonoBehaviour
         }
 
         RemapEnvironmentPalette(environment);
+        bool coldWhiteFortress = IsColdWhiteFortressEnvironment(
+            environment.transform);
+        if (coldWhiteFortress)
+            DisableLegacyTrackVisualRenderers(segment.transform);
         if (variantSet == null) return;
         TrackSegmentData data = segment.GetComponent<TrackSegmentData>();
         float routeDistance = data != null ? data.routeDistance : 0f;
         int runSeed = GameManager.Instance != null
             ? GameManager.Instance.RunSeed : 0;
         variantSet.ApplyQuality(VisualQualityController.Current);
-        variantSet.SelectFor(runSeed, routeDistance);
+        bool sampleEnabled = TrackManager.Instance != null
+                             && TrackManager.Instance
+                                 .UsesColdWhiteFortressSample;
+        int preferredVariant = TrackManager
+            .ColdWhiteFortressVisualVariantIndex(segmentType,
+                routeDistance, sampleEnabled);
+        if (preferredVariant < 0 && coldWhiteFortress
+            && segmentType == TrackSegmentType.Straight)
+        {
+            // The scan gate is a deliberate transition landmark, never random
+            // repeating dressing. Ordinary segments select only open variants.
+            preferredVariant = EchoEnvironmentVariantSet.SelectVariantIndex(
+                runSeed, routeDistance, Mathf.Min(2, variantSet.VariantCount));
+        }
+        variantSet.SelectFor(runSeed, routeDistance, preferredVariant);
+    }
+
+    private static bool IsColdWhiteFortressEnvironment(Transform environment)
+    {
+        if (environment == null) return false;
+        Transform variants = environment.Find("VisualVariants");
+        if (variants == null) return false;
+        for (int index = 0; index < variants.childCount; index++)
+        {
+            if (variants.GetChild(index).name.IndexOf("ColdWhite",
+                    System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+        }
+        return false;
+    }
+
+    private static void DisableLegacyTrackVisualRenderers(
+        Transform segmentRoot)
+    {
+        if (segmentRoot == null) return;
+        for (int index = 0; index < segmentRoot.childCount; index++)
+        {
+            Transform child = segmentRoot.GetChild(index);
+            string childName = child.name;
+            bool legacyRoadVisual = childName == "GroundPlane"
+                                    || childName == "EntryStrip"
+                                    || childName == "ExitStrip"
+                                    || childName == TrackManager
+                                        .TurnInnerCornerCapName
+                                    || childName.StartsWith("LaneLine_",
+                                        System.StringComparison.Ordinal)
+                                    || childName.StartsWith("DataSeam",
+                                        System.StringComparison.Ordinal);
+            if (!legacyRoadVisual) continue;
+            Renderer renderer = child.GetComponent<Renderer>();
+            if (renderer != null) renderer.enabled = false;
+        }
     }
 
     private void ConfigureAtmosphere()
@@ -204,7 +273,8 @@ public class WorldStyler : MonoBehaviour
 
         material.name = "EchoSky_Seamless_Runtime";
         material.SetColor("_Tint", BaseSkyTint);
-        material.SetFloat("_Exposure", 0.54f);
+        material.SetFloat("_Exposure", SkyExposure);
+        material.SetFloat("_Saturation", SkySaturation);
         material.SetFloat("_Rotation", 0f);
         material.SetFloat("_SeamBlend", 0.07f);
         material.SetFloat("_HorizonTexY", 0.24f);
@@ -262,11 +332,17 @@ public class WorldStyler : MonoBehaviour
             new Color(1.00f, 0.40f, 0.35f), new Color(0.58f, 0.060f, 0.028f), 0.14f, 0.50f);
         _goldMaterial = MakeMaterial("EchoGold",
             new Color(0.94f, 0.68f, 0.24f), new Color(0.48f, 0.19f, 0.015f), 0.52f, 0.72f);
+        _fortressPhaseAccentMaterial = MakeMaterial(
+            ColdWhiteFortressPhaseAccentMaterialName,
+            new Color(0.16f, 0.72f, 0.90f),
+            new Color(0.04f, 0.38f, 0.62f), 0.18f, 0.66f);
     }
 
     private void BuildStraightEnvironment(Transform parent,
         EchoEnvironmentVariantSet variantSet)
     {
+        if (TryBuildColdWhiteStraightEnvironment(parent, variantSet)) return;
+
         GameObject common = new GameObject("Common");
         common.transform.SetParent(parent, false);
         CreateCapsule("LeftIsland", common.transform, new Vector3(-11.7f, -1.52f, 0f),
@@ -329,11 +405,11 @@ public class WorldStyler : MonoBehaviour
         CreateBeam("LaunchRailL", deck.transform,
             new Vector3(-TrackGeometryStandards.EdgeRailOffset, 0.16f, -5f),
             new Vector3(-TrackGeometryStandards.EdgeRailOffset, 0.16f, 73f),
-            0.09f, _cyanMaterial);
+            0.09f, _structureMaterial);
         CreateBeam("LaunchRailR", deck.transform,
             new Vector3(TrackGeometryStandards.EdgeRailOffset, 0.16f, -5f),
             new Vector3(TrackGeometryStandards.EdgeRailOffset, 0.16f, 73f),
-            0.09f, _goldMaterial);
+            0.09f, _structureMaterial);
         CreateCapsule("LaunchIslandL", deck.transform, new Vector3(-12f, -1.25f, 34f),
             new Vector3(3.5f, 38f, 0.82f), _deepStructureMaterial,
             new Vector3(90f, 0f, 0f));
@@ -341,10 +417,10 @@ public class WorldStyler : MonoBehaviour
             new Vector3(3.5f, 38f, 0.82f), _deepStructureMaterial,
             new Vector3(90f, 0f, 0f));
 
-        BuildSignalArch(deck.transform, 22f);
+        // Keep the opening stretch visually quiet. Authored sample landmarks own
+        // the transition gate, so the launch deck must not add a second doorway.
         for (int side = -1; side <= 1; side += 2)
         {
-            BuildPylon(deck.transform, side, 8f, 4.2f, side > 0);
             BuildPylon(deck.transform, side, 35f, 7.2f, side < 0);
             BuildPylon(deck.transform, side, 58f, 9.5f, side > 0);
         }
@@ -353,6 +429,10 @@ public class WorldStyler : MonoBehaviour
     private void BuildTurnEnvironment(Transform parent,
         TrackSegmentType segmentType, EchoEnvironmentVariantSet variantSet)
     {
+        if (segmentType == TrackSegmentType.TurnRight
+            && TryBuildColdWhiteTurnRightEnvironment(parent, variantSet))
+            return;
+
         int direction = segmentType == TrackSegmentType.TurnRight ? 1 : -1;
         GameObject common = new GameObject("Common");
         common.transform.SetParent(parent, false);
@@ -378,10 +458,12 @@ public class WorldStyler : MonoBehaviour
         visualVariants.transform.SetParent(parent, false);
         GameObject city = CreateVariant("Variant_A_CornerCity",
             visualVariants.transform);
-        BuildMegacityDistrict(city.transform, false, -direction, 10f, 0.92f);
+        BuildMegacityDistrict(city.transform, false, -direction, 10f, 0.92f,
+            TrackGeometryStandards.TurnNearDecorationCenterOffset);
         GameObject signal = CreateVariant("Variant_B_CornerSignal",
             visualVariants.transform);
-        BuildMegacityDistrict(signal.transform, true, -direction, 13f, 0.88f);
+        BuildMegacityDistrict(signal.transform, true, -direction, 13f, 0.88f,
+            TrackGeometryStandards.TurnNearDecorationCenterOffset);
         BuildTurnSignal(signal.transform, direction);
 
         GameObject highQualityOnly = new GameObject("HighQualityOnly");
@@ -394,6 +476,72 @@ public class WorldStyler : MonoBehaviour
         GameObject variant = new GameObject(name);
         variant.transform.SetParent(parent, false);
         return variant;
+    }
+
+    private bool TryBuildColdWhiteStraightEnvironment(Transform parent,
+        EchoEnvironmentVariantSet variantSet)
+    {
+        if (_coldWhiteFortressStraight00Prefab == null)
+            _coldWhiteFortressStraight00Prefab = Resources.Load<GameObject>(
+                ColdWhiteFortressStraight00ResourcePath);
+        if (_coldWhiteFortressStraight40Prefab == null)
+            _coldWhiteFortressStraight40Prefab = Resources.Load<GameObject>(
+                ColdWhiteFortressStraight40ResourcePath);
+        if (_coldWhiteFortressStraight00Prefab == null
+            || _coldWhiteFortressStraight40Prefab == null)
+            return false;
+
+        GameObject common = new GameObject("Common");
+        common.transform.SetParent(parent, false);
+        GameObject visualVariants = new GameObject("VisualVariants");
+        visualVariants.transform.SetParent(parent, false);
+        GameObject open = InstantiateAuthoredVariant(
+            _coldWhiteFortressStraight00Prefab,
+            "Variant_A_ColdWhiteOpen", visualVariants.transform);
+        GameObject openReverse = InstantiateAuthoredVariant(
+            _coldWhiteFortressStraight00Prefab,
+            "Variant_B_ColdWhiteOpenReverse", visualVariants.transform);
+        openReverse.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+        GameObject exit = InstantiateAuthoredVariant(
+            _coldWhiteFortressStraight40Prefab,
+            "Variant_C_ColdWhiteExit", visualVariants.transform);
+        GameObject highQualityOnly = new GameObject("HighQualityOnly");
+        highQualityOnly.transform.SetParent(parent, false);
+        variantSet.Initialize(new[] { open, openReverse, exit },
+            highQualityOnly);
+        return true;
+    }
+
+    private bool TryBuildColdWhiteTurnRightEnvironment(Transform parent,
+        EchoEnvironmentVariantSet variantSet)
+    {
+        if (_coldWhiteFortressTurnRight20Prefab == null)
+            _coldWhiteFortressTurnRight20Prefab = Resources.Load<GameObject>(
+                ColdWhiteFortressTurnRight20ResourcePath);
+        if (_coldWhiteFortressTurnRight20Prefab == null) return false;
+
+        GameObject common = new GameObject("Common");
+        common.transform.SetParent(parent, false);
+        GameObject visualVariants = new GameObject("VisualVariants");
+        visualVariants.transform.SetParent(parent, false);
+        GameObject turn = InstantiateAuthoredVariant(
+            _coldWhiteFortressTurnRight20Prefab,
+            "Variant_A_ColdWhiteTurnRight", visualVariants.transform);
+        GameObject highQualityOnly = new GameObject("HighQualityOnly");
+        highQualityOnly.transform.SetParent(parent, false);
+        variantSet.Initialize(new[] { turn }, highQualityOnly);
+        return true;
+    }
+
+    private static GameObject InstantiateAuthoredVariant(GameObject prefab,
+        string instanceName, Transform parent)
+    {
+        GameObject instance = Instantiate(prefab, parent, false);
+        instance.name = instanceName;
+        instance.transform.localPosition = Vector3.zero;
+        instance.transform.localRotation = Quaternion.identity;
+        instance.transform.localScale = Vector3.one;
+        return instance;
     }
 
     private void BuildTurnSignal(Transform parent, int direction)
@@ -426,7 +574,7 @@ public class WorldStyler : MonoBehaviour
     }
 
     private void BuildMegacityDistrict(Transform parent, bool useVariantB,
-        int side, float z, float scale)
+        int side, float z, float scale, float lateralOffset = 13.2f)
     {
         GameObject prefab;
         if (useVariantB)
@@ -450,7 +598,8 @@ public class WorldStyler : MonoBehaviour
         district.name = useVariantB
             ? "MegacityDistrictB"
             : "MegacityDistrictA";
-        district.transform.localPosition = new Vector3(side * 13.2f, -0.72f, z);
+        district.transform.localPosition = new Vector3(
+            side * Mathf.Max(0f, lateralOffset), -0.72f, z);
         district.transform.localRotation = Quaternion.Euler(
             0f, side > 0 ? -90f : 90f, 0f);
         district.transform.localScale = Vector3.one * scale;
@@ -479,6 +628,10 @@ public class WorldStyler : MonoBehaviour
     {
         if (material == null) return null;
         string materialName = material.name;
+        if (materialName.IndexOf(
+                ColdWhiteFortressPhaseAccentMaterialName,
+                System.StringComparison.OrdinalIgnoreCase) >= 0)
+            return _fortressPhaseAccentMaterial;
         if (materialName.IndexOf("Cyan", System.StringComparison.OrdinalIgnoreCase) >= 0)
             return _cyanMaterial;
         if (materialName.IndexOf("Coral", System.StringComparison.OrdinalIgnoreCase) >= 0)
@@ -495,6 +648,7 @@ public class WorldStyler : MonoBehaviour
     public void ApplyPhaseVisualStyle(EchoPhaseVisualStyle style)
     {
         EnsurePalette();
+        float intensity = Mathf.Clamp01(style.intensity);
         EchoWorldPhasePalette palette = BuildPhasePalette(style);
         RenderSettings.fogColor = palette.fog;
         RenderSettings.ambientSkyColor = palette.ambientSky;
@@ -515,6 +669,13 @@ public class WorldStyler : MonoBehaviour
             palette.coralEmission);
         ApplyMaterialColors(_goldMaterial, palette.gold,
             palette.goldEmission);
+        Color accent = PhaseHue(new Color(0.16f, 0.72f, 0.90f),
+            style.tint, 0.72f + intensity * 0.28f);
+        Color accentEmission = style.tint
+            * Mathf.Lerp(0.42f, 0.92f, intensity);
+        accentEmission.a = 1f;
+        ApplyMaterialColors(_fortressPhaseAccentMaterial, accent,
+            accentEmission);
     }
 
     public static EchoWorldPhasePalette BuildPhasePalette(
@@ -524,21 +685,21 @@ public class WorldStyler : MonoBehaviour
         float coralBoost = Mathf.Clamp01(style.coral);
         return new EchoWorldPhasePalette
         {
-            fog = PhaseHue(BaseFog, style.tint, intensity * 0.72f),
-            ambientSky = PhaseHue(BaseAmbientSky, style.tint, intensity * 0.62f),
+            fog = PhaseHue(BaseFog, style.tint, intensity * 0.10f),
+            ambientSky = PhaseHue(BaseAmbientSky, style.tint, intensity * 0.10f),
             ambientEquator = PhaseHue(BaseAmbientEquator, style.tint,
-                intensity * 0.58f),
+                intensity * 0.08f),
             ambientGround = PhaseHue(BaseAmbientGround, style.tint,
-                intensity * 0.48f),
-            skyTint = PhaseHue(BaseSkyTint, style.tint, intensity * 0.58f),
-            keyLight = PhaseHue(BaseKeyLight, style.tint, intensity * 0.14f),
-            fillLight = PhaseHue(BaseFillLight, style.tint, intensity * 0.72f),
-            structure = PhaseHue(BaseStructure, style.tint, intensity * 0.42f),
+                intensity * 0.06f),
+            skyTint = PhaseHue(BaseSkyTint, style.tint, intensity * 0.08f),
+            keyLight = PhaseHue(BaseKeyLight, style.tint, intensity * 0.05f),
+            fillLight = PhaseHue(BaseFillLight, style.tint, intensity * 0.10f),
+            structure = PhaseHue(BaseStructure, style.tint, intensity * 0.10f),
             structureEmission = PhaseEmission(BaseStructureEmission,
-                style.tint, intensity * 0.58f, 1f),
-            depth = PhaseHue(BaseDepth, style.tint, intensity * 0.36f),
+                style.tint, intensity * 0.18f, 1f),
+            depth = PhaseHue(BaseDepth, style.tint, intensity * 0.10f),
             depthEmission = PhaseEmission(BaseDepthEmission, style.tint,
-                intensity * 0.52f, 1f),
+                intensity * 0.16f, 1f),
             cyan = PhaseHue(BaseCyan, style.tint, intensity * 0.72f),
             cyanEmission = PhaseEmission(BaseCyanEmission, style.tint,
                 intensity * 0.82f, 1.08f),
@@ -1008,6 +1169,7 @@ public class WorldStyler : MonoBehaviour
         DestroyPaletteMaterial(_cyanMaterial);
         DestroyPaletteMaterial(_coralMaterial);
         DestroyPaletteMaterial(_goldMaterial);
+        DestroyPaletteMaterial(_fortressPhaseAccentMaterial);
         if (Instance == this) Instance = null;
     }
 

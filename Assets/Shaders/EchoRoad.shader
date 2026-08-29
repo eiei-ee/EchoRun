@@ -2,16 +2,16 @@ Shader "EchoRun/Road"
 {
     Properties
     {
-        _Color ("Road Base", Color) = (0.045, 0.065, 0.095, 1)
+        _Color ("Road Base", Color) = (0.052, 0.057, 0.061, 1)
         [NoScaleOffset] _RoadAtlas ("Road Atlas", 2D) = "gray" {}
         [NoScaleOffset] _NormalMap ("Road Normal", 2D) = "bump" {}
-        _AtlasTiling ("Atlas Tiling", Vector) = (2, 6, 0, 0)
-        _LaneColor ("Guide Cyan", Color) = (0.08, 0.72, 0.92, 1)
-        _EdgeColor ("Edge Cyan", Color) = (0.035, 0.34, 0.48, 1)
-        _FlowSpeed ("Flow Speed", Range(0, 1)) = 0.12
-        _NormalStrength ("Normal Strength", Range(0, 2)) = 0.72
-        _Wetness ("Wetness", Range(0, 1)) = 0.72
-        _ReflectionStrength ("Fake Reflection", Range(0, 1)) = 0.18
+        _AtlasTiling ("Atlas Tiling", Vector) = (1, 4, 0, 0)
+        _LaneColor ("Inset Neutral", Color) = (0.28, 0.31, 0.32, 1)
+        _EdgeColor ("Edge Neutral", Color) = (0.62, 0.66, 0.67, 1)
+        _FlowSpeed ("Scan Speed", Range(0, 1)) = 0.08
+        _NormalStrength ("Normal Strength", Range(0, 2)) = 0.46
+        _Wetness ("Wetness", Range(0, 1)) = 0.18
+        _ReflectionStrength ("Fake Reflection", Range(0, 1)) = 0.05
         _RoadRole ("Road Role", Float) = 0
         _RoadUvScale ("Role UV Scale", Float) = 1
         _RoadSeamStrength ("Seam Strength", Float) = 0
@@ -124,7 +124,7 @@ Shader "EchoRun/Road"
                     * max(0.1h, _RoadUvScale);
                 fixed3 atlas = tex2D(_RoadAtlas, atlasUv).rgb;
                 fixed luminance = dot(atlas, fixed3(0.299, 0.587, 0.114));
-                fixed3 surface = _Color.rgb * lerp(0.68h, 1.20h, luminance);
+                fixed3 surface = _Color.rgb * lerp(0.88h, 1.08h, luminance);
 
                 half3 normalDirection = normalize(i.worldNormal);
                 #if defined(_ECHO_NORMALMAP)
@@ -140,39 +140,54 @@ Shader "EchoRun/Road"
                 half3 viewDirection = normalize(_WorldSpaceCameraPos.xyz - i.worldPos);
                 half ndl = saturate(dot(normalDirection,
                     normalize(_WorldSpaceLightPos0.xyz)));
-                surface *= 0.74h + ndl * 0.22h;
+                surface *= 0.82h + ndl * 0.16h;
 
-                half centerGuide = Band(i.uv.x, 0.5h, 0.018h, 0.022h);
-                half leftEdge = Band(i.uv.x, 0.055h, 0.010h, 0.016h);
-                half rightEdge = Band(i.uv.x, 0.945h, 0.010h, 0.016h);
-                half laneDivider = max(Band(i.uv.x, 0.333h, 0.004h, 0.010h),
-                    Band(i.uv.x, 0.667h, 0.004h, 0.010h));
+                half centerGuide = Band(i.uv.x, 0.5h, 0.004h, 0.006h);
+                half leftEdge = Band(i.uv.x, 0.055h, 0.005h, 0.009h);
+                half rightEdge = Band(i.uv.x, 0.945h, 0.005h, 0.009h);
+                half laneDivider = max(Band(i.uv.x, 0.333h, 0.0025h, 0.005h),
+                    Band(i.uv.x, 0.667h, 0.0025h, 0.005h));
                 half seamRole = step(1.5h, _RoadRole) * (1.0h - step(2.5h, _RoadRole));
                 half regularRoad = 1.0h - seamRole;
                 centerGuide *= regularRoad * saturate(_RoadLaneDensity);
                 half edges = max(leftEdge, rightEdge) * regularRoad;
-                laneDivider *= regularRoad * 0.22h;
+                laneDivider *= regularRoad;
 
-                half flowPhase = frac(i.uv.y * 7.0h
+                // One restrained transverse memory node per 20 m road surface.
+                // It gives speed scale without painting circuit graphics everywhere.
+                half memoryNode = Band(frac(i.uv.y), 0.5h, 0.008h, 0.012h)
+                    * regularRoad;
+
+                half flowPhase = frac(i.uv.y
                     - _Time.y * max(0.01h, _FlowSpeed));
-                half flowPulse = smoothstep(0.91h, 0.98h, flowPhase)
-                    * (1.0h - smoothstep(0.98h, 1.0h, flowPhase));
-                fixed3 emission = _LaneColor.rgb
-                    * centerGuide * (0.18h + flowPulse * 0.36h);
-                emission += _EdgeColor.rgb * edges * 0.48h;
-                emission += _EdgeColor.rgb * laneDivider;
+                half scanPulse = smoothstep(0.91h, 0.97h, flowPhase)
+                    * (1.0h - smoothstep(0.97h, 1.0h, flowPhase));
+                half phaseAmount = saturate(_EchoPhaseIntensity);
+                fixed3 phaseColor = max(_EchoPhaseTint.rgb,
+                    fixed3(0.001h, 0.001h, 0.001h));
+
+                // Lane recognition stays neutral. Stage color is reserved for the
+                // narrow edge flow, scan pulse and memory node.
+                fixed3 emission = _LaneColor.rgb * laneDivider * 0.045h;
+                emission += _EdgeColor.rgb * edges * 0.025h;
+                emission += phaseColor * edges
+                    * (0.025h + phaseAmount * 0.12h);
+                emission += phaseColor * centerGuide * phaseAmount
+                    * (0.035h + scanPulse * 0.16h);
+                emission += phaseColor * memoryNode
+                    * (0.018h + phaseAmount * 0.075h);
                 emission += _LaneColor.rgb * seamRole
-                    * saturate(_RoadSeamStrength) * 0.18h;
+                    * saturate(_RoadSeamStrength) * 0.08h;
 
                 half viewHighlight = pow(1.0h
                     - saturate(dot(normalDirection, viewDirection)), 3.0h);
-                surface += _EdgeColor.rgb * viewHighlight * 0.045h;
+                surface += _EdgeColor.rgb * viewHighlight * 0.018h;
 
                 #if defined(_ECHO_WET_SURFACE)
                     half rainNoise = Hash21(floor(i.worldPos.xz * 1.7h));
                     half rainStain = smoothstep(0.68h, 0.94h, rainNoise) * _Wetness;
-                    surface = lerp(surface, surface * 0.66h, rainStain * 0.22h);
-                    emission += _EdgeColor.rgb * rainStain * viewHighlight * 0.035h;
+                    surface = lerp(surface, surface * 0.78h, rainStain * 0.08h);
+                    emission += _EdgeColor.rgb * rainStain * viewHighlight * 0.012h;
                 #endif
 
                 #if defined(_ECHO_FAKE_REFLECTION)
@@ -199,18 +214,13 @@ Shader "EchoRun/Road"
                         * inside * _Wetness;
                 #endif
 
-                half phaseBlend = saturate(_EchoPhaseIntensity) * 0.72h;
-                fixed3 phaseMultiplier = fixed3(0.50h, 0.50h, 0.50h)
-                    + max(_EchoPhaseTint.rgb, fixed3(0.001h, 0.001h, 0.001h))
-                    * 0.90h;
-                surface = lerp(surface, surface * phaseMultiplier, phaseBlend);
-                emission = lerp(emission, emission * phaseMultiplier,
-                    phaseBlend * 0.90h);
-                emission += fixed3(1.0h, 0.12h, 0.06h) * centerGuide
-                    * saturate(_EchoPhaseCoral) * 0.30h;
+                // The graphite road never receives a full-surface phase wash.
+                // Coral/relearn energy stays a local hairline, not a red floor.
+                emission += phaseColor * centerGuide
+                    * saturate(_EchoPhaseCoral) * 0.035h;
 
-                surface += _Color.rgb * saturate(_RoadStartDeckBoost) * 0.10h;
-                surface += _LaneColor.rgb * saturate(_RoadSafeLaneHint) * 0.025h;
+                surface += _Color.rgb * saturate(_RoadStartDeckBoost) * 0.06h;
+                surface += _LaneColor.rgb * saturate(_RoadSafeLaneHint) * 0.015h;
                 fixed4 color = fixed4(surface + emission, 1.0h);
                 UNITY_APPLY_FOG(i.fogCoord, color);
                 return color;

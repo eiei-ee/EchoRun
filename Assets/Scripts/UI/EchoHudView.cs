@@ -40,16 +40,44 @@ public sealed class EchoHudView : MonoBehaviour
     [SerializeField] private Text feedbackText;
     [SerializeField] private Button pauseButton;
 
-    private static readonly Color Cyan = EchoRunUITheme.RouteCyan;
-    private static readonly Color Coral = EchoRunUITheme.Danger;
-    private static readonly Color Gold = EchoRunUITheme.Reward;
-    private static readonly Color Muted = EchoRunUITheme.TextMuted;
-    private static readonly Color EmptyCell = new Color(0.13f, 0.20f, 0.27f, 0.92f);
+    [Header("Cold White Fortress Skin")]
+    [SerializeField] private Image[] skinPanels;
+    [SerializeField] private Image[] skinRules;
+    [SerializeField] private Image[] phaseAccentRules;
+    [SerializeField] private GameObject announcementPlate;
+    [SerializeField] private GameObject directivePlate;
+    [SerializeField] private GameObject predictionPlate;
+    [SerializeField] private GameObject feedbackPlate;
+
+    [Header("State Transition")]
+    [SerializeField] private CanvasGroup stateTransitionFx;
+    [SerializeField] private RectTransform transitionScanLine;
+    [SerializeField] private RectTransform fractureSliceA;
+    [SerializeField] private RectTransform fractureSliceB;
+
+    private static readonly Color Coral = EchoRunUITheme.HudDangerText;
+    private static readonly Color Gold = EchoRunUITheme.HudRewardText;
+    private static readonly Color Muted = EchoRunUITheme.HudInkMuted;
+    private static readonly Color EmptyCell = EchoRunUITheme.HudRule;
+
+    private Color _phaseAccent = EchoRunUITheme.HudCalibrationAccent;
+    private EchoHudTransitionKind _transitionKind;
+    private float _transitionElapsed;
+    private float _transitionDuration;
+    private bool _transitionActive;
+    private bool _transitionBasesCached;
+    private Vector2 _scanLineBase;
+    private Vector2 _fractureSliceABase;
+    private Vector2 _fractureSliceBBase;
 
     public Button PauseButton => pauseButton;
 
+    public EchoHudTransitionKind ActiveTransitionKind => _transitionActive
+        ? _transitionKind : EchoHudTransitionKind.None;
+
     public void Present(EchoHudViewData data, bool showAnnouncement)
     {
+        ApplySkin(EchoRunUITheme.HudSkinFor(data.mode));
         bool calibrating = data.mode == EchoHudMode.Calibration;
         SetActiveIfChanged(stageRail, !calibrating);
         SetActiveIfChanged(calibrationRail, calibrating);
@@ -58,10 +86,18 @@ public sealed class EchoHudView : MonoBehaviour
         SetTextIfChanged(announcementText, data.announcement);
         SetActiveIfChanged(announcementText != null
             ? announcementText.gameObject : null, showAnnouncement);
+        SetActiveIfChanged(announcementPlate, showAnnouncement);
         SetTextIfChanged(directiveText, data.directiveShort);
+        bool showDirective = !string.IsNullOrEmpty(data.directiveShort);
+        SetActiveIfChanged(directiveText != null
+            ? directiveText.gameObject : null, showDirective);
+        SetActiveIfChanged(directivePlate, showDirective);
         SetTextIfChanged(predictionText, data.predictionShort);
-        SetActiveIfChanged(predictionText != null ? predictionText.gameObject : null,
-            data.showPrediction && !string.IsNullOrEmpty(data.predictionShort));
+        bool showPrediction = data.showPrediction
+                              && !string.IsNullOrEmpty(data.predictionShort);
+        SetActiveIfChanged(predictionText != null
+            ? predictionText.gameObject : null, showPrediction);
+        SetActiveIfChanged(predictionPlate, showPrediction);
 
         SetTextIfChanged(calibrationObservationText,
             calibrating ? "路线  记录中    节奏  采集中" : "");
@@ -88,6 +124,7 @@ public sealed class EchoHudView : MonoBehaviour
     public void PresentSingleContract(SingleContractHudData data,
         bool showAnnouncement)
     {
+        ApplySingleContractSkin(data.visualState, data.openingMemory);
         // Keep the persistent run shell visible from the first gameplay frame.
         // Opening memory is a foreground message, not a loading state.
         SetActiveIfChanged(staticLayer, true);
@@ -102,13 +139,16 @@ public sealed class EchoHudView : MonoBehaviour
         SetTextIfChanged(directiveText, data.memory);
         SetActiveIfChanged(directiveText != null
             ? directiveText.gameObject : null, data.showMemory);
+        SetActiveIfChanged(directivePlate, data.showMemory);
         if (data.openingMemory)
         {
             SetActiveIfChanged(announcementText != null
                 ? announcementText.gameObject : null, false);
+            SetActiveIfChanged(announcementPlate, false);
             SetTextIfChanged(predictionText, "");
             SetActiveIfChanged(predictionText != null
                 ? predictionText.gameObject : null, false);
+            SetActiveIfChanged(predictionPlate, false);
             SetTextIfChanged(calibrationObservationText, data.injuriesText);
             SetActiveIfChanged(calibrationObservationText != null
                 ? calibrationObservationText.gameObject : null, true);
@@ -120,6 +160,7 @@ public sealed class EchoHudView : MonoBehaviour
             SetActiveIfChanged(buffGroup, false);
             SetActiveIfChanged(feedbackText != null
                 ? feedbackText.gameObject : null, false);
+            SetActiveIfChanged(feedbackPlate, false);
             return;
         }
 
@@ -127,10 +168,12 @@ public sealed class EchoHudView : MonoBehaviour
             SingleContractAnnouncement(data.visualState));
         SetActiveIfChanged(announcementText != null
             ? announcementText.gameObject : null, showAnnouncement);
+        SetActiveIfChanged(announcementPlate, showAnnouncement);
         SetTextIfChanged(predictionText, data.prediction);
+        bool showPrediction = !string.IsNullOrEmpty(data.prediction);
         SetActiveIfChanged(predictionText != null
-                ? predictionText.gameObject : null,
-            !string.IsNullOrEmpty(data.prediction));
+            ? predictionText.gameObject : null, showPrediction);
+        SetActiveIfChanged(predictionPlate, showPrediction);
 
         SetTextIfChanged(calibrationObservationText, data.injuriesText);
         SetActiveIfChanged(calibrationObservationText != null
@@ -163,8 +206,203 @@ public sealed class EchoHudView : MonoBehaviour
         SetTextIfChanged(feedbackText, text);
         if (feedbackText != null && feedbackText.color != color)
             feedbackText.color = color;
-        SetActiveIfChanged(feedbackText != null ? feedbackText.gameObject : null,
-            visible && !string.IsNullOrEmpty(text));
+        bool show = visible && !string.IsNullOrEmpty(text);
+        SetActiveIfChanged(feedbackText != null
+            ? feedbackText.gameObject : null, show);
+        SetActiveIfChanged(feedbackPlate, show);
+    }
+
+    public void ApplySingleContractSkin(SingleContractVisualState state,
+        bool openingMemory = false)
+    {
+        // Opening memory is part of the persistent shell, so it receives the
+        // neutral foundation without starting a second visual state.
+        EchoHudSkin skin = EchoRunUITheme.HudSkinFor(state);
+        if (openingMemory)
+            skin.accent = Color.Lerp(skin.rule, skin.accent, 0.45f);
+        ApplySkin(skin);
+    }
+
+    public void PlaySingleContractTransition(SingleContractVisualState state)
+    {
+        EchoHudSkin skin = EchoRunUITheme.HudSkinFor(state);
+        ApplySkin(skin);
+        StartTransition(skin.transition);
+    }
+
+    public void PlayPredictionChangeTransition()
+    {
+        // Prediction changes fracture the current HUD accent; they are not a
+        // phase change and therefore must not apply the red relearn skin.
+        StartTransition(EchoHudTransitionKind.Fracture);
+    }
+
+    private void StartTransition(EchoHudTransitionKind kind)
+    {
+        if (stateTransitionFx == null || EchoRunAccessibility.ReducedMotion
+            || kind == EchoHudTransitionKind.None)
+        {
+            StopSingleContractTransition();
+            return;
+        }
+
+        CacheTransitionBases();
+        _transitionKind = kind;
+        _transitionDuration = TransitionDuration(_transitionKind);
+        _transitionElapsed = 0f;
+        _transitionActive = true;
+        stateTransitionFx.alpha = 0f;
+        stateTransitionFx.blocksRaycasts = false;
+        stateTransitionFx.interactable = false;
+        SetActiveIfChanged(stateTransitionFx.gameObject, true);
+        SetTransitionPieceVisibility(_transitionKind);
+    }
+
+    public void StopSingleContractTransition()
+    {
+        _transitionActive = false;
+        _transitionKind = EchoHudTransitionKind.None;
+        _transitionElapsed = 0f;
+        ResetTransitionGeometry();
+        SetTransitionPieceVisibility(EchoHudTransitionKind.None);
+        if (stateTransitionFx == null) return;
+        stateTransitionFx.alpha = 0f;
+        stateTransitionFx.blocksRaycasts = false;
+        stateTransitionFx.interactable = false;
+        SetActiveIfChanged(stateTransitionFx.gameObject, false);
+    }
+
+    private void SetTransitionPieceVisibility(EchoHudTransitionKind kind)
+    {
+        bool fracture = kind == EchoHudTransitionKind.Fracture;
+        bool scan = kind == EchoHudTransitionKind.Scan
+                    || kind == EchoHudTransitionKind.Activate
+                    || kind == EchoHudTransitionKind.Release;
+        SetActiveIfChanged(transitionScanLine != null
+            ? transitionScanLine.gameObject : null, scan);
+        SetActiveIfChanged(fractureSliceA != null
+            ? fractureSliceA.gameObject : null, fracture);
+        SetActiveIfChanged(fractureSliceB != null
+            ? fractureSliceB.gameObject : null, fracture);
+    }
+
+    private void Update()
+    {
+        if (!_transitionActive || stateTransitionFx == null) return;
+        if (EchoRunAccessibility.ReducedMotion)
+        {
+            StopSingleContractTransition();
+            return;
+        }
+
+        _transitionElapsed += Time.unscaledDeltaTime;
+        float duration = Mathf.Max(0.01f, _transitionDuration);
+        float t = Mathf.Clamp01(_transitionElapsed / duration);
+        float pulse = Mathf.Sin(t * Mathf.PI);
+        stateTransitionFx.alpha = pulse * TransitionAlpha(_transitionKind);
+        AnimateTransitionGeometry(_transitionKind, t, pulse);
+        if (t >= 1f) StopSingleContractTransition();
+    }
+
+    private void ApplySkin(EchoHudSkin skin)
+    {
+        _phaseAccent = skin.accent;
+        SetColors(skinPanels, skin.panel, false);
+        SetColors(skinRules, skin.rule, false);
+        SetColors(phaseAccentRules, skin.accent, true);
+
+        SetColorIfChanged(statsText, skin.ink);
+        SetColorIfChanged(announcementText, skin.ink);
+        SetColorIfChanged(directiveText, skin.ink);
+        SetColorIfChanged(predictionText, EchoRunUITheme.HudDangerText);
+        SetColorIfChanged(calibrationObservationText, skin.mutedInk);
+        SetColorIfChanged(distanceText, skin.mutedInk);
+        SetColorIfChanged(meterLabel, skin.mutedInk);
+        SetColorIfChanged(recoveryText, EchoRunUITheme.HudDangerText);
+        SetColorIfChanged(markerText, EchoRunUITheme.HudDangerText);
+        SetColorIfChanged(buffText, skin.ink);
+
+        if (pauseButton != null)
+        {
+            Graphic target = pauseButton.targetGraphic;
+            if (target != null && target.color != skin.panelRaised)
+                target.color = skin.panelRaised;
+            Text label = pauseButton.GetComponentInChildren<Text>(true);
+            SetColorIfChanged(label, skin.ink);
+        }
+    }
+
+    private void CacheTransitionBases()
+    {
+        if (_transitionBasesCached) return;
+        if (transitionScanLine != null)
+            _scanLineBase = transitionScanLine.anchoredPosition;
+        if (fractureSliceA != null)
+            _fractureSliceABase = fractureSliceA.anchoredPosition;
+        if (fractureSliceB != null)
+            _fractureSliceBBase = fractureSliceB.anchoredPosition;
+        _transitionBasesCached = true;
+    }
+
+    private void AnimateTransitionGeometry(EchoHudTransitionKind kind,
+        float t, float pulse)
+    {
+        CacheTransitionBases();
+        ResetTransitionGeometry();
+        if (kind == EchoHudTransitionKind.Scan && transitionScanLine != null)
+        {
+            transitionScanLine.anchoredPosition = _scanLineBase
+                + new Vector2(Mathf.Lerp(-250f, 250f, t), 0f);
+        }
+        else if (kind == EchoHudTransitionKind.Activate
+                 && transitionScanLine != null)
+        {
+            transitionScanLine.anchoredPosition = _scanLineBase
+                + new Vector2(Mathf.Lerp(-90f, 90f, t), 0f);
+        }
+        else if (kind == EchoHudTransitionKind.Fracture)
+        {
+            if (fractureSliceA != null)
+                fractureSliceA.anchoredPosition = _fractureSliceABase
+                    + new Vector2(7f * pulse, 0f);
+            if (fractureSliceB != null)
+                fractureSliceB.anchoredPosition = _fractureSliceBBase
+                    - new Vector2(5f * pulse, 0f);
+        }
+        else if (kind == EchoHudTransitionKind.Release
+                 && transitionScanLine != null)
+        {
+            transitionScanLine.anchoredPosition = _scanLineBase
+                + new Vector2(Mathf.Lerp(-160f, 160f, t), 0f);
+        }
+    }
+
+    private void ResetTransitionGeometry()
+    {
+        if (!_transitionBasesCached) return;
+        if (transitionScanLine != null)
+            transitionScanLine.anchoredPosition = _scanLineBase;
+        if (fractureSliceA != null)
+            fractureSliceA.anchoredPosition = _fractureSliceABase;
+        if (fractureSliceB != null)
+            fractureSliceB.anchoredPosition = _fractureSliceBBase;
+    }
+
+    private static float TransitionDuration(EchoHudTransitionKind kind)
+    {
+        switch (kind)
+        {
+            case EchoHudTransitionKind.Scan: return 0.28f;
+            case EchoHudTransitionKind.Activate: return 0.24f;
+            case EchoHudTransitionKind.Fracture: return 0.36f;
+            case EchoHudTransitionKind.Release: return 0.45f;
+            default: return 0f;
+        }
+    }
+
+    private static float TransitionAlpha(EchoHudTransitionKind kind)
+    {
+        return kind == EchoHudTransitionKind.Fracture ? 0.48f : 0.34f;
     }
 
     private void PresentStage(int phaseIndex)
@@ -175,7 +413,8 @@ public sealed class EchoHudView : MonoBehaviour
             Text node = stageNodes[i];
             if (node == null) continue;
             Color target = i < phaseIndex ? Muted
-                : i == phaseIndex ? Cyan : new Color(Muted.r, Muted.g, Muted.b, 0.45f);
+                : i == phaseIndex ? EchoRunUITheme.HudInk
+                : new Color(Muted.r, Muted.g, Muted.b, 0.45f);
             if (node.color != target) node.color = target;
             FontStyle style = i == phaseIndex ? FontStyle.Bold : FontStyle.Normal;
             if (node.fontStyle != style) node.fontStyle = style;
@@ -196,7 +435,7 @@ public sealed class EchoHudView : MonoBehaviour
         if (meterFill != null)
         {
             Color target = data.meterKind == EchoHudMeterKind.EchoLock
-                ? Coral : Cyan;
+                ? Coral : _phaseAccent;
             if (data.meterKind == EchoHudMeterKind.EchoLock
                 && data.displayedMeter01 <= 0.01f)
                 target = Gold;
@@ -239,7 +478,8 @@ public sealed class EchoHudView : MonoBehaviour
             {
                 Image cell = syncCells[i];
                 if (cell == null) continue;
-                Color target = i < data.syncRemaining ? Cyan : EmptyCell;
+                Color target = i < data.syncRemaining
+                    ? _phaseAccent : EmptyCell;
                 if (cell.color != target) cell.color = target;
             }
         }
@@ -338,6 +578,26 @@ public sealed class EchoHudView : MonoBehaviour
         float safe = Mathf.Clamp01(value);
         if (!Mathf.Approximately(target.fillAmount, safe))
             target.fillAmount = safe;
+    }
+
+    private static void SetColors(Image[] targets, Color color,
+        bool preserveAlpha)
+    {
+        if (targets == null) return;
+        for (int i = 0; i < targets.Length; i++)
+        {
+            Image target = targets[i];
+            if (target == null) continue;
+            Color value = color;
+            if (preserveAlpha) value.a = target.color.a;
+            if (target.color != value) target.color = value;
+            target.raycastTarget = false;
+        }
+    }
+
+    private static void SetColorIfChanged(Graphic target, Color color)
+    {
+        if (target != null && target.color != color) target.color = color;
     }
 
     private static void SetActiveIfChanged(GameObject target, bool active)

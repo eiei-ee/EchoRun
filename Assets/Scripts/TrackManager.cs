@@ -11,6 +11,12 @@ public struct EchoEncounterLaneChoice
 
 public class TrackManager : MonoBehaviour
 {
+    public const string ColdWhiteFortressSampleArgument =
+        "-echo-cold-white-fortress-sample";
+    public const string ColdWhiteFortressLeftSampleArgument =
+        "-echo-cold-white-fortress-sample-left";
+    public const float ColdWhiteFortressSampleLength =
+        TrackGeometryStandards.StandardSegmentLength * 3f;
     public const float ChallengeSettlementMargin = 7f;
     public const float PredictionGateMinimumObstacleClearance = 12f;
     public const float PredictionGateRibbonWidth = 1.15f;
@@ -18,6 +24,8 @@ public class TrackManager : MonoBehaviour
     public const float PredictionGateDecisionBandWidth = 1.45f;
     public const string PredictionGateVisualRootName =
         "PredictionGateVisual";
+    public const string TurnInnerCornerCapName = "TurnInnerCornerCap";
+    public const string TurnWalkableBridgeName = "TurnWalkableBridge";
     public static TrackManager Instance { get; private set; }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -109,6 +117,8 @@ public class TrackManager : MonoBehaviour
     private Material _finishMarkerMaterial;
     private Material _predictionGateMaterial;
     private Light[] _finishMarkerLights;
+    private bool _usesColdWhiteFortressSample;
+    private bool _usesColdWhiteFortressLeftSample;
 
     public int ObstacleRowsSpawned { get; private set; }
     public int ObstacleRowsRejectedForSpacing { get; private set; }
@@ -118,6 +128,10 @@ public class TrackManager : MonoBehaviour
     public int ChallengeRowsSpawned { get; private set; }
     public int ChallengeRowsMissed { get; private set; }
     public int PredictionGateRowsSpawned { get; private set; }
+    public bool UsesColdWhiteFortressSample =>
+        _usesColdWhiteFortressSample;
+    public bool UsesColdWhiteFortressLeftSample =>
+        _usesColdWhiteFortressLeftSample;
     public float LongestObstacleRowGap { get; private set; }
     public float MinimumChallengeWarningSeconds { get; private set; }
         = float.PositiveInfinity;
@@ -186,10 +200,108 @@ public class TrackManager : MonoBehaviour
                    planningPoolSize);
     }
 
+    public static bool HasColdWhiteFortressSampleArgument(string[] arguments)
+    {
+        if (arguments == null) return false;
+        for (int index = 0; index < arguments.Length; index++)
+        {
+            if (string.Equals(arguments[index],
+                    ColdWhiteFortressSampleArgument,
+                    System.StringComparison.OrdinalIgnoreCase)
+                || string.Equals(arguments[index],
+                    ColdWhiteFortressLeftSampleArgument,
+                    System.StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    public static bool TryGetColdWhiteFortressSampleSegment(
+        float routeDistance, bool sampleEnabled,
+        out TrackSegmentType segmentType)
+    {
+        return TryGetColdWhiteFortressSampleSegment(routeDistance,
+            sampleEnabled, false, out segmentType);
+    }
+
+    public static bool TryGetColdWhiteFortressSampleSegment(
+        float routeDistance, bool sampleEnabled, bool leftTurn,
+        out TrackSegmentType segmentType)
+    {
+        segmentType = TrackSegmentType.Straight;
+        if (!sampleEnabled || routeDistance < 0f
+            || routeDistance >= ColdWhiteFortressSampleLength)
+            return false;
+
+        int segmentIndex = Mathf.FloorToInt(routeDistance
+            / TrackGeometryStandards.StandardSegmentLength);
+        segmentType = segmentIndex == 1
+            ? (leftTurn
+                ? TrackSegmentType.TurnLeft
+                : TrackSegmentType.TurnRight)
+            : TrackSegmentType.Straight;
+        return true;
+    }
+
+    public static bool HasColdWhiteFortressLeftSampleArgument(
+        string[] arguments)
+    {
+        if (arguments == null) return false;
+        for (int index = 0; index < arguments.Length; index++)
+        {
+            if (string.Equals(arguments[index],
+                    ColdWhiteFortressLeftSampleArgument,
+                    System.StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    public static int ColdWhiteFortressVisualVariantIndex(
+        TrackSegmentType segmentType, float routeDistance,
+        bool sampleEnabled)
+    {
+        if (sampleEnabled && segmentType == TrackSegmentType.Straight
+            && routeDistance >= ColdWhiteFortressSampleLength
+            && routeDistance < ColdWhiteFortressSampleLength
+                               + TrackGeometryStandards.StandardSegmentLength
+                                 * 2f)
+        {
+            int openIndex = Mathf.FloorToInt(routeDistance
+                / TrackGeometryStandards.StandardSegmentLength);
+            return openIndex % 2;
+        }
+
+        if (!TryGetColdWhiteFortressSampleSegment(routeDistance,
+                sampleEnabled, out TrackSegmentType authoredType)
+            || authoredType != segmentType)
+            return -1;
+
+        if (segmentType != TrackSegmentType.Straight) return 0;
+        return routeDistance >= TrackGeometryStandards.StandardSegmentLength
+                                * 2f
+            ? 2 : 0;
+    }
+
+    public static Vector3 ColdWhiteFortressInitialSpawnOffset(
+        bool sampleEnabled, float routeSegmentLength,
+        Vector3 forwardDirection)
+    {
+        if (!sampleEnabled) return Vector3.zero;
+        return forwardDirection.normalized
+               * Mathf.Max(1f, routeSegmentLength) * 0.5f;
+    }
+
     void Awake()
     {
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
+        _usesColdWhiteFortressSample =
+            HasColdWhiteFortressSampleArgument(
+                System.Environment.GetCommandLineArgs());
+        _usesColdWhiteFortressLeftSample =
+            HasColdWhiteFortressLeftSampleArgument(
+                System.Environment.GetCommandLineArgs());
         TrackBalance balance = GameBalanceConfig.Current.track;
         obstacleChance = balance.obstacleChance;
         coinChance = balance.coinChance;
@@ -208,8 +320,12 @@ public class TrackManager : MonoBehaviour
     void Start()
     {
         _player = GameObject.Find("player")?.transform;
-        _spawnPosition = _player != null ? new Vector3(_player.position.x, 0, _player.position.z) : Vector3.zero;
         _spawnAngle = 0f;
+        _spawnPosition = _player != null
+            ? new Vector3(_player.position.x, 0f, _player.position.z)
+            : Vector3.zero;
+        _spawnPosition += ColdWhiteFortressInitialSpawnOffset(
+            _usesColdWhiteFortressSample, segmentLength, ForwardDirection);
         _straightSegmentsSinceLastTurn = 0;
         InitializePools();
     }
@@ -644,9 +760,15 @@ public class TrackManager : MonoBehaviour
         bool isFinishSegment = courseDistance > _plannedDistance
                                && courseDistance <= _plannedDistance + segmentLength;
         bool shouldTurn = ShouldSpawnTurn(canTurn, plan.shouldTurn,
-                              _straightSegmentsSinceLastTurn)
-                          && !isFinishSegment
-                          && !reservedSingleContractStraight;
+                               _straightSegmentsSinceLastTurn)
+                           && !isFinishSegment
+                           && !reservedSingleContractStraight;
+        bool usesSampleSegment = TryGetColdWhiteFortressSampleSegment(
+            _plannedDistance, _usesColdWhiteFortressSample,
+            _usesColdWhiteFortressLeftSample,
+            out TrackSegmentType sampleSegmentType);
+        if (usesSampleSegment)
+            shouldTurn = sampleSegmentType != TrackSegmentType.Straight;
 
         GameObject prefab;
         TrackSegmentType segType;
@@ -655,7 +777,9 @@ public class TrackManager : MonoBehaviour
 
         if (shouldTurn)
         {
-            bool turnRight = AIRunRandom.Value < 0.5f;
+            bool turnRight = usesSampleSegment
+                ? sampleSegmentType == TrackSegmentType.TurnRight
+                : AIRunRandom.Value < 0.5f;
             prefab = turnRight ? turnRightPrefab : turnLeftPrefab;
             segType = turnRight ? TrackSegmentType.TurnRight : TrackSegmentType.TurnLeft;
             angleDelta = turnRight ? 90f : -90f;
@@ -2472,42 +2596,112 @@ public class TrackManager : MonoBehaviour
 
         Transform entryStrip = segment.transform.Find("EntryStrip");
         Transform exitStrip = segment.transform.Find("ExitStrip");
-        if (entryStrip != null && exitStrip != null)
-        {
-            ConfigureAuthoredTurnSurface(entryStrip, true, turnDirection);
-            ConfigureAuthoredTurnSurface(exitStrip, false, turnDirection);
-            return;
-        }
-
-        if (segment.transform.Find("RuntimeTurnCoverage") != null) return;
-
+        bool hasAuthoredSurfaces = entryStrip != null && exitStrip != null;
         int layer = LayerMask.NameToLayer("Ground");
         if (layer < 0) layer = segment.layer;
 
-        GameObject coverage = new GameObject("RuntimeTurnCoverage");
-        coverage.layer = layer;
-        coverage.transform.SetParent(segment.transform, false);
+        if (hasAuthoredSurfaces)
+        {
+            ConfigureAuthoredTurnSurface(entryStrip, true, turnDirection);
+            ConfigureAuthoredTurnSurface(exitStrip, false, turnDirection);
+        }
+        else if (segment.transform.Find("RuntimeTurnCoverage") == null)
+        {
+            GameObject coverage = new GameObject("RuntimeTurnCoverage");
+            coverage.layer = layer;
+            coverage.transform.SetParent(segment.transform, false);
 
-        CreateTurnSurface("EntryCoverage", coverage.transform,
-            new Vector3(0f, -0.15f,
-                TrackGeometryStandards.TurnEntrySurfaceCenter(segmentLength)),
-            Quaternion.identity,
-            new Vector3(TrackGeometryStandards.VisualRoadWidth, 0.3f,
-                TrackGeometryStandards.TurnEntrySurfaceLength(segmentLength)),
-            layer);
-        // Exit strip fills only the gap between the turn and the following
-        // straight. Extending it under that straight creates coplanar overlap,
-        // which z-fights across the entire first road block after every turn.
-        float exitLength = TrackGeometryStandards.TurnExitSurfaceLength(
-            segmentLength);
-        float exitCenterX = TrackGeometryStandards.TurnExitSurfaceCenter(
-            segmentLength);
-        CreateTurnSurface("ExitCoverage", coverage.transform,
-            new Vector3(turnDirection * exitCenterX, -0.15f,
-                segmentLength * 0.5f),
-            Quaternion.Euler(0f, 90f, 0f),
-            new Vector3(TrackGeometryStandards.VisualRoadWidth, 0.3f,
-                exitLength), layer);
+            CreateTurnSurface("EntryCoverage", coverage.transform,
+                new Vector3(0f, -0.15f,
+                    TrackGeometryStandards.TurnEntrySurfaceCenter(segmentLength)),
+                Quaternion.identity,
+                new Vector3(TrackGeometryStandards.VisualRoadWidth, 0.3f,
+                    TrackGeometryStandards.TurnEntrySurfaceLength(segmentLength)),
+                layer);
+            // Exit coverage ends at the following straight. The separate inner
+            // corner cap closes the visible square without lengthening either
+            // road arm into a coplanar overlap.
+            float exitLength = TrackGeometryStandards.TurnExitSurfaceLength(
+                segmentLength);
+            float exitCenterX = TrackGeometryStandards.TurnExitSurfaceCenter(
+                segmentLength);
+            CreateTurnSurface("ExitCoverage", coverage.transform,
+                new Vector3(turnDirection * exitCenterX, -0.15f,
+                    segmentLength * 0.5f),
+                Quaternion.Euler(0f, 90f, 0f),
+                new Vector3(TrackGeometryStandards.VisualRoadWidth, 0.3f,
+                    exitLength), layer);
+        }
+
+        EnsureTurnInnerCornerCap(segment.transform, turnDirection, layer,
+            hasAuthoredSurfaces);
+        EnsureTurnWalkableBridge(segment.transform, turnDirection, layer,
+            hasAuthoredSurfaces);
+    }
+
+    void EnsureTurnInnerCornerCap(Transform root, int turnDirection,
+        int layer, bool authoredSurface)
+    {
+        Transform existing = root.Find(TurnInnerCornerCapName);
+        GameObject cap;
+        if (existing != null)
+        {
+            cap = existing.gameObject;
+        }
+        else
+        {
+            cap = GameObject.CreatePrimitive(authoredSurface
+                ? PrimitiveType.Plane : PrimitiveType.Cube);
+            cap.name = TurnInnerCornerCapName;
+            cap.transform.SetParent(root, false);
+        }
+
+        Collider[] capColliders = cap.GetComponents<Collider>();
+        for (int index = 0; index < capColliders.Length; index++)
+        {
+            capColliders[index].enabled = false;
+            if (Application.isPlaying) Destroy(capColliders[index]);
+            else DestroyImmediate(capColliders[index]);
+        }
+
+        float size = TrackGeometryStandards.TurnInnerCornerSize(segmentLength);
+        Vector3 center = TrackGeometryStandards.TurnInnerCornerCenter(
+            segmentLength, turnDirection);
+        center.y = authoredSurface ? 0.051f : -0.15f;
+        cap.layer = layer;
+        cap.transform.localPosition = center;
+        cap.transform.localRotation = Quaternion.identity;
+        cap.transform.localScale = authoredSurface
+            ? new Vector3(size / 10f, 1f, size / 10f)
+            : new Vector3(size, 0.3f, size);
+        Renderer renderer = cap.GetComponent<Renderer>();
+        if (renderer != null)
+            EchoRoadVisualController.Instance.ApplyTo(renderer,
+                RoadSurfaceRole.RuntimeFallback);
+    }
+
+    void EnsureTurnWalkableBridge(Transform root, int turnDirection,
+        int layer, bool authoredSurface)
+    {
+        Transform existing = root.Find(TurnWalkableBridgeName);
+        GameObject bridge = existing != null
+            ? existing.gameObject : new GameObject(TurnWalkableBridgeName);
+        if (existing == null) bridge.transform.SetParent(root, false);
+
+        Vector3 center = TrackGeometryStandards.TurnWalkableBridgeCenter(
+            segmentLength, turnDirection);
+        center.y = authoredSurface ? 0.05f : -0.15f;
+        bridge.layer = layer;
+        bridge.transform.localPosition = center;
+        bridge.transform.localRotation = Quaternion.identity;
+        bridge.transform.localScale = Vector3.one;
+        BoxCollider collider = bridge.GetComponent<BoxCollider>();
+        if (collider == null) collider = bridge.AddComponent<BoxCollider>();
+        collider.enabled = true;
+        collider.center = Vector3.zero;
+        collider.size = new Vector3(
+            TrackGeometryStandards.TurnWalkableBridgeWidth, 0.3f,
+            TrackGeometryStandards.WalkableWidth);
     }
 
     void ConfigureAuthoredTurnSurface(Transform surface, bool entry,

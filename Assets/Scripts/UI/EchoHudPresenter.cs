@@ -13,6 +13,9 @@ public sealed class EchoHudPresenter : MonoBehaviour
     private bool _hasSingleContractVisualState;
     private SingleContractVisualState _lastSingleContractVisualState;
     private bool _lastSingleContractOpeningMemory;
+    private bool _hasSingleContractPrediction;
+    private string _lastSingleContractPredictionKey = "";
+    private int _lastSingleContractPredictionGateNumber;
 
     public void Initialize(EchoHudView view, GameManager gameManager)
     {
@@ -115,13 +118,14 @@ public sealed class EchoHudPresenter : MonoBehaviour
                               || duel.feedback.StartsWith("命中")
                               || duel.feedback.StartsWith("预判命中")
                               || duel.feedback.StartsWith("重锁")
-            ? EchoRunUITheme.Danger
+            ? EchoRunUITheme.HudDangerText
             : duel.feedback.StartsWith("预测失效")
               || duel.feedback.StartsWith("偏离")
               || duel.feedback.StartsWith("裂解")
               || duel.feedback.StartsWith("反制生效")
               || duel.feedback.StartsWith("锁定碎裂")
-                ? EchoRunUITheme.Reward : EchoRunUITheme.RouteCyan;
+                ? EchoRunUITheme.HudRewardText
+                : EchoRunUITheme.HudSuccessText;
         _view.ShowFeedback(duel.feedback, feedbackColor,
             Time.unscaledTime < _feedbackUntil);
     }
@@ -179,6 +183,8 @@ public sealed class EchoHudPresenter : MonoBehaviour
 
     public void ReleaseSingleContractVisualState()
     {
+        if (_view != null) _view.StopSingleContractTransition();
+        ResetSingleContractPredictionTracking();
         EchoPhaseVisualController visual = EchoPhaseVisualController.Instance;
         if (visual != null && visual.UsesSingleContractVisualState)
             visual.ReleaseSingleContractVisualState();
@@ -192,6 +198,8 @@ public sealed class EchoHudPresenter : MonoBehaviour
 
     public void ResetRun()
     {
+        if (_view != null) _view.StopSingleContractTransition();
+        ResetSingleContractPredictionTracking();
         _hasMode = false;
         _lastFeedbackSequence = -1;
         _feedbackUntil = 0f;
@@ -206,6 +214,12 @@ public sealed class EchoHudPresenter : MonoBehaviour
         SingleContractHudData data = BuildSingleContractHudData(
             _gameManager, shadow, powerUpStatus);
         bool enteringSingleContract = !_presentingSingleContract;
+        if (enteringSingleContract)
+            ResetSingleContractPredictionTracking();
+        bool hadPreviousState = !enteringSingleContract
+                                && _hasSingleContractVisualState;
+        SingleContractVisualState previousState =
+            _lastSingleContractVisualState;
         bool openingChanged = !enteringSingleContract
                               && data.openingMemory
                               != _lastSingleContractOpeningMemory;
@@ -213,14 +227,29 @@ public sealed class EchoHudPresenter : MonoBehaviour
                             || !_hasSingleContractVisualState
                             || data.visualState
                             != _lastSingleContractVisualState;
+        bool emphasizeTransition =
+            ShouldEmphasizeSingleContractTransition(
+                hadPreviousState, previousState, data.visualState,
+                data.openingMemory, openingChanged);
+        bool returningFromRelearn = hadPreviousState
+                                    && previousState
+                                    == SingleContractVisualState.RelearnPulse
+                                    && data.visualState
+                                    == SingleContractVisualState.Challenge;
+        bool emphasizePredictionChange =
+            ShouldEmphasizeSingleContractPredictionChange(
+                _hasSingleContractPrediction,
+                _lastSingleContractPredictionKey,
+                _lastSingleContractPredictionGateNumber,
+                data, emphasizeTransition, returningFromRelearn);
         if (stateChanged || openingChanged)
         {
             _presentingSingleContract = true;
             _hasSingleContractVisualState = true;
             _lastSingleContractVisualState = data.visualState;
             _lastSingleContractOpeningMemory = data.openingMemory;
-            _announcementUntil = data.openingMemory
-                ? 0f : Time.unscaledTime + 1f;
+            _announcementUntil = emphasizeTransition
+                ? Time.unscaledTime + 1f : 0f;
             if (enteringSingleContract) _lastFeedbackSequence = -1;
         }
 
@@ -230,6 +259,11 @@ public sealed class EchoHudPresenter : MonoBehaviour
 
         _view.PresentSingleContract(data,
             Time.unscaledTime < _announcementUntil);
+        if (emphasizeTransition)
+            _view.PlaySingleContractTransition(data.visualState);
+        else if (emphasizePredictionChange)
+            _view.PlayPredictionChangeTransition();
+        TrackSingleContractPrediction(data);
         _view.SetStats(_gameManager != null ? _gameManager.Score : 0,
             _gameManager != null ? _gameManager.Distance : 0f);
 
@@ -247,6 +281,72 @@ public sealed class EchoHudPresenter : MonoBehaviour
             !data.openingMemory && Time.unscaledTime < _feedbackUntil);
     }
 
+    public static bool ShouldEmphasizeSingleContractTransition(
+        bool hasPreviousState, SingleContractVisualState previousState,
+        SingleContractVisualState currentState, bool openingMemory,
+        bool openingChanged)
+    {
+        if (openingMemory) return false;
+        if (hasPreviousState
+            && previousState == SingleContractVisualState.RelearnPulse
+            && currentState == SingleContractVisualState.Challenge)
+            return false;
+        return !hasPreviousState || previousState != currentState
+               || openingChanged;
+    }
+
+    public static bool ShouldEmphasizeSingleContractPredictionChange(
+        bool hasPreviousPrediction, string previousPredictionKey,
+        int previousGateNumber, SingleContractHudData current,
+        bool stageTransitionEmphasized, bool returningFromRelearn)
+    {
+        if (current.openingMemory || stageTransitionEmphasized
+            || returningFromRelearn || !hasPreviousPrediction)
+            return false;
+
+        string currentKey = SingleContractPredictionSemanticKey(current);
+        if (string.IsNullOrEmpty(currentKey)) return false;
+        return previousGateNumber != current.predictionGateNumber
+               || !string.Equals(previousPredictionKey, currentKey);
+    }
+
+    public static string SingleContractPredictionSemanticKey(
+        SingleContractHudData data)
+    {
+        string value = (data.prediction ?? "").Trim();
+        if (string.IsNullOrEmpty(value)) return "";
+        const string token = "预测：";
+        int start = value.IndexOf(token);
+        if (start < 0) return value;
+        start += token.Length;
+        int lineEnd = value.IndexOf('\n', start);
+        if (lineEnd < 0) lineEnd = value.Length;
+        return value.Substring(start, lineEnd - start).Trim();
+    }
+
+    private void TrackSingleContractPrediction(SingleContractHudData data)
+    {
+        if (data.openingMemory) return;
+        string key = SingleContractPredictionSemanticKey(data);
+        if (string.IsNullOrEmpty(key))
+        {
+            if (data.visualState == SingleContractVisualState.Calibration)
+                ResetSingleContractPredictionTracking();
+            return;
+        }
+
+        _hasSingleContractPrediction = true;
+        _lastSingleContractPredictionKey = key;
+        _lastSingleContractPredictionGateNumber = data.predictionGateNumber;
+    }
+
+    private void ResetSingleContractPredictionTracking()
+    {
+        _hasSingleContractPrediction = false;
+        _lastSingleContractPredictionKey = "";
+        _lastSingleContractPredictionGateNumber = 0;
+    }
+
     private bool IsSingleContractPresentation(AIShadowRunner shadow)
     {
         if (_gameManager != null) return _gameManager.IsSingleContractRun;
@@ -262,11 +362,11 @@ public sealed class EchoHudPresenter : MonoBehaviour
             case SingleContractInstantFeedback.PredictionHit:
             case SingleContractInstantFeedback.CounterFailed:
             case SingleContractInstantFeedback.EchoRelearned:
-                return EchoRunUITheme.Danger;
+                return EchoRunUITheme.HudDangerText;
             case SingleContractInstantFeedback.RewriteSucceeded:
-                return EchoRunUITheme.Reward;
+                return EchoRunUITheme.HudRewardText;
             default:
-                return EchoRunUITheme.RouteCyan;
+                return EchoRunUITheme.HudSuccessText;
         }
     }
 

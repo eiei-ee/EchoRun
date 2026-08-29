@@ -2,14 +2,17 @@
 
 public class Coin : MonoBehaviour
 {
-    public float rotateSpeed = 180f;
-    public float bobSpeed = 2f;
-    public float bobHeight = 0.3f;
+    public float rotateSpeed = 38f;
+    public float yawAmplitude = 12f;
+    public float bobSpeed = 1.7f;
+    public float bobHeight = 0.04f;
     public bool IsEchoContractMarker { get; private set; }
     public int EchoChallengeStepId { get; private set; }
 
     private float _baseY;
     private float _phaseOffset;
+    private float _rotationPhase;
+    private Quaternion _baseRotation;
     private Transform _player;
     private static Transform _cachedPlayer;
     private static int _lastPlayerLookupFrame = -1;
@@ -25,13 +28,25 @@ public class Coin : MonoBehaviour
     {
         _baseY = transform.position.y;
         _phaseOffset = Random.Range(0f, Mathf.PI * 2f);
+        _rotationPhase = Random.Range(0f, Mathf.PI * 2f);
+        _baseRotation = transform.rotation;
         _player = _cachedPlayer;
     }
 
     void Update()
     {
         if (!EchoRunAccessibility.ReducedMotion)
-            transform.Rotate(Vector3.up, rotateSpeed * Time.deltaTime, Space.World);
+        {
+            float yaw = Mathf.Sin(Time.time * rotateSpeed * Mathf.Deg2Rad
+                                   + _rotationPhase)
+                        * Mathf.Max(0f, yawAmplitude);
+            transform.rotation = _baseRotation
+                                 * Quaternion.Euler(0f, yaw, 0f);
+        }
+        else
+        {
+            transform.rotation = _baseRotation;
+        }
 
         PowerUpController powerUps = PowerUpController.Instance;
         if (powerUps != null && powerUps.HasMagnet && ResolvePlayer() != null)

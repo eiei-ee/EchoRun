@@ -413,7 +413,8 @@ public class PlayerController : MonoBehaviour
             AIShadowRunner.Instance?.RecordCoin(coin.IsEchoContractMarker,
                 coin.EchoChallengeStepId);
             AudioManager.Instance?.PlayCoin();
-            ParticleManager.Instance?.EmitCoin(other.transform.position);
+            ParticleManager.Instance?.EmitCoin(other.transform.position,
+                transform.position + Vector3.up * 0.8f);
             if (TrackManager.Instance != null)
                 TrackManager.Instance.ReleaseDynamic(other.gameObject);
             else

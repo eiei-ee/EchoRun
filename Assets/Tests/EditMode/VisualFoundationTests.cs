@@ -143,18 +143,22 @@ public class VisualFoundationTests
     }
 
     [Test]
-    public void NightBaselineStaysInsideFrozenExposureRanges()
+    public void ColdWhiteFortressBaselineStaysInsideFrozenExposureRanges()
     {
         Assert.That(WorldStyler.StructureMetallic,
             Is.InRange(0.10f, 0.20f));
         Assert.That(WorldStyler.StructureSmoothness,
             Is.InRange(0.25f, 0.35f));
         Assert.That(WorldStyler.HighFillLightIntensity,
-            Is.InRange(0.25f, 0.28f));
+            Is.InRange(0.40f, 0.46f));
         Assert.That(WorldStyler.HighReflectionIntensity,
             Is.InRange(0.22f, 0.25f));
         Assert.That(WorldStyler.KeyLightIntensity,
-            Is.InRange(0.95f, 1.05f));
+            Is.InRange(1.10f, 1.16f));
+        Assert.That(WorldStyler.SkyExposure,
+            Is.InRange(0.68f, 0.76f));
+        Assert.That(WorldStyler.SkySaturation,
+            Is.InRange(0.18f, 0.28f));
     }
 
     [Test]
@@ -174,6 +178,10 @@ public class VisualFoundationTests
                 Is.InRange(0.001f, 0.10f));
             Assert.That(material.GetFloat("_HorizonTexY"),
                 Is.InRange(0.20f, 0.30f));
+            Assert.AreEqual(WorldStyler.SkyExposure,
+                material.GetFloat("_Exposure"), 0.001f);
+            Assert.AreEqual(WorldStyler.SkySaturation,
+                material.GetFloat("_Saturation"), 0.001f);
             Assert.IsFalse(material.HasProperty("_GroundFadeStart"));
             Assert.IsFalse(material.HasProperty("_GroundFadeEnd"));
             Assert.IsFalse(material.HasProperty("_GroundColor"));
@@ -203,6 +211,26 @@ public class VisualFoundationTests
         Assert.IsTrue(material.IsKeywordEnabled("_ECHO_NORMALMAP"));
         Assert.IsTrue(material.IsKeywordEnabled("_ECHO_FAKE_REFLECTION"));
         Assert.IsTrue(material.IsKeywordEnabled("_ECHO_WET_SURFACE"));
+    }
+
+    [Test]
+    public void RoadMaterialUsesMatteGraphiteAndNeutralInsetGuides()
+    {
+        EchoRoadVisualController controller = CreateController();
+        Material material = controller.SharedRoadMaterial;
+
+        Color road = material.GetColor("_Color");
+        Color lane = material.GetColor("_LaneColor");
+        Assert.Less(road.maxColorComponent, 0.10f,
+            "The road foundation must remain deep graphite.");
+        Assert.Less(Mathf.Max(Mathf.Abs(road.r - road.g),
+            Mathf.Abs(road.g - road.b)), 0.02f,
+            "The road foundation must stay neutral instead of blue-purple.");
+        Assert.Less(Mathf.Max(Mathf.Abs(lane.r - lane.g),
+            Mathf.Abs(lane.g - lane.b)), 0.06f,
+            "Embedded lane seams must remain neutral.");
+        Assert.LessOrEqual(material.GetFloat("_Wetness"), 0.25f);
+        Assert.LessOrEqual(material.GetFloat("_ReflectionStrength"), 0.08f);
     }
 
     private EchoRoadVisualController CreateController()

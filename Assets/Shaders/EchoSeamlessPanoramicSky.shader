@@ -5,6 +5,7 @@ Shader "EchoRun/SeamlessPanoramicSky"
         _MainTex ("Panorama", 2D) = "grey" {}
         _Tint ("Tint Color", Color) = (.5, .5, .5, 1)
         _Exposure ("Exposure", Range(0, 8)) = 0.54
+        _Saturation ("Saturation", Range(0, 1)) = 0.22
         _Rotation ("Rotation", Range(0, 360)) = 0
         _SeamBlend ("Seam Blend", Range(0.001, 0.1)) = 0.07
         _HorizonTexY ("Source Horizon Height", Range(0.1, 0.45)) = 0.24
@@ -28,6 +29,7 @@ Shader "EchoRun/SeamlessPanoramicSky"
             float4 _MainTex_TexelSize;
             half4 _Tint;
             half _Exposure;
+            half _Saturation;
             float _Rotation;
             float _SeamBlend;
             float _HorizonTexY;
@@ -100,6 +102,10 @@ Shader "EchoRun/SeamlessPanoramicSky"
                 float seamWeight = 1.0 - smoothstep(
                     0.0, max(_SeamBlend, 0.001), edgeDistance);
                 half4 color = lerp(city, (city + oppositeEdge) * 0.5, seamWeight);
+                half luminance = dot(color.rgb,
+                    half3(0.2126h, 0.7152h, 0.0722h));
+                color.rgb = lerp(luminance.xxx, color.rgb,
+                    saturate(_Saturation));
                 color.rgb *= _Tint.rgb * unity_ColorSpaceDouble.rgb * _Exposure;
 
                 color.a = 1.0;

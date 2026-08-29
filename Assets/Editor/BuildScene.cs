@@ -45,7 +45,7 @@ public class BuildScene
         CreateTrackSegmentPrefab();
         CreateTurnSegmentPrefabs();
         BakeEnvironmentVariants();
-        ConfigureTrackManager();
+        EnsureFormalTrackManagerBindings();
         EchoHudPrefabBuilder.Build();
         CreateUICanvas();
 
@@ -576,9 +576,7 @@ public class BuildScene
     {
         RecreateManager("GameManager", typeof(GameManager));
         RecreateManager("InputManager", typeof(InputManager));
-        GameObject serializedTrackManager = GameObject.Find("TrackManager");
-        if (serializedTrackManager != null)
-            Object.DestroyImmediate(serializedTrackManager);
+        RecreateManager("TrackManager", typeof(TrackManager));
         RecreateManager("WorldStyler", typeof(WorldStyler));
         RecreateManager("UIManager", typeof(UIManager));
         RecreateManager("AudioManager", typeof(AudioManager));
@@ -829,12 +827,19 @@ public class BuildScene
         ground.name = "GroundPlane";
         ground.transform.SetParent(seg.transform);
         ground.transform.localPosition = Vector3.zero;
-        ground.transform.localScale = new Vector3(1.5f, 1f, 2f);
+        ground.transform.localScale = new Vector3(
+            TrackGeometryStandards.VisualRoadWidth / 10f, 1f,
+            TrackGeometryStandards.StandardSegmentLength / 10f);
         ground.layer = LayerMask.NameToLayer("Ground");
         Object.DestroyImmediate(ground.GetComponent<Collider>());
         BoxCollider groundCol = ground.AddComponent<BoxCollider>();
         groundCol.center = Vector3.zero;
-        groundCol.size = new Vector3(9f, 0.2f, 20f);
+        groundCol.size = new Vector3(
+            TrackGeometryStandards.WalkableWidth
+            / ground.transform.localScale.x,
+            0.2f,
+            TrackGeometryStandards.StandardSegmentLength
+            / ground.transform.localScale.z);
 
         Material gm = GetOrCreateSharedRoadMaterial();
         if (gm != null) ground.GetComponent<MeshRenderer>().sharedMaterial = gm;
@@ -847,21 +852,23 @@ public class BuildScene
             m.transform.localPosition = new Vector3((i - 1) * 3f, 0.06f, 0);
         }
 
-        // White lane divider lines
-        Material lineMat = CreateMaterial("LaneLineMat", new Color(0.06f, 0.34f, 0.4f),
-            new Color(0.01f, 0.22f, 0.3f), 0.12f, 0.58f);
+        // Neutral recessed lane seams. Phase color belongs to authored accent
+        // meshes, not to a pair of always-emissive full-length strips.
+        Material lineMat = CreateMaterial("LaneInsetMat",
+            new Color(0.055f, 0.070f, 0.078f), Color.black, 0.20f, 0.44f);
         for (int i = -1; i <= 1; i += 2)
         {
             GameObject line = GameObject.CreatePrimitive(PrimitiveType.Cube);
             line.name = "LaneLine_" + (i > 0 ? "R" : "L");
             line.transform.SetParent(seg.transform);
-            line.transform.localPosition = new Vector3(i * 1.5f, 0.06f, 0);
-            line.transform.localScale = new Vector3(0.15f, 0.02f, 20f);
-            if (lineMat != null) line.GetComponent<MeshRenderer>().material = lineMat;
+            line.transform.localPosition = new Vector3(i * 1.5f, 0.052f, 0);
+            line.transform.localScale = new Vector3(0.045f, 0.012f, 19.2f);
+            if (lineMat != null)
+                line.GetComponent<MeshRenderer>().sharedMaterial = lineMat;
             Object.DestroyImmediate(line.GetComponent<Collider>());
         }
 
-        Material seamMat = gm;
+        Material seamMat = lineMat;
         for (int z = -8; z <= 8; z += 4)
         {
             GameObject seam = CreatePrefabPart("DataSeam", PrimitiveType.Cube, seg.transform,
@@ -876,8 +883,8 @@ public class BuildScene
     static void CreateTurnSegmentPrefabs()
     {
         Material trackMat = GetOrCreateSharedRoadMaterial();
-        Material lineMat = CreateMaterial("LaneLineMat_Turn", new Color(0.86f, 0.56f, 0.16f),
-            new Color(0.36f, 0.12f, 0.01f), 0.48f, 0.7f);
+        Material lineMat = CreateMaterial("LaneInsetMat_Turn",
+            new Color(0.055f, 0.070f, 0.078f), Color.black, 0.20f, 0.44f);
         int groundLayer = LayerMask.NameToLayer("Ground");
 
         CreateTurnPrefab("Assets/Prefabs/TurnSegment_Right.prefab", "TurnSegment_Right", 1, trackMat, lineMat, groundLayer);
@@ -890,7 +897,7 @@ public class BuildScene
         FixTurnRoadJoinPrefab("Assets/Prefabs/TurnSegment_Left.prefab", -1);
         FixTurnRoadJoinPrefab("Assets/Prefabs/TurnSegment_Right.prefab", 1);
         AssetDatabase.SaveAssets();
-        Debug.Log("Turn road joins trimmed to the L-shaped track standard.");
+        Debug.Log("Turn road joins sealed with mirrored inner-corner caps.");
     }
 
     static void FixTurnRoadJoinPrefab(string path, int turnDir)
@@ -902,6 +909,11 @@ public class BuildScene
                 true, turnDir);
             ConfigureTurnRoadSurface(root.transform.Find("ExitStrip"),
                 false, turnDir);
+            Renderer entryRenderer = root.transform.Find("EntryStrip")
+                .GetComponent<Renderer>();
+            EnsureTurnCornerSupport(root.transform, turnDir,
+                entryRenderer != null ? entryRenderer.sharedMaterial : null,
+                root.layer);
 
             Transform runtimeCoverage = root.transform.Find(
                 "RuntimeTurnCoverage");
@@ -935,7 +947,9 @@ public class BuildScene
             CreateMaterial("EchoCoral", new Color(1.00f, 0.40f, 0.35f),
                 new Color(0.58f, 0.060f, 0.028f), 0.14f, 0.50f),
             CreateMaterial("EchoGold", new Color(0.94f, 0.68f, 0.24f),
-                new Color(0.48f, 0.19f, 0.015f), 0.52f, 0.72f)
+                new Color(0.48f, 0.19f, 0.015f), 0.52f, 0.72f),
+            AssetDatabase.LoadAssetAtPath<Material>(
+                InstallColdWhiteMemoryFortress.PhaseAccentMaterialPath)
         };
 
         GameObject temporaryStyler = null;
@@ -1091,6 +1105,7 @@ public class BuildScene
                     if (rendererName == "GroundPlane"
                         || rendererName == "EntryStrip"
                         || rendererName == "ExitStrip"
+                        || rendererName == TrackManager.TurnInnerCornerCapName
                         || rendererName.Contains("Seam"))
                         renderers[r].sharedMaterial = material;
                 }
@@ -1115,8 +1130,9 @@ public class BuildScene
         float exitLength = TrackGeometryStandards.TurnExitSurfaceLength(
             segmentLength);
 
-        // L-shaped geometry: the entry owns the corner square while the exit
-        // stops at the following straight's near edge. No arm overhangs a join.
+        // Entry and exit keep their trimmed join envelopes. A separate visual
+        // cap seals the inner square without extending either arm underneath a
+        // neighboring straight.
         GameObject entry = GameObject.CreatePrimitive(PrimitiveType.Plane);
         entry.name = "EntryStrip";
         entry.transform.SetParent(seg.transform);
@@ -1154,6 +1170,8 @@ public class BuildScene
             / exitStrip.transform.localScale.x, 0.3f, 10f);
         if (trackMat != null) exitStrip.GetComponent<MeshRenderer>().sharedMaterial = trackMat;
 
+        EnsureTurnCornerSupport(seg.transform, turnDir, trackMat, groundLayer);
+
         // Lane markers on entry strip
         for (int i = 0; i < 3; i++)
         {
@@ -1166,9 +1184,10 @@ public class BuildScene
             GameObject line = GameObject.CreatePrimitive(PrimitiveType.Cube);
             line.name = "LaneLine_" + (i > 0 ? "R" : "L");
             line.transform.SetParent(seg.transform);
-            line.transform.localPosition = new Vector3(i * 1.5f, 0.08f, 5f);
-            line.transform.localScale = new Vector3(0.15f, 0.02f, 10f);
-            if (lineMat != null) line.GetComponent<MeshRenderer>().material = lineMat;
+            line.transform.localPosition = new Vector3(i * 1.5f, 0.072f, 5f);
+            line.transform.localScale = new Vector3(0.045f, 0.012f, 9.2f);
+            if (lineMat != null)
+                line.GetComponent<MeshRenderer>().sharedMaterial = lineMat;
             Object.DestroyImmediate(line.GetComponent<Collider>());
         }
 
@@ -1219,12 +1238,65 @@ public class BuildScene
         }
     }
 
+    static void EnsureTurnCornerSupport(Transform root, int turnDir,
+        Material roadMaterial, int groundLayer)
+    {
+        float segmentLength = TrackGeometryStandards.StandardSegmentLength;
+        float size = TrackGeometryStandards.TurnInnerCornerSize(segmentLength);
+        Vector3 capCenter = TrackGeometryStandards.TurnInnerCornerCenter(
+            segmentLength, turnDir);
+        capCenter.y = 0.051f;
+
+        Transform existingCap = root.Find(TrackManager.TurnInnerCornerCapName);
+        GameObject cap = existingCap != null
+            ? existingCap.gameObject
+            : GameObject.CreatePrimitive(PrimitiveType.Plane);
+        cap.name = TrackManager.TurnInnerCornerCapName;
+        cap.transform.SetParent(root, false);
+        cap.transform.localPosition = capCenter;
+        cap.transform.localRotation = Quaternion.identity;
+        cap.transform.localScale = new Vector3(size / 10f, 1f, size / 10f);
+        cap.layer = groundLayer;
+        Collider[] capColliders = cap.GetComponents<Collider>();
+        for (int index = 0; index < capColliders.Length; index++)
+            Object.DestroyImmediate(capColliders[index]);
+        Renderer capRenderer = cap.GetComponent<Renderer>();
+        if (capRenderer != null && roadMaterial != null)
+            capRenderer.sharedMaterial = roadMaterial;
+
+        Transform existingBridge = root.Find(TrackManager.TurnWalkableBridgeName);
+        GameObject bridge = existingBridge != null
+            ? existingBridge.gameObject
+            : new GameObject(TrackManager.TurnWalkableBridgeName);
+        bridge.transform.SetParent(root, false);
+        Vector3 bridgeCenter = TrackGeometryStandards.TurnWalkableBridgeCenter(
+            segmentLength, turnDir);
+        bridgeCenter.y = 0.05f;
+        bridge.transform.localPosition = bridgeCenter;
+        bridge.transform.localRotation = Quaternion.identity;
+        bridge.transform.localScale = Vector3.one;
+        bridge.layer = groundLayer;
+        BoxCollider bridgeCollider = bridge.GetComponent<BoxCollider>();
+        if (bridgeCollider == null)
+            bridgeCollider = bridge.AddComponent<BoxCollider>();
+        bridgeCollider.enabled = true;
+        bridgeCollider.center = Vector3.zero;
+        bridgeCollider.size = new Vector3(
+            TrackGeometryStandards.TurnWalkableBridgeWidth, 0.3f,
+            TrackGeometryStandards.WalkableWidth);
+    }
+
     // ── track manager wiring ───────────────────────────
 
-    static void ConfigureTrackManager()
+    [MenuItem("Tools/EchoRun/Ensure Formal Track Manager Bindings")]
+    public static void EnsureFormalTrackManagerBindings()
     {
         TrackManager tm = Object.FindObjectOfType<TrackManager>();
-        if (tm == null) { Debug.LogWarning("TrackManager not found!"); return; }
+        if (tm == null)
+        {
+            GameObject manager = new GameObject("TrackManager");
+            tm = manager.AddComponent<TrackManager>();
+        }
 
         GameObject coinPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Coin.prefab");
         GameObject obsLow = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Obstacle_Low.prefab");
@@ -1233,10 +1305,21 @@ public class BuildScene
         GameObject segmentPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/TrackSegment.prefab");
         GameObject turnLeftPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/TurnSegment_Left.prefab");
         GameObject turnRightPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/TurnSegment_Right.prefab");
+        if (coinPrefab == null || obsLow == null || obsHigh == null
+            || obsBarrier == null || segmentPrefab == null
+            || turnLeftPrefab == null || turnRightPrefab == null)
+        {
+            throw new System.InvalidOperationException(
+                "Formal TrackManager binding requires all track, coin and obstacle prefabs.");
+        }
 
         SerializedObject so = new SerializedObject(tm);
         so.FindProperty("coinPrefab").objectReferenceValue = coinPrefab;
         so.FindProperty("trackSegmentPrefab").objectReferenceValue = segmentPrefab;
+        so.FindProperty("segmentLength").floatValue =
+            TrackGeometryStandards.StandardSegmentLength;
+        so.FindProperty("laneDistance").floatValue =
+            TrackGeometryStandards.LaneSpacing;
         so.FindProperty("turnLeftPrefab").objectReferenceValue = turnLeftPrefab;
         so.FindProperty("turnRightPrefab").objectReferenceValue = turnRightPrefab;
 
@@ -1248,6 +1331,8 @@ public class BuildScene
 
         so.ApplyModifiedProperties();
         EditorUtility.SetDirty(tm.gameObject);
+        EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+        Debug.Log("FORMAL_TRACK_MANAGER_BINDINGS_OK");
     }
 
     // ── canvas / UI ────────────────────────────────────

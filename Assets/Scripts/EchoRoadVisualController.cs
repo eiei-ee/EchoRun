@@ -81,8 +81,9 @@ public sealed class EchoRoadVisualController : MonoBehaviour
         properties.SetFloat(SeamStrengthId, role == RoadSurfaceRole.Seam ? 1f : 0f);
         properties.SetFloat(StartDeckBoostId,
             role == RoadSurfaceRole.StartDeck ? 1f : 0f);
-        properties.SetFloat(LaneDensityId,
-            role == RoadSurfaceRole.Turn ? 0.75f : 1f);
+        properties.SetFloat(LaneDensityId, IsAuthoredFortressRoad(renderer)
+            ? 0f
+            : role == RoadSurfaceRole.Turn ? 0.75f : 1f);
         properties.SetFloat(SafeLaneHintId, 0f);
         renderer.SetPropertyBlock(properties);
     }
@@ -142,7 +143,7 @@ public sealed class EchoRoadVisualController : MonoBehaviour
         };
         if (_sharedRoadMaterial.HasProperty("_Color"))
             _sharedRoadMaterial.SetColor("_Color",
-                new Color(0.045f, 0.065f, 0.095f, 1f));
+                new Color(0.052f, 0.057f, 0.061f, 1f));
         _ownsRuntimeMaterial = true;
     }
 
@@ -152,6 +153,7 @@ public sealed class EchoRoadVisualController : MonoBehaviour
         if (objectName == "GroundPlane" || objectName == "EntryStrip"
             || objectName == "ExitStrip" || objectName == "Surface"
             || objectName == "EntryCoverage" || objectName == "ExitCoverage"
+            || objectName == TrackManager.TurnInnerCornerCapName
             || objectName == "LaunchRoad" || objectName == "Plane"
             || objectName.IndexOf("Seam", StringComparison.OrdinalIgnoreCase) >= 0)
             return true;
@@ -164,6 +166,17 @@ public sealed class EchoRoadVisualController : MonoBehaviour
                || material.name == "EchoRoad";
     }
 
+    private static bool IsAuthoredFortressRoad(Renderer renderer)
+    {
+        Transform current = renderer != null ? renderer.transform : null;
+        while (current != null)
+        {
+            if (current.name == "RoadVisual") return true;
+            current = current.parent;
+        }
+        return false;
+    }
+
     private static RoadSurfaceRole ResolveRole(string rendererName,
         RoadSurfaceRole defaultRole)
     {
@@ -171,7 +184,8 @@ public sealed class EchoRoadVisualController : MonoBehaviour
             return RoadSurfaceRole.Seam;
         if (rendererName == "LaunchRoad" || rendererName == "Plane")
             return RoadSurfaceRole.StartDeck;
-        if (rendererName == "EntryCoverage" || rendererName == "ExitCoverage")
+        if (rendererName == "EntryCoverage" || rendererName == "ExitCoverage"
+            || rendererName == TrackManager.TurnInnerCornerCapName)
             return RoadSurfaceRole.RuntimeFallback;
         return defaultRole;
     }

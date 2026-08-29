@@ -2606,6 +2606,34 @@ public class GameStateTests
             "Exit coverage must stop at the next straight's near edge.");
         Assert.AreEqual(manager.segmentLength * 0.5f,
             exit.localPosition.z, 0.001f);
+
+        Transform cap = turn.transform.Find(
+            TrackManager.TurnInnerCornerCapName);
+        Assert.IsNotNull(cap);
+        Assert.IsNotNull(cap.GetComponent<Renderer>());
+        Assert.IsNull(cap.GetComponent<Collider>(),
+            "Runtime fallback cap is visual-only.");
+        Vector3 expectedCap = TrackGeometryStandards.TurnInnerCornerCenter(
+            manager.segmentLength, turnDirection);
+        Assert.AreEqual(expectedCap.x, cap.localPosition.x, 0.001f);
+        Assert.AreEqual(expectedCap.z, cap.localPosition.z, 0.001f);
+
+        Transform bridge = turn.transform.Find(
+            TrackManager.TurnWalkableBridgeName);
+        Assert.IsNotNull(bridge);
+        Assert.IsNull(bridge.GetComponent<Renderer>());
+        BoxCollider bridgeCollider = bridge.GetComponent<BoxCollider>();
+        Assert.IsNotNull(bridgeCollider);
+        Assert.IsTrue(bridgeCollider.enabled);
+        Vector3 expectedBridge =
+            TrackGeometryStandards.TurnWalkableBridgeCenter(
+                manager.segmentLength, turnDirection);
+        Assert.AreEqual(expectedBridge.x, bridge.localPosition.x, 0.001f);
+        Assert.AreEqual(expectedBridge.z, bridge.localPosition.z, 0.001f);
+        Assert.AreEqual(TrackGeometryStandards.TurnWalkableBridgeWidth,
+            bridgeCollider.size.x, 0.001f);
+        Assert.AreEqual(TrackGeometryStandards.WalkableWidth,
+            bridgeCollider.size.z, 0.001f);
     }
 
     [Test]

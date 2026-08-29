@@ -19,8 +19,8 @@ public sealed class SingleContractVisualStateTests
             "Calibration must remain blue.");
         Assert.Greater(challenge.tint.g, challenge.tint.r,
             "Challenge must retain its cyan component.");
-        Assert.Greater(challenge.tint.b, challenge.tint.g,
-            "Challenge must retain its violet-blue component.");
+        Assert.AreEqual(challenge.tint.g, challenge.tint.b, 0.08f,
+            "Challenge must read as restrained cyan, not violet-blue neon.");
         Assert.Greater(relearn.tint.r, relearn.tint.g + 0.5f,
             "Relearn must be an unmistakable red pulse.");
         Assert.Greater(finale.tint.r, finale.tint.g);

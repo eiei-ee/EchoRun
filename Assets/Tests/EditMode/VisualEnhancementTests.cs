@@ -99,11 +99,12 @@ public class VisualEnhancementTests
             Assert.Greater(palette.cyanEmission.maxColorComponent, 0.25f);
             for (int j = 0; j < i; j++)
             {
-                EchoWorldPhasePalette previous = WorldStyler.BuildPhasePalette(
-                    EchoPhaseVisualController.StyleFor(phases[j]));
-                Assert.Greater(ColorDistance(palette.skyTint,
-                    previous.skyTint), 0.025f,
-                    phases[j] + " and " + phases[i] + " sky");
+                  EchoWorldPhasePalette previous = WorldStyler.BuildPhasePalette(
+                      EchoPhaseVisualController.StyleFor(phases[j]));
+                  Assert.Greater(ColorDistance(palette.skyTint,
+                      previous.skyTint), 0.008f,
+                      phases[j] + " and " + phases[i]
+                      + " restrained global sky shift");
                 Assert.Greater(ColorDistance(palette.cyanEmission,
                     previous.cyanEmission), 0.035f,
                     phases[j] + " and " + phases[i] + " city signals");
