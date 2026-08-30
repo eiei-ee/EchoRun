@@ -82,6 +82,32 @@ public static class TrackSpawnRules
             GroundCoinHeight, corner);
     }
 
+    public static Vector3 TurnGuideCoinLocalTangent(float segmentLength,
+        int turnDirection, int coinIndex)
+    {
+        int index = Mathf.Clamp(coinIndex, 0, TurnGuideCoinCount - 1);
+        int previousIndex = Mathf.Max(0, index - 1);
+        int nextIndex = Mathf.Min(TurnGuideCoinCount - 1, index + 1);
+        Vector3 tangent = TurnGuideCoinLocalPosition(
+                              segmentLength, turnDirection, nextIndex)
+                          - TurnGuideCoinLocalPosition(
+                              segmentLength, turnDirection, previousIndex);
+        tangent.y = 0f;
+        return tangent.sqrMagnitude > 0.0001f
+            ? tangent.normalized
+            : Vector3.forward;
+    }
+
+    public static Quaternion CoinRouteRotation(Quaternion segmentRotation,
+        Vector3 localTangent)
+    {
+        Vector3 worldTangent = segmentRotation * localTangent;
+        worldTangent.y = 0f;
+        if (worldTangent.sqrMagnitude <= 0.0001f)
+            worldTangent = segmentRotation * Vector3.forward;
+        return Quaternion.LookRotation(worldTangent.normalized, Vector3.up);
+    }
+
     public static bool CoinTrailOverlapsObstacle(float startZ, int count,
         float spacing, float obstacleZ, float obstacleHalfDepth)
     {

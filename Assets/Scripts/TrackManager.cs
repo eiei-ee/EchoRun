@@ -1824,13 +1824,15 @@ public class TrackManager : MonoBehaviour
         }
 
         float x = (lane - 1) * laneDistance;
+        Quaternion routeRotation = TrackSpawnRules.CoinRouteRotation(
+            segment.transform.rotation, Vector3.forward);
         for (int c = 0; c < count; c++)
         {
             Vector3 lp = new Vector3(x, TrackSpawnRules.GroundCoinHeight,
                 startZ + c * TrackSpawnRules.CoinSpacing);
             if (lp.z > segmentLength - 1f) break;
             Vector3 wp = segment.transform.TransformPoint(lp);
-            SpawnCoinInstance(segment, wp, echoContractMarker,
+            SpawnCoinInstance(segment, wp, routeRotation, echoContractMarker,
                 challengeStepId);
         }
     }
@@ -1866,6 +1868,8 @@ public class TrackManager : MonoBehaviour
         float halfSpan = (count - 1) * spacing * 0.5f;
         float startZ = obstacleZ - halfSpan;
         float x = (lane - 1) * laneDistance;
+        Quaternion routeRotation = TrackSpawnRules.CoinRouteRotation(
+            segment.transform.rotation, Vector3.forward);
         for (int c = 0; c < count; c++)
         {
             float progress = count > 1 ? (float)c / (count - 1) : 0.5f;
@@ -1877,7 +1881,7 @@ public class TrackManager : MonoBehaviour
                 TrackSpawnRules.GroundCoinHeight, jumpHeight);
             Vector3 wp = segment.transform.TransformPoint(
                 new Vector3(x, y, z));
-            SpawnCoinInstance(segment, wp, echoContractMarker,
+            SpawnCoinInstance(segment, wp, routeRotation, echoContractMarker,
                 challengeStepId);
         }
     }
@@ -1893,7 +1897,11 @@ public class TrackManager : MonoBehaviour
                 segmentLength, turnDirection, index);
             Vector3 worldPosition = segment.transform.TransformPoint(
                 localPosition);
-            SpawnCoinInstance(segment, worldPosition, false);
+            Vector3 localTangent = TrackSpawnRules.TurnGuideCoinLocalTangent(
+                segmentLength, turnDirection, index);
+            Quaternion routeRotation = TrackSpawnRules.CoinRouteRotation(
+                segment.transform.rotation, localTangent);
+            SpawnCoinInstance(segment, worldPosition, routeRotation, false);
         }
     }
 
@@ -2440,6 +2448,8 @@ public class TrackManager : MonoBehaviour
            : Instantiate(prefab);
 
        instance.SetActive(false);
+       if (prefab == coinPrefab)
+           Coin.EnsureRuntimeContract(instance);
        instance.transform.SetParent(ownerSegment.transform, true);
        instance.transform.SetPositionAndRotation(position, rotation);
        instance.SetActive(true);
@@ -2460,11 +2470,11 @@ public class TrackManager : MonoBehaviour
    }
 
     private GameObject SpawnCoinInstance(GameObject ownerSegment,
-        Vector3 position, bool echoContractMarker,
+        Vector3 position, Quaternion routeRotation, bool echoContractMarker,
         int challengeStepId = 0)
-   {
-       GameObject instance = SpawnDynamic(
-           coinPrefab, ownerSegment, position, Quaternion.identity);
+    {
+        GameObject instance = SpawnDynamic(
+            coinPrefab, ownerSegment, position, routeRotation);
        Coin coin = instance != null ? instance.GetComponent<Coin>() : null;
         coin?.ConfigureEchoContractMarker(echoContractMarker, challengeStepId);
        return instance;

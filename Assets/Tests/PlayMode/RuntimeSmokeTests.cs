@@ -139,6 +139,124 @@ public sealed class RuntimeSmokeTests
         }
     }
 
+    [UnityTest]
+    public IEnumerator CoinPoolRepairsBindingAndKeepsRouteAlignedTrigger()
+    {
+        for (int frame = 0; frame < 120
+             && (TrackManager.Instance == null || WorldStyler.Instance == null);
+             frame++)
+            yield return null;
+
+        TrackManager track = TrackManager.Instance;
+        Assert.IsNotNull(track);
+        Assert.IsNotNull(WorldStyler.Instance);
+
+        MethodInfo spawnCoin = typeof(TrackManager).GetMethod(
+            "SpawnCoinInstance", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.IsNotNull(spawnCoin);
+
+        GameObject originalPrefab = track.coinPrefab;
+        GameObject legacyPrefab = new GameObject("LegacyCoinPrefab_Test");
+        BoxCollider legacyTrigger = legacyPrefab.AddComponent<BoxCollider>();
+        legacyTrigger.size = new Vector3(1f, 1f, 0.4f);
+        legacyTrigger.isTrigger = true;
+        legacyPrefab.SetActive(false);
+        Assert.IsNull(legacyPrefab.GetComponent<Coin>(),
+            "The test template must reproduce the missing Coin binding.");
+        track.coinPrefab = legacyPrefab;
+
+        GameObject owner = new GameObject("CoinPoolRuntimeOwner");
+        owner.transform.SetPositionAndRotation(
+            new Vector3(1000f, 0f, 1000f),
+            Quaternion.Euler(0f, 90f, 0f));
+        GameObject spawned = null;
+        try
+        {
+            Quaternion firstRoute = TrackSpawnRules.CoinRouteRotation(
+                owner.transform.rotation, Vector3.forward);
+            spawned = spawnCoin.Invoke(track, new object[]
+            {
+                owner,
+                owner.transform.position + Vector3.up,
+                firstRoute,
+                true,
+                17
+            }) as GameObject;
+            Assert.IsNotNull(spawned);
+            yield return null;
+
+            Assert.IsTrue(spawned.activeInHierarchy);
+            Assert.AreSame(owner.transform, spawned.transform.parent);
+            Assert.AreEqual(1, spawned.GetComponents<Coin>().Length,
+                "A pooled pickup must never accumulate Coin components.");
+            BoxCollider trigger = spawned.GetComponent<BoxCollider>();
+            Assert.IsNotNull(trigger);
+            Assert.IsTrue(trigger.isTrigger);
+            Assert.AreEqual(new Vector3(1f, 1f, 0.4f), trigger.size);
+            Assert.Less(Vector3.Angle(spawned.transform.forward,
+                    firstRoute * Vector3.forward), 0.01f,
+                "The root trigger must follow the route, not the camera.");
+
+            EchoCoinVisual visual =
+                spawned.GetComponentInChildren<EchoCoinVisual>(true);
+            Assert.IsNotNull(visual,
+                "World styling must attach the single rendered coin visual.");
+            Renderer renderer = visual.GetComponent<Renderer>();
+            Assert.IsNotNull(renderer);
+            var properties = new MaterialPropertyBlock();
+            renderer.GetPropertyBlock(properties);
+            Assert.AreEqual(1f,
+                properties.GetFloat(Shader.PropertyToID("_ContractMarker")),
+                0.001f);
+
+            GameObject firstSpawn = spawned;
+            track.ReleaseDynamic(firstSpawn);
+            Assert.IsFalse(firstSpawn.activeSelf);
+
+            Quaternion secondRoute = TrackSpawnRules.CoinRouteRotation(
+                Quaternion.Euler(0f, -90f, 0f), Vector3.forward);
+            GameObject reused = spawnCoin.Invoke(track, new object[]
+            {
+                owner,
+                owner.transform.position + Vector3.up * 2f,
+                secondRoute,
+                false,
+                0
+            }) as GameObject;
+            spawned = reused;
+            Assert.AreSame(firstSpawn, reused,
+                "The test must exercise the actual pooled reuse path.");
+            yield return null;
+
+            Assert.AreEqual(1, reused.GetComponents<Coin>().Length);
+            Assert.Less(Vector3.Angle(reused.transform.forward,
+                    secondRoute * Vector3.forward), 0.01f);
+            renderer.GetPropertyBlock(properties);
+            Assert.AreEqual(0f,
+                properties.GetFloat(Shader.PropertyToID("_ContractMarker")),
+                0.001f,
+                "Reused normal coins must clear the contract marker.");
+        }
+        finally
+        {
+            if (spawned != null && spawned.activeSelf)
+                track.ReleaseDynamic(spawned);
+            track.coinPrefab = originalPrefab;
+            Dictionary<GameObject, Queue<GameObject>> pools =
+                GetPrivateField<Dictionary<GameObject, Queue<GameObject>>>(
+                    track, "_dynamicPools");
+            if (pools.TryGetValue(legacyPrefab,
+                    out Queue<GameObject> testPool))
+            {
+                while (testPool.Count > 0)
+                    Object.Destroy(testPool.Dequeue());
+                pools.Remove(legacyPrefab);
+            }
+            Object.Destroy(legacyPrefab);
+            Object.Destroy(owner);
+        }
+    }
+
     private static Bounds CombinedRendererBounds(Transform root)
     {
         Renderer[] renderers = root.GetComponentsInChildren<Renderer>();

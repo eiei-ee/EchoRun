@@ -25,13 +25,15 @@ public static class EchoGameplayArtBuilder
         {
             material.shader = shader;
         }
-        material.SetColor("_FrameColor", new Color32(24, 33, 39, 255));
-        material.SetColor("_FrameHighlight", new Color32(89, 102, 109, 255));
-        material.SetColor("_CoreColor", new Color32(0, 220, 235, 255));
-        material.SetColor("_CoreEdgeColor", new Color32(184, 250, 255, 255));
-        material.SetColor("_AccentColor", new Color32(255, 120, 32, 255));
+        material.SetColor("_FrameColor", new Color32(217, 139, 50, 255));
+        material.SetColor("_FrameHighlight", new Color32(255, 234, 194, 255));
+        material.SetColor("_CoreColor", new Color32(255, 178, 74, 255));
+        material.SetColor("_CoreEdgeColor", new Color32(255, 241, 214, 255));
+        material.SetColor("_AccentColor", new Color32(31, 231, 231, 255));
         material.SetColor("_ContractColor", new Color(1f, 0.34f, 0.30f, 1f));
-        material.SetFloat("_EmissionStrength", 1.65f);
+        material.SetFloat("_EmissionStrength", 2.05f);
+        material.SetFloat("_FrameEmissionStrength", 0.72f);
+        material.SetFloat("_AccentEmissionStrength", 0.70f);
         material.SetFloat("_ScanPeriod", 1.5f);
         material.enableInstancing = true;
         EditorUtility.SetDirty(material);

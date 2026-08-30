@@ -70,10 +70,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5fd2de0d4887294db617ace0177ceb8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  rotateSpeed: 38
+  rotateSpeed: 225
   yawAmplitude: 12
-  bobSpeed: 1.7
-  bobHeight: 0.04
+  bobSpeed: 3.5
+  bobHeight: 0.06
 --- !u!1 &4197640908277237237
 GameObject:
   m_ObjectHideFlags: 0

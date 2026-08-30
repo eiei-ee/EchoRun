@@ -79,15 +79,30 @@ public sealed class MemoryPulseShardTests
     {
         GameObject coinPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
             CoinPrefabPath);
-        Coin coin = coinPrefab.GetComponent<Coin>();
         BoxCollider trigger = coinPrefab.GetComponent<BoxCollider>();
-        Assert.IsNotNull(coin);
         Assert.IsNotNull(trigger);
         Assert.IsTrue(trigger.isTrigger);
         Assert.AreEqual(new Vector3(1f, 1f, 0.4f), trigger.size);
-        Assert.That(coin.rotateSpeed, Is.InRange(30f, 45f));
-        Assert.That(coin.yawAmplitude, Is.InRange(8f, 14f));
-        Assert.That(coin.bobHeight, Is.InRange(0.03f, 0.05f));
+
+        GameObject runtimeCoin = new GameObject("RuntimeCoinValidation");
+        try
+        {
+            Coin coin = Coin.EnsureRuntimeContract(runtimeCoin);
+            Assert.IsNotNull(coin);
+            Assert.AreSame(coin, Coin.EnsureRuntimeContract(runtimeCoin),
+                "Runtime repair must be idempotent for pooled pickups.");
+            BoxCollider runtimeTrigger = runtimeCoin.GetComponent<BoxCollider>();
+            Assert.IsNotNull(runtimeTrigger);
+            Assert.IsTrue(runtimeTrigger.isTrigger);
+            Assert.AreEqual(new Vector3(1f, 1f, 0.4f), runtimeTrigger.size);
+            Assert.That(coin.rotateSpeed, Is.InRange(200f, 260f));
+            Assert.That(coin.yawAmplitude, Is.InRange(8f, 14f));
+            Assert.That(coin.bobHeight, Is.InRange(0.05f, 0.08f));
+        }
+        finally
+        {
+            Object.DestroyImmediate(runtimeCoin);
+        }
 
         GameObject visual = AssetDatabase.LoadAssetAtPath<GameObject>(
             VisualPrefabPath);
@@ -95,6 +110,63 @@ public sealed class MemoryPulseShardTests
         float width = TransformBounds(visualFilter.sharedMesh.bounds,
             visualFilter.transform.localToWorldMatrix).size.x;
         Assert.GreaterOrEqual(TrackSpawnRules.CoinSpacing, width * 1.3f);
+    }
+
+    [Test]
+    public void PickupVisualFacesViewerAcrossStraightAndTurnedRoutes()
+    {
+        Vector3 coinPosition = new Vector3(0f, 1f, 0f);
+        Vector3[] viewerPositions =
+        {
+            new Vector3(0f, 3f, -8f),
+            new Vector3(-8f, 3f, 0f),
+            new Vector3(8f, 3f, 0f)
+        };
+
+        foreach (Vector3 viewerPosition in viewerPositions)
+        {
+            Vector3 expectedForward = coinPosition - viewerPosition;
+            expectedForward.y = 0f;
+            expectedForward.Normalize();
+
+            Quaternion aligned = Coin.ResolveViewFacingRotation(
+                coinPosition, viewerPosition, Quaternion.identity, 0f);
+            Assert.Less(Vector3.Angle(
+                aligned * Vector3.forward, expectedForward), 0.01f);
+
+            Quaternion swayed = Coin.ResolveViewFacingRotation(
+                coinPosition, viewerPosition, Quaternion.identity, 12f);
+            Assert.That(Vector3.Angle(
+                swayed * Vector3.forward, expectedForward),
+                Is.InRange(11.9f, 12.1f));
+        }
+    }
+
+    [Test]
+    public void CollectibleMaterialKeepsWarmReadabilityWithoutBloom()
+    {
+        Material material = AssetDatabase.LoadAssetAtPath<Material>(
+            "Assets/Resources/Materials/EchoCollectible.mat");
+        Assert.IsNotNull(material);
+        Assert.IsTrue(material.enableInstancing);
+        Assert.IsTrue(material.HasProperty("_FrameEmissionStrength"));
+        Assert.IsTrue(material.HasProperty("_AccentEmissionStrength"));
+        Assert.That(material.GetFloat("_EmissionStrength"),
+            Is.InRange(1.8f, 2.2f));
+        Assert.That(material.GetFloat("_FrameEmissionStrength"),
+            Is.InRange(0.55f, 0.8f));
+        Assert.That(material.GetFloat("_AccentEmissionStrength"),
+            Is.InRange(0.5f, 0.8f));
+
+        Color core = material.GetColor("_CoreColor");
+        Color frameHighlight = material.GetColor("_FrameHighlight");
+        Color accent = material.GetColor("_AccentColor");
+        Assert.Greater(core.r, core.g,
+            "The collectible core must read as amber, not scene cyan.");
+        Assert.Greater(frameHighlight.grayscale, 0.85f,
+            "The outer frame needs a warm-white distance highlight.");
+        Assert.Greater(accent.g, accent.r * 2f,
+            "Cyan is reserved for the small data accent.");
     }
 
     private static Bounds TransformBounds(Bounds localBounds,

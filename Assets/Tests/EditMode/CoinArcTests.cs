@@ -79,4 +79,33 @@ public class CoinArcTests
             exit.x, 0.0001f);
         Assert.AreEqual(10f, exit.z, 0.0001f);
     }
+
+    [TestCase(1)]
+    [TestCase(-1)]
+    public void TurnGuideCoinRootsFollowTheRouteTangent(int turnDirection)
+    {
+        Quaternion segmentRotation = Quaternion.Euler(0f, 90f, 0f);
+        for (int index = 0;
+             index < TrackSpawnRules.TurnGuideCoinCount; index++)
+        {
+            Vector3 localTangent = TrackSpawnRules.TurnGuideCoinLocalTangent(
+                20f, turnDirection, index);
+            Quaternion routeRotation = TrackSpawnRules.CoinRouteRotation(
+                segmentRotation, localTangent);
+            Vector3 expectedLocalTangent = index
+                < TrackSpawnRules.TurnGuideCoinsPerArm
+                ? Vector3.forward
+                : index == TrackSpawnRules.TurnGuideCoinsPerArm
+                    ? new Vector3(turnDirection, 0f, 1f).normalized
+                    : new Vector3(turnDirection, 0f, 0f);
+            Vector3 expectedWorldTangent =
+                segmentRotation * expectedLocalTangent;
+
+            Assert.Less(Vector3.Angle(localTangent, expectedLocalTangent),
+                0.01f, "The authored turn tangent is reversed or misplaced.");
+            Assert.Less(Vector3.Angle(routeRotation * Vector3.forward,
+                    expectedWorldTangent), 0.01f,
+                "The root trigger width must stay across the route after a turn.");
+        }
+    }
 }

@@ -23,11 +23,23 @@ public sealed class EchoCoinVisual : MonoBehaviour
         _renderer = GetComponent<MeshRenderer>();
         if (_renderer == null) _renderer = gameObject.AddComponent<MeshRenderer>();
         filter.sharedMesh = GetFormalMesh();
+        transform.localPosition = Vector3.zero;
         transform.localRotation = _formalRotation;
         transform.localScale = _formalScale;
         _renderer.sharedMaterial = GetOrCreateMaterial();
         _renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         _renderer.receiveShadows = false;
+    }
+
+    public void ApplyViewFacingRotation(Quaternion facingRotation)
+    {
+        transform.rotation = facingRotation * _formalRotation;
+    }
+
+    public void ResetPresentation()
+    {
+        transform.localPosition = Vector3.zero;
+        transform.localRotation = _formalRotation;
     }
 
     public void SetContractMarker(bool marker)

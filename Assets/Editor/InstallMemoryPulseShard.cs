@@ -40,7 +40,7 @@ public static class InstallMemoryPulseShard
         Debug.Log("MEMORY_PULSE_SHARD_INSTALL_OK variant=B source=blender "
             + "renderer=1 "
             + "materials=1 triangles=" + source.sharedMesh.triangles.Length / 3
-            + " sway=12 rotationPhaseSpeed=38 bob=0.04 scan=1.5");
+            + " sway=12 rotationPhaseSpeed=225 bob=0.06 scan=1.5");
     }
 
     public static void ValidateInstalledAssets()
@@ -103,18 +103,33 @@ public static class InstallMemoryPulseShard
 
         GameObject coinPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
             CoinPrefabPath);
-        Coin coin = coinPrefab != null ? coinPrefab.GetComponent<Coin>() : null;
         BoxCollider trigger = coinPrefab != null
             ? coinPrefab.GetComponent<BoxCollider>()
             : null;
-        if (coin == null || trigger == null || !trigger.isTrigger)
+        if (trigger == null || !trigger.isTrigger)
             throw new InvalidOperationException("Coin gameplay root was not preserved.");
-        if (coin.rotateSpeed < 30f || coin.rotateSpeed > 45f
-            || coin.yawAmplitude < 8f || coin.yawAmplitude > 14f
-            || coin.bobHeight < 0.03f || coin.bobHeight > 0.05f)
+        GameObject motionHost = UnityEngine.Object.Instantiate(coinPrefab);
+        motionHost.name = "CoinMotionValidation";
+        motionHost.hideFlags = HideFlags.HideAndDontSave;
+        motionHost.SetActive(false);
+        try
         {
-            throw new InvalidOperationException(
-                "Coin motion is outside the memory pulse specification.");
+            Coin coin = Coin.EnsureRuntimeContract(motionHost);
+            Collider runtimeTrigger = motionHost.GetComponent<Collider>();
+            if (runtimeTrigger == null || !runtimeTrigger.isTrigger)
+                throw new InvalidOperationException(
+                    "Coin runtime trigger contract was not preserved.");
+            if (coin.rotateSpeed < 200f || coin.rotateSpeed > 260f
+                || coin.yawAmplitude < 8f || coin.yawAmplitude > 14f
+                || coin.bobHeight < 0.05f || coin.bobHeight > 0.08f)
+            {
+                throw new InvalidOperationException(
+                    "Coin motion is outside the memory pulse specification.");
+            }
+        }
+        finally
+        {
+            UnityEngine.Object.DestroyImmediate(motionHost);
         }
     }
 
@@ -177,11 +192,21 @@ public static class InstallMemoryPulseShard
         {
             Coin coin = root.GetComponent<Coin>();
             if (coin == null)
-                throw new InvalidOperationException("Coin component is missing.");
-            coin.rotateSpeed = 38f;
-            coin.yawAmplitude = 12f;
-            coin.bobSpeed = 1.7f;
-            coin.bobHeight = 0.04f;
+            {
+                BoxCollider trigger = root.GetComponent<BoxCollider>();
+                if (root.name != "Coin" || !root.CompareTag("Coin")
+                    || trigger == null || !trigger.isTrigger)
+                {
+                    throw new InvalidOperationException(
+                        "Coin gameplay root cannot be safely repaired.");
+                }
+
+                Debug.LogWarning(
+                    "Coin prefab uses a non-serializable legacy script "
+                    + "binding; runtime spawning will attach Coin safely.");
+                return;
+            }
+            ConfigureCoinMotion(coin);
             EditorUtility.SetDirty(coin);
             PrefabUtility.SaveAsPrefabAsset(root, CoinPrefabPath);
         }
@@ -189,6 +214,14 @@ public static class InstallMemoryPulseShard
         {
             PrefabUtility.UnloadPrefabContents(root);
         }
+    }
+
+    private static void ConfigureCoinMotion(Coin coin)
+    {
+        coin.rotateSpeed = 225f;
+        coin.yawAmplitude = 12f;
+        coin.bobSpeed = 3.5f;
+        coin.bobHeight = 0.06f;
     }
 
     private static void EnsureFolder(string path)
