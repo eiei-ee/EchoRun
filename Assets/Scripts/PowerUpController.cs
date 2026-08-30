@@ -74,7 +74,6 @@ public sealed class PowerUpController : MonoBehaviour
         _shieldCharges--;
         AIRunTelemetry.RecordEvent("shield_absorb", (int)PowerUpId.Shield);
         ClearActive();
-        AudioManager.Instance?.PlayUIConfirm();
         return true;
     }
 

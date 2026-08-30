@@ -15,16 +15,27 @@ public class AudioManager : MonoBehaviour
     [Header("Audio Sources")]
     private AudioSource _sfxSource;
     private AudioSource _musicSource;
+    private AudioSource _slideLoopSource;
+    private AudioSource _impactSource;
+    private AudioSource _dodgeResultSource;
+    private AudioSource _speedWindLoopSource;
 
     [Header("SFX Clips (assign .wav/.mp3/.ogg, or leave null for procedural beeps)")]
     public AudioClip jumpClip;
     public AudioClip slideClip;
+    public AudioClip slideLoopClip;
+    public AudioClip slideExitClip;
+    public AudioClip landClip;
     public AudioClip coinClip;
     public AudioClip dodgeObstacleClip;
     public AudioClip deathClip;
     public AudioClip footstepClip;
     public AudioClip[] footstepClips;
     public AudioClip collisionClip;
+    public AudioClip impactRecoverClip;
+    public AudioClip impactFatalClip;
+    public AudioClip counterSuccessClip;
+    public AudioClip speedWindLoopClip;
     public AudioClip uiClickClip;
     public AudioClip uiConfirmClip;
     public AudioClip uiErrorClip;
@@ -41,11 +52,28 @@ public class AudioManager : MonoBehaviour
 
     [Header("Footsteps")]
     public float footstepInterval = 0.35f;
+    [Range(0f, 1f)] public float slideLoopVolume = 0.34f;
+    [Range(0.12f, 0.35f)] public float minimumFootstepInterval = 0.2f;
+    [Range(1f, 20f)] public float speedFeedbackResponse = 7f;
+    [Range(0f, 0.2f)] public float speedWindLoopVolume = 0.12f;
     private float _footstepTimer;
+    private float _currentFootstepInterval;
+    private float _speedFeedback01;
     private bool _isPlayingFootsteps;
+    private bool _footstepsPausedForAction;
     private int _footstepIndex;
     private float _lastCoinPickupTime = -10f;
     private int _coinChainIndex;
+    private int _lastImpactFrame = -1;
+    private bool _lastImpactWasFatal;
+
+    public bool AreFootstepsPausedForAction => _footstepsPausedForAction;
+    public bool IsSlideLoopPlaying => _slideLoopSource != null
+                                      && _slideLoopSource.isPlaying;
+    public bool IsSpeedWindPlaying => _speedWindLoopSource != null
+                                      && _speedWindLoopSource.isPlaying;
+    public float CurrentSpeedFeedback01 => _speedFeedback01;
+    public float CurrentFootstepInterval => _currentFootstepInterval;
 
     // Procedural audio cache
     private Dictionary<string, AudioClip> _procClips = new Dictionary<string, AudioClip>();
@@ -67,6 +95,28 @@ public class AudioManager : MonoBehaviour
         _musicSource.playOnAwake = false;
         _musicSource.loop = true;
         _musicSource.spatialBlend = 0f;
+
+        _slideLoopSource = gameObject.AddComponent<AudioSource>();
+        _slideLoopSource.playOnAwake = false;
+        _slideLoopSource.loop = true;
+        _slideLoopSource.spatialBlend = 0f;
+
+        _impactSource = gameObject.AddComponent<AudioSource>();
+        _impactSource.playOnAwake = false;
+        _impactSource.loop = false;
+        _impactSource.spatialBlend = 0f;
+
+        _dodgeResultSource = gameObject.AddComponent<AudioSource>();
+        _dodgeResultSource.playOnAwake = false;
+        _dodgeResultSource.loop = false;
+        _dodgeResultSource.spatialBlend = 0f;
+
+        _speedWindLoopSource = gameObject.AddComponent<AudioSource>();
+        _speedWindLoopSource.playOnAwake = false;
+        _speedWindLoopSource.loop = true;
+        _speedWindLoopSource.spatialBlend = 0f;
+        _currentFootstepInterval = ResolveTargetFootstepInterval(
+            footstepInterval, minimumFootstepInterval, 0f);
         ApplyOutputVolumes();
     }
 
@@ -79,6 +129,10 @@ public class AudioManager : MonoBehaviour
         muted = PlayerPrefs.GetInt("AudioMuted", 0) != 0;
         ApplyOutputVolumes();
 
+        if (speedWindLoopClip == null)
+            GetProceduralClip("speedWind");
+        WarmActionFallbacks();
+
         AudioClip music = bgmClip != null ? bgmClip : GetProceduralClip("bgm");
         if (music == null) return;
         _musicSource.clip = music;
@@ -87,10 +141,12 @@ public class AudioManager : MonoBehaviour
 
     void Update()
     {
-        if (!_isPlayingFootsteps) return;
+        AdvanceSpeedFeedback(Time.deltaTime);
+        if (!ShouldEmitFootsteps(_isPlayingFootsteps,
+                _footstepsPausedForAction)) return;
 
         _footstepTimer += Time.deltaTime;
-        if (_footstepTimer >= footstepInterval)
+        if (_footstepTimer >= _currentFootstepInterval)
         {
             _footstepTimer = 0f;
             AudioClip step = footstepClips != null && footstepClips.Length > 0
@@ -102,17 +158,139 @@ public class AudioManager : MonoBehaviour
 
     public void StartFootsteps()
     {
+        StopSlideLoopSource();
+        ResetSpeedFeedbackState();
+        _footstepsPausedForAction = false;
         _isPlayingFootsteps = true;
         _footstepTimer = 0f;
     }
 
     public void StopFootsteps()
     {
+        StopSlideLoopSource();
         _isPlayingFootsteps = false;
+        _footstepsPausedForAction = false;
+        _footstepTimer = 0f;
+        ResetSpeedFeedbackState();
+    }
+
+    public void PauseFootstepsForAction()
+    {
+        if (_footstepsPausedForAction) return;
+        _footstepsPausedForAction = true;
+        _footstepTimer = 0f;
+    }
+
+    public void ResumeFootstepsAfterAction()
+    {
+        if (!_footstepsPausedForAction) return;
+        _footstepsPausedForAction = false;
+        _footstepTimer = 0f;
+    }
+
+    public void BeginSlideLoop()
+    {
+        PauseFootstepsForAction();
+        if (_slideLoopSource == null) return;
+
+        AudioClip loop = slideLoopClip != null
+            ? slideLoopClip
+            : GetProceduralClip("slideLoop");
+        if (loop == null) return;
+        if (!ShouldStartSlideLoop(_slideLoopSource.isPlaying,
+                _slideLoopSource.clip == loop)) return;
+
+        _slideLoopSource.Stop();
+        _slideLoopSource.clip = loop;
+        _slideLoopSource.Play();
+    }
+
+    public void EndSlideLoop()
+    {
+        StopSlideLoopSource();
+        ResumeFootstepsAfterAction();
+    }
+
+    private void StopSlideLoopSource()
+    {
+        if (_slideLoopSource != null && _slideLoopSource.isPlaying)
+            _slideLoopSource.Stop();
+    }
+
+    public void SetSpeedFeedback(float speed01)
+    {
+        _speedFeedback01 = ResolveStoredSpeedFeedback(
+            _isPlayingFootsteps, speed01);
+        ApplySpeedWindOutputVolume();
+        RefreshSpeedWindLoop();
+    }
+
+    private void AdvanceSpeedFeedback(float deltaTime)
+    {
+        float target = ResolveTargetFootstepInterval(footstepInterval,
+            minimumFootstepInterval, _speedFeedback01);
+        _currentFootstepInterval = SmoothFootstepInterval(
+            _currentFootstepInterval, target, speedFeedbackResponse,
+            deltaTime);
+
+        if (_speedWindLoopSource != null)
+            _speedWindLoopSource.pitch = ResolveSpeedWindPitch(
+                _speedFeedback01);
+        ApplySpeedWindOutputVolume();
+    }
+
+    private void ResetSpeedFeedbackState()
+    {
+        _speedFeedback01 = 0f;
+        _currentFootstepInterval = ResolveTargetFootstepInterval(
+            footstepInterval, minimumFootstepInterval, 0f);
+        StopSpeedWindLoop();
+    }
+
+    private void RefreshSpeedWindLoop()
+    {
+        if (_speedWindLoopSource == null) return;
+        if (!ShouldPlaySpeedWind(_isPlayingFootsteps,
+                _footstepsPausedForAction, _speedFeedback01))
+        {
+            StopSpeedWindLoop();
+            return;
+        }
+
+        AudioClip loop = speedWindLoopClip != null
+            ? speedWindLoopClip
+            : GetProceduralClip("speedWind");
+        if (loop == null) return;
+        _speedWindLoopSource.pitch = ResolveSpeedWindPitch(
+            _speedFeedback01);
+        if (_speedWindLoopSource.clip != loop)
+        {
+            _speedWindLoopSource.Stop();
+            _speedWindLoopSource.clip = loop;
+        }
+        if (!_speedWindLoopSource.isPlaying)
+            _speedWindLoopSource.Play();
+    }
+
+    private void StopSpeedWindLoop()
+    {
+        if (_speedWindLoopSource == null) return;
+        if (_speedWindLoopSource.isPlaying)
+            _speedWindLoopSource.Stop();
+        _speedWindLoopSource.volume = 0f;
     }
 
     public void PlayJump()  => PlaySFX(jumpClip, 1f, "jump");
     public void PlaySlide() => PlaySFX(slideClip, 0.6f, "slide");
+    public void PlayLand(float intensity01 = 1f)
+    {
+        PlaySFX(landClip, ResolveLandVolumeScale(intensity01), "land");
+    }
+
+    public void PlaySlideExit()
+    {
+        PlaySFX(slideExitClip, 0.48f, "slideExit");
+    }
     public void PlayCoin()
     {
         _coinChainIndex = Time.unscaledTime - _lastCoinPickupTime <= 0.34f
@@ -121,9 +299,39 @@ public class AudioManager : MonoBehaviour
         _lastCoinPickupTime = Time.unscaledTime;
         PlaySFX(coinClip, 0.64f, "memoryPulse" + _coinChainIndex);
     }
-    public void PlayDodgeObstacle() => PlaySFX(dodgeObstacleClip, 0.6f, "dodge");
-    public void PlayDeath() => PlaySFX(deathClip, 0.9f, "death");
-    public void PlayCollision() => PlaySFX(collisionClip, 0.82f, "death");
+    public void PlayDodgeObstacle()
+    {
+        PlayDodgeResultSFX(dodgeObstacleClip, 0.6f, "dodge");
+    }
+    public void PlayDeath() => PlayImpactResult(true);
+    public void PlayCollision() => PlayImpactResult(false);
+    public void PlayCounterSuccess()
+    {
+        // Contract rewrite is the semantic result of the pass. Replace only
+        // the generic dodge channel, never jump/land/coin/UI one-shots.
+        if (_dodgeResultSource != null) _dodgeResultSource.Stop();
+        PlayDodgeResultSFX(
+            counterSuccessClip, 0.68f, "counterSuccess");
+    }
+    public void PlayImpactResult(bool fatal)
+    {
+        bool playedThisFrame = _lastImpactFrame == Time.frameCount;
+        if (!ShouldPlayImpact(playedThisFrame, _lastImpactWasFatal, fatal))
+            return;
+
+        bool replace = ShouldReplaceImpact(playedThisFrame,
+            _lastImpactWasFatal, fatal);
+        if (replace && _impactSource != null)
+            _impactSource.Stop();
+
+        _lastImpactFrame = Time.frameCount;
+        _lastImpactWasFatal = fatal;
+        AudioClip clip = fatal
+            ? (impactFatalClip != null ? impactFatalClip : deathClip)
+            : (impactRecoverClip != null ? impactRecoverClip : collisionClip);
+        PlayImpactSFX(clip, fatal ? 0.9f : 0.72f,
+            fatal ? "death" : "impactRecover");
+    }
     public void PlayUIClick() => PlaySFX(uiClickClip, 0.55f, "dodge");
     public void PlayUIConfirm() => PlaySFX(uiConfirmClip, 0.65f, "coin");
     public void PlayUIError() => PlaySFX(uiErrorClip, 0.65f, "death");
@@ -162,6 +370,79 @@ public class AudioManager : MonoBehaviour
         return isMuted ? 0f : Mathf.Clamp01(master) * Mathf.Clamp01(channel);
     }
 
+    public static bool ShouldEmitFootsteps(bool requested, bool actionPaused)
+    {
+        return requested && !actionPaused;
+    }
+
+    public static float ResolveLandVolumeScale(float intensity01)
+    {
+        return Mathf.Lerp(0.42f, 0.78f, Mathf.Clamp01(intensity01));
+    }
+
+    public static bool ShouldStartSlideLoop(bool isPlaying,
+        bool hasRequestedClip)
+    {
+        return !isPlaying || !hasRequestedClip;
+    }
+
+    public static float ResolveStoredSpeedFeedback(bool runActive,
+        float speed01)
+    {
+        return runActive ? Mathf.Clamp01(speed01) : 0f;
+    }
+
+    public static float ResolveTargetFootstepInterval(float baseInterval,
+        float minimumInterval, float speed01)
+    {
+        float safeBase = Mathf.Max(0.12f, baseInterval);
+        float safeMinimum = Mathf.Clamp(minimumInterval, 0.12f, safeBase);
+        float speedCurve = Mathf.SmoothStep(0f, 1f,
+            Mathf.Clamp01(speed01));
+        return Mathf.Lerp(safeBase, safeMinimum, speedCurve);
+    }
+
+    public static float SmoothFootstepInterval(float current,
+        float target, float response, float deltaTime)
+    {
+        float safeDelta = Mathf.Max(0f, deltaTime);
+        float blend = 1f - Mathf.Exp(-Mathf.Max(0f, response) * safeDelta);
+        return Mathf.Lerp(current, target, blend);
+    }
+
+    public static bool ShouldPlaySpeedWind(bool runActive,
+        bool actionPaused, float speed01)
+    {
+        // Action pause gates footsteps only. Wind describes world speed.
+        _ = actionPaused;
+        return runActive && Mathf.Clamp01(speed01) > 0.001f;
+    }
+
+    public static float ResolveSpeedWindVolumeScale(float speed01,
+        float maximumVolume)
+    {
+        float speedCurve = Mathf.SmoothStep(0f, 1f,
+            Mathf.Clamp01(speed01));
+        return Mathf.Clamp(maximumVolume, 0f, 0.2f) * speedCurve;
+    }
+
+    public static float ResolveSpeedWindPitch(float speed01)
+    {
+        return Mathf.Lerp(0.86f, 1.16f, Mathf.Clamp01(speed01));
+    }
+
+    public static bool ShouldPlayImpact(bool playedThisFrame,
+        bool previousWasFatal, bool nextIsFatal)
+    {
+        return !playedThisFrame || (!previousWasFatal && nextIsFatal);
+    }
+
+    public static bool ShouldReplaceImpact(bool playedThisFrame,
+        bool previousWasFatal, bool nextIsFatal)
+    {
+        return playedThisFrame && !previousWasFatal && nextIsFatal;
+    }
+
     private void ApplyOutputVolumes()
     {
         if (_musicSource != null)
@@ -170,6 +451,25 @@ public class AudioManager : MonoBehaviour
         if (_sfxSource != null)
             _sfxSource.volume = ResolveOutputVolume(
                 masterVolume, 1f, muted);
+        if (_impactSource != null)
+            _impactSource.volume = ResolveOutputVolume(
+                masterVolume, 1f, muted);
+        if (_dodgeResultSource != null)
+            _dodgeResultSource.volume = ResolveOutputVolume(
+                masterVolume, 1f, muted);
+        if (_slideLoopSource != null)
+            _slideLoopSource.volume = ResolveOutputVolume(
+                masterVolume, sfxVolume * slideLoopVolume, muted);
+        ApplySpeedWindOutputVolume();
+    }
+
+    private void ApplySpeedWindOutputVolume()
+    {
+        if (_speedWindLoopSource == null) return;
+        float windVolume = ResolveSpeedWindVolumeScale(_speedFeedback01,
+            speedWindLoopVolume);
+        _speedWindLoopSource.volume = ResolveOutputVolume(
+            masterVolume, sfxVolume * windVolume, muted);
     }
 
     private void SaveAudioSettings(bool flush)
@@ -187,6 +487,36 @@ public class AudioManager : MonoBehaviour
         _sfxSource.PlayOneShot(clip, sfxVolume * volumeScale);
     }
 
+    private void PlayImpactSFX(AudioClip clip, float volumeScale,
+        string procKey)
+    {
+        if (clip == null && !string.IsNullOrEmpty(procKey))
+            clip = GetProceduralClip(procKey);
+
+        if (clip == null || _impactSource == null) return;
+        _impactSource.PlayOneShot(clip, sfxVolume * volumeScale);
+    }
+
+    private void PlayDodgeResultSFX(AudioClip clip, float volumeScale,
+        string procKey)
+    {
+        if (clip == null && !string.IsNullOrEmpty(procKey))
+            clip = GetProceduralClip(procKey);
+        if (clip == null || _dodgeResultSource == null) return;
+        _dodgeResultSource.PlayOneShot(clip, sfxVolume * volumeScale);
+    }
+
+    private void WarmActionFallbacks()
+    {
+        if (jumpClip == null) GetProceduralClip("jump");
+        if (slideClip == null) GetProceduralClip("slide");
+        if (slideLoopClip == null) GetProceduralClip("slideLoop");
+        if (slideExitClip == null) GetProceduralClip("slideExit");
+        if (landClip == null) GetProceduralClip("land");
+        if (impactRecoverClip == null) GetProceduralClip("impactRecover");
+        if (counterSuccessClip == null) GetProceduralClip("counterSuccess");
+    }
+
     private void LoadBundledAudio()
     {
         if (bgmClip == null) bgmClip = Resources.Load<AudioClip>("Audio/bgm_transit");
@@ -194,6 +524,12 @@ public class AudioManager : MonoBehaviour
         // in-world object is memory data, so the default is a restrained
         // glass/digital pulse rather than a traditional coin chime.
         if (collisionClip == null) collisionClip = Resources.Load<AudioClip>("Audio/collision");
+        if (slideLoopClip == null) slideLoopClip = Resources.Load<AudioClip>("Audio/slide_loop");
+        if (slideExitClip == null) slideExitClip = Resources.Load<AudioClip>("Audio/slide_exit");
+        if (landClip == null) landClip = Resources.Load<AudioClip>("Audio/land");
+        if (impactRecoverClip == null) impactRecoverClip = Resources.Load<AudioClip>("Audio/impact_recover");
+        if (impactFatalClip == null) impactFatalClip = Resources.Load<AudioClip>("Audio/impact_fatal");
+        if (counterSuccessClip == null) counterSuccessClip = Resources.Load<AudioClip>("Audio/counter_success");
         if (uiClickClip == null) uiClickClip = Resources.Load<AudioClip>("Audio/ui_click");
         if (uiConfirmClip == null) uiConfirmClip = Resources.Load<AudioClip>("Audio/ui_confirm");
         if (uiErrorClip == null) uiErrorClip = Resources.Load<AudioClip>("Audio/ui_error");
@@ -226,6 +562,12 @@ public class AudioManager : MonoBehaviour
             "footstep" => GenerateFootstep(),
             "jump"     => GenerateToneSweep(260f, 620f, 0.18f),
             "slide"    => GenerateNoiseBurst(0.18f, 0.18f),
+            "slideLoop" => GenerateSlideLoop(),
+            "slideExit" => GenerateNoiseBurst(0.11f, 0.12f),
+            "land"      => GenerateNoiseBurst(0.13f, 0.16f),
+            "impactRecover" => GenerateToneSweep(210f, 128f, 0.18f),
+            "counterSuccess" => GenerateToneSweep(520f, 980f, 0.22f),
+            "speedWind" => GenerateSpeedWindLoop(),
             "coin"     => GenerateMemoryPulse(0),
             "dodge"    => GenerateToneSweep(520f, 240f, 0.14f),
             "death"    => GenerateToneSweep(360f, 52f, 0.48f),
@@ -260,6 +602,49 @@ public class AudioManager : MonoBehaviour
         }
         AudioClip clip = AudioClip.Create("memory_pulse_" + chain,
             samples, 1, SampleRate, false);
+        clip.SetData(data, 0);
+        return clip;
+    }
+
+    AudioClip GenerateSpeedWindLoop()
+    {
+        const float duration = 1f;
+        int samples = Mathf.CeilToInt(SampleRate * duration);
+        float[] data = new float[samples];
+        for (int index = 0; index < samples; index++)
+        {
+            float normalized = index / (float)samples;
+            float phase = 2f * Mathf.PI * normalized;
+            float air = Mathf.Sin(phase * 37f) * 0.42f
+                        + Mathf.Sin(phase * 71f) * 0.27f
+                        + Mathf.Sin(phase * 113f) * 0.17f
+                        + Mathf.Sin(phase * 197f) * 0.08f;
+            float breath = 0.78f + Mathf.Sin(phase * 3f) * 0.16f;
+            data[index] = air * breath * 0.08f;
+        }
+        AudioClip clip = AudioClip.Create("proc_speed_wind_loop", samples,
+            1, SampleRate, false);
+        clip.SetData(data, 0);
+        return clip;
+    }
+
+    AudioClip GenerateSlideLoop()
+    {
+        const float duration = 0.6f;
+        int samples = Mathf.CeilToInt(SampleRate * duration);
+        float[] data = new float[samples];
+        for (int i = 0; i < samples; i++)
+        {
+            float normalized = i / (float)samples;
+            float phase = 2f * Mathf.PI * normalized;
+            float texture = Mathf.Sin(phase * 83f) * 0.42f
+                            + Mathf.Sin(phase * 151f) * 0.24f
+                            + Mathf.Sin(phase * 233f) * 0.13f;
+            float scrapePulse = 0.72f + Mathf.Sin(phase * 5f) * 0.18f;
+            data[i] = texture * scrapePulse * 0.12f;
+        }
+        AudioClip clip = AudioClip.Create("proc_slide_loop", samples, 1,
+            SampleRate, false);
         clip.SetData(data, 0);
         return clip;
     }
@@ -366,6 +751,20 @@ public class AudioManager : MonoBehaviour
     void OnDestroy()
     {
         if (Instance != this) return;
+        if (_slideLoopSource != null)
+        {
+            _slideLoopSource.Stop();
+            _slideLoopSource.clip = null;
+        }
+        if (_impactSource != null)
+            _impactSource.Stop();
+        if (_dodgeResultSource != null)
+            _dodgeResultSource.Stop();
+        if (_speedWindLoopSource != null)
+        {
+            _speedWindLoopSource.Stop();
+            _speedWindLoopSource.clip = null;
+        }
         foreach (AudioClip clip in _procClips.Values)
             if (clip != null) Destroy(clip);
         _procClips.Clear();

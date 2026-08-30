@@ -33,6 +33,15 @@ public class CharacterAnimator : MonoBehaviour
     [Header("Turning")]
     public float lookRotationSpeed = 15f;
 
+    [Header("Motion Feedback")]
+    [Tooltip("Maximum visual-only torso roll while changing lanes.")]
+    public float maxLaneLeanAngle = 9f;
+    [Tooltip("Lateral speed that reaches the maximum visual lane lean.")]
+    public float laneLeanVelocity = 7f;
+    public float laneLeanResponse = 14f;
+    [Tooltip("Duration of the pose-preserving authored slide transition.")]
+    public float authoredTransitionDuration = 0.08f;
+
     [Header("Limb References (set manually or via InitFromHumanoid)")]
     public Transform leftUpperArm;
     public Transform rightUpperArm;
@@ -63,8 +72,19 @@ public class CharacterAnimator : MonoBehaviour
     private bool _externalDriver;
     private bool _slideAnimatorFrozen;
     private float _runPhase;
+    private float _jumpTime;
     private float _slideTime;
     private int _activeAuthoredState;
+    private bool _hasMotionFeedback;
+    private float _feedbackJump01;
+    private float _feedbackSlide01;
+    private float _feedbackLateralVelocity;
+    private float _visualLaneLean;
+    private Transform[] _authoredBlendBones;
+    private Vector3[] _authoredBlendPositions;
+    private Quaternion[] _authoredBlendRotations;
+    private float _authoredBlendElapsed;
+    private bool _authoredBlendActive;
 
     private Vector3 _hipsBasePos;
     private Vector3 _bodyBasePos;
@@ -113,6 +133,11 @@ public class CharacterAnimator : MonoBehaviour
             _animator = GetComponent<Animator>();
             if (_animator == null) _animator = GetComponentInChildren<Animator>(true);
             if (_animator == null) _animator = GetComponentInParent<Animator>();
+            if (_animator != null)
+            {
+                _animator.applyRootMotion = false;
+                _animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            }
             if (_animator != null && _animator.isHuman)
             {
                 InitFromHumanoid();
@@ -120,12 +145,11 @@ public class CharacterAnimator : MonoBehaviour
                 // Keep the Animator active so WebGL/WeChat continues updating the
                 // skinned-mesh bone matrices. Procedural poses are written later in
                 // LateUpdate, after Humanoid evaluation.
-                _animator.applyRootMotion = false;
-                _animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
             }
         }
 
         PrepareSkinnedMeshes();
+        PrepareAuthoredPoseBlend();
 
         // These fallbacks also support the current Generic EchoRunner skeleton.
         leftUpperArm = FindBone(leftUpperArm, "LeftUpperArm", "LeftArm", "Arm_Upper_L");
@@ -200,7 +224,8 @@ public class CharacterAnimator : MonoBehaviour
         if (_player == null) return;
 
         if (_gm == null) _gm = GameManager.Instance;
-        if (_gm == null || _gm.State != GameState.Playing)
+        if (_gm == null || _gm.State != GameState.Playing
+            || _gm.IsDeathSequence)
         {
             if (CanUseAuthoredAnimations())
             {
@@ -227,11 +252,58 @@ public class CharacterAnimator : MonoBehaviour
             renderers[i].forceMatrixRecalculationPerRender = true;
     }
 
+    private void PrepareAuthoredPoseBlend()
+    {
+        _authoredBlendBones = GetComponentsInChildren<Transform>(true);
+        _authoredBlendPositions = new Vector3[_authoredBlendBones.Length];
+        _authoredBlendRotations = new Quaternion[_authoredBlendBones.Length];
+    }
+
     // The AI shadow owns movement state, but reuses exactly the same pose code.
     public void SetExternalDriver()
     {
         Initialize();
         _externalDriver = true;
+    }
+
+    /// <summary>
+    /// Supplies normalized presentation input without changing gameplay state.
+    /// The existing player and shadow paths continue to work when this is not set.
+    /// </summary>
+    public void SetMotionFeedback(
+        float jump01, float slide01, float lateralVelocity)
+    {
+        _hasMotionFeedback = true;
+        _feedbackJump01 = Mathf.Clamp01(jump01);
+        _feedbackSlide01 = Mathf.Clamp01(slide01);
+        _feedbackLateralVelocity = lateralVelocity;
+    }
+
+    public void ClearMotionFeedback()
+    {
+        _hasMotionFeedback = false;
+        _feedbackJump01 = 0f;
+        _feedbackSlide01 = 0f;
+        _feedbackLateralVelocity = 0f;
+        _visualLaneLean = 0f;
+        _jumpTime = 0f;
+        _slideTime = 0f;
+        _authoredBlendActive = false;
+        if (_animator != null)
+        {
+            _animator.speed = 1f;
+            _slideAnimatorFrozen = false;
+        }
+    }
+
+    public void ResetMotionFeedback()
+    {
+        ClearMotionFeedback();
+    }
+
+    private void OnDisable()
+    {
+        ClearMotionFeedback();
     }
 
     public void ApplyExternalMotion(bool isJumping, bool isSliding,
@@ -242,15 +314,35 @@ public class CharacterAnimator : MonoBehaviour
         ApplyMotion(isJumping, isSliding, forward, speed, deltaTime);
     }
 
+    public void ApplyExternalMotion(bool isJumping, bool isSliding,
+        Vector3 forward, float speed, float deltaTime,
+        float jump01, float slide01, float lateralVelocity)
+    {
+        SetMotionFeedback(jump01, slide01, lateralVelocity);
+        ApplyExternalMotion(isJumping, isSliding, forward, speed, deltaTime);
+    }
+
     private void ApplyMotion(bool isJumping, bool isSliding,
         Vector3 forward, float speed, float deltaTime)
     {
         RotateTowardForward(forward, deltaTime);
+        _jumpTime = isJumping ? _jumpTime + deltaTime : 0f;
         _slideTime = isSliding ? _slideTime + deltaTime : 0f;
+        float jumpDuration = _player != null
+            ? Mathf.Max(0.2f, _player.jumpDuration)
+            : 0.9f;
         float slideDuration = _player != null
             ? Mathf.Max(0.2f, _player.slideDuration)
             : 0.8f;
-        float slidePhase = Mathf.Clamp01(_slideTime / slideDuration);
+        float jumpPhase = _hasMotionFeedback && isJumping
+            ? _feedbackJump01
+            : Mathf.Clamp01(_jumpTime / jumpDuration);
+        float slidePhase = _hasMotionFeedback && isSliding
+            ? _feedbackSlide01
+            : Mathf.Clamp01(_slideTime / slideDuration);
+        float lateralVelocity = _hasMotionFeedback
+            ? _feedbackLateralVelocity
+            : 0f;
 
         if (CanUseAuthoredAnimations())
         {
@@ -259,7 +351,7 @@ public class CharacterAnimator : MonoBehaviour
                 if (useAuthoredSlide && _animator.HasState(0, SlideState))
                 {
                     ResumeAuthoredMotion();
-                    ApplyAuthoredSlideMotion(slideDuration);
+                    ApplyAuthoredSlideMotion(slideDuration, deltaTime);
                 }
                 else
                 {
@@ -277,13 +369,18 @@ public class CharacterAnimator : MonoBehaviour
             {
                 ResumeAuthoredMotion();
                 ApplyAuthoredMotion(true, speed, false);
+                ShapeAuthoredJumpPose(jumpPhase);
             }
+            ApplyVisualLaneLean(
+                lateralVelocity, isSliding, true, deltaTime);
             return;
         }
 
-        if (isJumping) ApplyJumpPose(deltaTime);
+        if (isJumping) ApplyJumpPose(jumpPhase, deltaTime);
         else if (isSliding) ApplySlidePose(slidePhase);
         else ApplyRunPose(speed, deltaTime);
+        ApplyVisualLaneLean(
+            lateralVelocity, isSliding, false, deltaTime);
     }
 
     private bool CanUseAuthoredAnimations()
@@ -322,13 +419,27 @@ public class CharacterAnimator : MonoBehaviour
         if (_activeAuthoredState != targetState)
         {
             bool leavingSlide = _activeAuthoredState == SlideState;
-            if (_activeAuthoredState == 0 || leavingSlide)
+            if (_activeAuthoredState == 0)
             {
                 _animator.Play(targetState, 0, 0f);
-                if (leavingSlide) _animator.Update(0f);
             }
             else
-                _animator.CrossFade(targetState, 0.12f, 0);
+            {
+                _animator.CrossFadeInFixedTime(
+                    targetState,
+                    Mathf.Max(0.01f, authoredTransitionDuration),
+                    0,
+                    0f);
+            }
+            if (leavingSlide)
+            {
+                _authoredBlendActive = false;
+                // CrossFade is issued from LateUpdate, after the Animator's
+                // normal evaluation for this frame. Register the transition
+                // immediately without advancing its fixed-time blend so the
+                // slide cannot remain authoritative for one extra frame.
+                _animator.Update(0f);
+            }
             _activeAuthoredState = targetState;
         }
 
@@ -337,21 +448,64 @@ public class CharacterAnimator : MonoBehaviour
             : 1f;
     }
 
-    private void ApplyAuthoredSlideMotion(float slideDuration)
+    private void ApplyAuthoredSlideMotion(
+        float slideDuration, float deltaTime)
     {
         if (_animator == null) return;
 
         if (_activeAuthoredState != SlideState)
         {
+            CaptureAuthoredEntryPose();
             _animator.Play(SlideState, 0, 0f);
             _animator.Update(0f);
             _activeAuthoredState = SlideState;
+            _authoredBlendElapsed = 0f;
+            _authoredBlendActive = true;
         }
 
         AnimatorStateInfo state = _animator.GetCurrentAnimatorStateInfo(0);
         _animator.speed = state.length > 0.001f
             ? state.length / Mathf.Max(0.2f, slideDuration)
             : 1f;
+        BlendAuthoredEntryPose(deltaTime);
+    }
+
+    private void CaptureAuthoredEntryPose()
+    {
+        if (_authoredBlendBones == null
+            || _authoredBlendPositions == null
+            || _authoredBlendRotations == null)
+        {
+            PrepareAuthoredPoseBlend();
+        }
+
+        for (int i = 0; i < _authoredBlendBones.Length; i++)
+        {
+            Transform bone = _authoredBlendBones[i];
+            if (bone == null || bone == transform) continue;
+            _authoredBlendPositions[i] = bone.localPosition;
+            _authoredBlendRotations[i] = bone.localRotation;
+        }
+    }
+
+    private void BlendAuthoredEntryPose(float deltaTime)
+    {
+        if (!_authoredBlendActive || _authoredBlendBones == null) return;
+
+        _authoredBlendElapsed += Mathf.Max(0f, deltaTime);
+        float weight = ResolveTransitionWeight(
+            _authoredBlendElapsed, authoredTransitionDuration);
+        for (int i = 0; i < _authoredBlendBones.Length; i++)
+        {
+            Transform bone = _authoredBlendBones[i];
+            if (bone == null || bone == transform) continue;
+            bone.localPosition = Vector3.Lerp(
+                _authoredBlendPositions[i], bone.localPosition, weight);
+            bone.localRotation = Quaternion.Slerp(
+                _authoredBlendRotations[i], bone.localRotation, weight);
+        }
+
+        if (weight >= 1f) _authoredBlendActive = false;
     }
 
     private void StabilizeAuthoredRunPose()
@@ -460,6 +614,113 @@ public class CharacterAnimator : MonoBehaviour
         return angles;
     }
 
+    public static float ResolveTransitionWeight(
+        float elapsed, float duration)
+    {
+        if (duration <= 0.0001f) return 1f;
+        return Mathf.SmoothStep(
+            0f, 1f, Mathf.Clamp01(elapsed / duration));
+    }
+
+    /// <summary>
+    /// x: takeoff, y: apex, z: descent, w: landing preparation.
+    /// The weights overlap deliberately so a continuous jump clock cannot pop.
+    /// </summary>
+    public static Vector4 ResolveJumpPoseWeights(float jump01)
+    {
+        float phase = Mathf.Clamp01(jump01);
+        float takeoff = 1f - SmoothRange(phase, 0.08f, 0.26f);
+        float apex = SmoothRange(phase, 0.12f, 0.40f)
+            * (1f - SmoothRange(phase, 0.56f, 0.74f));
+        float descent = SmoothRange(phase, 0.50f, 0.72f)
+            * (1f - SmoothRange(phase, 0.86f, 0.98f));
+        float preLanding = SmoothRange(phase, 0.78f, 0.98f);
+        return new Vector4(takeoff, apex, descent, preLanding);
+    }
+
+    public static float ResolveLaneLeanAngle(
+        float lateralVelocity, bool isSliding,
+        float velocityForFullLean, float maximumAngle)
+    {
+        if (isSliding) return 0f;
+        float normalizedVelocity = lateralVelocity
+            / Mathf.Max(0.01f, Mathf.Abs(velocityForFullLean));
+        return -Mathf.Clamp(normalizedVelocity, -1f, 1f)
+            * Mathf.Abs(maximumAngle);
+    }
+
+    public static float DampVisualValue(
+        float current, float target, float response, float deltaTime)
+    {
+        if (deltaTime <= 0f) return current;
+        float weight = 1f - Mathf.Exp(
+            -Mathf.Max(0f, response) * deltaTime);
+        return Mathf.Lerp(current, target, weight);
+    }
+
+    private void ShapeAuthoredJumpPose(float jump01)
+    {
+        Vector4 weights = ResolveJumpPoseWeights(jump01);
+        float torsoPitch = weights.x * 4f
+            - weights.y * 2f
+            - weights.z * 4f
+            + weights.w * 7f;
+        float compression = (weights.x + weights.w) * 0.025f;
+        if (hipsTransform != null)
+            hipsTransform.localPosition += Vector3.down * compression;
+        if (bodyTransform != null)
+            bodyTransform.localRotation *= Quaternion.Euler(
+                torsoPitch, 0f, 0f);
+
+        float kneePreparation = weights.x * 7f + weights.w * 18f;
+        if (leftLowerLeg != null)
+            leftLowerLeg.localRotation *= Quaternion.Euler(
+                -kneePreparation, 0f, 0f);
+        if (rightLowerLeg != null)
+            rightLowerLeg.localRotation *= Quaternion.Euler(
+                -kneePreparation, 0f, 0f);
+        float toePreparation = weights.w * 10f;
+        if (leftFoot != null)
+            leftFoot.localRotation *= Quaternion.Euler(
+                toePreparation, 0f, 0f);
+        if (rightFoot != null)
+            rightFoot.localRotation *= Quaternion.Euler(
+                toePreparation, 0f, 0f);
+    }
+
+    private void ApplyVisualLaneLean(
+        float lateralVelocity, bool isSliding,
+        bool authoredPose, float deltaTime)
+    {
+        float targetLean = ResolveLaneLeanAngle(
+            lateralVelocity, isSliding,
+            laneLeanVelocity, maxLaneLeanAngle);
+        _visualLaneLean = isSliding
+            ? 0f
+            : DampVisualValue(
+                _visualLaneLean, targetLean,
+                laneLeanResponse, deltaTime);
+        if (bodyTransform == null || isSliding
+            || Mathf.Abs(_visualLaneLean) <= 0.001f)
+        {
+            return;
+        }
+
+        if (authoredPose)
+        {
+            bodyTransform.localRotation *= Quaternion.Euler(
+                0f, 0f, _visualLaneLean);
+            return;
+        }
+
+        Quaternion relative = Quaternion.Inverse(_bodyBaseRot)
+            * bodyTransform.localRotation;
+        Vector3 relativeEuler = SignedEuler(relative);
+        relativeEuler.z = _visualLaneLean;
+        bodyTransform.localRotation = _bodyBaseRot
+            * Quaternion.Euler(relativeEuler);
+    }
+
     private void RotateTowardForward(Vector3 forward, float deltaTime)
     {
         if (forward.sqrMagnitude < 0.001f) return;
@@ -516,13 +777,17 @@ public class CharacterAnimator : MonoBehaviour
             _bodyBasePos + Vector3.up * bob, bodyRotation, deltaTime);
     }
 
-    private void ApplyJumpPose(float deltaTime)
+    private void ApplyJumpPose(float jump01, float deltaTime)
     {
         // Freeze the lead side from the last run stride so the pose stays stable
         // throughout the jump instead of swapping limbs in mid-air.
         bool leftLegLeads = Mathf.Sin(_runPhase) >= 0f;
-        float leadingArmSwing = -jumpArmRaiseAngle;
-        float trailingArmSwing = jumpArmRaiseAngle * 0.35f;
+        Vector4 weights = ResolveJumpPoseWeights(jump01);
+        float airborneShape = Mathf.Clamp01(
+            0.72f + weights.y * 0.28f - weights.w * 0.12f);
+        float leadingArmSwing = -jumpArmRaiseAngle * airborneShape;
+        float trailingArmSwing = jumpArmRaiseAngle
+            * Mathf.Lerp(0.28f, 0.40f, weights.y);
         ApplyRunArm(leftUpperArm, leftLowerArm,
             _leftUpperArmBaseRootRot, _leftLowerArmBaseRootRot,
             leftLegLeads ? trailingArmSwing : leadingArmSwing,
@@ -532,14 +797,24 @@ public class CharacterAnimator : MonoBehaviour
             leftLegLeads ? leadingArmSwing : trailingArmSwing,
             -armTuckAngle, jumpElbowBendAngle);
 
-        float leftThighAngle = leftLegLeads
-            ? jumpLegTuckAngle : -jumpLegTuckAngle * 0.3f;
-        float rightThighAngle = leftLegLeads
-            ? -jumpLegTuckAngle * 0.3f : jumpLegTuckAngle;
-        float leftKneeAngle = leftLegLeads
-            ? -jumpKneeBendAngle : -jumpKneeBendAngle * 0.55f;
-        float rightKneeAngle = leftLegLeads
-            ? -jumpKneeBendAngle * 0.55f : -jumpKneeBendAngle;
+        float tuckScale = Mathf.Clamp(
+            0.72f + weights.y * 0.28f
+            - weights.z * 0.08f + weights.w * 0.06f,
+            0.65f, 1f);
+        float landingThighLift = weights.w * 8f;
+        float leftThighAngle = (leftLegLeads
+            ? jumpLegTuckAngle : -jumpLegTuckAngle * 0.3f)
+            * tuckScale + landingThighLift;
+        float rightThighAngle = (leftLegLeads
+            ? -jumpLegTuckAngle * 0.3f : jumpLegTuckAngle)
+            * tuckScale + landingThighLift;
+        float commonLandingBend = weights.w * jumpKneeBendAngle * 0.22f;
+        float leftKneeAngle = (leftLegLeads
+            ? -jumpKneeBendAngle : -jumpKneeBendAngle * 0.55f)
+            * tuckScale - commonLandingBend;
+        float rightKneeAngle = (leftLegLeads
+            ? -jumpKneeBendAngle * 0.55f : -jumpKneeBendAngle)
+            * tuckScale - commonLandingBend;
         BlendLocalRotation(leftUpperLeg,
             _leftUpperLegBaseRot * Quaternion.Euler(leftThighAngle, 0f, 0f), deltaTime);
         BlendLocalRotation(rightUpperLeg,
@@ -548,13 +823,23 @@ public class CharacterAnimator : MonoBehaviour
             _leftLowerLegBaseRot * Quaternion.Euler(leftKneeAngle, 0f, 0f), deltaTime);
         BlendLocalRotation(rightLowerLeg,
             _rightLowerLegBaseRot * Quaternion.Euler(rightKneeAngle, 0f, 0f), deltaTime);
+        float leftFootPitch = Mathf.Lerp(
+            leftLegLeads ? 22f : -8f, 10f, weights.w);
+        float rightFootPitch = Mathf.Lerp(
+            leftLegLeads ? -8f : 22f, 10f, weights.w);
         BlendLocalRotation(leftFoot,
-            _leftFootBaseRot * Quaternion.Euler(leftLegLeads ? 22f : -8f, 0f, 0f), deltaTime);
+            _leftFootBaseRot * Quaternion.Euler(
+                leftFootPitch, 0f, 0f), deltaTime);
         BlendLocalRotation(rightFoot,
-            _rightFootBaseRot * Quaternion.Euler(leftLegLeads ? -8f : 22f, 0f, 0f), deltaTime);
-        BlendCorePose(_hipsBasePos, _hipsBaseRot,
+            _rightFootBaseRot * Quaternion.Euler(
+                rightFootPitch, 0f, 0f), deltaTime);
+        float compression = (weights.x + weights.w) * 0.035f;
+        float spinePitch = jumpSpineLean + weights.x * 4f
+            - weights.z * 4f + weights.w * 6f;
+        BlendCorePose(_hipsBasePos + Vector3.down * compression, _hipsBaseRot,
             _bodyBasePos,
-            _bodyBaseRot * Quaternion.Euler(jumpSpineLean, 0f, 0f), deltaTime);
+            _bodyBaseRot * Quaternion.Euler(
+                spinePitch, 0f, 0f), deltaTime);
     }
 
     private void ApplySlidePose(float phase)

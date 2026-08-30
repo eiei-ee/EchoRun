@@ -38,6 +38,8 @@ public class AIShadowRunner : MonoBehaviour
     public bool LastSingleContractCommitSucceeded { get; private set; }
     public bool LastSingleContractIdentityPromoted { get; private set; }
     public bool LastRunWasTransientValidation { get; private set; }
+    public event Action<PredictionGateSettlement>
+        PredictionGateSettlementConsumed;
     public GameplayFlowMode ActiveGameplayFlowMode => _activeGameplayFlowMode;
     public int Generation => IsSingleContractRuntime()
         ? _activeSingleContractIdentity != null
@@ -2647,6 +2649,7 @@ public class AIShadowRunner : MonoBehaviour
                     AISingleContractEventType.EchoRelearned, gate,
                     settlement, PlayerLead, PlayerLead, true);
             }
+            PredictionGateSettlementConsumed?.Invoke(settlement);
         }
     }
 

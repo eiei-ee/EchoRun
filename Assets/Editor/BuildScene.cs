@@ -513,6 +513,8 @@ public class BuildScene
         // PlayerController
         if (player.GetComponent<PlayerController>() == null)
             player.AddComponent<PlayerController>();
+        if (player.GetComponent<PlayerFeedbackController>() == null)
+            player.AddComponent<PlayerFeedbackController>();
 
         // ── Character Model ──
         GameObject humanoidPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(

@@ -136,6 +136,7 @@ GameObject:
   - component: {fileID: 195782151}
   - component: {fileID: 195782157}
   - component: {fileID: 195782156}
+  - component: {fileID: 195782158}
   m_Layer: 0
   m_HasEditorInfo: 1
   m_Name: player
@@ -233,6 +234,19 @@ CapsuleCollider:
   m_Height: 2.2
   m_Direction: 1
   m_Center: {x: 0, y: 1, z: 0}
+--- !u!114 &195782158
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 195782149}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2d54c356010261f4cbd8f8f9228531de, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  groundContactOffset: 1
 --- !u!1001 &206173864
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -382,6 +396,10 @@ MonoBehaviour:
   slideRearKneeBend: 105
   slideArmSweep: 48
   lookRotationSpeed: 15
+  maxLaneLeanAngle: 9
+  laneLeanVelocity: 7
+  laneLeanResponse: 14
+  authoredTransitionDuration: 0.08
   leftUpperArm: {fileID: 0}
   rightUpperArm: {fileID: 0}
   leftLowerArm: {fileID: 0}
@@ -654,12 +672,19 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   jumpClip: {fileID: 0}
   slideClip: {fileID: 0}
+  slideLoopClip: {fileID: 0}
+  slideExitClip: {fileID: 0}
+  landClip: {fileID: 0}
   coinClip: {fileID: 0}
   dodgeObstacleClip: {fileID: 0}
   deathClip: {fileID: 0}
   footstepClip: {fileID: 0}
   footstepClips: []
   collisionClip: {fileID: 0}
+  impactRecoverClip: {fileID: 0}
+  impactFatalClip: {fileID: 0}
+  counterSuccessClip: {fileID: 0}
+  speedWindLoopClip: {fileID: 0}
   uiClickClip: {fileID: 0}
   uiConfirmClip: {fileID: 0}
   uiErrorClip: {fileID: 0}
@@ -669,6 +694,10 @@ MonoBehaviour:
   sfxVolume: 1
   muted: 0
   footstepInterval: 0.35
+  slideLoopVolume: 0.34
+  minimumFootstepInterval: 0.2
+  speedFeedbackResponse: 7
+  speedWindLoopVolume: 0.12
 --- !u!4 &839351752
 Transform:
   m_ObjectHideFlags: 0
@@ -840,6 +869,18 @@ MonoBehaviour:
   target: {fileID: 195782155}
   offset: {x: 0, y: 4.6, z: -8.2}
   smoothSpeed: 8
+  motionResponse: 7
+  speedPullback: 0.38
+  speedLift: 0.06
+  slideCameraDrop: 0.12
+  maximumSpeedFovBoost: 3.5
+  fovResponse: 6
+  landingPulseAmplitude: 0.1
+  landingPulseDuration: 0.16
+  impactPulseAmplitude: 0.18
+  impactPulseDuration: 0.22
+  deathShakeAmplitude: 0.22
+  deathShakeDuration: 0.55
 --- !u!1 &964505397
 GameObject:
   m_ObjectHideFlags: 0

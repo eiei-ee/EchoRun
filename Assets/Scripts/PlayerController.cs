@@ -36,11 +36,17 @@ public class PlayerController : MonoBehaviour
     public ObstacleContactDiagnostic LastObstacleContact { get; private set; }
     public int ResolvedObstacleCount => _resolvedObstacles.Count;
     public int DuplicateObstacleContactCount { get; private set; }
+    public event System.Action<PlayerActionSignal> ActionRaised;
+    public PlayerMotionSnapshot MotionSnapshot => PlayerMotionFeedback.Project(
+        CurrentLane, IsJumping, _jumpTimer, jumpDuration,
+        IsSliding, _slideTimer, slideDuration, _lateralVelocity,
+        _gm != null ? _gm.CurrentSpeed : 0f,
+        _gm != null ? _gm.startSpeed : 0f,
+        _gm != null ? _gm.maxSpeed : 0f,
+        ForwardDirection, _laneOffset);
 
     private float _jumpTimer;
    private float _slideTimer;
-    private float _slideTrailTimer;
-    private float _runTrailTimer;
     private float _jumpGroundY;
     private float _originalColliderHeight;
     private Vector3 _originalColliderCenter;
@@ -49,6 +55,14 @@ public class PlayerController : MonoBehaviour
     private Rigidbody _rb;
     private TrackSegmentData _lastTurnSegment;
     private float _laneOffset;
+    private float _lateralVelocity;
+    private int _nextSignalSequence = 1;
+    private int _nextActionId = 1;
+    private int _activeJumpActionId;
+    private int _activeSlideActionId;
+    private int _activeLaneActionId;
+    private int _activeLaneFromLane;
+    private float _laneActionTimer;
     private GameManager _gm;
     private InputManager _input;
     private TrackManager _trackMgr;
@@ -166,14 +180,6 @@ public class PlayerController : MonoBehaviour
            ? AITrackDirector.Instance.CurrentLaneIncentiveCenter : 1f;
        StyleTracker.TickLane(CurrentLane, Time.deltaTime,
            offeredLaneCenter);
-
-        // Running trail dust
-        if (_runTrailTimer > 0.12f)
-        {
-            _runTrailTimer = 0f;
-            ParticleManager.Instance?.EmitTrail(_rb.position + Vector3.down * 0.8f);
-        }
-        _runTrailTimer += Time.deltaTime;
    }
 
    void FixedUpdate()
@@ -207,25 +213,37 @@ public class PlayerController : MonoBehaviour
         if (_gm.State != GameState.Playing || _gm.IsDeathSequence) return;
 
         _laneOffset = nextOffset;
+        _lateralVelocity = Vector3.Dot(planarVelocity, right);
+        if (_activeLaneActionId != 0)
+        {
+            _laneActionTimer += Time.fixedDeltaTime;
+            if (Mathf.Abs(_laneOffset - targetLateral) <= 0.0001f)
+                CompleteLaneChange();
+        }
         Vector3 vel = _rb.velocity;
         vel.x = planarVelocity.x;
         vel.z = planarVelocity.z;
 
-        // Jump
-        if (IsJumping)
-        {
-            _jumpTimer += Time.fixedDeltaTime;
-            float progress = Mathf.Clamp01(_jumpTimer / Mathf.Max(0.01f, jumpDuration));
-            float targetHeight = EvaluateJumpArc(progress) * jumpHeight;
-            float targetY = _jumpGroundY + targetHeight;
-            vel.y = CalculateVerticalCorrectionVelocity(
-                _rb.position.y, targetY, Time.fixedDeltaTime);
-
-            if (progress >= 1f)
-                IsJumping = false;
-        }
+        vel = UpdateJumpVelocity(vel, Time.fixedDeltaTime);
 
         _rb.velocity = vel;
+    }
+
+    private Vector3 UpdateJumpVelocity(Vector3 velocity, float fixedDeltaTime)
+    {
+        if (!IsJumping) return velocity;
+
+        _jumpTimer += fixedDeltaTime;
+        float progress = Mathf.Clamp01(
+            _jumpTimer / Mathf.Max(0.01f, jumpDuration));
+        float targetHeight = EvaluateJumpArc(progress) * jumpHeight;
+        float targetY = _jumpGroundY + targetHeight;
+        velocity.y = CalculateVerticalCorrectionVelocity(
+            _rb.position.y, targetY, fixedDeltaTime);
+
+        if (progress >= 1f)
+            CompleteJump();
+        return velocity;
     }
 
     void UpdateForwardDirection()
@@ -301,11 +319,7 @@ public class PlayerController : MonoBehaviour
                {
                    AIShadowRunner.Instance?.RecordPlayerAction(
                        ShadowAction.Jump, CurrentLane);
-                   IsJumping = true;
-                    _jumpTimer = 0f;
-                    _jumpGroundY = _rb.position.y;
-                    AITrackDirector.Instance?.RecordJump();
-                    AudioManager.Instance?.PlayJump();
+                    BeginJump();
                     accepted = true;
                }
                 else
@@ -318,12 +332,7 @@ public class PlayerController : MonoBehaviour
                {
        AIShadowRunner.Instance?.RecordPlayerAction(
            ShadowAction.Slide, CurrentLane);
-       IsSliding = true;
-       _slideTimer = 0f;
-         _slideTrailTimer = 0f;
-       AITrackDirector.Instance?.RecordSlide();
-                    AudioManager.Instance?.PlaySlide();
-                    ApplySlideCollider();
+                    BeginSlide();
                 accepted = true;
                 }
                 else
@@ -334,7 +343,10 @@ public class PlayerController : MonoBehaviour
         }
 
         if (CurrentLane != previousLane)
+        {
             AITrackDirector.Instance?.RecordLaneChange(CurrentLane);
+            BeginLaneChange(previousLane, CurrentLane);
+        }
 
         if (temporarilyBlocked)
         {
@@ -353,25 +365,89 @@ public class PlayerController : MonoBehaviour
 
        _slideTimer += Time.deltaTime;
 
-        // Slide dust trail
-        if (_slideTrailTimer > 0.06f)
-        {
-            _slideTrailTimer = 0f;
-            ParticleManager.Instance?.EmitDust(_rb.position + Vector3.down * 0.5f);
-        }
-        _slideTrailTimer += Time.deltaTime;
-
        if (_slideTimer >= slideDuration)
-       {
-           IsSliding = false;
-            if (characterModel != null)
-                characterModel.localPosition = _originalModelPos;
-           if (_capsuleCollider != null)
-           {
-               _capsuleCollider.height = _originalColliderHeight;
-               _capsuleCollider.center = _originalColliderCenter;
-           }
-       }
+           CompleteSlide();
+    }
+
+    private void BeginJump()
+    {
+        IsJumping = true;
+        _jumpTimer = 0f;
+        _jumpGroundY = _rb != null ? _rb.position.y : transform.position.y;
+        _activeJumpActionId = NextActionId();
+        AITrackDirector.Instance?.RecordJump();
+        RaiseAction(PlayerActionEdge.JumpStarted, _activeJumpActionId,
+            jumpDuration, CurrentLane, CurrentLane, ResolvePlayerPosition());
+    }
+
+    private void CompleteJump()
+    {
+        if (!IsJumping) return;
+
+        int actionId = _activeJumpActionId != 0
+            ? _activeJumpActionId
+            : NextActionId();
+        IsJumping = false;
+        _activeJumpActionId = 0;
+        RaiseAction(PlayerActionEdge.Landed, actionId, jumpDuration,
+            CurrentLane, CurrentLane, ResolvePlayerPosition());
+    }
+
+    private void BeginSlide()
+    {
+        IsSliding = true;
+        _slideTimer = 0f;
+        _activeSlideActionId = NextActionId();
+        AITrackDirector.Instance?.RecordSlide();
+        ApplySlideCollider();
+        RaiseAction(PlayerActionEdge.SlideStarted, _activeSlideActionId,
+            slideDuration, CurrentLane, CurrentLane, ResolvePlayerPosition());
+    }
+
+    private void CompleteSlide()
+    {
+        if (!IsSliding) return;
+
+        int actionId = _activeSlideActionId != 0
+            ? _activeSlideActionId
+            : NextActionId();
+        IsSliding = false;
+        if (characterModel != null)
+            characterModel.localPosition = _originalModelPos;
+        if (_capsuleCollider != null)
+        {
+            _capsuleCollider.height = _originalColliderHeight;
+            _capsuleCollider.center = _originalColliderCenter;
+        }
+        _activeSlideActionId = 0;
+        RaiseAction(PlayerActionEdge.SlideEnded, actionId, slideDuration,
+            CurrentLane, CurrentLane, ResolvePlayerPosition());
+    }
+
+    private void BeginLaneChange(int fromLane, int toLane)
+    {
+        _activeLaneActionId = NextActionId();
+        _activeLaneFromLane = fromLane;
+        _laneActionTimer = 0f;
+        float targetOffset = (toLane - 1) * laneDistance;
+        float duration = Mathf.Abs(targetOffset - _laneOffset)
+                         / Mathf.Max(0.01f, laneSwitchSpeed);
+        RaiseAction(PlayerActionEdge.LaneChangeStarted,
+            _activeLaneActionId, duration, fromLane, toLane,
+            ResolvePlayerPosition());
+    }
+
+    private void CompleteLaneChange()
+    {
+        if (_activeLaneActionId == 0) return;
+
+        int actionId = _activeLaneActionId;
+        int fromLane = _activeLaneFromLane;
+        float duration = _laneActionTimer;
+        _activeLaneActionId = 0;
+        _laneActionTimer = 0f;
+        RaiseAction(PlayerActionEdge.LaneChangeCompleted, actionId,
+            duration, fromLane, CurrentLane, ResolvePlayerPosition());
     }
 
     private void ApplySlideCollider()
@@ -388,6 +464,35 @@ public class PlayerController : MonoBehaviour
         center.y = bottom + height * 0.5f;
         _capsuleCollider.height = height;
         _capsuleCollider.center = center;
+    }
+
+    private void RaiseAction(PlayerActionEdge edge, int actionId,
+        float duration, int fromLane, int toLane, Vector3 position)
+    {
+        PlayerMotionSnapshot motion = MotionSnapshot;
+        var signal = new PlayerActionSignal(edge, NextSignalSequence(),
+            actionId, Time.time, Mathf.Max(0f, duration), position,
+            motion.Forward, fromLane, toLane, motion);
+        ActionRaised?.Invoke(signal);
+    }
+
+    private Vector3 ResolvePlayerPosition()
+    {
+        return _rb != null ? _rb.position : transform.position;
+    }
+
+    private int NextSignalSequence()
+    {
+        int sequence = _nextSignalSequence++;
+        if (_nextSignalSequence <= 0) _nextSignalSequence = 1;
+        return sequence;
+    }
+
+    private int NextActionId()
+    {
+        int actionId = _nextActionId++;
+        if (_nextActionId <= 0) _nextActionId = 1;
+        return actionId;
     }
 
     bool IsGrounded()
@@ -592,10 +697,15 @@ public class PlayerController : MonoBehaviour
                    predictionGateBinding, trackingId);
            }
            AIShadowRunner.Instance?.RecordObstacleHit(challengeBinding);
-           AudioManager.Instance?.PlayCollision();
+           Vector3 playerPosition = ResolvePlayerPosition();
+           Vector3 contactPosition = other != null
+               ? other.ClosestPoint(playerPosition)
+               : playerPosition;
            if (PowerUpController.Instance != null
                && PowerUpController.Instance.TryAbsorbCollision())
            {
+               RaiseAction(PlayerActionEdge.ImpactAbsorbed, NextActionId(),
+                   0f, CurrentLane, CurrentLane, contactPosition);
                if (TrackManager.Instance != null)
                    TrackManager.Instance.ReleaseDynamic(other.gameObject);
                else
@@ -604,6 +714,8 @@ public class PlayerController : MonoBehaviour
            }
            if (_gm.TryRecoverFromCollision())
            {
+               RaiseAction(PlayerActionEdge.ImpactRecovered, NextActionId(),
+                   0f, CurrentLane, CurrentLane, contactPosition);
                if (TrackManager.Instance != null)
                    TrackManager.Instance.ReleaseDynamic(other.gameObject);
                else
@@ -611,6 +723,9 @@ public class PlayerController : MonoBehaviour
                return;
            }
            StopBeforeObstacle(other);
+           _lateralVelocity = 0f;
+           RaiseAction(PlayerActionEdge.FatalImpact, NextActionId(),
+               0f, CurrentLane, CurrentLane, contactPosition);
            _gm.GameOver();
    }
 
