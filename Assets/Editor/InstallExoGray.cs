@@ -245,11 +245,8 @@ public static class InstallExoGray
 
         Texture mainTexture = source.HasProperty("_MainTex") ? source.GetTexture("_MainTex") : null;
         material.SetTexture("_MainTex", mainTexture);
-        material.SetColor("_DarkColor", new Color(0.035f, 0.075f, 0.12f, 1f));
-        material.SetColor("_LightColor", new Color(0.32f, 0.46f, 0.60f, 1f));
-        material.SetColor("_EmissionColor", new Color(0f, 1.3f, 2.1f, 1f));
-        material.SetFloat("_EmissionStrength", 1.6f);
-        material.SetFloat("_AccentThreshold", 0.08f);
+        InstallEchoRunnerPhaseOne.ApplyBlueTechProfile(
+            material, source.name);
         EditorUtility.SetDirty(material);
         return material;
     }

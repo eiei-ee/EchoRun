@@ -3,11 +3,12 @@ Shader "EchoRun/GhostRunner"
     Properties
     {
         _MainTex ("Source Texture", 2D) = "white" {}
-        _Color ("Ghost Color", Color) = (0.22, 0.84, 1.00, 0.66)
-        _RimColor ("Rim Color", Color) = (0.64, 0.94, 1.00, 1)
-        _RimPower ("Rim Power", Range(0.7, 5)) = 2.1
-        _EmissionStrength ("Emission Strength", Range(0, 4)) = 0.72
-        _ScanStrength ("Scan Strength", Range(0, 1)) = 0.22
+        _Color ("Transparent Body", Color) = (0.018, 0.045, 0.075, 0.14)
+        [HDR] _RimColor ("Rim Color", Color) = (0.18, 0.72, 0.92, 1)
+        _RimPower ("Rim Power", Range(1, 7)) = 3.4
+        _EmissionStrength ("Rim Emission", Range(0, 1)) = 0.38
+        _ScanStrength ("Scan Strength", Range(0, 0.5)) = 0.16
+        _GlitchStrength ("Horizontal Glitch", Range(0, 0.04)) = 0.014
     }
 
     SubShader
@@ -18,7 +19,7 @@ Shader "EchoRun/GhostRunner"
         ZWrite Off
 
         CGPROGRAM
-        #pragma surface surf Lambert alpha:fade noforwardadd
+        #pragma surface surf Lambert alpha:premul vertex:vert noforwardadd keepalpha
         #pragma target 2.0
 
         sampler2D _MainTex;
@@ -27,6 +28,7 @@ Shader "EchoRun/GhostRunner"
         half _RimPower;
         half _EmissionStrength;
         half _ScanStrength;
+        half _GlitchStrength;
 
         struct Input
         {
@@ -35,20 +37,38 @@ Shader "EchoRun/GhostRunner"
             float3 viewDir;
         };
 
+        void vert(inout appdata_full vertex)
+        {
+            half localBand = step(0.965h,
+                sin(vertex.vertex.y * 29.0h + floor(_Time.y * 3.0h) * 1.73h));
+            half eventGate = step(0.91h, frac(_Time.y * 0.23h));
+            half direction = sin(floor(_Time.y * 3.0h) * 2.11h) >= 0.0h
+                ? 1.0h : -1.0h;
+            vertex.vertex.x += localBand * eventGate * direction * _GlitchStrength;
+        }
+
         void surf(Input input, inout SurfaceOutput output)
         {
             fixed3 source = tex2D(_MainTex, input.uv_MainTex).rgb;
             half textureValue = dot(source, fixed3(0.30, 0.59, 0.11));
             half rim = pow(1.0h - saturate(dot(normalize(input.viewDir), output.Normal)),
                 _RimPower);
-            half scanWave = 0.5h + 0.5h * sin((input.worldPos.y + _Time.y * 0.85h) * 24.0h);
-            half scan = step(0.82h, scanWave) * _ScanStrength;
-            half detail = lerp(0.62h, 1.10h, textureValue);
+            half scanWave = 0.5h + 0.5h * sin(
+                input.worldPos.y * 34.0h - _Time.y * 7.5h);
+            half scan = step(0.93h, scanWave) * _ScanStrength;
+            half dropoutWave = 0.5h + 0.5h * sin(
+                input.worldPos.y * 17.0h + floor(_Time.y * 2.0h) * 2.37h);
+            half dropoutGate = step(0.945h, dropoutWave)
+                * step(0.82h, frac(_Time.y * 0.31h));
+            half detail = lerp(0.62h, 0.92h, textureValue);
 
             output.Albedo = _Color.rgb * detail;
-            output.Emission = _Color.rgb * (_EmissionStrength + scan)
-                + _RimColor.rgb * rim * 1.45h;
-            output.Alpha = saturate(_Color.a * (0.76h + rim * 0.48h) + scan * 0.14h);
+            output.Emission = _RimColor.rgb
+                * (rim * _EmissionStrength + scan * 0.34h);
+            output.Alpha = saturate(
+                (_Color.a * (0.78h + detail * 0.22h)
+                 + rim * 0.48h + scan * 0.16h)
+                * (1.0h - dropoutGate * 0.88h));
         }
         ENDCG
     }

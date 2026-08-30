@@ -153,8 +153,8 @@ public class WorldStyler : MonoBehaviour
     public static Vector3 GetCameraOffset(bool portrait)
     {
         return portrait
-            ? new Vector3(0f, 4.35f, -8.0f)
-            : new Vector3(0f, 4.6f, -8.2f);
+            ? new Vector3(0f, 3.75f, -6.3f)
+            : new Vector3(0f, 3.85f, -6.45f);
     }
 
     public void DecorateSegment(GameObject segment, TrackSegmentType segmentType)

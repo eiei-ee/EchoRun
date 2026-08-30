@@ -784,7 +784,7 @@ public class UIManager : MonoBehaviour
     // ═══════════════════════════════════════════════════
 
     static readonly (string name, Color dark, Color light, Color emission)[] _presets = {
-        ("原型", new Color(0.035f, 0.075f, 0.12f), new Color(0.32f, 0.46f, 0.60f), new Color(0.10f, 1.25f, 1.80f)),
+        ("原型", new Color(0.030f, 0.060f, 0.10f), new Color(0.32f, 0.46f, 0.60f), new Color(0.95f, 0.72f, 0.48f)),
         ("警戒", new Color(0.16f, 0.035f, 0.04f), new Color(0.88f, 0.26f, 0.22f), new Color(1.60f, 0.24f, 0.18f)),
         ("深海", new Color(0.025f, 0.06f, 0.18f), new Color(0.14f, 0.38f, 0.86f), new Color(0.12f, 0.62f, 1.75f)),
         ("脉冲", new Color(0.03f, 0.14f, 0.08f), new Color(0.12f, 0.68f, 0.36f), new Color(0.15f, 1.45f, 0.72f)),

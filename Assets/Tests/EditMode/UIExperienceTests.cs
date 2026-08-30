@@ -293,6 +293,28 @@ public sealed class UIExperienceTests
     }
 
     [Test]
+    public void RunnerAppearanceSeparatesHardArmorFromSoftInnerLayer()
+    {
+        Color dark = new Color(0.03f, 0.06f, 0.10f);
+        Color light = new Color(0.32f, 0.46f, 0.60f);
+        Color emission = new Color(0.95f, 0.72f, 0.48f);
+
+        RunnerAppearanceService.ResolveMaterialPalette(
+            "Exo_MAT_BlueTech", dark, light, emission,
+            out Color armorDark, out Color armorLight,
+            out Color armorEmission);
+        RunnerAppearanceService.ResolveMaterialPalette(
+            "Body_MAT_BlueTech", dark, light, emission,
+            out Color bodyDark, out Color bodyLight,
+            out Color bodyEmission);
+
+        Assert.Greater(armorLight.grayscale, light.grayscale * 1.15f);
+        Assert.Less(bodyLight.grayscale, light.grayscale * 0.70f);
+        Assert.Less(bodyDark.grayscale, armorDark.grayscale);
+        Assert.Less(bodyEmission.grayscale, armorEmission.grayscale);
+    }
+
+    [Test]
     public void PlayerFacingFontCoversNewInterfaceCopy()
     {
         Font font = Resources.Load<Font>("Fonts/EchoRunSansSC-Regular");
@@ -372,9 +394,9 @@ public sealed class UIExperienceTests
             new Vector2(180f, 56f), false, false).y);
         Assert.AreEqual(62f, WorldStyler.GetCameraFieldOfView(true));
         Assert.AreEqual(56f, WorldStyler.GetCameraFieldOfView(false));
-        Assert.AreEqual(new Vector3(0f, 4.35f, -8f),
+        Assert.AreEqual(new Vector3(0f, 3.75f, -6.3f),
             WorldStyler.GetCameraOffset(true));
-        Assert.AreEqual(new Vector3(0f, 4.6f, -8.2f),
+        Assert.AreEqual(new Vector3(0f, 3.85f, -6.45f),
             WorldStyler.GetCameraOffset(false));
     }
 

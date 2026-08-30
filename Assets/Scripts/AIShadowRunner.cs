@@ -2346,14 +2346,18 @@ public class AIShadowRunner : MonoBehaviour
         if (_ghostMaterial != null)
         {
             bool reducedMotion = EchoRunAccessibility.ReducedMotion;
-            float ghostAlpha = reducedMotion
-                ? 0.66f
-                : 0.64f + Mathf.Sin(Time.time * 4f) * 0.035f;
-            _ghostMaterial.color = _ghostStumbleTimer > 0f
-                ? new Color(1.0f, 0.30f, 0.24f, 0.76f)
-                : new Color(0.22f, 0.84f, 1.00f, ghostAlpha);
+            bool stumbling = _ghostStumbleTimer > 0f;
+            _ghostMaterial.color = ResolveGhostBodyColor(
+                stumbling, reducedMotion, Time.time);
+            if (_ghostMaterial.HasProperty("_RimColor"))
+                _ghostMaterial.SetColor(
+                    "_RimColor", ResolveGhostRimColor(stumbling));
             if (_ghostMaterial.HasProperty("_ScanStrength"))
-                _ghostMaterial.SetFloat("_ScanStrength", reducedMotion ? 0f : 0.22f);
+                _ghostMaterial.SetFloat(
+                    "_ScanStrength", reducedMotion ? 0f : 0.16f);
+            if (_ghostMaterial.HasProperty("_GlitchStrength"))
+                _ghostMaterial.SetFloat(
+                    "_GlitchStrength", reducedMotion ? 0f : 0.014f);
         }
     }
 
@@ -3103,6 +3107,25 @@ public class AIShadowRunner : MonoBehaviour
         return false;
     }
 
+    public static Color ResolveGhostBodyColor(
+        bool stumbling, bool reducedMotion, float time)
+    {
+        if (stumbling)
+            return new Color(0.11f, 0.022f, 0.030f, 0.18f);
+
+        float alpha = reducedMotion
+            ? 0.14f
+            : 0.14f + Mathf.Sin(time * 2.2f) * 0.012f;
+        return new Color(0.018f, 0.045f, 0.075f, alpha);
+    }
+
+    public static Color ResolveGhostRimColor(bool stumbling)
+    {
+        return stumbling
+            ? new Color(0.95f, 0.20f, 0.18f, 1f)
+            : new Color(0.18f, 0.72f, 0.92f, 1f);
+    }
+
     private void ApplyGhostMaterial(GameObject visual)
     {
         Shader shader = Resources.Load<Shader>("Shaders/EchoGhost");
@@ -3114,18 +3137,20 @@ public class AIShadowRunner : MonoBehaviour
 
         _ghostMaterial = new Material(shader)
         {
-            color = new Color(0.22f, 0.84f, 1.00f, 0.66f),
+            color = ResolveGhostBodyColor(false, false, 0f),
             renderQueue = 3000
         };
 
         if (_ghostMaterial.HasProperty("_RimColor"))
-            _ghostMaterial.SetColor("_RimColor", new Color(0.64f, 0.94f, 1f, 1f));
+            _ghostMaterial.SetColor("_RimColor", ResolveGhostRimColor(false));
         if (_ghostMaterial.HasProperty("_RimPower"))
-            _ghostMaterial.SetFloat("_RimPower", 2.1f);
+            _ghostMaterial.SetFloat("_RimPower", 3.4f);
         if (_ghostMaterial.HasProperty("_EmissionStrength"))
-            _ghostMaterial.SetFloat("_EmissionStrength", 0.72f);
+            _ghostMaterial.SetFloat("_EmissionStrength", 0.38f);
         if (_ghostMaterial.HasProperty("_ScanStrength"))
-            _ghostMaterial.SetFloat("_ScanStrength", 0.22f);
+            _ghostMaterial.SetFloat("_ScanStrength", 0.16f);
+        if (_ghostMaterial.HasProperty("_GlitchStrength"))
+            _ghostMaterial.SetFloat("_GlitchStrength", 0.014f);
 
         foreach (Renderer renderer in visual.GetComponentsInChildren<Renderer>(true))
         {

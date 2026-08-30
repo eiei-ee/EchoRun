@@ -30,14 +30,18 @@ public static class RunnerAppearanceService
                 bool legacyOutfit = IsLegacyOutfitMaterial(material.name);
                 if (!techMaterial && !legacyOutfit) continue;
 
+                ResolveMaterialPalette(material.name, dark, light, emission,
+                    out Color materialDark, out Color materialLight,
+                    out Color materialEmission);
+
                 properties.Clear();
                 renderer.GetPropertyBlock(properties, index);
                 if (material.HasProperty(DarkColor))
-                    properties.SetColor(DarkColor, dark);
+                    properties.SetColor(DarkColor, materialDark);
                 if (material.HasProperty(LightColor))
-                    properties.SetColor(LightColor, light);
+                    properties.SetColor(LightColor, materialLight);
                 if (material.HasProperty(EmissionColor))
-                    properties.SetColor(EmissionColor, emission);
+                    properties.SetColor(EmissionColor, materialEmission);
                 if (!techMaterial && material.HasProperty(BaseColor))
                     properties.SetColor(BaseColor,
                         IsDarkMaterial(material.name) ? dark : light);
@@ -49,6 +53,50 @@ public static class RunnerAppearanceService
             }
         }
         return changedSlots;
+    }
+
+    public static void ResolveMaterialPalette(
+        string materialName, Color dark, Color light, Color emission,
+        out Color materialDark, out Color materialLight,
+        out Color materialEmission)
+    {
+        string name = materialName ?? string.Empty;
+        if (name.Contains("Exo_MAT"))
+        {
+            materialDark = ScaleRgb(dark, 1.05f, 0.004f);
+            materialLight = ScaleRgb(light, 1.20f, 0.012f);
+            materialEmission = ScaleRgb(emission, 0.55f, 0f);
+            return;
+        }
+
+        if (name.Contains("Body_MAT"))
+        {
+            materialDark = ScaleRgb(dark, 0.55f, 0f);
+            materialLight = ScaleRgb(light, 0.62f, 0f);
+            materialEmission = ScaleRgb(emission, 0.30f, 0f);
+            return;
+        }
+
+        if (name.Contains("Eye") || name.Contains("Brow"))
+        {
+            materialDark = ScaleRgb(dark, 0.42f, 0f);
+            materialLight = ScaleRgb(light, 0.50f, 0f);
+            materialEmission = ScaleRgb(emission, 0.25f, 0f);
+            return;
+        }
+
+        materialDark = dark;
+        materialLight = light;
+        materialEmission = emission;
+    }
+
+    private static Color ScaleRgb(Color color, float scale, float offset)
+    {
+        return new Color(
+            Mathf.Clamp01(color.r * scale + offset),
+            Mathf.Clamp01(color.g * scale + offset),
+            Mathf.Clamp01(color.b * scale + offset),
+            color.a);
     }
 
     private static bool IsLegacyOutfitMaterial(string materialName)
