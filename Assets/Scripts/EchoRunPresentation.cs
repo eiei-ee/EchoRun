@@ -255,6 +255,69 @@ public static class EchoRunPresentation
         };
     }
 
+    public static string BuildSingleContractCognitionSummary(
+        EchoCognitionAssessment assessment)
+    {
+        if (!assessment.IsAvailable) return "";
+
+        string previousLane = SingleContractCognitionLaneName(
+            assessment.PreviousLane);
+        string nextLane = SingleContractCognitionLaneName(
+            assessment.NextLane);
+        int previousConfidence = Mathf.RoundToInt(
+            assessment.PreviousConfidence * 100f);
+        int nextConfidence = Mathf.RoundToInt(
+            assessment.NextConfidence * 100f);
+        string runEvidence = "本局发生：反制 "
+                             + assessment.SuccessfulCounterCount + "/"
+                             + assessment.TotalGateCount + " · "
+                             + (assessment.RelearnStartGateNumber > 0
+                                 ? "第" + assessment.RelearnStartGateNumber
+                                   + "门起追学"
+                                 : "回声未追学");
+
+        string nextCognition;
+        switch (assessment.ChangeKind)
+        {
+            case EchoCognitionChangeKind.Consolidated:
+                nextCognition = "路线认知巩固：第"
+                                + assessment.NextGeneration
+                                + "代更确信" + nextLane + " · "
+                                + nextConfidence + "%";
+                break;
+            case EchoCognitionChangeKind.Shaken:
+                nextCognition = assessment.NextMemoryPrecise
+                    ? "路线认知动摇：第" + assessment.NextGeneration
+                      + "代仍判断" + nextLane + " · 降至"
+                      + nextConfidence + "%"
+                    : "路线认知动摇：第" + assessment.NextGeneration
+                      + "代路线记忆变得模糊";
+                break;
+            case EchoCognitionChangeKind.Shifted:
+                nextCognition = "路线认知偏移：第"
+                                + assessment.NextGeneration
+                                + "代开始转向" + nextLane + " · "
+                                + nextConfidence + "%";
+                break;
+            case EchoCognitionChangeKind.Reversed:
+                nextCognition = "路线认知反转：第"
+                                + assessment.NextGeneration
+                                + "代改判为" + nextLane + " · "
+                                + nextConfidence + "%";
+                break;
+            default:
+                nextCognition = "路线无新认知：第"
+                                + assessment.NextGeneration
+                                + "代仍判断" + nextLane + " · "
+                                + nextConfidence + "%";
+                break;
+        }
+
+        return "上一代路线认知：偏向" + previousLane + " · 置信度 "
+               + previousConfidence + "%\n"
+               + runEvidence + "\n" + nextCognition;
+    }
+
     public static SingleContractHudData BuildSingleContractHud(
         SingleContractHudInput input)
     {
@@ -825,6 +888,16 @@ public static class EchoRunPresentation
             case 0: return "左侧路线";
             case 2: return "右侧路线";
             default: return "中间路线";
+        }
+    }
+
+    private static string SingleContractCognitionLaneName(int lane)
+    {
+        switch (lane)
+        {
+            case 0: return "左侧";
+            case 2: return "右侧";
+            default: return "中间";
         }
     }
 

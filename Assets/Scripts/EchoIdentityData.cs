@@ -284,6 +284,134 @@ public sealed class ActiveEchoIdentity
     }
 }
 
+public enum EchoCognitionChangeKind
+{
+    Unavailable,
+    NoNewCognition,
+    Consolidated,
+    Shaken,
+    Shifted,
+    Reversed
+}
+
+public readonly struct EchoCognitionAssessment
+{
+    public const float MeaningfulConfidenceDelta = 0.1f;
+
+    public bool IsAvailable { get; }
+    public EchoCognitionChangeKind ChangeKind { get; }
+    public int PreviousGeneration { get; }
+    public int NextGeneration { get; }
+    public int PreviousLane { get; }
+    public int NextLane { get; }
+    public float PreviousConfidence { get; }
+    public float NextConfidence { get; }
+    public bool NextMemoryPrecise { get; }
+    public int SuccessfulCounterCount { get; }
+    public int TotalGateCount { get; }
+    public int RelearnStartGateNumber { get; }
+
+    private EchoCognitionAssessment(
+        EchoCognitionChangeKind changeKind,
+        int previousGeneration, int nextGeneration,
+        int previousLane, int nextLane,
+        float previousConfidence, float nextConfidence,
+        bool nextMemoryPrecise, int successfulCounterCount,
+        int totalGateCount, int relearnStartGateNumber)
+    {
+        IsAvailable = true;
+        ChangeKind = changeKind;
+        PreviousGeneration = previousGeneration;
+        NextGeneration = nextGeneration;
+        PreviousLane = previousLane;
+        NextLane = nextLane;
+        PreviousConfidence = previousConfidence;
+        NextConfidence = nextConfidence;
+        NextMemoryPrecise = nextMemoryPrecise;
+        SuccessfulCounterCount = successfulCounterCount;
+        TotalGateCount = totalGateCount;
+        RelearnStartGateNumber = relearnStartGateNumber;
+    }
+
+    public static EchoCognitionAssessment Compare(
+        ActiveEchoIdentity previousIdentity,
+        ActiveEchoIdentity nextIdentity,
+        int successfulCounterCount, int totalGateCount,
+        int relearnStartGateNumber, bool nextLaneHasUniqueEvidence)
+    {
+        EchoMemoryContract previousMemory = previousIdentity != null
+            ? previousIdentity.memoryContract : null;
+        EchoMemoryContract nextMemory = nextIdentity != null
+            ? nextIdentity.memoryContract : null;
+        if (!HasPreciseMemory(previousMemory)
+            || nextMemory == null
+            || previousIdentity.generation <= 0
+            || nextIdentity.generation != previousIdentity.generation + 1
+            || string.IsNullOrEmpty(previousIdentity.identityId)
+            || !string.Equals(nextIdentity.parentIdentityId,
+                previousIdentity.identityId, StringComparison.Ordinal))
+            return default;
+
+        int previousLane = Mathf.Clamp(previousMemory.preferredLane, 0, 2);
+        int nextLane = Mathf.Clamp(nextMemory.preferredLane, 0, 2);
+        float previousConfidence = SafeConfidence(previousMemory.confidence);
+        float nextConfidence = SafeConfidence(nextMemory.confidence);
+        bool nextMemoryPrecise = HasPreciseMemory(nextMemory);
+        float confidenceDelta = nextConfidence - previousConfidence;
+
+        EchoCognitionChangeKind changeKind;
+        if (nextLane != previousLane)
+        {
+            changeKind = nextMemoryPrecise
+                ? EchoCognitionChangeKind.Reversed
+                : nextLaneHasUniqueEvidence
+                    ? EchoCognitionChangeKind.Shifted
+                    : EchoCognitionChangeKind.Shaken;
+        }
+        else if (!nextMemoryPrecise
+                 || confidenceDelta <= -MeaningfulConfidenceDelta)
+        {
+            changeKind = EchoCognitionChangeKind.Shaken;
+        }
+        else if (confidenceDelta >= MeaningfulConfidenceDelta)
+        {
+            changeKind = EchoCognitionChangeKind.Consolidated;
+        }
+        else
+        {
+            changeKind = EchoCognitionChangeKind.NoNewCognition;
+        }
+
+        int gates = Mathf.Max(0, totalGateCount);
+        int counters = gates > 0
+            ? Mathf.Clamp(successfulCounterCount, 0, gates)
+            : 0;
+        int relearnStart = relearnStartGateNumber > 0 && gates > 0
+            ? Mathf.Clamp(relearnStartGateNumber, 1, gates)
+            : 0;
+        return new EchoCognitionAssessment(
+            changeKind, previousIdentity.generation,
+            nextIdentity.generation, previousLane, nextLane,
+            previousConfidence, nextConfidence, nextMemoryPrecise,
+            counters, gates, relearnStart);
+    }
+
+    private static bool HasPreciseMemory(EchoMemoryContract memory)
+    {
+        return memory != null
+               && memory.evidenceCount >= 3
+               && SafeConfidence(memory.confidence)
+               >= EchoMemoryContract.PreciseDescriptionConfidence;
+    }
+
+    private static float SafeConfidence(float value)
+    {
+        return float.IsNaN(value) || float.IsInfinity(value)
+            ? 0f
+            : Mathf.Clamp01(value);
+    }
+}
+
 public static class SingleContractValidationIdentity
 {
     public const int Generation = 1;
@@ -476,6 +604,30 @@ public sealed class GateChoiceAccumulator
     public int ChoiceCountForLane(int lane)
     {
         return _choiceCounts[Mathf.Clamp(lane, 0, 2)];
+    }
+
+    public bool TryGetUniquePreferredLane(out int preferredLane)
+    {
+        preferredLane = -1;
+        int highestCount = 0;
+        bool tied = false;
+        for (int lane = 0; lane < _choiceCounts.Length; lane++)
+        {
+            int count = _choiceCounts[lane];
+            if (count > highestCount)
+            {
+                highestCount = count;
+                preferredLane = lane;
+                tied = false;
+            }
+            else if (count > 0 && count == highestCount)
+            {
+                tied = true;
+            }
+        }
+        if (highestCount > 0 && !tied) return true;
+        preferredLane = -1;
+        return false;
     }
 
     public bool TryBuildMemoryContract(out EchoMemoryContract contract)
@@ -756,7 +908,9 @@ public sealed class RunAdaptationState
     public int hypothesisVersion;
     public int predictedStrategy;
     public int consecutiveSuccessfulCounters;
+    public int successfulCounterCount;
     public int resolvedGateCount;
+    public int relearnStartGateNumber;
 }
 
 [Serializable]

@@ -193,6 +193,156 @@ public sealed class SingleContractProductionUiTests
                 RunEndReason.FinishReached, true, true));
     }
 
+    [TestCase(0, 0.61f, 0, 0.83f, 5,
+        EchoCognitionChangeKind.Consolidated)]
+    [TestCase(0, 0.83f, 0, 0.67f, 4,
+        EchoCognitionChangeKind.Shaken)]
+    [TestCase(0, 0.83f, 1, 0.50f, 3,
+        EchoCognitionChangeKind.Shifted)]
+    [TestCase(0, 0.83f, 1, 0.67f, 4,
+        EchoCognitionChangeKind.Reversed)]
+    [TestCase(0, 0.67f, 0, 0.70f, 4,
+        EchoCognitionChangeKind.NoNewCognition)]
+    public void CognitionAssessmentClassifiesVisibleRouteMemoryChange(
+        int previousLane, float previousConfidence,
+        int nextLane, float nextConfidence, int nextEvidence,
+        EchoCognitionChangeKind expected)
+    {
+        EchoCognitionAssessment assessment = EchoCognitionAssessment.Compare(
+            CognitionIdentity(3, previousLane, previousConfidence, 4),
+            CognitionIdentity(4, nextLane, nextConfidence, nextEvidence),
+            successfulCounterCount: 4, totalGateCount: 6,
+            relearnStartGateNumber: 3,
+            nextLaneHasUniqueEvidence: true);
+
+        Assert.IsTrue(assessment.IsAvailable);
+        Assert.AreEqual(expected, assessment.ChangeKind);
+        Assert.AreEqual(3, assessment.PreviousGeneration);
+        Assert.AreEqual(4, assessment.NextGeneration);
+        Assert.AreEqual(4, assessment.SuccessfulCounterCount);
+        Assert.AreEqual(6, assessment.TotalGateCount);
+        Assert.AreEqual(3, assessment.RelearnStartGateNumber);
+    }
+
+    [Test]
+    public void CognitionSummaryShowsOldBeliefRunEvidenceAndNewBelief()
+    {
+        EchoCognitionAssessment assessment = EchoCognitionAssessment.Compare(
+            CognitionIdentity(3, 0, 0.83f, 5),
+            CognitionIdentity(4, 1, 0.67f, 4),
+            successfulCounterCount: 4, totalGateCount: 6,
+            relearnStartGateNumber: 3,
+            nextLaneHasUniqueEvidence: true);
+
+        string summary = EchoRunPresentation
+            .BuildSingleContractCognitionSummary(assessment);
+
+        Assert.AreEqual(
+            "上一代路线认知：偏向左侧 · 置信度 83%\n"
+            + "本局发生：反制 4/6 · 第3门起追学\n"
+            + "路线认知反转：第4代改判为中间 · 67%",
+            summary);
+    }
+
+    [Test]
+    public void MissingPromotionCannotClaimNewCognition()
+    {
+        EchoCognitionAssessment assessment = EchoCognitionAssessment.Compare(
+            CognitionIdentity(3, 0, 0.83f, 5), null,
+            successfulCounterCount: 4, totalGateCount: 6,
+            relearnStartGateNumber: 3,
+            nextLaneHasUniqueEvidence: true);
+
+        Assert.IsFalse(assessment.IsAvailable);
+        Assert.AreEqual(EchoCognitionChangeKind.Unavailable,
+            assessment.ChangeKind);
+        Assert.AreEqual("", EchoRunPresentation
+            .BuildSingleContractCognitionSummary(assessment));
+    }
+
+    [Test]
+    public void AmbiguousLaneTieCannotClaimCognitionShift()
+    {
+        EchoCognitionAssessment assessment = EchoCognitionAssessment.Compare(
+            CognitionIdentity(3, 0, 0.80f, 4),
+            CognitionIdentity(4, 1, 0.40f, 2),
+            successfulCounterCount: 2, totalGateCount: 5,
+            relearnStartGateNumber: 0,
+            nextLaneHasUniqueEvidence: false);
+
+        Assert.IsTrue(assessment.IsAvailable);
+        Assert.AreEqual(EchoCognitionChangeKind.Shaken,
+            assessment.ChangeKind);
+        StringAssert.DoesNotContain("开始转向",
+            EchoRunPresentation.BuildSingleContractCognitionSummary(
+                assessment));
+    }
+
+    [Test]
+    public void ImprecisePreviousMemoryCannotClaimCognitionChange()
+    {
+        EchoCognitionAssessment assessment = EchoCognitionAssessment.Compare(
+            CognitionIdentity(3, 0, 0.50f, 3),
+            CognitionIdentity(4, 1, 0.67f, 4),
+            successfulCounterCount: 3, totalGateCount: 6,
+            relearnStartGateNumber: 3,
+            nextLaneHasUniqueEvidence: true);
+
+        Assert.IsFalse(assessment.IsAvailable);
+        Assert.AreEqual(EchoCognitionChangeKind.Unavailable,
+            assessment.ChangeKind);
+    }
+
+    [Test]
+    public void CognitionComparisonDoesNotMutateEitherIdentity()
+    {
+        ActiveEchoIdentity previous = CognitionIdentity(3, 0, 0.80f, 4);
+        ActiveEchoIdentity next = CognitionIdentity(4, 2, 0.67f, 4);
+        string previousJson = JsonUtility.ToJson(previous);
+        string nextJson = JsonUtility.ToJson(next);
+
+        EchoCognitionAssessment.Compare(previous, next,
+            successfulCounterCount: 3, totalGateCount: 6,
+            relearnStartGateNumber: 3,
+            nextLaneHasUniqueEvidence: true);
+
+        Assert.AreEqual(previousJson, JsonUtility.ToJson(previous));
+        Assert.AreEqual(nextJson, JsonUtility.ToJson(next));
+    }
+
+    [Test]
+    public void CognitionSummaryStatesWhenEchoDidNotRelearn()
+    {
+        EchoCognitionAssessment assessment = EchoCognitionAssessment.Compare(
+            CognitionIdentity(3, 0, 0.80f, 4),
+            CognitionIdentity(4, 0, 0.82f, 5),
+            successfulCounterCount: 1, totalGateCount: 6,
+            relearnStartGateNumber: 0,
+            nextLaneHasUniqueEvidence: true);
+
+        string summary = EchoRunPresentation
+            .BuildSingleContractCognitionSummary(assessment);
+        StringAssert.Contains("反制 1/6 · 回声未追学", summary);
+        StringAssert.Contains("路线无新认知", summary);
+    }
+
+    [Test]
+    public void WrongParentCannotClaimNewCognition()
+    {
+        ActiveEchoIdentity next = CognitionIdentity(4, 1, 0.67f, 4);
+        next.parentIdentityId = "unrelated-identity";
+
+        EchoCognitionAssessment assessment = EchoCognitionAssessment.Compare(
+            CognitionIdentity(3, 0, 0.83f, 5), next,
+            successfulCounterCount: 4, totalGateCount: 6,
+            relearnStartGateNumber: 3,
+            nextLaneHasUniqueEvidence: true);
+
+        Assert.IsFalse(assessment.IsAvailable);
+        Assert.AreEqual(EchoCognitionChangeKind.Unavailable,
+            assessment.ChangeKind);
+    }
+
     private static PredictionGateLane Lane(int physicalLane,
         PredictionGateRole role)
     {
@@ -200,6 +350,25 @@ public sealed class SingleContractProductionUiTests
         {
             physicalLane = physicalLane,
             role = role
+        };
+    }
+
+    private static ActiveEchoIdentity CognitionIdentity(int generation,
+        int preferredLane, float confidence, int evidenceCount)
+    {
+        return new ActiveEchoIdentity
+        {
+            generation = generation,
+            identityId = "identity-" + generation,
+            parentIdentityId = generation > 1
+                ? "identity-" + (generation - 1)
+                : "",
+            memoryContract = new EchoMemoryContract
+            {
+                preferredLane = preferredLane,
+                confidence = confidence,
+                evidenceCount = evidenceCount
+            }
         };
     }
 }

@@ -1,4 +1,6 @@
+using System.Reflection;
 using NUnit.Framework;
+using UnityEngine;
 
 public sealed class SingleContractRuntimeTests
 {
@@ -300,6 +302,8 @@ public sealed class SingleContractRuntimeTests
 
         Assert.IsTrue(flow.LastRelearnResult.triggered);
         Assert.IsTrue(flow.RelearnTriggered);
+        Assert.AreEqual(second.gateId, flow.RelearnTriggerGateId);
+        Assert.AreEqual(3, flow.RelearnStartGateNumber);
         Assert.AreEqual(2, flow.HypothesisVersion);
         Assert.AreEqual(StrategyKey.AvoidOriginal,
             flow.PredictedStrategy);
@@ -307,6 +311,37 @@ public sealed class SingleContractRuntimeTests
             flow.GetGate(2).Definition.hypothesisVersion);
         Assert.AreEqual(StrategyKey.AvoidOriginal,
             flow.GetGate(2).Definition.predictedStrategy);
+
+        GameObject runnerObject = new GameObject(
+            "Batched Relearn Settlement Test");
+        runnerObject.SetActive(false);
+        try
+        {
+            AIShadowRunner runner = runnerObject.AddComponent<AIShadowRunner>();
+            var adaptation = new RunAdaptationState();
+            SetPrivateField(runner, "_singleContractFlow", flow);
+            SetPrivateField(runner, "_runAdaptationState", adaptation);
+            InvokePrivate(runner, "ConsumeSingleContractSettlements");
+
+            Assert.AreEqual(2, adaptation.resolvedGateCount);
+            Assert.AreEqual(2, adaptation.successfulCounterCount);
+            Assert.IsTrue(adaptation.relearnUsed);
+            Assert.AreEqual(2, adaptation.hypothesisVersion);
+            Assert.AreEqual(3, adaptation.relearnStartGateNumber);
+        }
+        finally
+        {
+            Object.DestroyImmediate(runnerObject);
+        }
+
+        PredictionGateDefinition third = flow.GetGate(2).Definition;
+        int thirdNeutralLane = FindLaneForRole(
+            third, PredictionGateRole.Neutral);
+        AdvanceThroughExit(flow, third, thirdNeutralLane, 20f);
+
+        Assert.IsFalse(flow.LastRelearnResult.triggered);
+        Assert.AreEqual(second.gateId, flow.RelearnTriggerGateId);
+        Assert.AreEqual(3, flow.RelearnStartGateNumber);
     }
 
     [Test]
@@ -542,5 +577,22 @@ public sealed class SingleContractRuntimeTests
                 count++;
         }
         return count;
+    }
+
+    private static void SetPrivateField(object target, string name,
+        object value)
+    {
+        FieldInfo field = target.GetType().GetField(
+            name, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.IsNotNull(field, "Missing private field: " + name);
+        field.SetValue(target, value);
+    }
+
+    private static void InvokePrivate(object target, string name)
+    {
+        MethodInfo method = target.GetType().GetMethod(
+            name, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.IsNotNull(method, "Missing private method: " + name);
+        method.Invoke(target, null);
     }
 }

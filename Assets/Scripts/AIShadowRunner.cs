@@ -1680,9 +1680,33 @@ public class AIShadowRunner : MonoBehaviour
 
         LastRunWasChallenge = challengedOpponent;
         LastRunWon = playerWon;
+        int cognitionGateCount = _singleContractFlow != null
+            ? _singleContractFlow.GateCount : 0;
+        bool nextLaneHasUniqueEvidence = false;
+        if (_runIdentityDraft != null
+            && _runIdentityDraft.gateChoices != null
+            && promotedIdentity != null
+            && promotedIdentity.memoryContract != null
+            && _runIdentityDraft.gateChoices.TryGetUniquePreferredLane(
+                out int uniquePreferredLane))
+        {
+            nextLaneHasUniqueEvidence = uniquePreferredLane
+                                        == promotedIdentity.memoryContract
+                                            .preferredLane;
+        }
+        EchoCognitionAssessment cognitionAssessment =
+            EchoCognitionAssessment.Compare(
+                _frozenSingleContractIdentity,
+                promotionBuilt ? promotedIdentity : null,
+                _runAdaptationState != null
+                    ? _runAdaptationState.successfulCounterCount : 0,
+                cognitionGateCount,
+                _runAdaptationState != null
+                    ? _runAdaptationState.relearnStartGateNumber : 0,
+                nextLaneHasUniqueEvidence);
         string intendedResult = BuildSingleContractResult(
             endReason, challengedOpponent, playerWon, promotionBuilt,
-            promotedIdentity, generationBefore);
+            promotedIdentity, generationBefore, cognitionAssessment);
         LastResult = intendedResult;
 
         int runSequence = _runIdentityDraft != null
@@ -1864,7 +1888,8 @@ public class AIShadowRunner : MonoBehaviour
 
     private static string BuildSingleContractResult(RunEndReason endReason,
         bool challengedOpponent, bool playerWon, bool promotionBuilt,
-        ActiveEchoIdentity promotedIdentity, int generationBefore)
+        ActiveEchoIdentity promotedIdentity, int generationBefore,
+        EchoCognitionAssessment cognitionAssessment)
     {
         if (endReason != RunEndReason.FinishReached)
         {
@@ -1898,6 +1923,13 @@ public class AIShadowRunner : MonoBehaviour
         {
             return "你跑赢了第" + Mathf.Max(1, generationBefore)
                    + "代回声\n下一代身份证据不足，当前回声保持不变";
+        }
+        string cognitionSummary = EchoRunPresentation
+            .BuildSingleContractCognitionSummary(cognitionAssessment);
+        if (!string.IsNullOrEmpty(cognitionSummary))
+        {
+            return "你跑赢了第" + Mathf.Max(1, generationBefore)
+                   + "代回声\n" + cognitionSummary;
         }
         return "你跑赢了第" + Mathf.Max(1, generationBefore)
                + "代回声\n第" + promotedIdentity.generation
@@ -2575,6 +2607,8 @@ public class AIShadowRunner : MonoBehaviour
             if (_runAdaptationState != null)
             {
                 _runAdaptationState.resolvedGateCount++;
+                if (settlement.IsCounterSuccess)
+                    _runAdaptationState.successfulCounterCount++;
                 _runAdaptationState.consecutiveSuccessfulCounters =
                     settlement.IsCounterSuccess
                         ? _runAdaptationState
@@ -2583,14 +2617,27 @@ public class AIShadowRunner : MonoBehaviour
             }
 
             ApplyPredictionGateSettlement(settlement, gate);
-            EchoRelearnResult relearn =
-                _singleContractFlow.LastRelearnResult;
-            if (relearn.triggered && _runAdaptationState != null
+            bool settlementTriggeredRelearn =
+                _singleContractFlow.RelearnTriggerGateId > 0
+                    ? settlement.gateId
+                      == _singleContractFlow.RelearnTriggerGateId
+                    : _singleContractFlow.LastRelearnResult.triggered;
+            if (settlementTriggeredRelearn && _runAdaptationState != null
                 && !_runAdaptationState.relearnUsed)
             {
                 _runAdaptationState.relearnUsed = true;
+                int gateCount = _singleContractFlow.GateCount;
+                int nextGateNumber =
+                    _singleContractFlow.RelearnStartGateNumber > 0
+                        ? _singleContractFlow.RelearnStartGateNumber
+                        : gate != null
+                            ? gate.Definition.sequence + 1
+                            : _runAdaptationState.resolvedGateCount + 1;
+                _runAdaptationState.relearnStartGateNumber = gateCount > 0
+                    ? Mathf.Clamp(nextGateNumber, 1, gateCount)
+                    : Mathf.Max(1, nextGateNumber);
                 _runAdaptationState.hypothesisVersion =
-                    relearn.hypothesisVersion;
+                    _singleContractFlow.HypothesisVersion;
                 _runAdaptationState.predictedStrategy =
                     (int)StrategyKey.AvoidOriginal;
                 _singleContractRelearnPulseTimer = 1.25f;

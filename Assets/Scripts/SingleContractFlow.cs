@@ -170,6 +170,8 @@ public sealed class SingleContractFlow : IEchoGameplayFlowRuntime
     public EchoRelearnResult LastRelearnResult { get; private set; }
     public bool RelearnTriggered => _gatePlan != null
                                     && _gatePlan.RelearnTriggered;
+    public int RelearnTriggerGateId { get; private set; } = -1;
+    public int RelearnStartGateNumber { get; private set; }
     public int HypothesisVersion => _gatePlan != null
         ? _gatePlan.HypothesisVersion : 0;
     public StrategyKey PredictedStrategy => _gatePlan != null
@@ -263,6 +265,8 @@ public sealed class SingleContractFlow : IEchoGameplayFlowRuntime
         _consumedSettlementIndices.Clear();
         AccumulatedSignedLeadMeters = 0f;
         LastRelearnResult = default;
+        RelearnTriggerGateId = -1;
+        RelearnStartGateNumber = 0;
         _activeGateIndex = -1;
         _nextGateIndex = 0;
         _lastSpeed = 0f;
@@ -523,6 +527,23 @@ public sealed class SingleContractFlow : IEchoGameplayFlowRuntime
         {
             AccumulatedSignedLeadMeters += settlement.signedLeadMeters;
             LastRelearnResult = _gatePlan.RecordSettlement(settlement);
+            if (LastRelearnResult.triggered)
+            {
+                RelearnTriggerGateId = settlement.gateId;
+                int firstRemappedSequence = 0;
+                for (int index = 0; index < _gatePlan.GateCount; index++)
+                {
+                    PredictionGateDefinition definition =
+                        _gatePlan.GetGate(index).Definition;
+                    if (definition.hypothesisVersion
+                        != LastRelearnResult.hypothesisVersion)
+                        continue;
+                    if (firstRemappedSequence == 0
+                        || definition.sequence < firstRemappedSequence)
+                        firstRemappedSequence = definition.sequence;
+                }
+                RelearnStartGateNumber = firstRemappedSequence;
+            }
         }
     }
 

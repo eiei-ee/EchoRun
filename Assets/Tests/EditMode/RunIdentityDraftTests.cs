@@ -149,6 +149,58 @@ public sealed class RunIdentityDraftTests
         Assert.AreNotEqual(frozen.memoryContract.contractId,
             promoted.memoryContract.contractId);
         Assert.IsTrue(promoted.IsSemanticallyValid());
+
+        Assert.IsTrue(draft.gateChoices.TryGetUniquePreferredLane(
+            out int uniquePreferredLane));
+        Assert.AreEqual(promoted.memoryContract.preferredLane,
+            uniquePreferredLane);
+        EchoCognitionAssessment assessment = EchoCognitionAssessment.Compare(
+            frozen, promoted, successfulCounterCount: 3,
+            totalGateCount: 5, relearnStartGateNumber: 3,
+            nextLaneHasUniqueEvidence: true);
+        Assert.IsTrue(assessment.IsAvailable);
+        Assert.AreEqual(EchoCognitionChangeKind.Reversed,
+            assessment.ChangeKind);
+        Assert.AreEqual(0, assessment.PreviousLane);
+        Assert.AreEqual(2, assessment.NextLane);
+    }
+
+    [Test]
+    public void ChallengeCognitionShiftRequiresUniqueNewLaneEvidence()
+    {
+        ActiveEchoIdentity frozen = CreateFrozenIdentity();
+        RunIdentityDraft tiedDraft = RunIdentityDraft.Create(frozen, 74);
+        RecordGatePattern(tiedDraft, 300,
+            new[] { 1, 1, 2, 2, 0 },
+            new[] { true, true, true, true, true });
+        Assert.IsTrue(tiedDraft.TryBuildChallengePromotion(
+            true, 1f, out ActiveEchoIdentity tiedPromotion));
+        Assert.IsFalse(tiedDraft.gateChoices.TryGetUniquePreferredLane(
+            out _));
+        EchoCognitionAssessment tiedAssessment =
+            EchoCognitionAssessment.Compare(
+                frozen, tiedPromotion, successfulCounterCount: 2,
+                totalGateCount: 5, relearnStartGateNumber: 0,
+                nextLaneHasUniqueEvidence: false);
+        Assert.AreEqual(EchoCognitionChangeKind.Shaken,
+            tiedAssessment.ChangeKind);
+
+        RunIdentityDraft uniqueDraft = RunIdentityDraft.Create(frozen, 75);
+        RecordGatePattern(uniqueDraft, 400,
+            new[] { 1, 1, 1, 2, 2, 0 },
+            new[] { true, true, true, true, true, true });
+        Assert.IsTrue(uniqueDraft.TryBuildChallengePromotion(
+            true, 1f, out ActiveEchoIdentity uniquePromotion));
+        Assert.IsTrue(uniqueDraft.gateChoices.TryGetUniquePreferredLane(
+            out int uniqueLane));
+        Assert.AreEqual(1, uniqueLane);
+        EchoCognitionAssessment uniqueAssessment =
+            EchoCognitionAssessment.Compare(
+                frozen, uniquePromotion, successfulCounterCount: 3,
+                totalGateCount: 6, relearnStartGateNumber: 3,
+                nextLaneHasUniqueEvidence: true);
+        Assert.AreEqual(EchoCognitionChangeKind.Shifted,
+            uniqueAssessment.ChangeKind);
     }
 
     [Test]
