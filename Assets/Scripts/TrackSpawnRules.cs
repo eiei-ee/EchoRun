@@ -7,6 +7,8 @@ public static class TrackSpawnRules
     public const float GroundCoinHeight = 1f;
     public const int JumpRewardCoinCount = 7;
     public const float CoinSegmentMargin = 1f;
+    public const int TurnGuideCoinsPerArm = 3;
+    public const int TurnGuideCoinCount = TurnGuideCoinsPerArm * 2 + 1;
 
     public static bool NeedsSegment(float plannedRouteDistance,
         float playerRouteDistance, float segmentLength, int poolSize)
@@ -61,6 +63,23 @@ public static class TrackSpawnRules
     public static float CoinTrailEndZ(float startZ, int count, float spacing)
     {
         return startZ + Mathf.Max(0, count - 1) * Mathf.Max(0f, spacing);
+    }
+
+    public static Vector3 TurnGuideCoinLocalPosition(float segmentLength,
+        int turnDirection, int coinIndex)
+    {
+        float corner = Mathf.Max(0f, segmentLength) * 0.5f;
+        int index = Mathf.Clamp(coinIndex, 0, TurnGuideCoinCount - 1);
+        int stepFromCorner = index - TurnGuideCoinsPerArm;
+        if (stepFromCorner <= 0)
+        {
+            return new Vector3(0f, GroundCoinHeight,
+                corner + stepFromCorner * CoinSpacing);
+        }
+
+        float direction = turnDirection >= 0 ? 1f : -1f;
+        return new Vector3(direction * stepFromCorner * CoinSpacing,
+            GroundCoinHeight, corner);
     }
 
     public static bool CoinTrailOverlapsObstacle(float startZ, int count,

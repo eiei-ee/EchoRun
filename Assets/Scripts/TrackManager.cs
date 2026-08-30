@@ -1481,7 +1481,7 @@ public class TrackManager : MonoBehaviour
 
        if (segType != TrackSegmentType.Straight)
        {
-           SpawnCoinsZigzag(segment, buffer, segmentLength * 0.35f);
+           SpawnTurnCoinGuide(segment, segType);
            return;
        }
 
@@ -1882,34 +1882,18 @@ public class TrackManager : MonoBehaviour
         }
     }
 
-   void SpawnCoinsZigzag(GameObject segment, float zStart, float zEnd)
+   void SpawnTurnCoinGuide(GameObject segment, TrackSegmentType segmentType)
     {
-        // Subway Surfers-style: coins weave between lanes
         if (coinPrefab == null) return;
-        int steps = AIRunRandom.Range(5, 9);
-        float zStep = (zEnd - zStart) / steps;
-
-        int fromLane = AIRunRandom.Range(0, 3);
-        for (int i = 0; i < steps; i++)
+        int turnDirection = segmentType == TrackSegmentType.TurnRight ? 1 : -1;
+        for (int index = 0;
+             index < TrackSpawnRules.TurnGuideCoinCount; index++)
         {
-            float z = zStart + zStep * i;
-            int toLane = (fromLane + (AIRunRandom.Value < 0.5f ? 1 : -1) + 3) % 3;
-            toLane = Mathf.Clamp(toLane, 0, 2);
-
-            float x = (fromLane - 1) * laneDistance;
-            float x2 = (toLane - 1) * laneDistance;
-
-            int coins = AIRunRandom.Range(2, 5);
-            for (int c = 0; c < coins; c++)
-            {
-                float t = (float)c / (coins - 1);
-                float cx = Mathf.Lerp(x, x2, t);
-                Vector3 lp = new Vector3(cx, 1f, z + c * 1.2f);
-                if (lp.z > zEnd) break;
-                Vector3 wp = segment.transform.TransformPoint(lp);
-                SpawnCoinInstance(segment, wp, false);
-            }
-            fromLane = toLane;
+            Vector3 localPosition = TrackSpawnRules.TurnGuideCoinLocalPosition(
+                segmentLength, turnDirection, index);
+            Vector3 worldPosition = segment.transform.TransformPoint(
+                localPosition);
+            SpawnCoinInstance(segment, worldPosition, false);
         }
     }
 

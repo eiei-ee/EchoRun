@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using UnityEngine;
 
 public class CoinArcTests
 {
@@ -45,5 +46,37 @@ public class CoinArcTests
         Assert.LessOrEqual(center + halfSpan,
             20f - TrackSpawnRules.CoinSegmentMargin);
         Assert.AreEqual(6.4f, center, 0.0001f);
+    }
+
+    [TestCase(1)]
+    [TestCase(-1)]
+    public void TurnGuideCoinsFormOneEvenlySpacedPathThroughTheCorner(
+        int turnDirection)
+    {
+        Vector3 previous = TrackSpawnRules.TurnGuideCoinLocalPosition(
+            20f, turnDirection, 0);
+        Assert.AreEqual(0f, previous.x, 0.0001f);
+
+        for (int index = 1;
+             index < TrackSpawnRules.TurnGuideCoinCount; index++)
+        {
+            Vector3 current = TrackSpawnRules.TurnGuideCoinLocalPosition(
+                20f, turnDirection, index);
+            Assert.AreEqual(TrackSpawnRules.CoinSpacing,
+                Vector3.Distance(previous, current), 0.0001f,
+                "Turn guide coins must not bunch up around the corner.");
+            previous = current;
+        }
+
+        Vector3 corner = TrackSpawnRules.TurnGuideCoinLocalPosition(
+            20f, turnDirection, TrackSpawnRules.TurnGuideCoinsPerArm);
+        Vector3 exit = TrackSpawnRules.TurnGuideCoinLocalPosition(
+            20f, turnDirection, TrackSpawnRules.TurnGuideCoinCount - 1);
+        Assert.AreEqual(new Vector3(0f, TrackSpawnRules.GroundCoinHeight, 10f),
+            corner);
+        Assert.AreEqual(turnDirection * TrackSpawnRules.CoinSpacing
+                        * TrackSpawnRules.TurnGuideCoinsPerArm,
+            exit.x, 0.0001f);
+        Assert.AreEqual(10f, exit.z, 0.0001f);
     }
 }
