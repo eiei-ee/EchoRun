@@ -28,6 +28,88 @@ public sealed class RunIdentityDraftTests
     }
 
     [Test]
+    public void CalibrationProgressSnapshotReportsEveryPromotionRequirement()
+    {
+        RunIdentityDraft draft = RunIdentityDraft.Create(null, 12);
+        draft.RecordSample(ShadowAction.Jump);
+        draft.RecordSample(ShadowAction.Jump);
+        draft.RecordSample(ShadowAction.Slide);
+        draft.RecordSample(ShadowAction.Left);
+        draft.RecordFormalGateChoice(1, 2, true);
+        draft.RecordFormalGateChoice(2, 2, true);
+        draft.RecordFormalGateChoice(3, 2, true);
+        draft.RecordFormalGateChoice(4, 1, false);
+
+        SingleContractCalibrationProgress progress =
+            draft.BuildCalibrationProgress(
+                MinimumTotalSamples, MinimumActiveSamples,
+                MinimumActionCategories, MinimumJumpSamples,
+                MinimumSlideSamples);
+
+        Assert.AreEqual(4, progress.totalSamples);
+        Assert.AreEqual(MinimumTotalSamples, progress.minimumTotalSamples);
+        Assert.AreEqual(4, progress.activeSamples);
+        Assert.AreEqual(MinimumActiveSamples, progress.minimumActiveSamples);
+        Assert.AreEqual(3, progress.actionCategories);
+        Assert.AreEqual(MinimumActionCategories,
+            progress.minimumActionCategories);
+        Assert.AreEqual(2, progress.jumpSamples);
+        Assert.AreEqual(MinimumJumpSamples, progress.minimumJumpSamples);
+        Assert.AreEqual(1, progress.slideSamples);
+        Assert.AreEqual(MinimumSlideSamples, progress.minimumSlideSamples);
+        Assert.AreEqual(4, progress.formalChoices);
+        Assert.AreEqual(5, progress.minimumFormalChoices);
+        Assert.AreEqual(3, progress.successfulChoices);
+        Assert.AreEqual(3, progress.minimumSuccessfulChoices);
+        Assert.AreEqual(3, progress.strongestRouteChoices);
+        Assert.AreEqual(3, progress.minimumStrongestRouteChoices);
+        Assert.IsTrue(progress.HasTargets);
+        Assert.IsFalse(progress.IsComplete);
+    }
+
+    [Test]
+    public void PromotionProgressSeparatesPlayerEvidenceFromFinishAndStructure()
+    {
+        RunIdentityDraft ready = CreateCalibrationDraft(true);
+        RecordStrongGateEvidence(ready, 80);
+
+        SingleContractCalibrationProgress beforeFinish =
+            ready.BuildCalibrationProgress(
+                MinimumTotalSamples, MinimumActiveSamples,
+                MinimumActionCategories, MinimumJumpSamples,
+                MinimumSlideSamples, false);
+        SingleContractCalibrationProgress atFinish =
+            ready.BuildCalibrationProgress(
+                MinimumTotalSamples, MinimumActiveSamples,
+                MinimumActionCategories, MinimumJumpSamples,
+                MinimumSlideSamples, true);
+
+        Assert.IsTrue(beforeFinish.evidenceReady);
+        Assert.IsFalse(beforeFinish.promotionReady);
+        Assert.IsTrue(atFinish.promotionReady);
+
+        RunIdentityDraft invalidStructure = RunIdentityDraft.Create(null, 0);
+        invalidStructure.physicalPace = 12f;
+        RecordReadyMotionSamples(invalidStructure);
+        RecordStrongGateEvidence(invalidStructure, 90);
+        SingleContractCalibrationProgress invalid =
+            invalidStructure.BuildCalibrationProgress(
+                MinimumTotalSamples, MinimumActiveSamples,
+                MinimumActionCategories, MinimumJumpSamples,
+                MinimumSlideSamples, true);
+
+        Assert.IsTrue(invalid.evidenceReady,
+            "Player evidence can be complete even when internal structure is invalid.");
+        Assert.IsFalse(invalid.promotionReady,
+            "The UI must not claim promotion when the real predicate rejects it.");
+
+        ready.Discard();
+        Assert.IsTrue(atFinish.promotionReady,
+            "The captured value must survive draft disposal for the result screen.");
+        Assert.AreEqual(5, atFinish.formalChoices);
+    }
+
+    [Test]
     public void CalibrationReadinessRequiresEveryMotionAndGateThreshold()
     {
         RunIdentityDraft noMotion = CreateCalibrationDraft(false);

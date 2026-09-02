@@ -60,6 +60,9 @@ public struct SingleContractHudInput
 {
     public SingleContractVisualState visualState;
     public bool openingMemory;
+    public bool openingReplay;
+    public ShadowAction openingReplayAction;
+    public int openingReplayCount;
     public int generation;
     public string memory;
     public bool showPrediction;
@@ -74,6 +77,7 @@ public struct SingleContractHudInput
     public SingleContractInstantFeedback instantFeedback;
     public float feedbackLeadDeltaMeters;
     public int feedbackSequence;
+    public SingleContractCalibrationProgress calibrationProgress;
     public string result;
 }
 
@@ -82,6 +86,8 @@ public struct SingleContractHudData
 {
     public SingleContractVisualState visualState;
     public bool openingMemory;
+    public bool openingReplay;
+    public string openingTitle;
     public int generation;
     public bool showMemory;
     public string memory;
@@ -102,6 +108,11 @@ public struct SingleContractHudData
     public float feedbackLeadDeltaMeters;
     public string instantFeedback;
     public int feedbackSequence;
+    public bool showCalibrationProgress;
+    public float calibrationProgress01;
+    public string calibrationMeterText;
+    public string calibrationActionProgress;
+    public string calibrationRouteProgress;
     public string result;
 }
 
@@ -200,22 +211,25 @@ public static class EchoRunPresentation
     }
 
     public static EchoMenuViewData BuildSingleContractMenu(
-        ActiveEchoIdentity identity)
+        ActiveEchoIdentity identity, int minimumJumpSamples = 2,
+        int minimumSlideSamples = 2, int minimumTotalSamples = 24,
+        int minimumActiveSamples = 6,
+        int minimumActionCategories = 2)
     {
         if (identity == null)
         {
             return new EchoMenuViewData
             {
-                generation = "首次回声校准",
-                learned = "完成 5 个正式路线选择",
-                rule = "三条路线都能合理通过",
-                objective = "到达终点，生成第 1 代回声",
-                primaryAction = "开始校准"
+                generation = "你的操作，会变成下一局的对手",
+                learned = "本机 AI 会实时观察你的选路、跳跃和滑铲",
+                rule = "多做不同动作和选路，让学习条变亮",
+                objective = "学习条亮后跑到终点，形成下一局的回声",
+                primaryAction = "开始第一局"
             };
         }
 
         int generation = Mathf.Max(1, identity.generation);
-        string generationText = "第 " + generation + " 代回声";
+        string generationText = "第" + generation + "代回声";
         EchoMemoryContract memory = identity.memoryContract != null
             ? identity.memoryContract.Clone()
             : null;
@@ -223,11 +237,11 @@ public static class EchoRunPresentation
         {
             return new EchoMenuViewData
             {
-                generation = generationText,
-                learned = "旧回声已保留",
-                rule = "正在重建路线记忆",
-                objective = "完成 5 个正式选择，建立第一条路线记忆",
-                primaryAction = "开始兼容校准"
+                generation = generationText + "还在",
+                learned = "AI 还没看清你的路线习惯",
+                rule = "继续做不同动作和选路，让学习条变亮",
+                objective = "学习条亮后跑到终点；旧回声不会丢",
+                primaryAction = "让它再观察一局"
             };
         }
 
@@ -236,11 +250,11 @@ public static class EchoRunPresentation
         {
             return new EchoMenuViewData
             {
-                generation = generationText,
-                learned = "回声记忆模糊",
-                rule = "你的选择尚未形成稳定模式",
-                objective = "再完成 5 个正式选择，重建路线记忆",
-                primaryAction = "继续校准"
+                generation = generationText + "还在",
+                learned = "AI 还没看清你的路线习惯",
+                rule = "继续做不同动作和选路，让学习条变亮",
+                objective = "学习条亮后跑到终点；旧回声不会丢",
+                primaryAction = "让它再观察一局"
             };
         }
 
@@ -248,10 +262,9 @@ public static class EchoRunPresentation
         {
             generation = generationText,
             learned = "它记住了：" + memory.BuildMemoryText(),
-            rule = "走它预料的路，它会获得距离优势；成功骗过它会失真；"
-                   + "同一种骗法连续成功两次，它会追学一次",
-            objective = "先到终点且领先者获胜",
-            primaryAction = "挑战第 " + generation + " 代回声"
+            rule = "它猜中会抢先；连续两次骗过它，它会改猜",
+            objective = "先到终点，并把回声留在身后",
+            primaryAction = "挑战第" + generation + "代回声"
         };
     }
 
@@ -264,71 +277,68 @@ public static class EchoRunPresentation
             assessment.PreviousLane);
         string nextLane = SingleContractCognitionLaneName(
             assessment.NextLane);
-        int previousConfidence = Mathf.RoundToInt(
-            assessment.PreviousConfidence * 100f);
-        int nextConfidence = Mathf.RoundToInt(
-            assessment.NextConfidence * 100f);
-        string runEvidence = "本局发生：反制 "
+        string runEvidence = "这局你骗过它 "
                              + assessment.SuccessfulCounterCount + "/"
-                             + assessment.TotalGateCount + " · "
+                             + assessment.TotalGateCount + " 次 · "
                              + (assessment.RelearnStartGateNumber > 0
-                                 ? "第" + assessment.RelearnStartGateNumber
-                                   + "门起追学"
-                                 : "回声未追学");
+                                 ? "从第" + assessment.RelearnStartGateNumber
+                                   + "次选路起，它改猜了"
+                                 : "它没有改猜");
 
         string nextCognition;
         switch (assessment.ChangeKind)
         {
             case EchoCognitionChangeKind.Consolidated:
-                nextCognition = "路线认知巩固：第"
-                                + assessment.NextGeneration
-                                + "代更确信" + nextLane + " · "
-                                + nextConfidence + "%";
+                nextCognition = "下一代更确定：压力时你偏向" + nextLane;
                 break;
             case EchoCognitionChangeKind.Shaken:
                 nextCognition = assessment.NextMemoryPrecise
-                    ? "路线认知动摇：第" + assessment.NextGeneration
-                      + "代仍判断" + nextLane + " · 降至"
-                      + nextConfidence + "%"
-                    : "路线认知动摇：第" + assessment.NextGeneration
-                      + "代路线记忆变得模糊";
+                    ? "下一代不再确定：你仍可能偏向" + nextLane
+                    : "下一代还没看清你的路线";
                 break;
             case EchoCognitionChangeKind.Shifted:
-                nextCognition = "路线认知偏移：第"
-                                + assessment.NextGeneration
-                                + "代开始转向" + nextLane + " · "
-                                + nextConfidence + "%";
+                nextCognition = "下一代开始改猜：压力时你偏向" + nextLane;
                 break;
             case EchoCognitionChangeKind.Reversed:
-                nextCognition = "路线认知反转：第"
-                                + assessment.NextGeneration
-                                + "代改判为" + nextLane + " · "
-                                + nextConfidence + "%";
+                nextCognition = "下一代已经改猜：压力时你偏向" + nextLane;
                 break;
             default:
-                nextCognition = "路线无新认知：第"
-                                + assessment.NextGeneration
-                                + "代仍判断" + nextLane + " · "
-                                + nextConfidence + "%";
+                nextCognition = "下一代没有改猜：仍偏向" + nextLane;
                 break;
         }
 
-        return "上一代路线认知：偏向" + previousLane + " · 置信度 "
-               + previousConfidence + "%\n"
+        return "它原本认为：压力时你偏向" + previousLane + "\n"
                + runEvidence + "\n" + nextCognition;
     }
 
     public static SingleContractHudData BuildSingleContractHud(
         SingleContractHudInput input)
     {
+        bool showCalibrationProgress = input.visualState
+                                       == SingleContractVisualState.Calibration
+                                       && input.calibrationProgress.HasTargets;
+        float calibrationProgress01 = showCalibrationProgress
+            ? input.calibrationProgress.Progress01 : 0f;
         bool openingMemory = input.openingMemory
                              && input.generation > 0
                              && input.visualState
                              != SingleContractVisualState.Calibration;
+        bool openingReplay = openingMemory && input.openingReplay
+                             && input.openingReplayCount
+                             >= EchoSignatureActionParser
+                                 .MinimumSignatureActionCount
+                             && IsOpeningReplayAction(
+                                 input.openingReplayAction);
         int generation = Mathf.Max(0, input.generation);
         string memory = openingMemory
-            ? BuildOpeningMemory(generation, input.memory)
-            : NormalizeSingleContractMemory(input.memory);
+            ? openingReplay
+                ? BuildOpeningReplayDetail(input.openingReplayAction,
+                    input.openingReplayCount, input.memory)
+                : BuildOpeningMemoryDetail(input.memory)
+            : showCalibrationProgress
+                ? BuildCalibrationLearningLine(input.calibrationProgress,
+                    compact: true)
+                : NormalizeSingleContractMemory(input.memory);
         bool showPrediction = !openingMemory && input.showPrediction
                               && input.visualState
                               != SingleContractVisualState.Calibration
@@ -367,6 +377,10 @@ public static class EchoRunPresentation
         {
             visualState = input.visualState,
             openingMemory = openingMemory,
+            openingReplay = openingReplay,
+            openingTitle = openingMemory
+                ? "第" + Mathf.Max(1, generation) + "代回声现身"
+                : "",
             generation = generation,
             showMemory = openingMemory
                          || input.visualState
@@ -403,8 +417,58 @@ public static class EchoRunPresentation
                     : input.instantFeedback,
                 input.feedbackLeadDeltaMeters),
             feedbackSequence = Mathf.Max(0, input.feedbackSequence),
+            showCalibrationProgress = showCalibrationProgress,
+            calibrationProgress01 = calibrationProgress01,
+            calibrationMeterText = showCalibrationProgress
+                ? input.calibrationProgress.PlayerEvidenceReady
+                    ? "学够了 · 去终点"
+                    : "学习 " + Mathf.RoundToInt(
+                        calibrationProgress01 * 100f) + "%"
+                : "",
+            calibrationActionProgress = showCalibrationProgress
+                ? BuildCalibrationActionLine(
+                    input.calibrationProgress, injuries, compact: true)
+                : "",
+            calibrationRouteProgress = showCalibrationProgress
+                ? BuildCalibrationRouteLine(
+                    input.calibrationProgress, compact: true)
+                : "",
             result = result
         };
+    }
+
+    public static string BuildSingleContractCalibrationResult(
+        SingleContractCalibrationProgress progress)
+    {
+        if (!progress.HasTargets)
+        {
+            return "AI 看到了你的跑法\n"
+                   + "这局观察不会带到下一局；再跑一局，它会重新观察";
+        }
+
+        bool generationProblem = progress.finishReached
+                                 && progress.evidenceReady
+                                 && !progress.promotionReady;
+        string title = generationProblem
+            ? "回声形成遇到问题" : "AI 看到了你的跑法";
+        return title + "\n"
+               + BuildSingleContractCalibrationEvidence(progress)
+               + " · " + (progress.finishReached
+                   ? "已经到终点" : "还没到终点")
+               + (generationProblem
+                   ? "\n学习条已经全亮，但回声没有形成；请再跑一局"
+                   : "\n这局观察不会带到下一局；再跑一局，它会重新观察");
+    }
+
+    public static string BuildSingleContractCalibrationEvidence(
+        SingleContractCalibrationProgress progress)
+    {
+        if (!progress.HasTargets) return "";
+        return BuildCalibrationLearningLine(progress, compact: false)
+               + " · " + BuildCalibrationActionLine(
+                   progress, 0, compact: false)
+               + "\n" + BuildCalibrationRouteLine(
+                   progress, compact: true);
     }
 
     public static EchoHudViewData BuildHud(bool hasOpponent,
@@ -850,14 +914,124 @@ public static class EchoRunPresentation
         return feedback;
     }
 
+    private static string BuildCalibrationLearningLine(
+        SingleContractCalibrationProgress progress, bool compact)
+    {
+        if (compact)
+        {
+            return "AI 学习 " + Count(progress.totalSamples) + "/"
+                   + Count(progress.minimumTotalSamples) + " · 主动 "
+                   + Count(progress.activeSamples) + "/"
+                   + Count(progress.minimumActiveSamples) + " · 种类 "
+                   + Count(progress.actionCategories) + "/"
+                   + Count(progress.minimumActionCategories);
+        }
+        return "观察 " + Count(progress.totalSamples) + "/"
+               + Count(progress.minimumTotalSamples) + " · 主动 "
+               + Count(progress.activeSamples) + "/"
+               + Count(progress.minimumActiveSamples) + " · 动作种类 "
+               + Count(progress.actionCategories) + "/"
+               + Count(progress.minimumActionCategories);
+    }
+
+    private static string BuildCalibrationActionLine(
+        SingleContractCalibrationProgress progress, int injuries,
+        bool compact)
+    {
+        if (compact)
+        {
+            return "跳 " + Count(progress.jumpSamples) + "/"
+                   + Count(progress.minimumJumpSamples) + " · 滑 "
+                   + Count(progress.slideSamples) + "/"
+                   + Count(progress.minimumSlideSamples) + " · 受伤 "
+                   + Count(injuries);
+        }
+        return "跳跃 " + Count(progress.jumpSamples) + "/"
+               + Count(progress.minimumJumpSamples) + " · 滑铲 "
+               + Count(progress.slideSamples) + "/"
+               + Count(progress.minimumSlideSamples);
+    }
+
+    private static string BuildCalibrationRouteLine(
+        SingleContractCalibrationProgress progress, bool compact)
+    {
+        if (compact)
+        {
+            string route = progress.preferredLaneUnique
+                           && progress.preferredLane >= 0
+                ? CompactSingleContractLaneName(progress.preferredLane)
+                : "同路";
+            string routeEvidence;
+            if (progress.strongestRouteChoices
+                < progress.minimumStrongestRouteChoices)
+            {
+                routeEvidence = route
+                                + Count(progress.strongestRouteChoices)
+                                + "/"
+                                + Count(progress
+                                    .minimumStrongestRouteChoices);
+            }
+            else if (progress.preferredLaneConfidence
+                     < EchoMemoryContract.PreciseDescriptionConfidence)
+            {
+                routeEvidence = "同路"
+                                + Mathf.RoundToInt(Mathf.Clamp01(
+                                    progress.preferredLaneConfidence) * 100f)
+                                + "%/"
+                                + Mathf.RoundToInt(EchoMemoryContract
+                                    .PreciseDescriptionConfidence * 100f)
+                                + "%";
+            }
+            else
+            {
+                routeEvidence = route
+                                + Count(progress.strongestRouteChoices)
+                                + "次";
+            }
+            return "选路 " + Count(progress.formalChoices) + "/"
+                   + Count(progress.minimumFormalChoices) + " · 通过"
+                   + " " + Count(progress.successfulChoices) + "/"
+                   + Count(progress.minimumSuccessfulChoices) + " · "
+                   + routeEvidence;
+        }
+
+        string tendency = progress.preferredLaneUnique
+                          && progress.preferredLane >= 0
+            ? SingleContractCognitionLaneName(progress.preferredLane)
+              + "倾向"
+            : progress.strongestRouteChoices > 0
+                ? "倾向形成中" : "路线倾向";
+        return "路线选择 " + Count(progress.formalChoices) + "/"
+               + Count(progress.minimumFormalChoices) + " · "
+               + "成功通过 " + Count(progress.successfulChoices) + "/"
+               + Count(progress.minimumSuccessfulChoices) + " · "
+               + tendency + " " + Count(progress.strongestRouteChoices)
+               + "/" + Count(progress.minimumStrongestRouteChoices);
+    }
+
+    private static string CompactSingleContractLaneName(int lane)
+    {
+        switch (Mathf.Clamp(lane, 0, 2))
+        {
+            case 0: return "左路";
+            case 2: return "右路";
+            default: return "中路";
+        }
+    }
+
+    private static int Count(int value)
+    {
+        return Mathf.Max(0, value);
+    }
+
     private static string BuildSingleContractPrediction(int lane,
         int gateNumber, int gateCount, bool gateActive)
     {
         string progress = gateNumber > 0 && gateCount > 0
-            ? "第" + gateNumber + "/" + gateCount + "门 · " : "";
-        string timing = gateActive ? "当前门预测：" : "下一门预测：";
-        return progress + timing + SingleContractLaneName(lane)
-               + "\n红=预测　青=反制　白=安全";
+            ? "第" + gateNumber + "/" + gateCount + "次选路 · " : "";
+        string timing = gateActive ? "这次它猜" : "下一次它猜";
+        return progress + timing + CompactSingleContractLaneName(lane)
+               + "\n红=它猜  青=骗它  白=安全";
     }
 
     private static string SingleContractFeedbackFor(
@@ -867,27 +1041,17 @@ public static class EchoRunPresentation
         switch (feedback)
         {
             case SingleContractInstantFeedback.PredictionHit:
-                return "预判命中 · 回声 +" + meters.ToString("0.0") + "米";
+                return "它猜中了 · 回声 +" + meters.ToString("0.0") + "米";
             case SingleContractInstantFeedback.RewriteSucceeded:
-                return "改写成功 · 玩家 +" + meters.ToString("0.0") + "米";
+                return "你骗过它 · 玩家 +" + meters.ToString("0.0") + "米";
             case SingleContractInstantFeedback.SafePass:
                 return "安全通过 · 距离不变";
             case SingleContractInstantFeedback.CounterFailed:
-                return "反制失败 · 回声 +" + meters.ToString("0.0") + "米";
+                return "没骗过它 · 回声 +" + meters.ToString("0.0") + "米";
             case SingleContractInstantFeedback.EchoRelearned:
-                return "回声追学 · 预测更新";
+                return "回声改猜了 · 后续已更新";
             default:
                 return "";
-        }
-    }
-
-    private static string SingleContractLaneName(int lane)
-    {
-        switch (lane)
-        {
-            case 0: return "左侧路线";
-            case 2: return "右侧路线";
-            default: return "中间路线";
         }
     }
 
@@ -916,22 +1080,68 @@ public static class EchoRunPresentation
         string normalized = (value ?? "").Trim();
         if (string.IsNullOrEmpty(normalized)
             || normalized.Contains("尚未形成稳定模式"))
-            return "回声记忆模糊 · 路线尚未稳定";
+            return "AI 正在观察你的跑法";
         if (normalized.StartsWith("回声记忆模糊"))
-            return "回声记忆模糊 · 路线尚未稳定";
+            return "AI 正在观察你的跑法";
         if (normalized.StartsWith("旧回声已保留"))
-            return "旧回声已保留 · 重建路线记忆中";
-        return NormalizeSingleContractLabel(
-            normalized.Replace('\n', ' '), "回声记忆：", "路线尚未稳定");
+            return "旧回声还在 · AI 正在观察新跑法";
+        normalized = TrimPrefix(normalized.Replace('\n', ' '), "回声记忆：");
+        normalized = TrimPrefix(normalized, "它记住了：");
+        return "它记住了：" + (string.IsNullOrEmpty(normalized)
+            ? "AI 正在观察你的跑法" : normalized);
     }
 
-    private static string BuildOpeningMemory(int generation, string value)
+    private static string BuildOpeningMemoryDetail(string value)
     {
         string memory = (value ?? "").Trim().Replace('\n', ' ');
         memory = TrimPrefix(memory, "回声记忆：");
+        memory = TrimPrefix(memory, "它记住了：");
         if (string.IsNullOrEmpty(memory))
-            memory = "你的选择尚未形成稳定模式";
-        return "第" + Mathf.Max(1, generation) + "代回声记忆\n" + memory;
+            return "它还没看清你的路线";
+        return "它记住了：" + memory;
+    }
+
+    private static bool IsOpeningReplayAction(ShadowAction action)
+    {
+        return action == ShadowAction.Jump || action == ShadowAction.Slide
+               || action == ShadowAction.Left || action == ShadowAction.Right;
+    }
+
+    private static string BuildOpeningReplayDetail(ShadowAction action,
+        int count, string memory)
+    {
+        string actionText;
+        switch (action)
+        {
+            case ShadowAction.Jump:
+                actionText = "跳跃";
+                break;
+            case ShadowAction.Slide:
+                actionText = "滑铲";
+                break;
+            case ShadowAction.Left:
+                actionText = "左移";
+                break;
+            case ShadowAction.Right:
+                actionText = "右移";
+                break;
+            default:
+                actionText = "动作";
+                break;
+        }
+
+        string routeHint = BuildOpeningRouteHint(memory);
+        return "上一局学到：" + actionText + "×" + Mathf.Max(1, count)
+               + routeHint;
+    }
+
+    private static string BuildOpeningRouteHint(string memory)
+    {
+        string normalized = (memory ?? "").Replace('\n', ' ');
+        if (normalized.Contains("左侧")) return " · 压力时偏左";
+        if (normalized.Contains("右侧")) return " · 压力时偏右";
+        if (normalized.Contains("中间")) return " · 压力时走中";
+        return "";
     }
 
     private static string TrimPrefix(string value, string prefix)

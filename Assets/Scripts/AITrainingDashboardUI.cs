@@ -283,7 +283,7 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         AIShadowRunner.Instance?.ResetTrainingInMemory();
         AITrackDirector.Instance?.ResetTrainingInMemory();
         _resetConfirmUntil = 0f;
-        _resetHint.text = "学习数据已重置；下一局将重新校准。";
+        _resetHint.text = "学习记录已重置；下一局会重新观察你的跑法。";
         AudioManager.Instance?.PlayUIConfirm();
         Refresh();
     }

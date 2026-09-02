@@ -124,20 +124,20 @@ public static class EchoHudPrefabBuilder
             new Vector2(0f, 1f), new Vector2(360f, 30f),
             new Vector2(30f, -74f), new Vector2(0f, 1f));
         GameObject directivePlate = Panel("DirectivePlate",
-            dynamicLayer.transform, new Vector2(0f, 1f), new Vector2(500f, 38f),
+            dynamicLayer.transform, new Vector2(0f, 1f), new Vector2(500f, 40f),
             new Vector2(22f, -108f), new Vector2(0f, 1f),
             EchoRunUITheme.HudMessageVeil);
         Text directive = TextElement("Directive", dynamicLayer.transform,
             "复现中", 23, TextAnchor.MiddleLeft, TextPrimary,
-            new Vector2(0f, 1f), new Vector2(480f, 36f),
+            new Vector2(0f, 1f), new Vector2(480f, 38f),
             new Vector2(30f, -109f), new Vector2(0f, 1f));
         GameObject predictionPlate = Panel("PredictionPlate",
-            dynamicLayer.transform, new Vector2(0f, 1f), new Vector2(450f, 46f),
+            dynamicLayer.transform, new Vector2(0f, 1f), new Vector2(450f, 68f),
             new Vector2(22f, -150f), new Vector2(0f, 1f),
-            EchoRunUITheme.HudMessageVeil);
+            EchoRunUITheme.HudPredictionVeil);
         Text prediction = TextElement("Prediction", dynamicLayer.transform,
             "预判右路", 20, TextAnchor.MiddleLeft, Coral,
-            new Vector2(0f, 1f), new Vector2(420f, 44f),
+            new Vector2(0f, 1f), new Vector2(420f, 66f),
             new Vector2(30f, -151f), new Vector2(0f, 1f));
         Image stateAccentBar = ImageElement("StateAccentBar",
             dynamicLayer.transform, EchoRunUITheme.WithAlpha(Cyan, 0.78f),
@@ -172,12 +172,12 @@ public static class EchoHudPrefabBuilder
 
         GameObject feedbackPlate = Panel("FeedbackPlate",
             dynamicLayer.transform, new Vector2(0f, 1f), new Vector2(500f, 34f),
-            new Vector2(22f, -202f), new Vector2(0f, 1f),
+            new Vector2(22f, -226f), new Vector2(0f, 1f),
             EchoRunUITheme.HudMessageVeil);
         Text feedback = TextElement("Feedback", dynamicLayer.transform, "", 20,
             TextAnchor.MiddleLeft, EchoRunUITheme.HudSuccessText,
             new Vector2(0f, 1f),
-            new Vector2(480f, 32f), new Vector2(30f, -203f),
+            new Vector2(480f, 32f), new Vector2(30f, -227f),
             new Vector2(0f, 1f));
 
         GameObject transitionFxObject = new GameObject("StateTransitionFx",

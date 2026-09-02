@@ -62,6 +62,18 @@ public sealed class EchoHudFortressSkinTests
             false, SingleContractVisualState.Calibration,
             SingleContractVisualState.Challenge, true, false));
         Assert.IsTrue(EchoHudPresenter.ShouldEmphasizeSingleContractTransition(
+            false, SingleContractVisualState.Calibration,
+            SingleContractVisualState.Challenge, true, false, true));
+        Assert.IsTrue(EchoHudPresenter.ShouldEmphasizeSingleContractTransition(
+            true, SingleContractVisualState.Challenge,
+            SingleContractVisualState.Challenge, true, true, true));
+        Assert.IsFalse(EchoHudPresenter.ShouldEmphasizeSingleContractTransition(
+            true, SingleContractVisualState.Challenge,
+            SingleContractVisualState.Challenge, true, false, true));
+        Assert.IsFalse(EchoHudPresenter.ShouldEmphasizeSingleContractTransition(
+            true, SingleContractVisualState.Challenge,
+            SingleContractVisualState.Challenge, false, false));
+        Assert.IsTrue(EchoHudPresenter.ShouldEmphasizeSingleContractTransition(
             true, SingleContractVisualState.Challenge,
             SingleContractVisualState.Challenge, false, true));
     }
@@ -132,20 +144,22 @@ public sealed class EchoHudFortressSkinTests
             visualState = SingleContractVisualState.Challenge,
             predictionGateNumber = 2,
             prediction =
-                "第2/6门 · 下一门预测：右侧路线\n红=预测　青=反制　白=安全"
+                "第2/6次选路 · 下一次它猜右路\n"
+                + "红=它猜  青=骗它  白=安全"
         };
         string key = EchoHudPresenter.SingleContractPredictionSemanticKey(
             current);
-        Assert.AreEqual("右侧路线", key);
+        Assert.AreEqual("右路", key);
 
         Assert.IsFalse(ShouldPulse(false, "", 0, current));
         Assert.IsFalse(ShouldPulse(true, key, 2, current));
-        Assert.IsTrue(ShouldPulse(true, "左侧路线", 2, current));
+        Assert.IsTrue(ShouldPulse(true, "左路", 2, current));
         Assert.IsTrue(ShouldPulse(true, key, 1, current));
 
         SingleContractHudData activeWindow = current;
         activeWindow.prediction =
-            "第2/6门 · 当前门预测：右侧路线\n红=预测　青=反制　白=安全";
+            "第2/6次选路 · 这次它猜右路\n"
+            + "红=它猜  青=骗它  白=安全";
         Assert.AreEqual(key,
             EchoHudPresenter.SingleContractPredictionSemanticKey(activeWindow));
         Assert.IsFalse(ShouldPulse(true, key, 2, activeWindow),
@@ -153,14 +167,14 @@ public sealed class EchoHudFortressSkinTests
 
         SingleContractHudData opening = current;
         opening.openingMemory = true;
-        Assert.IsFalse(ShouldPulse(true, "左侧路线", 1, opening));
+        Assert.IsFalse(ShouldPulse(true, "左路", 1, opening));
         Assert.IsFalse(EchoHudPresenter
             .ShouldEmphasizeSingleContractPredictionChange(
-                true, "左侧路线", 1, current, true, false),
+                true, "左路", 1, current, true, false),
             "A phase transition already owns this frame's emphasis.");
         Assert.IsFalse(EchoHudPresenter
             .ShouldEmphasizeSingleContractPredictionChange(
-                true, "左侧路线", 1, current, false, true),
+                true, "左路", 1, current, false, true),
             "Relearn-to-challenge must stay silent.");
     }
 
@@ -196,7 +210,7 @@ public sealed class EchoHudFortressSkinTests
     }
 
     [Test]
-    public void ResourcePrefabUsesOneTopRailAndQuietMessageVeils()
+    public void ResourcePrefabUsesOneTopRailAndReadablePredictionVeil()
     {
         GameObject prefab = Resources.Load<GameObject>("UI/EchoHud");
         Assert.NotNull(prefab);
@@ -225,14 +239,23 @@ public sealed class EchoHudFortressSkinTests
 
         foreach (string name in new[]
                  {
-                     "AnnouncementPlate", "DirectivePlate", "PredictionPlate",
-                     "FeedbackPlate"
+                     "AnnouncementPlate", "DirectivePlate", "FeedbackPlate"
                  })
         {
             Image veil = dynamicLayer.Find(name).GetComponent<Image>();
             Assert.LessOrEqual(veil.color.a, 0.001f, name);
             Assert.IsFalse(veil.raycastTarget, name);
         }
+
+        Image predictionVeil = dynamicLayer.Find("PredictionPlate")
+            .GetComponent<Image>();
+        AssertColor(EchoRunUITheme.HudPredictionVeil,
+            predictionVeil.color);
+        Assert.GreaterOrEqual(predictionVeil.color.a, 0.8f,
+            "The prediction must remain readable over bright track scenery.");
+        Assert.Less(predictionVeil.color.grayscale, 0.15f,
+            "PredictionPlate must stay dark.");
+        Assert.IsFalse(predictionVeil.raycastTarget, "PredictionPlate");
 
         RectTransform accent = dynamicLayer.Find("StateAccentBar")
             as RectTransform;

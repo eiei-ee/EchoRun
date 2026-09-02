@@ -577,8 +577,89 @@ public sealed class EchoIdentityStyleAccumulator
     }
 }
 
+[Serializable]
+public struct SingleContractCalibrationProgress
+{
+    public bool available;
+    public bool finishReached;
+    public bool routeMemoryReady;
+    public bool evidenceReady;
+    public bool promotionReady;
+
+    public int totalSamples;
+    public int minimumTotalSamples;
+    public int activeSamples;
+    public int minimumActiveSamples;
+    public int actionCategories;
+    public int minimumActionCategories;
+    public int jumpSamples;
+    public int minimumJumpSamples;
+    public int slideSamples;
+    public int minimumSlideSamples;
+
+    public int formalChoices;
+    public int minimumFormalChoices;
+    public int successfulChoices;
+    public int minimumSuccessfulChoices;
+    public int preferredLane;
+    public bool preferredLaneUnique;
+    public int strongestRouteChoices;
+    public int minimumStrongestRouteChoices;
+    public float preferredLaneConfidence;
+
+    public bool HasTargets => available
+                              && minimumTotalSamples > 0
+                              && minimumActiveSamples > 0
+                              && minimumActionCategories > 0
+                              && minimumFormalChoices > 0
+                              && minimumSuccessfulChoices > 0
+                              && minimumStrongestRouteChoices > 0;
+
+    public bool PlayerEvidenceReady => evidenceReady;
+    public bool IsComplete => promotionReady;
+
+    public float Progress01
+    {
+        get
+        {
+            if (!HasTargets) return 0f;
+            float progress = Ratio(totalSamples, minimumTotalSamples);
+            progress = Mathf.Min(progress,
+                Ratio(activeSamples, minimumActiveSamples));
+            progress = Mathf.Min(progress,
+                Ratio(actionCategories, minimumActionCategories));
+            progress = Mathf.Min(progress,
+                Ratio(jumpSamples, minimumJumpSamples));
+            progress = Mathf.Min(progress,
+                Ratio(slideSamples, minimumSlideSamples));
+            progress = Mathf.Min(progress,
+                Ratio(formalChoices, minimumFormalChoices));
+            progress = Mathf.Min(progress,
+                Ratio(successfulChoices, minimumSuccessfulChoices));
+            progress = Mathf.Min(progress,
+                Ratio(strongestRouteChoices,
+                    minimumStrongestRouteChoices));
+            return Mathf.Min(progress,
+                Mathf.Clamp01(preferredLaneConfidence
+                              / EchoMemoryContract
+                                  .PreciseDescriptionConfidence));
+        }
+    }
+
+    private static float Ratio(int current, int minimum)
+    {
+        return minimum <= 0
+            ? 1f
+            : Mathf.Clamp01((float)Mathf.Max(0, current) / minimum);
+    }
+}
+
 public sealed class GateChoiceAccumulator
 {
+    public const int RequiredFormalChoices = 5;
+    public const int RequiredSuccessfulExecutions = 3;
+    public const int RequiredPreferredLaneEvidence = 3;
+
     private readonly HashSet<int> _recordedGateIds = new HashSet<int>();
     private readonly int[] _choiceCounts = new int[3];
     private readonly int[] _successfulCounts = new int[3];
@@ -639,8 +720,9 @@ public sealed class GateChoiceAccumulator
         out EchoMemoryContract contract)
     {
         contract = null;
-        if (FormalChoiceCount < 5
-            || requirePreciseMemory && SuccessfulExecutionCount < 3)
+        if (FormalChoiceCount < RequiredFormalChoices
+            || requirePreciseMemory
+            && SuccessfulExecutionCount < RequiredSuccessfulExecutions)
             return false;
 
         int preferredLane = 0;
@@ -650,7 +732,8 @@ public sealed class GateChoiceAccumulator
                 preferredLane = lane;
         }
         int evidence = _choiceCounts[preferredLane];
-        if (requirePreciseMemory && evidence < 3) return false;
+        if (requirePreciseMemory
+            && evidence < RequiredPreferredLaneEvidence) return false;
 
         contract = new EchoMemoryContract
         {
@@ -775,6 +858,88 @@ public sealed class RunIdentityDraft
                    gateId, physicalLane, executionSucceeded);
     }
 
+    public SingleContractCalibrationProgress BuildCalibrationProgress(
+        int minimumTotalSamples, int minimumActiveSamples,
+        int minimumActionCategories, int minimumJumpSamples,
+        int minimumSlideSamples, bool finishReached = false)
+    {
+        int strongestLane = -1;
+        int strongestCount = 0;
+        bool strongestTied = false;
+        if (gateChoices != null)
+        {
+            for (int lane = 0; lane < 3; lane++)
+            {
+                int count = gateChoices.ChoiceCountForLane(lane);
+                if (count > strongestCount)
+                {
+                    strongestLane = lane;
+                    strongestCount = count;
+                    strongestTied = false;
+                }
+                else if (count > 0 && count == strongestCount)
+                {
+                    strongestTied = true;
+                }
+            }
+        }
+
+        int jumpCount = GetActionCount(ShadowAction.Jump);
+        int slideCount = GetActionCount(ShadowAction.Slide);
+        bool motionReady = !_discarded && AIShadowRules.HasCalibrationSamples(
+            sampleCount, activeSampleCount, actionCounts,
+            minimumTotalSamples, minimumActiveSamples,
+            minimumActionCategories, minimumJumpSamples,
+            minimumSlideSamples);
+        bool routeReady = !_discarded && gateChoices != null
+                          && gateChoices.TryBuildMemoryContract(out _);
+        bool evidenceReady = motionReady && routeReady;
+        bool promotionReady = finishReached
+                              && HasCalibrationPromotionEvidence(
+                                  minimumTotalSamples,
+                                  minimumActiveSamples,
+                                  minimumActionCategories,
+                                  minimumJumpSamples,
+                                  minimumSlideSamples);
+        return new SingleContractCalibrationProgress
+        {
+            available = !_discarded,
+            finishReached = finishReached,
+            routeMemoryReady = routeReady,
+            evidenceReady = evidenceReady,
+            promotionReady = promotionReady,
+            totalSamples = Mathf.Max(0, sampleCount),
+            minimumTotalSamples = Mathf.Max(1, minimumTotalSamples),
+            activeSamples = Mathf.Max(0, activeSampleCount),
+            minimumActiveSamples = Mathf.Max(1, minimumActiveSamples),
+            actionCategories = AIShadowRules
+                .CountTrainedActionCategories(actionCounts),
+            minimumActionCategories = Mathf.Max(1,
+                minimumActionCategories),
+            jumpSamples = jumpCount,
+            minimumJumpSamples = Mathf.Max(0, minimumJumpSamples),
+            slideSamples = slideCount,
+            minimumSlideSamples = Mathf.Max(0, minimumSlideSamples),
+            formalChoices = gateChoices != null
+                ? gateChoices.FormalChoiceCount : 0,
+            minimumFormalChoices = GateChoiceAccumulator
+                .RequiredFormalChoices,
+            successfulChoices = gateChoices != null
+                ? gateChoices.SuccessfulExecutionCount : 0,
+            minimumSuccessfulChoices = GateChoiceAccumulator
+                .RequiredSuccessfulExecutions,
+            preferredLane = strongestLane,
+            preferredLaneUnique = strongestLane >= 0 && !strongestTied,
+            strongestRouteChoices = strongestCount,
+            minimumStrongestRouteChoices = GateChoiceAccumulator
+                .RequiredPreferredLaneEvidence,
+            preferredLaneConfidence = gateChoices != null
+                                      && gateChoices.FormalChoiceCount > 0
+                ? strongestCount / (float)gateChoices.FormalChoiceCount
+                : 0f
+        };
+    }
+
     public bool IsCalibrationPromotionReady(int minimumTotalSamples,
         int minimumActiveSamples, int minimumActionCategories,
         int minimumJumpSamples, int minimumSlideSamples)
@@ -859,6 +1024,14 @@ public sealed class RunIdentityDraft
                    minimumActionCategories, minimumJumpSamples,
                    minimumSlideSamples)
                && gateChoices.TryBuildMemoryContract(out _);
+    }
+
+    private int GetActionCount(ShadowAction action)
+    {
+        int index = (int)action;
+        return actionCounts != null && index >= 0
+               && index < actionCounts.Length
+            ? Mathf.Max(0, actionCounts[index]) : 0;
     }
 
     private bool TryBuildIdentity(ActiveEchoIdentity frozenBase,

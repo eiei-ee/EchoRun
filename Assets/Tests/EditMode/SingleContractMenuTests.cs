@@ -8,11 +8,13 @@ public sealed class SingleContractMenuTests
         EchoMenuViewData menu =
             EchoRunPresentation.BuildSingleContractMenu(null);
 
-        Assert.AreEqual("首次回声校准", menu.generation);
-        Assert.AreEqual("完成 5 个正式路线选择", menu.learned);
-        Assert.AreEqual("三条路线都能合理通过", menu.rule);
-        Assert.AreEqual("到达终点，生成第 1 代回声", menu.objective);
-        Assert.AreEqual("开始校准", menu.primaryAction);
+        Assert.AreEqual("你的操作，会变成下一局的对手", menu.generation);
+        Assert.AreEqual("本机 AI 会实时观察你的选路、跳跃和滑铲",
+            menu.learned);
+        Assert.AreEqual("多做不同动作和选路，让学习条变亮", menu.rule);
+        Assert.AreEqual("学习条亮后跑到终点，形成下一局的回声",
+            menu.objective);
+        Assert.AreEqual("开始第一局", menu.primaryAction);
         AssertNoLegacyContractLanguage(menu);
     }
 
@@ -29,12 +31,12 @@ public sealed class SingleContractMenuTests
         EchoMenuViewData menu =
             EchoRunPresentation.BuildSingleContractMenu(identity);
 
-        Assert.AreEqual("第 4 代回声", menu.generation);
-        Assert.AreEqual("旧回声已保留", menu.learned);
-        Assert.AreEqual("正在重建路线记忆", menu.rule);
-        Assert.AreEqual("完成 5 个正式选择，建立第一条路线记忆",
+        Assert.AreEqual("第4代回声还在", menu.generation);
+        Assert.AreEqual("AI 还没看清你的路线习惯", menu.learned);
+        Assert.AreEqual("继续做不同动作和选路，让学习条变亮", menu.rule);
+        Assert.AreEqual("学习条亮后跑到终点；旧回声不会丢",
             menu.objective);
-        Assert.AreEqual("开始兼容校准", menu.primaryAction);
+        Assert.AreEqual("让它再观察一局", menu.primaryAction);
         AssertNoLegacyContractLanguage(menu);
     }
 
@@ -53,14 +55,13 @@ public sealed class SingleContractMenuTests
         EchoMenuViewData menu =
             EchoRunPresentation.BuildSingleContractMenu(identity);
 
-        Assert.AreEqual("第 3 代回声", menu.generation);
+        Assert.AreEqual("第3代回声", menu.generation);
         Assert.AreEqual("它记住了：压力出现时，你偏向" + expectedLane,
             menu.learned);
-        Assert.AreEqual("走它预料的路，它会获得距离优势；成功骗过它会失真；"
-                        + "同一种骗法连续成功两次，它会追学一次",
+        Assert.AreEqual("它猜中会抢先；连续两次骗过它，它会改猜",
             menu.rule);
-        Assert.AreEqual("先到终点且领先者获胜", menu.objective);
-        Assert.AreEqual("挑战第 3 代回声", menu.primaryAction);
+        Assert.AreEqual("先到终点，并把回声留在身后", menu.objective);
+        Assert.AreEqual("挑战第3代回声", menu.primaryAction);
         AssertNoLegacyContractLanguage(menu);
     }
 
@@ -78,12 +79,12 @@ public sealed class SingleContractMenuTests
         EchoMenuViewData menu =
             EchoRunPresentation.BuildSingleContractMenu(identity);
 
-        Assert.AreEqual("第 2 代回声", menu.generation);
-        Assert.AreEqual("回声记忆模糊", menu.learned);
-        Assert.AreEqual("你的选择尚未形成稳定模式", menu.rule);
-        Assert.AreEqual("再完成 5 个正式选择，重建路线记忆",
+        Assert.AreEqual("第2代回声还在", menu.generation);
+        Assert.AreEqual("AI 还没看清你的路线习惯", menu.learned);
+        Assert.AreEqual("继续做不同动作和选路，让学习条变亮", menu.rule);
+        Assert.AreEqual("学习条亮后跑到终点；旧回声不会丢",
             menu.objective);
-        Assert.AreEqual("继续校准", menu.primaryAction);
+        Assert.AreEqual("让它再观察一局", menu.primaryAction);
         StringAssert.DoesNotContain("左侧", VisibleText(menu));
         StringAssert.DoesNotContain("中间", VisibleText(menu));
         StringAssert.DoesNotContain("右侧", VisibleText(menu));
@@ -119,14 +120,16 @@ public sealed class SingleContractMenuTests
         AITrainingDashboardUI.BuildSingleContractReport(identity,
             out string metrics, out string summary);
 
-        StringAssert.Contains("第 3 代回声", metrics);
+        StringAssert.Contains("第3代回声", metrics);
         StringAssert.Contains("压力出现时，你偏向右侧", metrics);
-        StringAssert.Contains("同一种骗法连续成功两次", summary);
-        StringAssert.Contains("先到终点且领先者获胜", summary);
+        StringAssert.Contains("连续两次骗过它", summary);
+        StringAssert.Contains("把回声留在身后", summary);
         foreach (string forbidden in new[]
                  {
                      "至少跳跃", "至少滑铲", "侦测", "暴露", "反抗",
-                     "反扑", "稳定度", "契约锁死"
+                     "反扑", "稳定度", "契约锁死", "校准", "契约",
+                     "正式选择", "草稿", "身份", "采样", "追学",
+                     "置信度", "路线认知"
                  })
             StringAssert.DoesNotContain(forbidden, metrics + summary);
     }
@@ -156,7 +159,9 @@ public sealed class SingleContractMenuTests
         foreach (string forbidden in new[]
                  {
                      "侦测", "暴露", "反抗", "反扑", "阶段", "稳定度",
-                     "0/100", "重写覆盖", "契约锁死", "未交锋"
+                     "0/100", "重写覆盖", "契约锁死", "未交锋",
+                     "校准", "契约", "正式选择", "草稿", "身份",
+                     "采样", "追学", "置信度", "路线认知"
                  })
             StringAssert.DoesNotContain(forbidden, visible);
     }

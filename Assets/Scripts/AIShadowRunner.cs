@@ -61,6 +61,25 @@ public class AIShadowRunner : MonoBehaviour
     public int SlideTrainingSampleCount => IsSingleContractRuntime()
         ? GetDraftActionSampleCount(ShadowAction.Slide)
         : GetActionSampleCount(ShadowAction.Slide);
+    public SingleContractCalibrationProgress
+        CurrentSingleContractCalibrationProgress
+    {
+        get
+        {
+            if (!IsSingleContractRuntime() || HasActiveOpponent)
+                return default;
+            return _runIdentityDraft != null
+                ? _runIdentityDraft.BuildCalibrationProgress(
+                    minimumTrainingSamples,
+                    minimumActiveTrainingSamples,
+                    minimumActionCategories,
+                    minimumJumpSamples,
+                    minimumSlideSamples)
+                : LastSingleContractCalibrationProgress;
+        }
+    }
+    public SingleContractCalibrationProgress
+        LastSingleContractCalibrationProgress { get; private set; }
     public float CalibrationProgress
     {
         get
@@ -154,6 +173,19 @@ public class AIShadowRunner : MonoBehaviour
         IsSingleContractRuntime() && HasActiveOpponent
         && _singleContractFlow != null
         && _singleContractFlow.IsOpeningMemoryActive;
+    public bool HasSingleContractOpeningReplay =>
+        _singleContractOpeningReplay != null
+        && _singleContractOpeningReplay.available;
+    public bool IsSingleContractOpeningReplayActive =>
+        HasSingleContractOpeningReplay
+        && !_singleContractOpeningReplayCompleted
+        && IsSingleContractOpeningMemory;
+    public ShadowAction SingleContractOpeningReplayAction =>
+        HasSingleContractOpeningReplay
+            ? _singleContractOpeningReplay.action : ShadowAction.Keep;
+    public int SingleContractOpeningReplayCount =>
+        HasSingleContractOpeningReplay
+            ? _singleContractOpeningReplay.count : 0;
     public SingleContractVisualState SingleContractVisualState
     {
         get
@@ -203,6 +235,11 @@ public class AIShadowRunner : MonoBehaviour
             ? _activeSingleContractIdentity.Clone() : null;
 
     private const int SamplesPerCheckpoint = 4;
+    public const float SingleContractOpeningReplayRevealSeconds = 0.18f;
+    public const float SingleContractOpeningReplayActionSeconds = 0.58f;
+    public const float SingleContractOpeningReplayReturnSeconds = 1.45f;
+    public const float SingleContractOpeningReplaySettleSeconds = 2.25f;
+    private const float SingleContractOpeningReplayGapMeters = 3.2f;
 
     [Serializable]
     private sealed class ShadowProfile
@@ -275,6 +312,15 @@ public class AIShadowRunner : MonoBehaviour
     private float _ghostSlideTimer;
     private float _ghostStumbleTimer;
     private float _ghostRecoveryTimer;
+    private EchoSignatureActionResult _singleContractOpeningReplay =
+        EchoSignatureActionResult.Unavailable;
+    private bool _singleContractOpeningReplayRevealed;
+    private bool _singleContractOpeningReplayActionStarted;
+    private bool _singleContractOpeningReplayActionFinished;
+    private bool _singleContractOpeningReplayCompleted;
+    private bool _singleContractOpeningReplayReducedMotion;
+    private readonly List<Renderer> _singleContractOpeningReplayHiddenRenderers =
+        new List<Renderer>();
     private float _decisionConfidence;
     private float _sequenceInfluence;
     private int _runCoins;
@@ -434,14 +480,19 @@ public class AIShadowRunner : MonoBehaviour
             _ghostProgress + (singleContractRun
                 ? _appliedContractShadowBonus : 0f));
 
-        _decisionTimer += Time.deltaTime;
-        if (_decisionTimer >= decisionInterval)
+        bool openingReplayActive = TickSingleContractOpeningReplay();
+        if (!openingReplayActive)
         {
-            _decisionTimer = 0f;
-            ApplyShadowDecision();
+            _decisionTimer += Time.deltaTime;
+            if (_decisionTimer >= decisionInterval)
+            {
+                _decisionTimer = 0f;
+                ApplyShadowDecision();
+            }
+
+            ApplyObstacleReaction();
         }
 
-        ApplyObstacleReaction();
         CurrentStatus = singleContractRun
             ? BuildSingleContractStatus() : BuildDuelStatus();
     }
@@ -454,7 +505,8 @@ public class AIShadowRunner : MonoBehaviour
             return;
 
         UpdateGhostPose();
-        EvaluateGhostObstacle();
+        if (!IsSingleContractOpeningReplayActive)
+            EvaluateGhostObstacle();
         CurrentStatus = IsSingleContractRuntime()
             ? BuildSingleContractStatus() : BuildDuelStatus();
     }
@@ -979,6 +1031,7 @@ public class AIShadowRunner : MonoBehaviour
         LastSingleContractCommitSucceeded = false;
         LastSingleContractIdentityPromoted = false;
         LastRunWasTransientValidation = false;
+        LastSingleContractCalibrationProgress = default;
         PolicyCorrectDecisionCount = 0;
         SafetyOverrideDecisionCount = 0;
         EmergencyReflexSaveCount = 0;
@@ -1008,6 +1061,7 @@ public class AIShadowRunner : MonoBehaviour
         LastSingleContractCommitSucceeded = false;
         LastSingleContractIdentityPromoted = false;
         LastRunWasTransientValidation = false;
+        LastSingleContractCalibrationProgress = default;
         _usesTransientValidationIdentity = false;
         _persistentIdentityJsonBeforeValidation = "";
         _runTime = 0f;
@@ -1047,6 +1101,7 @@ public class AIShadowRunner : MonoBehaviour
         _ghostSlideTimer = 0f;
         _ghostStumbleTimer = 0f;
         _ghostRecoveryTimer = 0f;
+        ResetSingleContractOpeningReplay();
         _sequenceInfluence = 0f;
         _ghostMistakes = 0;
         PolicyCorrectDecisionCount = 0;
@@ -1238,6 +1293,7 @@ public class AIShadowRunner : MonoBehaviour
             courseDistance = courseDistance,
             validation = validation
         });
+        PrepareSingleContractOpeningReplay();
         if (validation.enabled)
             LogSingleContractValidationPlan(validation);
         RecordSingleContractEvent(AISingleContractEventType.Begin);
@@ -1706,9 +1762,23 @@ public class AIShadowRunner : MonoBehaviour
                 _runAdaptationState != null
                     ? _runAdaptationState.relearnStartGateNumber : 0,
                 nextLaneHasUniqueEvidence);
+        SingleContractCalibrationProgress calibrationProgress =
+            !challengedOpponent && _runIdentityDraft != null
+                ? _runIdentityDraft.BuildCalibrationProgress(
+                    minimumTrainingSamples,
+                    minimumActiveTrainingSamples,
+                    minimumActionCategories,
+                    minimumJumpSamples,
+                    minimumSlideSamples,
+                    reachedFinish)
+                : default;
+        if (calibrationProgress.available)
+            calibrationProgress.promotionReady = promotionBuilt;
+        LastSingleContractCalibrationProgress = calibrationProgress;
         string intendedResult = BuildSingleContractResult(
             endReason, challengedOpponent, playerWon, promotionBuilt,
-            promotedIdentity, generationBefore, cognitionAssessment);
+            promotedIdentity, generationBefore, cognitionAssessment,
+            calibrationProgress);
         LastResult = intendedResult;
 
         int runSequence = _runIdentityDraft != null
@@ -1760,7 +1830,7 @@ public class AIShadowRunner : MonoBehaviour
         {
             LastResult = BuildSingleContractSaveFailureResult(
                 endReason, challengedOpponent, playerWon,
-                generationBefore);
+                generationBefore, calibrationProgress);
             RecordSingleContractIdentityEvent(
                 AISingleContractEventType.IdentityCommitFailed,
                 oldIdentityId, newIdentityId, transactionId,
@@ -1869,62 +1939,77 @@ public class AIShadowRunner : MonoBehaviour
 
     public static string BuildSingleContractSaveFailureResult(
         RunEndReason endReason, bool challengedOpponent, bool playerWon,
-        int generationBefore)
+        int generationBefore,
+        SingleContractCalibrationProgress calibrationProgress = default)
     {
         int generation = Mathf.Max(1, generationBefore);
         if (!challengedOpponent)
         {
-            return endReason == RunEndReason.FinishReached
-                ? "校准结算保存失败\n本局不会改写当前回声\n请重新完成短校准"
-                : "校准中断且结算保存失败\n本局身份草稿已丢弃\n请重新校准";
+            string result = endReason == RunEndReason.FinishReached
+                ? "回声保存失败\n本局学习没有写入"
+                : "回声保存失败\n这次观察提前结束";
+            string evidence = EchoRunPresentation
+                .BuildSingleContractCalibrationEvidence(
+                    calibrationProgress);
+            if (!string.IsNullOrEmpty(evidence))
+                result += "\n" + evidence;
+            return result + "\n当前回声未改变，请再跑一局";
         }
 
         if (playerWon && endReason == RunEndReason.FinishReached)
         {
             return "你跑赢了第" + generation
-                   + "代回声\n身份结算保存失败\n下一代未形成，当前回声保持不变";
+                   + "代回声\n回声保存失败\n下一代未形成，当前回声保持不变";
         }
         return "第" + generation
-               + "代回声胜出\n身份结算保存失败\n当前回声保持不变";
+               + "代回声胜出\n回声保存失败\n当前回声保持不变";
     }
 
     private static string BuildSingleContractResult(RunEndReason endReason,
         bool challengedOpponent, bool playerWon, bool promotionBuilt,
         ActiveEchoIdentity promotedIdentity, int generationBefore,
-        EchoCognitionAssessment cognitionAssessment)
+        EchoCognitionAssessment cognitionAssessment,
+        SingleContractCalibrationProgress calibrationProgress)
     {
         if (endReason != RunEndReason.FinishReached)
         {
             if (challengedOpponent)
             {
                 return "第" + Mathf.Max(1, generationBefore)
-                       + "代回声胜出\n相同记忆等待重试\n本局追学不会保留";
+                       + "代回声胜出\n它还记得同样的你\n这局的新观察不会保留";
             }
-            return endReason == RunEndReason.Collision
-                ? "校准中断 · 未到达终点\n本局身份草稿已丢弃"
-                : "校准已放弃\n本局身份草稿已丢弃";
+            return EchoRunPresentation.BuildSingleContractCalibrationResult(
+                calibrationProgress);
         }
 
         if (!challengedOpponent)
         {
             if (!promotionBuilt || promotedIdentity == null)
             {
-                return "回声记忆模糊\n你的选择尚未形成稳定模式\n请再完成一次短校准";
+                return EchoRunPresentation
+                    .BuildSingleContractCalibrationResult(
+                        calibrationProgress);
             }
-            return "校准完成\n第" + promotedIdentity.generation
+            string evidence = EchoRunPresentation
+                .BuildSingleContractCalibrationEvidence(
+                    calibrationProgress);
+            return "第" + promotedIdentity.generation
                    + "代回声已经形成\n它记住了："
-                   + promotedIdentity.memoryContract.BuildMemoryText();
+                   + promotedIdentity.memoryContract.BuildMemoryText()
+                   + (string.IsNullOrEmpty(evidence)
+                       ? "" : "\n" + evidence)
+                   + "\n下一局，它会带着这些习惯追上你";
         }
 
         if (!playerWon)
         {
             return "第" + Mathf.Max(1, generationBefore)
-                   + "代回声胜出\n相同记忆等待重试\n本局追学不会保留";
+                   + "代回声胜出\n它还记得同样的你\n这局的新观察不会保留";
         }
         if (!promotionBuilt || promotedIdentity == null)
         {
             return "你跑赢了第" + Mathf.Max(1, generationBefore)
-                   + "代回声\n下一代身份证据不足，当前回声保持不变";
+                   + "代回声\n这局还不足以形成下一代，当前回声保持不变";
         }
         string cognitionSummary = EchoRunPresentation
             .BuildSingleContractCognitionSummary(cognitionAssessment);
@@ -2232,6 +2317,262 @@ public class AIShadowRunner : MonoBehaviour
             SafetyOverrideDecisionCount++;
     }
 
+    private void PrepareSingleContractOpeningReplay()
+    {
+        ResetSingleContractOpeningReplay();
+        if (!HasActiveOpponent || _usesTransientValidationIdentity
+            || _frozenSingleContractIdentity == null || _ghost == null)
+            return;
+
+        EchoSignatureActionResult replay = EchoSignatureActionParser.FromJson(
+            EchoRunSaveSystem.GetLastRunTelemetryJson(),
+            _frozenSingleContractIdentity);
+        if (replay == null || !replay.available)
+            return;
+
+        _singleContractOpeningReplay = replay;
+        bool reducedMotion = EchoRunAccessibility.ReducedMotion;
+        _singleContractOpeningReplayReducedMotion = reducedMotion;
+        _displayedGhostLane = reducedMotion
+            ? _ghostLane : Mathf.Clamp(replay.laneBeforeAction, 0, 2);
+        _displayedGap = SingleContractOpeningReplayGapMeters;
+        _laneSmoothVelocity = 0f;
+        _gapSmoothVelocity = 0f;
+        if (!reducedMotion)
+            SetGhostRenderersVisible(false);
+    }
+
+    private void ResetSingleContractOpeningReplay()
+    {
+        _singleContractOpeningReplay = EchoSignatureActionResult.Unavailable;
+        _singleContractOpeningReplayRevealed = false;
+        _singleContractOpeningReplayActionStarted = false;
+        _singleContractOpeningReplayActionFinished = false;
+        _singleContractOpeningReplayCompleted = false;
+        _singleContractOpeningReplayReducedMotion = false;
+        SetGhostRenderersVisible(true);
+        if (_ghostAnimator != null)
+            _ghostAnimator.ClearMotionFeedback();
+    }
+
+    private bool TickSingleContractOpeningReplay()
+    {
+        if (!HasSingleContractOpeningReplay
+            || _singleContractOpeningReplayCompleted)
+            return false;
+
+        if (!IsSingleContractOpeningMemory)
+        {
+            CompleteSingleContractOpeningReplay();
+            return false;
+        }
+
+        float elapsed = GetSingleContractOpeningReplayElapsed();
+        bool reducedMotion = ResolveSingleContractOpeningReplayReducedMotion();
+        if (!_singleContractOpeningReplayRevealed
+            && (reducedMotion
+                || elapsed >= SingleContractOpeningReplayRevealSeconds))
+        {
+            _singleContractOpeningReplayRevealed = true;
+            SetGhostRenderersVisible(true);
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayUIConfirm();
+            if (!reducedMotion && ParticleManager.Instance != null
+                && _ghost != null)
+            {
+                ParticleManager.Instance.EmitCoin(
+                    _ghost.transform.position,
+                    _ghost.transform.position + Vector3.up * 1.2f);
+            }
+        }
+
+        float actionDuration = GetSingleContractOpeningReplayActionDuration();
+        if (!_singleContractOpeningReplayActionStarted
+            && elapsed >= SingleContractOpeningReplayActionSeconds)
+        {
+            float remaining = CalculateSingleContractOpeningReplayActionRemaining(
+                elapsed, actionDuration);
+            if (remaining > 0f)
+                BeginSingleContractOpeningReplayAction(
+                    reducedMotion, remaining);
+            else
+            {
+                _singleContractOpeningReplayActionStarted = true;
+                _singleContractOpeningReplayActionFinished = true;
+            }
+        }
+
+        if (_singleContractOpeningReplayActionStarted
+            && !_singleContractOpeningReplayActionFinished
+            && elapsed >= SingleContractOpeningReplayActionSeconds
+                          + actionDuration)
+            FinishSingleContractOpeningReplayAction(reducedMotion);
+
+        return true;
+    }
+
+    private bool ResolveSingleContractOpeningReplayReducedMotion()
+    {
+        if (_singleContractOpeningReplayReducedMotion)
+            return true;
+        if (!EchoRunAccessibility.ReducedMotion)
+            return false;
+
+        _singleContractOpeningReplayReducedMotion = true;
+        SetGhostRenderersVisible(true);
+        _ghostJumpTimer = 0f;
+        _ghostSlideTimer = 0f;
+        if (_singleContractOpeningReplayActionStarted)
+            _singleContractOpeningReplayActionFinished = true;
+        if (_ghostAnimator != null)
+            _ghostAnimator.ClearMotionFeedback();
+        return true;
+    }
+
+    private void BeginSingleContractOpeningReplayAction(bool reducedMotion,
+        float remainingDuration)
+    {
+        _singleContractOpeningReplayActionStarted = true;
+        if (reducedMotion)
+        {
+            _singleContractOpeningReplayActionFinished = true;
+            return;
+        }
+
+        ShadowAction action = SingleContractOpeningReplayAction;
+        if (action == ShadowAction.Jump || action == ShadowAction.Slide)
+        {
+            StartGhostAction(action);
+            if (action == ShadowAction.Jump)
+                _ghostJumpTimer = Mathf.Min(
+                    _ghostJumpTimer, remainingDuration);
+            else
+                _ghostSlideTimer = Mathf.Min(
+                    _ghostSlideTimer, remainingDuration);
+        }
+
+        AudioManager audio = AudioManager.Instance;
+        if (action == ShadowAction.Jump)
+        {
+            if (audio != null) audio.PlayJump();
+            if (!reducedMotion && ParticleManager.Instance != null
+                && _ghost != null)
+            {
+                ParticleManager.Instance.EmitTakeoff(
+                    _ghost.transform.position, _ghostForward);
+            }
+        }
+        else if (action == ShadowAction.Slide && audio != null)
+        {
+            audio.PlaySlide();
+        }
+    }
+
+    private void FinishSingleContractOpeningReplayAction(bool reducedMotion)
+    {
+        _singleContractOpeningReplayActionFinished = true;
+        ShadowAction action = SingleContractOpeningReplayAction;
+        AudioManager audio = AudioManager.Instance;
+        if (action == ShadowAction.Jump)
+        {
+            if (audio != null) audio.PlayLand(0.65f);
+            if (!reducedMotion && ParticleManager.Instance != null
+                && _ghost != null)
+            {
+                ParticleManager.Instance.EmitLand(
+                    _ghost.transform.position, _ghostForward, 0.65f);
+            }
+        }
+        else if (action == ShadowAction.Slide && audio != null)
+        {
+            audio.PlaySlideExit();
+        }
+    }
+
+    private void CompleteSingleContractOpeningReplay()
+    {
+        if (_singleContractOpeningReplayCompleted) return;
+        _singleContractOpeningReplayCompleted = true;
+        SetGhostRenderersVisible(true);
+        _ghostJumpTimer = 0f;
+        _ghostSlideTimer = 0f;
+        _decisionTimer = 0f;
+        _displayedGhostLane = _ghostLane;
+        _displayedGap = Mathf.Clamp(_ghostProgress - _playerProgress,
+            -2.5f, maximumVisibleLead);
+        _laneSmoothVelocity = 0f;
+        _gapSmoothVelocity = 0f;
+        if (_ghostAnimator != null)
+            _ghostAnimator.ClearMotionFeedback();
+    }
+
+    private float GetSingleContractOpeningReplayElapsed()
+    {
+        return _gameManager != null
+            ? Mathf.Max(0f, _gameManager.RunElapsed)
+            : Mathf.Max(0f, _runTime);
+    }
+
+    private float GetSingleContractOpeningReplayActionDuration()
+    {
+        switch (SingleContractOpeningReplayAction)
+        {
+            case ShadowAction.Jump:
+                return GetGhostJumpDuration();
+            case ShadowAction.Slide:
+                return GetGhostSlideDuration();
+            default:
+                return 0.42f;
+        }
+    }
+
+    public static float ResolveSingleContractOpeningReplayLane(
+        ShadowAction action, int laneBeforeAction, float elapsed,
+        int runtimeLane)
+    {
+        float sourceLane = Mathf.Clamp(laneBeforeAction, 0, 2);
+        float targetLane = sourceLane;
+        if (action == ShadowAction.Left)
+            targetLane = Mathf.Max(0f, sourceLane - 1f);
+        else if (action == ShadowAction.Right)
+            targetLane = Mathf.Min(2f, sourceLane + 1f);
+
+        float replayLane = sourceLane;
+        if (action == ShadowAction.Left || action == ShadowAction.Right)
+        {
+            float action01 = Mathf.InverseLerp(
+                SingleContractOpeningReplayActionSeconds,
+                SingleContractOpeningReplayActionSeconds + 0.42f,
+                elapsed);
+            replayLane = Mathf.Lerp(sourceLane, targetLane,
+                Mathf.SmoothStep(0f, 1f, action01));
+        }
+
+        float return01 = Mathf.InverseLerp(
+            SingleContractOpeningReplayReturnSeconds,
+            SingleContractOpeningReplaySettleSeconds, elapsed);
+        return Mathf.Lerp(replayLane, Mathf.Clamp(runtimeLane, 0, 2),
+            Mathf.SmoothStep(0f, 1f, return01));
+    }
+
+    public static float CalculateSingleContractOpeningReplayActionRemaining(
+        float elapsed, float actionDuration)
+    {
+        return Mathf.Max(0f, Mathf.Max(0f, actionDuration)
+                              - Mathf.Max(0f, elapsed
+                                  - SingleContractOpeningReplayActionSeconds));
+    }
+
+    public static float ResolveSingleContractOpeningReplayGap(
+        float elapsed, float runtimeGap)
+    {
+        float return01 = Mathf.InverseLerp(
+            SingleContractOpeningReplayReturnSeconds,
+            SingleContractOpeningReplaySettleSeconds, elapsed);
+        return Mathf.Lerp(SingleContractOpeningReplayGapMeters, runtimeGap,
+            Mathf.SmoothStep(0f, 1f, return01));
+    }
+
     private bool StartGhostAction(ShadowAction action)
     {
         if (!CanStartVerticalAction(action, _ghostJumpTimer > 0f,
@@ -2276,12 +2617,39 @@ public class AIShadowRunner : MonoBehaviour
 
         float targetGap = Mathf.Clamp(_ghostProgress - _playerProgress,
             -2.5f, maximumVisibleLead);
-        _displayedGap = Mathf.SmoothDamp(_displayedGap, targetGap,
-            ref _gapSmoothVelocity, Mathf.Max(0.02f, distanceSmoothTime),
-            80f, Time.deltaTime);
-        _displayedGhostLane = Mathf.SmoothDamp(_displayedGhostLane, _ghostLane,
-            ref _laneSmoothVelocity, Mathf.Max(0.02f, laneSmoothTime),
-            12f, Time.deltaTime);
+        float previousDisplayedLane = _displayedGhostLane;
+        bool openingReplay = IsSingleContractOpeningReplayActive;
+        bool openingReplayMotion = openingReplay
+                                   && !_singleContractOpeningReplayReducedMotion;
+        if (openingReplayMotion)
+        {
+            float elapsed = GetSingleContractOpeningReplayElapsed();
+            _displayedGap = ResolveSingleContractOpeningReplayGap(
+                elapsed, targetGap);
+            _displayedGhostLane = ResolveSingleContractOpeningReplayLane(
+                SingleContractOpeningReplayAction,
+                _singleContractOpeningReplay.laneBeforeAction,
+                elapsed, _ghostLane);
+            _gapSmoothVelocity = 0f;
+            _laneSmoothVelocity = 0f;
+        }
+        else if (openingReplay)
+        {
+            _displayedGap = SingleContractOpeningReplayGapMeters;
+            _displayedGhostLane = _ghostLane;
+            _gapSmoothVelocity = 0f;
+            _laneSmoothVelocity = 0f;
+        }
+        else
+        {
+            _displayedGap = Mathf.SmoothDamp(_displayedGap, targetGap,
+                ref _gapSmoothVelocity, Mathf.Max(0.02f, distanceSmoothTime),
+                80f, Time.deltaTime);
+            _displayedGhostLane = Mathf.SmoothDamp(
+                _displayedGhostLane, _ghostLane,
+                ref _laneSmoothVelocity, Mathf.Max(0.02f, laneSmoothTime),
+                12f, Time.deltaTime);
+        }
         float unclampedLane = _displayedGhostLane;
         _displayedGhostLane = Mathf.Clamp(_displayedGhostLane, 0f, 2f);
         if (!Mathf.Approximately(unclampedLane, _displayedGhostLane))
@@ -2337,15 +2705,35 @@ public class AIShadowRunner : MonoBehaviour
                 float animationSpeed = _gameManager != null
                     ? _gameManager.CurrentSpeed * shadowPaceMultiplier
                     : 10f;
-                _ghostAnimator.ApplyExternalMotion(
-                    _ghostJumpTimer > 0f, _ghostSlideTimer > 0f,
-                    _ghostForward, animationSpeed, Time.deltaTime);
+                if (openingReplayMotion)
+                {
+                    float jump01 = _ghostJumpTimer > 0f
+                        ? 1f - _ghostJumpTimer / GetGhostJumpDuration() : 0f;
+                    float slide01 = _ghostSlideTimer > 0f
+                        ? 1f - _ghostSlideTimer / GetGhostSlideDuration() : 0f;
+                    float lateralVelocity =
+                        (_displayedGhostLane - previousDisplayedLane)
+                        * _player.laneDistance
+                        / Mathf.Max(0.001f, Time.deltaTime);
+                    _ghostAnimator.ApplyExternalMotion(
+                        _ghostJumpTimer > 0f, _ghostSlideTimer > 0f,
+                        _ghostForward, animationSpeed, Time.deltaTime,
+                        jump01, slide01, lateralVelocity);
+                }
+                else
+                {
+                    _ghostAnimator.ApplyExternalMotion(
+                        _ghostJumpTimer > 0f, _ghostSlideTimer > 0f,
+                        _ghostForward, animationSpeed, Time.deltaTime);
+                }
             }
         }
 
         if (_ghostMaterial != null)
         {
-            bool reducedMotion = EchoRunAccessibility.ReducedMotion;
+            bool reducedMotion = EchoRunAccessibility.ReducedMotion
+                                 || (openingReplay
+                                     && _singleContractOpeningReplayReducedMotion);
             bool stumbling = _ghostStumbleTimer > 0f;
             _ghostMaterial.color = ResolveGhostBodyColor(
                 stumbling, reducedMotion, Time.time);
@@ -3001,6 +3389,7 @@ public class AIShadowRunner : MonoBehaviour
 
     private void DiscardSingleContractRunState()
     {
+        ResetSingleContractOpeningReplay();
         _runIdentityDraft?.Discard();
         _runIdentityDraft = null;
         _runAdaptationState = null;
@@ -3183,6 +3572,35 @@ public class AIShadowRunner : MonoBehaviour
     private void SetGhostActive(bool active)
     {
         if (_ghost != null) _ghost.SetActive(active);
+    }
+
+    private void SetGhostRenderersVisible(bool visible)
+    {
+        if (_ghost == null) return;
+        if (!visible)
+        {
+            if (_singleContractOpeningReplayHiddenRenderers.Count > 0)
+                return;
+            Renderer[] renderers =
+                _ghost.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer renderer = renderers[i];
+                if (renderer == null || !renderer.enabled) continue;
+                _singleContractOpeningReplayHiddenRenderers.Add(renderer);
+                renderer.enabled = false;
+            }
+            return;
+        }
+
+        for (int i = 0;
+             i < _singleContractOpeningReplayHiddenRenderers.Count; i++)
+        {
+            Renderer renderer =
+                _singleContractOpeningReplayHiddenRenderers[i];
+            if (renderer != null) renderer.enabled = true;
+        }
+        _singleContractOpeningReplayHiddenRenderers.Clear();
     }
 
     private void LoadProfile()

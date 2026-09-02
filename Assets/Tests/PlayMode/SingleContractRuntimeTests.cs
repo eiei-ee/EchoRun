@@ -392,6 +392,9 @@ public sealed class SingleContractRuntimeTests
                 {
                     visualState = SingleContractVisualState.Challenge,
                     openingMemory = true,
+                    openingReplay = true,
+                    openingReplayAction = ShadowAction.Slide,
+                    openingReplayCount = 4,
                     generation = 4,
                     memory = "压力出现时，你偏向右侧",
                     showPrediction = true,
@@ -410,8 +413,12 @@ public sealed class SingleContractRuntimeTests
             .activeInHierarchy);
         var directive = (UnityEngine.UI.Text)GetField(view,
             "directiveText");
-        Assert.AreEqual("第4代回声记忆\n压力出现时，你偏向右侧",
-            directive.text);
+        var announcement = (UnityEngine.UI.Text)GetField(view,
+            "announcementText");
+        Assert.AreEqual("第4代回声现身", announcement.text);
+        Assert.AreEqual("上一局学到：滑铲×4 · 压力时偏右", directive.text);
+        Assert.IsTrue(Find(hud, "HudDynamicCanvas/Announcement")
+            .activeInHierarchy);
         foreach (string visiblePath in new[]
                  {
                      "HudStaticCanvas/StatsPlate",
@@ -424,7 +431,6 @@ public sealed class SingleContractRuntimeTests
                 visiblePath + " must be visible on the first run frame.");
         foreach (string hiddenPath in new[]
                  {
-                     "HudDynamicCanvas/Announcement",
                      "HudDynamicCanvas/Prediction",
                      "HudDynamicCanvas/Feedback",
                      "HudDynamicCanvas/BuffGroup"
@@ -468,6 +474,43 @@ public sealed class SingleContractRuntimeTests
         Assert.IsFalse(Find(hud, "HudDynamicCanvas/Directive")
             .activeInHierarchy,
             "Frozen memory must not remain as a misleading live instruction.");
+    }
+
+    [UnityTest]
+    public IEnumerator OpeningMemoryFallbackUsesSeparateTitleAndBodyRows()
+    {
+        RectTransform viewport;
+        GameObject hud = CreateHud(new Vector2(1920f, 1080f),
+            out viewport);
+        EchoHudView view = hud.GetComponent<EchoHudView>();
+        SingleContractHudData opening =
+            EchoRunPresentation.BuildSingleContractHud(
+                new SingleContractHudInput
+                {
+                    visualState = SingleContractVisualState.Challenge,
+                    openingMemory = true,
+                    generation = 7,
+                    memory = "压力出现时，你偏向左侧",
+                    injuries = 0,
+                    finishRemaining = 900f
+                });
+
+        view.PresentSingleContract(opening, false);
+        Canvas.ForceUpdateCanvases();
+        yield return null;
+
+        var announcement = (UnityEngine.UI.Text)GetField(view,
+            "announcementText");
+        var directive = (UnityEngine.UI.Text)GetField(view,
+            "directiveText");
+        Assert.AreEqual("第7代回声现身", announcement.text);
+        Assert.AreEqual("它记住了：压力出现时，你偏向左侧", directive.text);
+        Assert.IsTrue(announcement.gameObject.activeInHierarchy);
+        Assert.IsTrue(directive.gameObject.activeInHierarchy);
+        Assert.LessOrEqual(announcement.preferredHeight,
+            announcement.rectTransform.rect.height + 0.5f);
+        Assert.LessOrEqual(directive.preferredHeight,
+            directive.rectTransform.rect.height + 0.5f);
     }
 
     [UnityTest]

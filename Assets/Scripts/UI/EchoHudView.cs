@@ -131,7 +131,13 @@ public sealed class EchoHudView : MonoBehaviour
         SetActiveIfChanged(dynamicLayer, true);
         SetActiveIfChanged(stageRail, false);
         SetActiveIfChanged(calibrationRail, true);
-        SetActiveIfChanged(meterGroup, false);
+        bool showCalibrationProgress = data.showCalibrationProgress
+                                       && data.visualState
+                                       == SingleContractVisualState.Calibration
+                                       && !data.openingMemory;
+        SetActiveIfChanged(meterGroup, showCalibrationProgress);
+        if (showCalibrationProgress)
+            PresentSingleContractCalibrationMeter(data);
         SetActiveIfChanged(markerGroup, false);
         SetActiveIfChanged(pauseButton != null
             ? pauseButton.gameObject : null, true);
@@ -142,9 +148,11 @@ public sealed class EchoHudView : MonoBehaviour
         SetActiveIfChanged(directivePlate, data.showMemory);
         if (data.openingMemory)
         {
+            bool showOpeningTitle = !string.IsNullOrEmpty(data.openingTitle);
+            SetTextIfChanged(announcementText, data.openingTitle);
             SetActiveIfChanged(announcementText != null
-                ? announcementText.gameObject : null, false);
-            SetActiveIfChanged(announcementPlate, false);
+                ? announcementText.gameObject : null, showOpeningTitle);
+            SetActiveIfChanged(announcementPlate, showOpeningTitle);
             SetTextIfChanged(predictionText, "");
             SetActiveIfChanged(predictionText != null
                 ? predictionText.gameObject : null, false);
@@ -169,13 +177,19 @@ public sealed class EchoHudView : MonoBehaviour
         SetActiveIfChanged(announcementText != null
             ? announcementText.gameObject : null, showAnnouncement);
         SetActiveIfChanged(announcementPlate, showAnnouncement);
-        SetTextIfChanged(predictionText, data.prediction);
-        bool showPrediction = !string.IsNullOrEmpty(data.prediction);
+        string prediction = showCalibrationProgress
+            ? data.calibrationRouteProgress : data.prediction;
+        SetTextIfChanged(predictionText, prediction);
+        SetColorIfChanged(predictionText, showCalibrationProgress
+            ? _phaseAccent : EchoRunUITheme.HudDangerText);
+        bool showPrediction = !string.IsNullOrEmpty(prediction);
         SetActiveIfChanged(predictionText != null
             ? predictionText.gameObject : null, showPrediction);
         SetActiveIfChanged(predictionPlate, showPrediction);
 
-        SetTextIfChanged(calibrationObservationText, data.injuriesText);
+        SetTextIfChanged(calibrationObservationText,
+            showCalibrationProgress
+                ? data.calibrationActionProgress : data.injuriesText);
         SetActiveIfChanged(calibrationObservationText != null
             ? calibrationObservationText.gameObject : null, true);
         SetTextIfChanged(distanceText, data.finishRemainingText);
@@ -446,6 +460,19 @@ public sealed class EchoHudView : MonoBehaviour
         }
     }
 
+    private void PresentSingleContractCalibrationMeter(
+        SingleContractHudData data)
+    {
+        SetTextIfChanged(meterLabel, data.calibrationMeterText);
+        SetFillIfChanged(meterFill, data.calibrationProgress01);
+        if (meterFill != null)
+        {
+            Color target = data.calibrationProgress01 >= 1f
+                ? Gold : _phaseAccent;
+            if (meterFill.color != target) meterFill.color = target;
+        }
+    }
+
     private void PresentLead(EchoHudViewData data)
     {
         if (data.mode == EchoHudMode.Calibration) return;
@@ -555,13 +582,13 @@ public sealed class EchoHudView : MonoBehaviour
         switch (state)
         {
             case SingleContractVisualState.Challenge:
-                return "回声对决";
+                return "回声正在追你";
             case SingleContractVisualState.RelearnPulse:
-                return "回声追学 · 预测更新";
+                return "回声改猜了";
             case SingleContractVisualState.Finale:
-                return "最终决胜";
+                return "最后冲刺";
             default:
-                return "回声路线校准";
+                return "AI 正在学你的跑法";
         }
     }
 

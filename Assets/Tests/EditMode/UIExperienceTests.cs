@@ -323,7 +323,13 @@ public sealed class UIExperienceTests
             "首次回声校准挑战契约补给舱跑者外观库存装备领先落后已破解"
             + "设置主音量音乐音效一键静音已画面帧率辅助显示选择配色立即预览并保存"
             + "跑酷难度休闲标准高压障碍较少密集恢复窗"
-            + "大字高对比减少动态返回百分比补充";
+            + "大字高对比减少动态返回百分比补充"
+            + "本机实时观察你的选路跳跃和滑铲不同动作学习条变亮形成下一局的对手"
+            + "还没看清路线习惯旧回声不会丢让它再观察猜中抢先连续两次骗过改猜"
+            + "留在身后正在学跑法学够了去终点主动种类受伤红它猜的路青骗它的路白安全路"
+            + "后续更新看到了这局观察不会带到下一局重新已经全亮没有形成遇到问题"
+            + "本局结果整理变化同样不足当前保持不变原本认为压力偏向开始仍可能"
+            + "《影迹》过去正在追上你米回声现身上一局学到×";
         foreach (char character in copy)
             Assert.IsTrue(font.HasCharacter(character), "UI font is missing: " + character);
     }
@@ -339,7 +345,7 @@ public sealed class UIExperienceTests
             string actual = BitConverter.ToString(
                 sha.ComputeHash(File.ReadAllBytes(path))).Replace("-", "");
             Assert.AreEqual(
-                "2BE407DC8955F124A6636C7C3DBFD25AB543DFEA340AD200C6109983F8094CD3",
+                "CCCAD320E18B33279AB48E88517D6312A9541B5DE06E65E3C777B67BA09724FA",
                 actual,
                 "The bundled font must stay the validated static Regular 400 subset.");
         }

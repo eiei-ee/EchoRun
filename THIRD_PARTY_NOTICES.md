@@ -31,7 +31,7 @@ its attribution and terms to this file before redistributing it.
 - Upstream SHA-256:
   `2C76254F6FC379FDDFCE0A7E84FB5385BB135D3E399294F6EEB6680D0365B74B`.
 - Bundled subset SHA-256:
-  `2BE407DC8955F124A6636C7C3DBFD25AB543DFEA340AD200C6109983F8094CD3`.
+  `CCCAD320E18B33279AB48E88517D6312A9541B5DE06E65E3C777B67BA09724FA`.
 - The subset retains the upstream Adobe copyright and Google trademark
   acknowledgement, but its user-facing family and PostScript names are
   `EchoRun Sans SC` and `EchoRunSansSC-Regular` so it cannot be mistaken for

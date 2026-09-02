@@ -1,6 +1,13 @@
 using UnityEngine;
 using UnityEngine.UI;
 
+public enum SingleContractResultTone
+{
+    Progress,
+    Success,
+    Danger
+}
+
 public class UIManager : MonoBehaviour
 {
     private static readonly Color Backdrop = EchoRunUITheme.Backdrop;
@@ -275,7 +282,7 @@ public class UIManager : MonoBehaviour
         _menuReadabilityVeil = veil.GetComponent<RectTransform>();
 
         _menuProtocolText = MakeText("Protocol", _menuPanel.transform,
-            "ADAPTIVE RIVAL PROTOCOL  //  07", 16, TextAnchor.MiddleCenter);
+            "本机 AI · 实时学习你的操作", 16, TextAnchor.MiddleCenter);
         _menuProtocolText.color = Primary;
         _menuProtocolText.fontStyle = FontStyle.Bold;
 
@@ -298,18 +305,20 @@ public class UIManager : MonoBehaviour
         _menuTaglineText.color = Primary;
 
         _menuGenerationText = MakeText("EchoGeneration", _menuPanel.transform,
-            "首次校准 · 回声尚未形成", 30, TextAnchor.MiddleLeft);
+            "你的操作，会变成下一局的对手", 30, TextAnchor.MiddleLeft);
         _menuGenerationText.color = Primary;
         _menuGenerationText.fontStyle = FontStyle.Bold;
 
         _menuLearnedText = MakeBriefLine("EchoLearned",
-            "等待采样：路线、动作与节奏", 0f, TextPrimary);
+            "本机 AI 会实时观察你的选路、跳跃和滑铲", 0f, TextPrimary);
         _menuRuleText = MakeBriefLine("EchoRule",
-            "校准目标：完成跳跃与滑铲采样", 0f, TextPrimary);
+            "多做不同动作和选路，让学习条变亮",
+            0f, TextPrimary);
         _menuObjectiveText = MakeBriefLine("EchoObjective",
-            "挑战目标：完成一次校准跑局", 0f, Reward);
+            "学习条亮后跑到终点，形成下一局的回声",
+            0f, Reward);
 
-        _startBtn = MakeButton("StartBtn", _menuPanel.transform, "开始校准", 28,
+        _startBtn = MakeButton("StartBtn", _menuPanel.transform, "开始第一局", 28,
             new Vector2(0.19f, 0.245f), new Vector2(520f, 78f),
             Primary, Primary, Ink);
         _startBtn.onClick.AddListener(StartGameFromHome);
@@ -1027,7 +1036,7 @@ public class UIManager : MonoBehaviour
             new Vector2(0f, -18f), new Vector2(0.5f, 1f));
 
         _contractText = MakeText("Contract", _hudContractPanel.transform,
-            "正在校准你的回声", 25, TextAnchor.MiddleLeft);
+            "AI 正在学你的跑法", 25, TextAnchor.MiddleLeft);
         _contractText.fontStyle = FontStyle.Bold;
         _contractText.color = TextPrimary;
         RectTransform contractRect = _contractText.rectTransform;
@@ -1230,22 +1239,38 @@ public class UIManager : MonoBehaviour
 
         if (_contractText != null)
         {
-            _contractText.text = view.memory;
+            _contractText.text = view.openingMemory
+                && !string.IsNullOrEmpty(view.openingTitle)
+                ? view.openingTitle + "\n" + view.memory
+                : view.memory;
             _contractText.gameObject.SetActive(view.showMemory);
         }
         if (_contractProgressText != null)
         {
-            _contractProgressText.text = view.prediction;
+            _contractProgressText.text = view.showCalibrationProgress
+                ? view.calibrationMeterText : view.prediction;
             _contractProgressText.gameObject.SetActive(
-                !string.IsNullOrEmpty(view.prediction));
+                !string.IsNullOrEmpty(_contractProgressText.text));
         }
         if (_contractProgressGroup != null)
-            _contractProgressGroup.SetActive(false);
+            _contractProgressGroup.SetActive(view.showCalibrationProgress);
+        if (_contractProgressFill != null && view.showCalibrationProgress)
+        {
+            RectTransform fill = _contractProgressFill.rectTransform;
+            fill.anchorMax = new Vector2(view.calibrationProgress01, 1f);
+            _contractProgressFill.color = view.calibrationProgress01 >= 1f
+                ? Success : Primary;
+        }
         if (_leadText != null)
         {
             _leadText.text = view.visualState
                              == SingleContractVisualState.Calibration
-                ? view.injuriesText + "　|　" + view.finishRemainingText
+                ? (view.showCalibrationProgress
+                    ? view.calibrationRouteProgress + "　|　"
+                      + view.calibrationActionProgress
+                      + "　|　" + view.finishRemainingText
+                    : view.injuriesText + "　|　"
+                      + view.finishRemainingText)
                 : view.lead + "　|　" + view.injuriesText
                   + "　|　" + view.finishRemainingText;
             _leadText.color = view.leadState
@@ -1426,7 +1451,7 @@ public class UIManager : MonoBehaviour
         _coinResultText.gameObject.SetActive(false);
 
         _shadowResultText = MakeText("ShadowResult", _gameOverPanel.transform,
-            "AI影子正在生成赛后分析", 28, TextAnchor.MiddleCenter);
+            "正在整理这局的回声变化", 28, TextAnchor.MiddleCenter);
         _shadowResultText.color = Primary;
         _shadowResultText.fontStyle = FontStyle.Bold;
         _shadowResultText.resizeTextForBestFit = true;
@@ -1452,7 +1477,7 @@ public class UIManager : MonoBehaviour
         // Create consolidated result text last so WebGL dynamic-font atlas rebuilds
         // cannot leave the earlier score rows without geometry.
         _gameOverTitleText = MakeText("GameOverTitle", _gameOverPanel.transform,
-            "跑局结算", 48, TextAnchor.MiddleCenter);
+            "本局结果", 48, TextAnchor.MiddleCenter);
         _gameOverTitleText.color = Danger;
         _gameOverTitleText.fontStyle = FontStyle.Bold;
         AddOutline(_gameOverTitleText.gameObject, new Color(0.4f, 0.05f, 0f));
@@ -1585,13 +1610,17 @@ public class UIManager : MonoBehaviour
                             GetSingleContractGameOverTitle(
                                 singleContractResultText, resultReason,
                                 wasChallenge, won);
-                        bool positiveResult = settlementSaved
-                                              && (wasChallenge
-                                                  ? won
-                                                  : identityPromoted
-                                                    && routeMemoryReady);
-                        _gameOverTitleText.color = positiveResult
-                            ? Success : Danger;
+                        SingleContractResultTone tone =
+                            GetSingleContractGameOverTone(
+                                settlementSaved, wasChallenge, won,
+                                identityPromoted, routeMemoryReady,
+                                singleContractResultText.StartsWith(
+                                    "回声形成遇到问题"));
+                        _gameOverTitleText.color = tone
+                            == SingleContractResultTone.Success
+                            ? Success
+                            : tone == SingleContractResultTone.Progress
+                                ? Primary : Danger;
                     }
                     else
                     {
@@ -1643,15 +1672,21 @@ public class UIManager : MonoBehaviour
         string result, RunEndReason endReason, bool wasChallenge, bool won)
     {
         string safe = (result ?? "").Trim();
-        if (safe.Contains("结算保存失败")) return "身份结算失败";
+        if (safe.Contains("保存失败")) return "回声保存失败";
         int newline = safe.IndexOf('\n');
         string firstLine = newline >= 0
             ? safe.Substring(0, newline).Trim() : safe;
         if (!wasChallenge)
         {
             bool savedCalibration = firstLine.StartsWith("校准完成")
-                                    && !safe.Contains("身份结算保存失败");
-            return savedCalibration ? "校准完成" : "校准未完成";
+                                    && !safe.Contains("保存失败");
+            if (savedCalibration) return "校准完成";
+            if (firstLine.StartsWith("第")
+                && firstLine.Contains("代回声已经形成"))
+                return firstLine;
+            return firstLine.StartsWith("AI 看到了你的跑法")
+                   || firstLine.StartsWith("回声形成遇到问题")
+                ? firstLine : "AI 看到了你的跑法";
         }
 
         if (firstLine.StartsWith("你跑赢了")
@@ -1659,17 +1694,32 @@ public class UIManager : MonoBehaviour
         return won ? "你跑赢了回声" : "回声胜出";
     }
 
+    public static SingleContractResultTone GetSingleContractGameOverTone(
+        bool settlementSaved, bool wasChallenge, bool won,
+        bool identityPromoted, bool routeMemoryReady,
+        bool calibrationGenerationError = false)
+    {
+        if (!settlementSaved || calibrationGenerationError)
+            return SingleContractResultTone.Danger;
+        if (wasChallenge)
+            return won ? SingleContractResultTone.Success
+                : SingleContractResultTone.Danger;
+        return identityPromoted && routeMemoryReady
+            ? SingleContractResultTone.Success
+            : SingleContractResultTone.Progress;
+    }
+
     public static string GetSingleContractGameOverActionLabel(
         RunEndReason endReason, bool wasChallenge, bool identityPromoted,
         int generation, bool routeMemoryReady)
     {
-        if (!routeMemoryReady) return "继续校准";
-        if (!identityPromoted && !wasChallenge) return "继续校准";
+        if (!routeMemoryReady) return "让它再观察一局";
+        if (!identityPromoted && !wasChallenge) return "再跑一局";
         if (!wasChallenge)
-            return "挑战第 " + Mathf.Max(1, generation) + " 代回声";
+            return "挑战第" + Mathf.Max(1, generation) + "代回声";
         if (identityPromoted)
-            return "挑战第 " + Mathf.Max(1, generation) + " 代回声";
-        return "重试第 " + Mathf.Max(1, generation) + " 代回声";
+            return "挑战第" + Mathf.Max(1, generation) + "代回声";
+        return "重试第" + Mathf.Max(1, generation) + "代回声";
     }
 
     void OnScoreChanged(int score)
@@ -1783,7 +1833,13 @@ public class UIManager : MonoBehaviour
             EchoMenuViewData singleContractView =
                 EchoRunPresentation.BuildSingleContractMenu(
                     shadow != null
-                        ? shadow.ActiveSingleContractIdentityPreview : null);
+                        ? shadow.ActiveSingleContractIdentityPreview : null,
+                    shadow != null ? shadow.minimumJumpSamples : 2,
+                    shadow != null ? shadow.minimumSlideSamples : 2,
+                    shadow != null ? shadow.minimumTrainingSamples : 24,
+                    shadow != null
+                        ? shadow.minimumActiveTrainingSamples : 6,
+                    shadow != null ? shadow.minimumActionCategories : 2);
             if (_menuGenerationText != null)
                 _menuGenerationText.text = singleContractView.generation;
             if (_menuLearnedText != null)

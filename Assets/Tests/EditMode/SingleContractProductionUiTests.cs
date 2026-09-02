@@ -102,7 +102,7 @@ public sealed class SingleContractProductionUiTests
                 RunEndReason.FinishReached, true, true));
         Assert.AreEqual("第3代回声胜出",
             UIManager.GetSingleContractGameOverTitle(
-                "第3代回声胜出\n相同记忆等待重试",
+                "第3代回声胜出\n它还记得同样的你",
                 RunEndReason.FinishReached, true, false));
 
         string visible = UIManager.GetSingleContractGameOverTitle(
@@ -116,40 +116,140 @@ public sealed class SingleContractProductionUiTests
     [Test]
     public void CalibrationResultTitlesStayInCalibrationLanguage()
     {
-        Assert.AreEqual("校准完成",
+        Assert.AreEqual("第1代回声已经形成",
             UIManager.GetSingleContractGameOverTitle(
-                "校准完成\n第1代回声已经形成",
+                "第1代回声已经形成\n它记住了：压力出现时，你偏向右侧",
                 RunEndReason.FinishReached, false, false));
-        Assert.AreEqual("校准未完成",
+        Assert.AreEqual("AI 看到了你的跑法",
             UIManager.GetSingleContractGameOverTitle(
-                "回声记忆模糊\n请再完成一次短校准",
+                "AI 看到了你的跑法\n这局观察不会带到下一局",
                 RunEndReason.FinishReached, false, false));
-        Assert.AreEqual("身份结算失败",
+        Assert.AreEqual("回声保存失败",
             UIManager.GetSingleContractGameOverTitle(
                 AIShadowRunner.BuildSingleContractSaveFailureResult(
                     RunEndReason.FinishReached, false, false, 0),
                 RunEndReason.FinishReached, false, false));
-        Assert.AreEqual("身份结算失败",
+        Assert.AreEqual("回声保存失败",
             UIManager.GetSingleContractGameOverTitle(
                 "你跑赢了第3代回声\n身份结算保存失败",
                 RunEndReason.FinishReached, true, true));
     }
 
     [Test]
+    public void IncompleteCalibrationShowsHonestProgressWithoutFailureLanguage()
+    {
+        var progress = new SingleContractCalibrationProgress
+        {
+            available = true,
+            totalSamples = 12,
+            minimumTotalSamples = 24,
+            activeSamples = 4,
+            minimumActiveSamples = 6,
+            actionCategories = 1,
+            minimumActionCategories = 2,
+            jumpSamples = 1,
+            minimumJumpSamples = 2,
+            slideSamples = 0,
+            minimumSlideSamples = 2,
+            formalChoices = 2,
+            minimumFormalChoices = 5,
+            successfulChoices = 1,
+            minimumSuccessfulChoices = 3,
+            preferredLane = 2,
+            preferredLaneUnique = true,
+            strongestRouteChoices = 2,
+            minimumStrongestRouteChoices = 3
+        };
+
+        string result = EchoRunPresentation
+            .BuildSingleContractCalibrationResult(progress);
+
+        StringAssert.StartsWith("AI 看到了你的跑法", result);
+        StringAssert.Contains(
+            "观察 12/24 · 主动 4/6 · 动作种类 1/2", result);
+        StringAssert.Contains("跳跃 1/2 · 滑铲 0/2", result);
+        StringAssert.Contains(
+            "选路 2/5 · 通过 1/3 · 右路2/3", result);
+        StringAssert.Contains("还没到终点", result);
+        StringAssert.Contains("这局观察不会带到下一局", result);
+        StringAssert.DoesNotContain("未完成", result);
+        StringAssert.DoesNotContain("草稿", result);
+        StringAssert.DoesNotContain("失败", result);
+    }
+
+    [Test]
     public void ResultActionsNameTheEchoOrCalibrationTarget()
     {
-        Assert.AreEqual("挑战第 4 代回声",
+        Assert.AreEqual("挑战第4代回声",
             UIManager.GetSingleContractGameOverActionLabel(
                 RunEndReason.FinishReached, true, true, 4, true));
-        Assert.AreEqual("重试第 3 代回声",
+        Assert.AreEqual("重试第3代回声",
             UIManager.GetSingleContractGameOverActionLabel(
                 RunEndReason.FinishReached, true, false, 3, true));
-        Assert.AreEqual("挑战第 1 代回声",
+        Assert.AreEqual("挑战第1代回声",
             UIManager.GetSingleContractGameOverActionLabel(
                 RunEndReason.FinishReached, false, true, 1, true));
-        Assert.AreEqual("继续校准",
+        Assert.AreEqual("让它再观察一局",
             UIManager.GetSingleContractGameOverActionLabel(
                 RunEndReason.Collision, false, false, 0, false));
+    }
+
+    [Test]
+    public void CalibrationUsesProgressToneUnlessSavingActuallyFails()
+    {
+        Assert.AreEqual(SingleContractResultTone.Success,
+            UIManager.GetSingleContractGameOverTone(
+                true, false, false, true, true));
+        Assert.AreEqual(SingleContractResultTone.Progress,
+            UIManager.GetSingleContractGameOverTone(
+                true, false, false, false, false));
+        Assert.AreEqual(SingleContractResultTone.Danger,
+            UIManager.GetSingleContractGameOverTone(
+                false, false, false, false, false));
+        Assert.AreEqual(SingleContractResultTone.Danger,
+            UIManager.GetSingleContractGameOverTone(
+                true, true, false, false, true));
+        Assert.AreEqual(SingleContractResultTone.Danger,
+            UIManager.GetSingleContractGameOverTone(
+                true, false, false, false, false, true));
+    }
+
+    [Test]
+    public void FullVisibleProgressReportsAnInternalGenerationProblem()
+    {
+        var progress = new SingleContractCalibrationProgress
+        {
+            available = true,
+            finishReached = true,
+            evidenceReady = true,
+            promotionReady = false,
+            totalSamples = 24,
+            minimumTotalSamples = 24,
+            activeSamples = 6,
+            minimumActiveSamples = 6,
+            actionCategories = 2,
+            minimumActionCategories = 2,
+            jumpSamples = 2,
+            minimumJumpSamples = 2,
+            slideSamples = 2,
+            minimumSlideSamples = 2,
+            formalChoices = 5,
+            minimumFormalChoices = 5,
+            successfulChoices = 3,
+            minimumSuccessfulChoices = 3,
+            preferredLane = 2,
+            preferredLaneUnique = true,
+            strongestRouteChoices = 3,
+            minimumStrongestRouteChoices = 3,
+            preferredLaneConfidence = 0.6f
+        };
+
+        string result = EchoRunPresentation
+            .BuildSingleContractCalibrationResult(progress);
+
+        StringAssert.StartsWith("回声形成遇到问题", result);
+        StringAssert.Contains("已经到终点", result);
+        StringAssert.Contains("学习条已经全亮", result);
     }
 
     [Test]
@@ -166,8 +266,8 @@ public sealed class SingleContractProductionUiTests
         StringAssert.Contains("下一代未形成", challenge);
         StringAssert.Contains("当前回声保持不变", challenge);
         StringAssert.DoesNotContain("已经形成", challenge);
-        StringAssert.Contains("校准结算保存失败", calibration);
-        StringAssert.Contains("不会改写当前回声", calibration);
+        StringAssert.Contains("回声保存失败", calibration);
+        StringAssert.Contains("当前回声未改变", calibration);
         StringAssert.DoesNotContain("校准完成", calibration);
     }
 
@@ -238,10 +338,16 @@ public sealed class SingleContractProductionUiTests
             .BuildSingleContractCognitionSummary(assessment);
 
         Assert.AreEqual(
-            "上一代路线认知：偏向左侧 · 置信度 83%\n"
-            + "本局发生：反制 4/6 · 第3门起追学\n"
-            + "路线认知反转：第4代改判为中间 · 67%",
+            "它原本认为：压力时你偏向左侧\n"
+            + "这局你骗过它 4/6 次 · 从第3次选路起，它改猜了\n"
+            + "下一代已经改猜：压力时你偏向中间",
             summary);
+        foreach (string forbidden in new[]
+                 {
+                     "校准", "契约", "正式选择", "草稿", "身份",
+                     "采样", "追学", "置信度", "路线认知"
+                 })
+            StringAssert.DoesNotContain(forbidden, summary);
     }
 
     [Test]
@@ -273,7 +379,7 @@ public sealed class SingleContractProductionUiTests
         Assert.IsTrue(assessment.IsAvailable);
         Assert.AreEqual(EchoCognitionChangeKind.Shaken,
             assessment.ChangeKind);
-        StringAssert.DoesNotContain("开始转向",
+        StringAssert.DoesNotContain("开始改猜",
             EchoRunPresentation.BuildSingleContractCognitionSummary(
                 assessment));
     }
@@ -322,8 +428,8 @@ public sealed class SingleContractProductionUiTests
 
         string summary = EchoRunPresentation
             .BuildSingleContractCognitionSummary(assessment);
-        StringAssert.Contains("反制 1/6 · 回声未追学", summary);
-        StringAssert.Contains("路线无新认知", summary);
+        StringAssert.Contains("这局你骗过它 1/6 次 · 它没有改猜", summary);
+        StringAssert.Contains("下一代没有改猜", summary);
     }
 
     [Test]

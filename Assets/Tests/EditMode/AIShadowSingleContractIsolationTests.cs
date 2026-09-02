@@ -231,6 +231,91 @@ public sealed class AIShadowSingleContractIsolationTests
     }
 
     [Test]
+    public void CalibrationDraftFlowsThroughRunnerAndPresenterWithoutPersistence()
+    {
+        SetSaveField("_singleContractData",
+            new EchoSingleContractSaveData());
+        SetSaveField("_singleContractInitialized", true);
+        GameObject host = new GameObject("Calibration HUD Flow Test");
+        AIShadowRunner runner = host.AddComponent<AIShadowRunner>();
+        runner.minimumTrainingSamples = 6;
+        runner.minimumActiveTrainingSamples = 4;
+        runner.minimumActionCategories = 2;
+        runner.minimumJumpSamples = 2;
+        runner.minimumSlideSamples = 2;
+        SetRunnerField(runner, "_activeGameplayFlowMode",
+            GameplayFlowMode.SingleContract);
+        InvokeRunner(runner, "BeginRun");
+        var draft = (RunIdentityDraft)RunnerField(
+            runner, "_runIdentityDraft").GetValue(runner);
+        draft.RecordSample(ShadowAction.Jump);
+        draft.RecordSample(ShadowAction.Jump);
+        draft.RecordSample(ShadowAction.Slide);
+        draft.RecordFormalGateChoice(1, 2, true);
+        draft.RecordFormalGateChoice(2, 2, false);
+
+        SingleContractHudData data =
+            EchoHudPresenter.BuildSingleContractHudData(null, runner, "");
+
+        Assert.IsTrue(data.showCalibrationProgress);
+        Assert.AreEqual("AI 学习 3/6 · 主动 3/4 · 种类 2/2",
+            data.memory);
+        Assert.AreEqual("跳 2/2 · 滑 1/2 · 受伤 0",
+            data.calibrationActionProgress);
+        Assert.AreEqual("选路 2/5 · 通过 1/3 · 右路2/3",
+            data.calibrationRouteProgress);
+        Assert.AreEqual(1f / 3f, data.calibrationProgress01, 0.0001f);
+        Object.DestroyImmediate(host);
+    }
+
+    [Test]
+    public void InterruptedCalibrationKeepsOnlyAResultSnapshotAfterDraftDiscard()
+    {
+        SetSaveField("_singleContractData",
+            new EchoSingleContractSaveData
+            {
+                importedLegacyFingerprint =
+                    "calibration-result-snapshot-test"
+            });
+        SetSaveField("_singleContractInitialized", true);
+        GameObject host = new GameObject("Calibration Result Snapshot Test");
+        AIShadowRunner runner = host.AddComponent<AIShadowRunner>();
+        runner.minimumTrainingSamples = 6;
+        runner.minimumActiveTrainingSamples = 4;
+        runner.minimumActionCategories = 2;
+        runner.minimumJumpSamples = 2;
+        runner.minimumSlideSamples = 2;
+        SetRunnerField(runner, "_activeGameplayFlowMode",
+            GameplayFlowMode.SingleContract);
+        InvokeRunner(runner, "BeginRun");
+        var draft = (RunIdentityDraft)RunnerField(
+            runner, "_runIdentityDraft").GetValue(runner);
+        draft.RecordSample(ShadowAction.Jump);
+        draft.RecordFormalGateChoice(1, 2, true);
+
+        InvokeRunner(runner, "FinishSingleContractRun",
+            RunEndReason.Collision);
+
+        Assert.IsNull(RunnerField(runner, "_runIdentityDraft")
+            .GetValue(runner));
+        SingleContractCalibrationProgress snapshot =
+            runner.LastSingleContractCalibrationProgress;
+        Assert.IsTrue(snapshot.available);
+        Assert.IsFalse(snapshot.finishReached);
+        Assert.AreEqual(1, snapshot.totalSamples);
+        Assert.AreEqual(1, snapshot.formalChoices);
+        StringAssert.Contains("观察 1/6", runner.LastResult);
+        StringAssert.Contains("选路 1/5", runner.LastResult);
+        StringAssert.Contains("还没到终点", runner.LastResult);
+        StringAssert.Contains("这局观察不会带到下一局", runner.LastResult);
+        StringAssert.DoesNotContain("未完成", runner.LastResult);
+        StringAssert.DoesNotContain("草稿", runner.LastResult);
+        StringAssert.DoesNotContain("失败", runner.LastResult);
+        Assert.IsNull(EchoRunSaveSystem.GetActiveEchoIdentity());
+        Object.DestroyImmediate(host);
+    }
+
+    [Test]
     public void FixedValidationChallengeUsesTransientIdentityAndNeverWritesArchive()
     {
         string persistedIdentityBefore =

@@ -13,6 +13,7 @@ public sealed class EchoHudPresenter : MonoBehaviour
     private bool _hasSingleContractVisualState;
     private SingleContractVisualState _lastSingleContractVisualState;
     private bool _lastSingleContractOpeningMemory;
+    private bool _lastSingleContractOpeningReplay;
     private bool _hasSingleContractPrediction;
     private string _lastSingleContractPredictionKey = "";
     private int _lastSingleContractPredictionGateNumber;
@@ -149,6 +150,13 @@ public sealed class EchoHudPresenter : MonoBehaviour
                     : SingleContractVisualState.Calibration,
                 openingMemory = shadow != null
                                 && shadow.IsSingleContractOpeningMemory,
+                openingReplay = shadow != null
+                                && shadow.HasSingleContractOpeningReplay,
+                openingReplayAction = shadow != null
+                    ? shadow.SingleContractOpeningReplayAction
+                    : ShadowAction.Keep,
+                openingReplayCount = shadow != null
+                    ? shadow.SingleContractOpeningReplayCount : 0,
                 generation = shadow != null ? shadow.Generation : 0,
                 memory = shadow != null
                     ? shadow.SingleContractMemoryText
@@ -177,6 +185,9 @@ public sealed class EchoHudPresenter : MonoBehaviour
                     ? shadow.SingleContractFeedbackLeadDeltaMeters : 0f,
                 feedbackSequence = shadow != null
                     ? shadow.SingleContractFeedbackSequence : 0,
+                calibrationProgress = shadow != null
+                    ? shadow.CurrentSingleContractCalibrationProgress
+                    : default,
                 result = shadow != null ? shadow.LastResult : ""
             });
     }
@@ -193,6 +204,7 @@ public sealed class EchoHudPresenter : MonoBehaviour
         _presentingSingleContract = false;
         _hasSingleContractVisualState = false;
         _lastSingleContractOpeningMemory = false;
+        _lastSingleContractOpeningReplay = false;
         _hasMode = false;
     }
 
@@ -206,6 +218,7 @@ public sealed class EchoHudPresenter : MonoBehaviour
         _announcementUntil = 0f;
         _hasSingleContractVisualState = false;
         _lastSingleContractOpeningMemory = false;
+        _lastSingleContractOpeningReplay = false;
     }
 
     private void RefreshSingleContract(AIShadowRunner shadow,
@@ -223,6 +236,9 @@ public sealed class EchoHudPresenter : MonoBehaviour
         bool openingChanged = !enteringSingleContract
                               && data.openingMemory
                               != _lastSingleContractOpeningMemory;
+        bool endingOpeningReplay = openingChanged
+                                   && !data.openingMemory
+                                   && _lastSingleContractOpeningReplay;
         bool stateChanged = enteringSingleContract
                             || !_hasSingleContractVisualState
                             || data.visualState
@@ -230,7 +246,9 @@ public sealed class EchoHudPresenter : MonoBehaviour
         bool emphasizeTransition =
             ShouldEmphasizeSingleContractTransition(
                 hadPreviousState, previousState, data.visualState,
-                data.openingMemory, openingChanged);
+                data.openingMemory,
+                openingChanged && !endingOpeningReplay,
+                data.openingReplay);
         bool returningFromRelearn = hadPreviousState
                                     && previousState
                                     == SingleContractVisualState.RelearnPulse
@@ -248,6 +266,7 @@ public sealed class EchoHudPresenter : MonoBehaviour
             _hasSingleContractVisualState = true;
             _lastSingleContractVisualState = data.visualState;
             _lastSingleContractOpeningMemory = data.openingMemory;
+            _lastSingleContractOpeningReplay = data.openingReplay;
             _announcementUntil = emphasizeTransition
                 ? Time.unscaledTime + 1f : 0f;
             if (enteringSingleContract) _lastFeedbackSequence = -1;
@@ -284,9 +303,10 @@ public sealed class EchoHudPresenter : MonoBehaviour
     public static bool ShouldEmphasizeSingleContractTransition(
         bool hasPreviousState, SingleContractVisualState previousState,
         SingleContractVisualState currentState, bool openingMemory,
-        bool openingChanged)
+        bool openingChanged, bool openingReplay = false)
     {
-        if (openingMemory) return false;
+        if (openingMemory)
+            return openingReplay && (!hasPreviousState || openingChanged);
         if (hasPreviousState
             && previousState == SingleContractVisualState.RelearnPulse
             && currentState == SingleContractVisualState.Challenge)
@@ -315,10 +335,17 @@ public sealed class EchoHudPresenter : MonoBehaviour
     {
         string value = (data.prediction ?? "").Trim();
         if (string.IsNullOrEmpty(value)) return "";
-        const string token = "预测：";
-        int start = value.IndexOf(token);
+        const string playerToken = "它猜";
+        const string legacyToken = "预测：";
+        int start = value.IndexOf(playerToken);
+        int tokenLength = playerToken.Length;
+        if (start < 0)
+        {
+            start = value.IndexOf(legacyToken);
+            tokenLength = legacyToken.Length;
+        }
         if (start < 0) return value;
-        start += token.Length;
+        start += tokenLength;
         int lineEnd = value.IndexOf('\n', start);
         if (lineEnd < 0) lineEnd = value.Length;
         return value.Substring(start, lineEnd - start).Trim();

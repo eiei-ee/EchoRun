@@ -42,6 +42,7 @@ public static class EchoRunUITheme
     public static readonly Color HudPanel = new Color32(4, 10, 14, 164);
     public static readonly Color HudPanelRaised = new Color32(8, 16, 21, 196);
     public static readonly Color HudMessageVeil = new Color32(0, 0, 0, 0);
+    public static readonly Color HudPredictionVeil = new Color32(4, 10, 14, 216);
     public static readonly Color HudInk = new Color32(238, 244, 246, 255);
     public static readonly Color HudInkMuted = new Color32(170, 185, 189, 240);
     public static readonly Color HudRule = new Color32(218, 232, 234, 46);
