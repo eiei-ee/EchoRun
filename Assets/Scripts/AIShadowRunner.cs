@@ -341,6 +341,7 @@ public class AIShadowRunner : MonoBehaviour
     private float _singleContractFeedbackLeadDeltaMeters;
     private bool _singleContractFeedbackRelearned;
     private GateAttempt _lastSingleContractGateAttempt;
+    private GateAttempt _relearnTriggerGateAttempt;
     private int _singleContractFeedbackSequence;
     private int _nextSingleContractSettlementIndex;
     private readonly HashSet<int> _singleContractPresentedTelemetry =
@@ -1023,6 +1024,7 @@ public class AIShadowRunner : MonoBehaviour
         _singleContractFeedbackLeadDeltaMeters = 0f;
         _singleContractFeedbackRelearned = false;
         _lastSingleContractGateAttempt = null;
+        _relearnTriggerGateAttempt = null;
         _singleContractFeedbackSequence = 0;
         _nextSingleContractSettlementIndex = 0;
         _singleContractPresentedTelemetry.Clear();
@@ -1082,6 +1084,7 @@ public class AIShadowRunner : MonoBehaviour
         _singleContractFeedbackLeadDeltaMeters = 0f;
         _singleContractFeedbackRelearned = false;
         _lastSingleContractGateAttempt = null;
+        _relearnTriggerGateAttempt = null;
         _singleContractFeedbackSequence = 0;
         _nextSingleContractSettlementIndex = 0;
         _singleContractPresentedTelemetry.Clear();
@@ -2041,8 +2044,14 @@ public class AIShadowRunner : MonoBehaviour
 
     private string AppendSingleContractGateReview(string result)
     {
+        string adaptation = EchoRunPresentation.BuildSingleContractAdaptationReview(
+            _relearnTriggerGateAttempt,
+            _runAdaptationState != null
+                ? _runAdaptationState.relearnStartGateNumber : 0);
         string review = EchoRunPresentation.BuildSingleContractGateReview(
             _lastSingleContractGateAttempt);
+        if (!string.IsNullOrEmpty(adaptation))
+            result += "\n" + adaptation;
         return string.IsNullOrEmpty(review) ? result : result + "\n" + review;
     }
 
@@ -3064,6 +3073,9 @@ public class AIShadowRunner : MonoBehaviour
                 // Keep this gate's choice/execution feedback and add its
                 // adaptation consequence to the same message and sequence.
                 _singleContractFeedbackRelearned = true;
+                _relearnTriggerGateAttempt = attempt;
+                TrackManager.Instance?.RefreshSingleContractGateVisuals(
+                    _singleContractFlow);
                 RecordSingleContractGateEvent(
                     AISingleContractEventType.EchoRelearned, gate,
                     settlement, PlayerLead, PlayerLead, true);
@@ -3220,7 +3232,7 @@ public class AIShadowRunner : MonoBehaviour
     private void RecordSingleContractGateEvent(string type,
         PredictionGateController gate,
         PredictionGateSettlement settlement = default,
-        float leadBefore = 0f, float leadAfter = 0f,
+        float leadBefore = float.NaN, float leadAfter = float.NaN,
         bool relearned = false)
     {
         if (gate == null)
@@ -3252,6 +3264,25 @@ public class AIShadowRunner : MonoBehaviour
                 sequence = definition.sequence,
                 hypothesisVersion = definition.hypothesisVersion,
                 predictedLane = predictedLane,
+                availableLanes = definition.lanes,
+                playerLane = _player != null ? _player.CurrentLane : -1,
+                playerLateralOffset = _player != null
+                    ? _player.MotionSnapshot.LateralOffset : 0f,
+                collisionStrikes = _gameManager != null
+                    ? _gameManager.CollisionStrikes : -1,
+                recoveryRemaining = _gameManager != null
+                    ? _gameManager.CollisionRecoveryTimeRemaining : 0f,
+                currentSpeed = _gameManager != null ? _gameManager.CurrentSpeed : 0f,
+                presentationDistance = definition.presentationDistance,
+                commitDistance = definition.commitDistance,
+                resolveDistance = definition.resolveDistance,
+                exitDistance = definition.exitDistance,
+                sourceIdentityId = _frozenSingleContractIdentity != null
+                    ? _frozenSingleContractIdentity.identityId : "",
+                sourceRunSequence = _frozenSingleContractIdentity != null
+                    ? _frozenSingleContractIdentity.sourceRunSequence : 0,
+                relearnStartGateNumber = _singleContractFlow != null
+                    ? _singleContractFlow.RelearnStartGateNumber : 0,
                 committedLane = attempt.committedLane,
                 chosenRole = attempt.chosenRole,
                 strategyKey = attempt.strategyKey,
@@ -3264,8 +3295,8 @@ public class AIShadowRunner : MonoBehaviour
                 speedAtResolution = settlement.speedAtResolution,
                 secondsDelta = settlement.signedLeadSeconds,
                 metersDelta = settlement.signedLeadMeters,
-                leadBefore = leadBefore,
-                leadAfter = leadAfter,
+                leadBefore = float.IsNaN(leadBefore) ? PlayerLead : leadBefore,
+                leadAfter = float.IsNaN(leadAfter) ? PlayerLead : leadAfter,
                 relearned = relearned
             });
     }

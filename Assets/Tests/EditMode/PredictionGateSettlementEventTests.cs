@@ -14,6 +14,49 @@ public sealed class PredictionGateSettlementEventTests
     }
 
     [Test]
+    public void PrewarmedSignsFollowRelearnWithoutChangingPhysicalContent()
+    {
+        SingleContractFlow flow = CreateFlowWithCounterSuccess();
+        var host = new GameObject("Prewarmed Gate Visual Test");
+        host.SetActive(false);
+        TrackManager track = host.AddComponent<TrackManager>();
+        var segments = new System.Collections.Generic.List<GameObject>();
+        try
+        {
+            for (int index = 0; index < 3; index++)
+            {
+                var segment = new GameObject("GateRoad" + index);
+                segment.transform.SetParent(host.transform);
+                PredictionGateDefinition gate = flow.GetGate(index).Definition;
+                var data = segment.AddComponent<TrackSegmentData>();
+                data.routeDistance = gate.resolveDistance - 5f;
+                new GameObject("ExistingObstacleAndCoins").transform.SetParent(segment.transform);
+                typeof(TrackManager).GetMethod("SpawnPredictionGateVisual",
+                    BindingFlags.NonPublic | BindingFlags.Instance).Invoke(track,
+                    new object[] { segment, gate, data.routeDistance });
+                segments.Add(segment);
+            }
+            SetPrivateField(track, "_activeSegments", segments);
+            Transform settledVisual = segments[0].transform.Find(TrackManager.PredictionGateVisualRootName);
+            Transform pendingVisual = segments[2].transform.Find(TrackManager.PredictionGateVisualRootName);
+            Transform content = segments[2].transform.Find("ExistingObstacleAndCoins");
+            ResolveCounter(flow, 1);
+            Assert.IsTrue(flow.RelearnTriggered);
+            track.RefreshSingleContractGateVisuals(flow);
+            Assert.AreSame(settledVisual, segments[0].transform.Find(TrackManager.PredictionGateVisualRootName));
+            Transform refreshed = segments[2].transform.Find(TrackManager.PredictionGateVisualRootName);
+            Assert.AreNotSame(pendingVisual, refreshed);
+            foreach (PredictionGateLane lane in flow.GetGate(2).Definition.lanes)
+                Assert.IsNotNull(refreshed.Find("Lane_" + lane.physicalLane + "_" + lane.role));
+            Assert.AreSame(content, segments[2].transform.Find("ExistingObstacleAndCoins"));
+            track.RefreshSingleContractGateVisuals(flow);
+            Assert.AreSame(refreshed, segments[2].transform.Find(TrackManager.PredictionGateVisualRootName),
+                "Repeated synchronization must not respawn signs.");
+        }
+        finally { Object.DestroyImmediate(host); }
+    }
+
+    [Test]
     public void ConsumedCounterSettlementIsPublishedExactlyOnce()
     {
         SingleContractFlow flow = CreateFlowWithCounterSuccess();
@@ -84,6 +127,14 @@ public sealed class PredictionGateSettlementEventTests
         Assert.IsTrue(runner.SingleContractFeedbackRelearned);
         Assert.AreEqual(2, runner.SingleContractFeedbackSequence,
             "The second gate's result and relearn must be one notification.");
+        string review = (string)typeof(AIShadowRunner).GetMethod(
+            "AppendSingleContractGateReview",
+            BindingFlags.NonPublic | BindingFlags.Instance)
+            .Invoke(runner, new object[] { "回声胜出\n下一局仍使用本代记录" });
+        StringAssert.Contains("改猜原因：连续两次反制通过", review);
+        StringAssert.Contains("从第3次选路起调整预测", review);
+        StringAssert.Contains("下一局仍使用本代记录", review,
+            "Observed adaptation must not claim identity promotion after defeat.");
         InvokePrivate(runner, "ConsumeSingleContractSettlements");
         Assert.AreEqual(2, runner.SingleContractFeedbackSequence);
     }

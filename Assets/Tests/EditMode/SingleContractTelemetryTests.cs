@@ -75,6 +75,51 @@ public sealed class SingleContractTelemetryTests
     }
 
     [Test]
+    public void UnchosenRoutesAreDeepCopiedAndSurviveSerialization()
+    {
+        BeginTelemetry();
+        var source = new AISingleContractEventSample
+        {
+            type = AISingleContractEventType.GatePresented,
+            availableLanes = new[]
+            {
+                new PredictionGateLane { physicalLane = 2,
+                    role = PredictionGateRole.Counter, coinCount = 7,
+                    obstacle = new PredictionGateObstacle {
+                        isRequired = true, obstacleType = ObstacleType.High,
+                        prefabIndex = 1 } }
+            },
+            playerLane = 0, playerLateralOffset = -2.5f,
+            collisionStrikes = 1, recoveryRemaining = 0.75f,
+            currentSpeed = 20f, leadBefore = -4f, leadAfter = -4f,
+            sourceIdentityId = "echo-from-earlier-win", sourceRunSequence = 6,
+            presentationDistance = 100f, commitDistance = 120f,
+            resolveDistance = 140f, exitDistance = 160f,
+            relearnStartGateNumber = 3
+        };
+        AIRunTelemetry.RecordSingleContractEvent(source);
+        source.availableLanes[0] = default;
+        AISingleContractEventSample restored = AIRunTelemetry.FromJson(
+            AIRunTelemetry.GetLatestRunJson()).singleContractEvents[0];
+        Assert.AreEqual(2, restored.availableLanes[0].physicalLane);
+        Assert.IsTrue(restored.availableLanes[0].obstacle.isRequired);
+        Assert.AreEqual(7, restored.availableLanes[0].coinCount);
+        Assert.AreEqual(0, restored.playerLane);
+        Assert.AreEqual(-2.5f, restored.playerLateralOffset);
+        Assert.AreEqual(1, restored.collisionStrikes);
+        Assert.AreEqual(0.75f, restored.recoveryRemaining);
+        Assert.AreEqual(20f, restored.currentSpeed);
+        Assert.AreEqual(-4f, restored.leadBefore);
+        Assert.AreEqual(6, restored.sourceRunSequence);
+        Assert.AreEqual("echo-from-earlier-win", restored.sourceIdentityId);
+        Assert.AreEqual(100f, restored.presentationDistance);
+        Assert.AreEqual(120f, restored.commitDistance);
+        Assert.AreEqual(140f, restored.resolveDistance);
+        Assert.AreEqual(160f, restored.exitDistance);
+        Assert.AreEqual(3, restored.relearnStartGateNumber);
+    }
+
+    [Test]
     public void IdentityEventRoundTripPreservesTransactionEvidence()
     {
         BeginTelemetry();

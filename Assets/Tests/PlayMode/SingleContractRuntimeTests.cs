@@ -416,7 +416,7 @@ public sealed class SingleContractRuntimeTests
         var announcement = (UnityEngine.UI.Text)GetField(view,
             "announcementText");
         Assert.AreEqual("第4代回声现身", announcement.text);
-        Assert.AreEqual("正在重演：上一局滑铲×4", directive.text);
+        Assert.AreEqual("正在重演：回声记录的滑铲×4", directive.text);
         Assert.IsTrue(Find(hud, "HudDynamicCanvas/Announcement")
             .activeInHierarchy);
         foreach (string visiblePath in new[]

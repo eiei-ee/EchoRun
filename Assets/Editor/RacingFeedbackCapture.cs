@@ -59,6 +59,11 @@ public static class RacingFeedbackCapture
     [MenuItem("Tools/Echo Runner/Capture Result Summary V1")]
     public static void CaptureResultSummary()
     {
+        CaptureResultSummary("ResultSummaryV1");
+    }
+
+    private static void CaptureResultSummary(string suite)
+    {
         if (EditorApplication.isPlaying)
             throw new System.InvalidOperationException(
                 "Run result-summary captures outside Play Mode.");
@@ -76,7 +81,7 @@ public static class RacingFeedbackCapture
                         ? NewSceneMode.Single : NewSceneMode.Additive);
                 SceneManager.SetActiveScene(captureScene);
                 string directory = Path.GetFullPath(Path.Combine(Application.dataPath,
-                    "..", "TestResults", "ResultSummaryV1", "Captures"));
+                    "..", "TestResults", suite, "Captures"));
                 Directory.CreateDirectory(directory);
                 var report = new StringBuilder();
                 report.AppendLine("Actual UIManager result components with injected full-result data.");
@@ -498,7 +503,14 @@ public static class RacingFeedbackCapture
         }
     }
 
-    private static void CaptureInternal(bool includeBaseline)
+    public static void CaptureCoreExperience()
+    {
+        CaptureInternal(true, "CoreExperienceV1", false);
+        CaptureResultSummary("CoreExperienceV1");
+    }
+
+    private static void CaptureInternal(bool includeBaseline,
+        string suite = "RacingFeedbackV1", bool rebuildPrefab = true)
     {
         if (EditorApplication.isPlaying)
             throw new System.InvalidOperationException(
@@ -510,7 +522,7 @@ public static class RacingFeedbackCapture
             NewSceneSetup.EmptyScene, replaceEmptyUntitledScene
                 ? NewSceneMode.Single : NewSceneMode.Additive);
         string outputDirectory = Path.GetFullPath(Path.Combine(
-            Application.dataPath, "..", "TestResults", "RacingFeedbackV1", "Captures"));
+            Application.dataPath, "..", "TestResults", suite, "Captures"));
         var report = new StringBuilder();
         report.AppendLine("Real Unity HUD rendering at injected feedback ages.");
         report.AppendLine("Scope: layout and alpha states only; not gameplay or event timing.");
@@ -527,7 +539,7 @@ public static class RacingFeedbackCapture
                 SceneManager.SetActiveScene(captureScene);
                 // Build in the temporary scene so its transient objects cannot
                 // dirty the user's open gameplay scene.
-                EchoHudPrefabBuilder.Build();
+                if (rebuildPrefab) EchoHudPrefabBuilder.Build();
                 Directory.CreateDirectory(outputDirectory);
                 if (includeBaseline)
                 {

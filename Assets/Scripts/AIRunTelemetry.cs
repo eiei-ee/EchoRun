@@ -74,6 +74,22 @@ public sealed class AISingleContractEventSample
     public float leadAfter;
     public bool relearned;
 
+    // Event-time choice set, including unchosen routes. Defaults distinguish
+    // older recordings / missing runtime objects from actual zero values.
+    public PredictionGateLane[] availableLanes = new PredictionGateLane[0];
+    public int playerLane = -1;
+    public float playerLateralOffset;
+    public int collisionStrikes = -1;
+    public float recoveryRemaining;
+    public float currentSpeed;
+    public float presentationDistance;
+    public float commitDistance;
+    public float resolveDistance;
+    public float exitDistance;
+    public string sourceIdentityId = "";
+    public int sourceRunSequence;
+    public int relearnStartGateNumber;
+
     public string oldIdentityId = "";
     public string newIdentityId = "";
     public string transactionId = "";
@@ -83,7 +99,11 @@ public sealed class AISingleContractEventSample
 
     public AISingleContractEventSample Clone()
     {
-        return (AISingleContractEventSample)MemberwiseClone();
+        var copy = (AISingleContractEventSample)MemberwiseClone();
+        copy.availableLanes = availableLanes != null
+            ? (PredictionGateLane[])availableLanes.Clone()
+            : new PredictionGateLane[0];
+        return copy;
     }
 }
 
@@ -238,7 +258,7 @@ public sealed class AIRunTelemetryData
 
 public static class AIRunTelemetry
 {
-    public const int SchemaVersion = 9;
+    public const int SchemaVersion = 10;
     public const float StateSampleInterval = 0.25f;
     public const string CompletedTrainingReason = "finish_reached";
 
@@ -617,6 +637,25 @@ public static class AIRunTelemetry
 
         string json = JsonUtility.ToJson(_active);
         EchoRunSaveSystem.SaveLastRunTelemetry(json);
+        // Explicit playtest opt-in. Keep every finished run before Restart
+        // replaces the in-memory record; ordinary players retain existing behavior.
+#if UNITY_STANDALONE_WIN && !UNITY_EDITOR
+        if (Array.IndexOf(Environment.GetCommandLineArgs(),
+                "-echo-playtest-export") >= 0)
+        {
+            try
+            {
+                Debug.Log("Playtest telemetry exported: " + ExportLatestRun(
+                    Path.Combine(Application.persistentDataPath, "Playtest",
+                        _active.startedUtcTicks.ToString())));
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("Playtest telemetry export failed: "
+                                 + exception.Message);
+            }
+        }
+#endif
         return json;
     }
 

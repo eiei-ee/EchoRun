@@ -274,9 +274,9 @@ public static class EchoRunPresentation
         return new EchoMenuViewData
         {
             generation = generationText,
-            learned = "最近选路：" + SingleContractRouteObservation(
-                memory.preferredLane),
-            rule = "预测路线通过会让回声抢先；连续两次反制通过后改猜",
+            learned = "当前回声记录：" + SingleContractRouteObservation(
+                memory.preferredLane) + " → 初始预测依据",
+            rule = "预测路线通过会让回声抢先；连续两次反制通过，且至少剩两次选路时改猜",
             objective = "领先回声到终点",
             primaryAction = "挑战第" + generation + "代回声"
         };
@@ -607,6 +607,19 @@ public static class EchoRunPresentation
             case "中间": return "中路";
             default: return lane;
         }
+    }
+
+    public static string BuildSingleContractAdaptationReview(
+        GateAttempt trigger, int startGateNumber)
+    {
+        if (trigger == null || trigger.gateId <= 0 || startGateNumber <= 0
+            || trigger.chosenRole != PredictionGateRole.Counter
+            || trigger.execution != GateExecutionOutcome.Success)
+            return "";
+        return "改猜原因：连续两次反制通过\n"
+               + "触发选路（第" + trigger.gateId + "次）："
+               + CompactSingleContractLaneName(trigger.committedLane)
+               + "反制通过；从第" + startGateNumber + "次选路起调整预测";
     }
 
     public static string BuildSingleContractGateReview(GateAttempt attempt)
@@ -1228,7 +1241,7 @@ public static class EchoRunPresentation
                 message = "尝试反制 · 通过未完成";
                 break;
             case SingleContractInstantFeedback.EchoRelearned:
-                return "后续预测已调整";
+                return "连续反制通过 · 后续预测已调整";
             case SingleContractInstantFeedback.ExecutionIncomplete:
                 message = "通过未完成";
                 break;
@@ -1238,7 +1251,8 @@ public static class EchoRunPresentation
             default:
                 return "";
         }
-        return message + (relearned ? " · 后续预测已调整" : "");
+        return relearned
+            ? "连续反制通过 · 后续预测已调整" : message;
     }
 
     private static string SingleContractLeadDelta(float meters)
@@ -1323,7 +1337,7 @@ public static class EchoRunPresentation
                 break;
         }
 
-        return "正在重演：上一局" + actionText + "×" + Mathf.Max(1, count);
+        return "正在重演：回声记录的" + actionText + "×" + Mathf.Max(1, count);
     }
 
     private static string TrimPrefix(string value, string prefix)

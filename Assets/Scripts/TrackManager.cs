@@ -1054,6 +1054,35 @@ public class TrackManager : MonoBehaviour
             gate.isFinal ? 1f : 0f);
     }
 
+    public void RefreshSingleContractGateVisuals(SingleContractFlow flow)
+    {
+        if (flow == null) return;
+        foreach (GameObject segment in _activeSegments)
+        {
+            if (segment == null) continue;
+            TrackSegmentData data = segment.GetComponent<TrackSegmentData>();
+            Transform visual = segment.transform.Find(PredictionGateVisualRootName);
+            if (data == null || visual == null) continue;
+            for (int i = 0; i < flow.GateCount; i++)
+            {
+                PredictionGateDefinition gate = flow.GetGate(i).Definition;
+                if (gate.resolveDistance < data.routeDistance - 0.01f
+                    || gate.resolveDistance >= data.routeDistance + segmentLength - 0.01f)
+                    continue;
+                // Road shells can be populated before Presented. On relearn,
+                // synchronize their signs without respawning coins or obstacles.
+                foreach (PredictionGateLane lane in gate.lanes)
+                {
+                    if (visual.Find("Lane_" + lane.physicalLane + "_" + lane.role) != null)
+                        continue;
+                    SpawnPredictionGateVisual(segment, gate, data.routeDistance);
+                    break;
+                }
+                break;
+            }
+        }
+    }
+
     private void SpawnPredictionGateVisual(GameObject segment,
         PredictionGateDefinition gate, float segmentStart)
     {
@@ -1210,6 +1239,7 @@ public class TrackManager : MonoBehaviour
         Transform existing = segment.transform.Find(
             PredictionGateVisualRootName);
         if (existing == null) return;
+        existing.gameObject.SetActive(false);
         existing.SetParent(null, false);
         DestroyRuntimeObject(existing.gameObject);
     }

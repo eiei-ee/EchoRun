@@ -56,9 +56,9 @@ public sealed class SingleContractMenuTests
             EchoRunPresentation.BuildSingleContractMenu(identity);
 
         Assert.AreEqual("第3代回声", menu.generation);
-        Assert.AreEqual("最近选路：" + expectedLane,
+        Assert.AreEqual("当前回声记录：" + expectedLane + " → 初始预测依据",
             menu.learned);
-        Assert.AreEqual("预测路线通过会让回声抢先；连续两次反制通过后改猜",
+        Assert.AreEqual("预测路线通过会让回声抢先；连续两次反制通过，且至少剩两次选路时改猜",
             menu.rule);
         Assert.AreEqual("领先回声到终点", menu.objective);
         Assert.AreEqual("挑战第3代回声", menu.primaryAction);
@@ -121,7 +121,7 @@ public sealed class SingleContractMenuTests
             out string metrics, out string summary);
 
         StringAssert.Contains("第3代回声", metrics);
-        StringAssert.Contains("最近选路：偏右", metrics);
+        StringAssert.Contains("当前回声记录：偏右", metrics);
         StringAssert.Contains("连续两次反制通过", summary);
         StringAssert.Contains("领先回声到终点", summary);
         foreach (string forbidden in new[]

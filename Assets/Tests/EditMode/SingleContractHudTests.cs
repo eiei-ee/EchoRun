@@ -192,7 +192,7 @@ public sealed class SingleContractHudTests
 
         Assert.IsTrue(data.openingReplay);
         Assert.AreEqual("第3代回声现身", data.openingTitle);
-        Assert.AreEqual("正在重演：上一局滑铲×4", data.memory);
+        Assert.AreEqual("正在重演：回声记录的滑铲×4", data.memory);
         StringAssert.DoesNotContain("\n", data.memory);
     }
 
@@ -225,7 +225,7 @@ public sealed class SingleContractHudTests
     [TestCase(SingleContractInstantFeedback.CounterFailed, -6.8f,
         "尝试反制 · 通过未完成")]
     [TestCase(SingleContractInstantFeedback.EchoRelearned,
-        0f, "后续预测已调整")]
+        0f, "连续反制通过 · 后续预测已调整")]
     [TestCase(SingleContractInstantFeedback.ExecutionIncomplete,
         -3f, "通过未完成")]
     [TestCase(SingleContractInstantFeedback.ObservationInconclusive,
@@ -432,7 +432,7 @@ public sealed class SingleContractHudTests
         Assert.AreEqual(SingleContractInstantFeedback.RewriteSucceeded,
             data.instantFeedbackKind);
         Assert.IsTrue(data.feedbackRelearned);
-        Assert.AreEqual("反制通过 · 玩家 +5.0米 · 后续预测已调整",
+        Assert.AreEqual("连续反制通过 · 后续预测已调整",
             data.instantFeedback);
         StringAssert.DoesNotContain("\n", data.instantFeedback);
         Assert.AreEqual(4, data.feedbackSequence);
