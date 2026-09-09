@@ -460,7 +460,7 @@ public sealed class RuntimeSmokeTests
             context + "the runtime skybox is missing.");
         Assert.IsNotNull(RenderSettings.skybox.shader,
             context + "the runtime skybox shader is missing.");
-        Assert.AreEqual(WorldStyler.SeamlessSkyShaderName,
+        Assert.AreEqual("CityAfterimage/QuietSky",
             RenderSettings.skybox.shader.name,
             context + "the authored skybox was not restored.");
 
@@ -480,7 +480,9 @@ public sealed class RuntimeSmokeTests
             context + "no active track segment was generated.");
         foreach (TrackSegmentData segment in segments)
         {
-            Transform environment = segment.transform.Find("EchoEnvironment");
+            Transform environment = segment.transform.Find(
+                segment.segmentType == TrackSegmentType.Straight
+                    ? "CityV7Environment" : "EchoEnvironment");
             Assert.IsNotNull(environment,
                 context + segment.name + " has no authored environment.");
             Assert.IsTrue(environment.gameObject.activeInHierarchy,

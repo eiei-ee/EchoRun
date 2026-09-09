@@ -109,6 +109,7 @@ public class WorldStyler : MonoBehaviour
         ApplyCameraLayout(true);
 
         ConfigureLighting();
+        CityV7PlayableEnvironment.ApplyAtmosphere(_keyLight, _fillLight);
 
         GameObject floor = GameObject.Find("Plane");
         Renderer floorRenderer = floor != null ? floor.GetComponent<Renderer>() : null;
@@ -160,6 +161,7 @@ public class WorldStyler : MonoBehaviour
     public void DecorateSegment(GameObject segment, TrackSegmentType segmentType)
     {
         if (segment == null) return;
+        if (CityV7PlayableEnvironment.Decorate(segment, segmentType)) return;
         EnsurePalette();
         Transform existing = segment.transform.Find("EchoEnvironment");
         GameObject environment;
@@ -258,7 +260,7 @@ public class WorldStyler : MonoBehaviour
         RenderSettings.ambientGroundColor = BaseAmbientGround;
         ApplyVisualQuality(VisualQualityController.Current);
 
-        _skyMaterial = CreateSeamlessSkyMaterial();
+        _skyMaterial = CityV7PlayableEnvironment.CreateSky();
         if (_skyMaterial != null) RenderSettings.skybox = _skyMaterial;
     }
 
@@ -676,6 +678,7 @@ public class WorldStyler : MonoBehaviour
         accentEmission.a = 1f;
         ApplyMaterialColors(_fortressPhaseAccentMaterial, accent,
             accentEmission);
+        CityV7PlayableEnvironment.ApplyAtmosphere(_keyLight, _fillLight);
     }
 
     public static EchoWorldPhasePalette BuildPhasePalette(

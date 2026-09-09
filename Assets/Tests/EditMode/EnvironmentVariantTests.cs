@@ -71,7 +71,7 @@ public class EnvironmentVariantTests
     }
 
     [Test]
-    public void StraightSegmentPrebuildsExclusiveVisualVariants()
+    public void StraightSegmentLoadsExclusiveCityVariantWithoutColliders()
     {
         WorldStyler styler = CreateStyler();
         _segment = new GameObject("TrackSegment_Test");
@@ -79,73 +79,39 @@ public class EnvironmentVariantTests
         data.routeDistance = 60f;
 
         styler.DecorateSegment(_segment, TrackSegmentType.Straight);
-        Transform environment = _segment.transform.Find("EchoEnvironment");
+        Transform environment = _segment.transform.Find("CityV7Environment");
         Assert.NotNull(environment);
-        Assert.NotNull(environment.Find("Common"));
-        Assert.NotNull(environment.Find("HighQualityOnly"));
-        Transform variants = environment.Find("VisualVariants");
-        Assert.NotNull(variants);
-        bool hasFortressStraights = Resources.Load<GameObject>(WorldStyler
-                                       .ColdWhiteFortressStraight00ResourcePath)
-                                   != null
-                                   && Resources.Load<GameObject>(WorldStyler
-                                       .ColdWhiteFortressStraight40ResourcePath)
-                                   != null;
-        const int expectedVariantCount = 3;
-        Assert.AreEqual(expectedVariantCount, variants.childCount);
-
-        EchoEnvironmentVariantSet set =
-            environment.GetComponent<EchoEnvironmentVariantSet>();
-        Assert.AreEqual(expectedVariantCount, set.VariantCount);
-        Assert.AreEqual(1, CountActiveChildren(variants));
-        if (hasFortressStraights)
-            Assert.That(set.ActiveVariantIndex, Is.InRange(0, 1),
-                "The scan gate must not repeat as random roadside dressing.");
-        Assert.AreEqual(0,
-            environment.GetComponentsInChildren<Collider>(true).Length);
+        Assert.AreEqual(3, environment.GetComponent<CityV7ChunkIdentity>().index);
+        Assert.AreEqual(0, environment.GetComponentsInChildren<Collider>(true).Length);
+        styler.DecorateSegment(_segment, TrackSegmentType.Straight);
+        Assert.AreSame(environment, _segment.transform.Find("CityV7Environment"));
+        Assert.AreEqual(1, _segment.GetComponentsInChildren<CityV7ChunkIdentity>(true).Length);
     }
 
     [Test]
-    public void ExistingBakedEnvironmentRemapsToRuntimePhasePalette()
+    public void CityReplacesBakedEnvironmentWithoutReplacingAuthoredMaterials()
     {
         WorldStyler styler = CreateStyler();
         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(
             "Assets/Prefabs/TrackSegment.prefab");
         Assert.NotNull(prefab);
         _segment = Object.Instantiate(prefab);
+        int colliderCount = _segment.GetComponentsInChildren<Collider>(true).Length;
 
         styler.DecorateSegment(_segment, TrackSegmentType.Straight);
-        Transform environment = _segment.transform.Find("EchoEnvironment");
+        Assert.IsFalse(_segment.transform.Find("EchoEnvironment").gameObject.activeSelf);
+        Transform environment = _segment.transform.Find("CityV7Environment");
         Assert.NotNull(environment);
-        Renderer[] renderers =
-            environment.GetComponentsInChildren<Renderer>(true);
+        Renderer[] renderers = environment.GetComponentsInChildren<Renderer>(true);
         Assert.Greater(renderers.Length, 0);
         foreach (Renderer renderer in renderers)
+        foreach (Material material in renderer.sharedMaterials)
         {
-            foreach (Material material in renderer.sharedMaterials)
-            {
-                Assert.NotNull(material, renderer.name);
-                if (material.name.StartsWith("ColdWhiteFortress_")
-                    && material.name != WorldStyler
-                        .ColdWhiteFortressPhaseAccentMaterialName)
-                {
-                    Assert.IsTrue(AssetDatabase.Contains(material),
-                        renderer.name + " neutral fortress materials stay authored.");
-                    continue;
-                }
-                if (material.name == "EchoRoad")
-                {
-                    Assert.IsTrue(AssetDatabase.Contains(material),
-                        renderer.name + " keeps the shared formal road material.");
-                    continue;
-                }
-                Assert.IsFalse(AssetDatabase.Contains(material),
-                    renderer.name + " must use the runtime phase palette.");
-                Assert.IsTrue(material.name.StartsWith("Echo")
-                              || material.name == WorldStyler
-                                  .ColdWhiteFortressPhaseAccentMaterialName);
-            }
+            Assert.NotNull(material, renderer.name);
+            Assert.IsTrue(AssetDatabase.Contains(material),
+                renderer.name + " retains the authored city material.");
         }
+        Assert.AreEqual(colliderCount, _segment.GetComponentsInChildren<Collider>(true).Length);
     }
 
     [Test]
