@@ -135,7 +135,6 @@ public class GameManager : MonoBehaviour
         // styler, so recreate it here before TrackManager.Start builds pools.
         EnsureSceneService<WorldStyler>("WorldStyler_Runtime");
         EnsureSceneService<TrackManager>("TrackManager_Runtime");
-        EnsureSceneService<PowerUpShopUI>("Power Up Shop UI");
         EnsureSceneService<AITrainingDashboardUI>("AI Training Dashboard UI");
     }
 
@@ -225,9 +224,7 @@ public class GameManager : MonoBehaviour
 
         int baseScore = Mathf.FloorToInt(_distanceTraveled) + Coins * coinScore;
         int baseGain = Mathf.Max(0, baseScore - _lastBaseScore);
-        float multiplier = PowerUpController.Instance != null
-            ? PowerUpController.Instance.ScoreMultiplier
-            : 1f;
+        const float multiplier = 1f;
         _powerUpBonusScore += baseGain * Mathf.Max(0f, multiplier - 1f);
         _lastBaseScore = baseScore;
         int newScore = baseScore + Mathf.FloorToInt(_powerUpBonusScore);
@@ -307,13 +304,9 @@ public class GameManager : MonoBehaviour
                 : "");
 
         Time.timeScale = 1f;
-        bool disablePowerUps = fixedSingleContractRun
-                               && _activeSingleContractValidationConfig.disablePowerUps;
-        PowerUpController.Instance?.BeginRun(!disablePowerUps);
-        float turboBonus = PowerUpController.Instance != null
-            ? PowerUpController.Instance.GetTurboStartBonus()
-            : 0f;
-        CurrentSpeed = Mathf.Min(maxSpeed, startSpeed + turboBonus);
+        // Retired supplies must neither activate nor consume archived inventory.
+        PowerUpController.Instance?.BeginRun(false);
+        CurrentSpeed = Mathf.Min(maxSpeed, startSpeed);
         Score = 0;
         Coins = 0;
         ContractMarkerCount = 0;
@@ -583,6 +576,7 @@ public class GameManager : MonoBehaviour
 
     public bool TryPurchasePowerUp(PowerUpId id)
     {
+        if (!PowerUpController.IsAvailable) return false;
         PowerUpBalance definition = GameBalanceConfig.GetPowerUp(id);
         if (definition == null
             || !EchoRunSaveSystem.TryPurchasePowerUp(id, definition.cost))
@@ -598,6 +592,7 @@ public class GameManager : MonoBehaviour
 
     public bool SelectPowerUp(PowerUpId id)
     {
+        if (!PowerUpController.IsAvailable) return false;
         bool selected = EchoRunSaveSystem.SelectPowerUp(id);
         if (selected) AudioManager.Instance?.PlayUIConfirm();
         else AudioManager.Instance?.PlayUIError();

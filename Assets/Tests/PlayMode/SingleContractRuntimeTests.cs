@@ -211,7 +211,7 @@ public sealed class SingleContractRuntimeTests
             CreateInactiveComponent<PowerUpController>("MagnetPowerUp");
         SetAutoProperty(powerUp, "ActivePowerUp", PowerUpId.Magnet);
         SetAutoProperty(powerUp, "TimeRemaining", 10f);
-        Assert.IsTrue(powerUp.HasMagnet);
+        Assert.IsFalse(powerUp.HasMagnet);
 
         Coin coin = CreateGameObject("MagnetCoin").AddComponent<Coin>();
         coin.ConfigureEchoContractMarker(false);
@@ -256,8 +256,8 @@ public sealed class SingleContractRuntimeTests
             CreateInactiveComponent<PowerUpController>("ShieldPowerUp");
         SetAutoProperty(shield, "ActivePowerUp", PowerUpId.Shield);
         SetField(shield, "_shieldCharges", 1);
-        Assert.IsTrue(shield.TryAbsorbCollision(),
-            "The shield should absorb the physical damage after contact is recorded.");
+        Assert.IsFalse(shield.TryAbsorbCollision(),
+            "Archived shields cannot absorb damage in the no-supply release.");
         yield return null;
 
         GateAttempt attempt = flow.GetGate(0).BuildAttempt();

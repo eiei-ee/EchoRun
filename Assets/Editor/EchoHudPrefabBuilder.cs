@@ -30,12 +30,12 @@ public static class EchoHudPrefabBuilder
         GameObject dynamicLayer = Layer("HudDynamicCanvas", root.transform, 20, true);
 
         Image topInformationRail = Panel("TopInformationRail", staticLayer.transform,
-            new Vector2(0f, 1f), new Vector2(360f, 124f),
+            new Vector2(0f, 1f), new Vector2(360f, 160f),
             new Vector2(16f, -16f), new Vector2(0f, 1f), Backdrop)
             .GetComponent<Image>();
 
         Text stats = TextElement("StatsText", staticLayer.transform,
-            "SCORE 00000   RANGE 000m", 16, TextAnchor.MiddleLeft,
+            "SCORE 00000   RANGE 000m", 18, TextAnchor.MiddleLeft,
             TextMuted, new Vector2(0f, 1f), new Vector2(340f, 28f),
             new Vector2(26f, -140f), new Vector2(0f, 1f));
         Image statsPlate = Panel("StatsPlate", stats.transform.parent,

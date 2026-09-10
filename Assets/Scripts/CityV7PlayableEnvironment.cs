@@ -16,7 +16,8 @@ public static class CityV7PlayableEnvironment
         RenderSettings.fogColor=Color32ToColor(0xBFCAD0);RenderSettings.ambientMode=UnityEngine.Rendering.AmbientMode.Trilight;
         RenderSettings.ambientSkyColor=Color32ToColor(0x8FABD6);RenderSettings.ambientEquatorColor=Color32ToColor(0x6485B0)*.85f;RenderSettings.ambientGroundColor=Color32ToColor(0x415C82)*.65f;
         if(key!=null){key.color=Color32ToColor(0xFFF1DB);key.intensity=1.22f;key.transform.rotation=Quaternion.Euler(53,-40,0);key.shadowStrength=.86f;key.shadowBias=.035f;key.shadowNormalBias=.10f;}
-        if(fill!=null)fill.intensity=0;
+        // A restrained cool fill separates the unchanged runner from the dark road.
+        if(fill!=null){fill.intensity=.32f;fill.color=new Color(.72f,.84f,1f);}
     }
     public static bool Decorate(GameObject segment,TrackSegmentType type)
     {

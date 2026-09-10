@@ -174,7 +174,7 @@ public sealed class PredictionGateTests
                     BindingFlags.Instance | BindingFlags.NonPublic)
                 ?.SetValue(shield, 1);
 
-            Assert.IsTrue(shield.TryAbsorbCollision());
+            Assert.IsFalse(shield.TryAbsorbCollision());
             Assert.AreEqual(GateExecutionOutcome.Hit, hit.execution);
             Assert.IsFalse(hit.IsCounterSuccess);
             Assert.AreEqual(GateTransitionResult.Rejected,

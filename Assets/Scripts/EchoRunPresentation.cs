@@ -497,6 +497,17 @@ public static class EchoRunPresentation
                    progress, compact: true);
     }
 
+    public static string BuildPlayerRouteEvidence(SingleContractCalibrationProgress progress)
+    {
+        if (progress.formalChoices <= 0) return "本局还没有可用的选路记录";
+        if (!progress.preferredLaneUnique || progress.preferredLane < 0)
+            return "本局记录了 " + progress.formalChoices + " 次选路，尚无唯一偏向";
+        string lane = progress.preferredLane == 0 ? "左路"
+            : progress.preferredLane == 2 ? "右路" : "中路";
+        return "本局 " + progress.formalChoices + " 次选路中，有 "
+               + progress.strongestRouteChoices + " 次选择了" + lane;
+    }
+
     // The original result remains the evidence record. These two projections
     // let the result screen keep the record change brief without losing detail.
     public static string BuildSingleContractResultSummary(string fullResult)
@@ -519,6 +530,15 @@ public static class EchoRunPresentation
             return "下一代尚未形成\n当前回声保持不变";
         if (FindSingleContractResultLine(lines, "下一局仍使用本代记录") != null)
             return "下一局仍使用本代记录";
+
+        foreach (string line in lines)
+        {
+            if (!line.StartsWith("第", System.StringComparison.Ordinal)
+                || !line.EndsWith("代回声已经形成", System.StringComparison.Ordinal)) continue;
+            string evidence = FindSingleContractResultLine(lines, "本局 ");
+            if (evidence != null)
+                return line + "\n" + evidence + "\n下一局，回声会依据这份记录进行预测";
+        }
 
         string next = FindSingleContractResultLine(lines, "下一局记录：");
         if (next != null)
@@ -558,10 +578,14 @@ public static class EchoRunPresentation
         {
             memory = memory.Substring("它记住了：".Length);
             if (memory == "回声记忆模糊") return "回声记录：还需要观察";
-            const string lanePrefix = "压力出现时，你偏向";
+            const string lanePrefix = "选路记录中，你更常选择";
             if (memory.StartsWith(lanePrefix, System.StringComparison.Ordinal))
                 return "回声记录：" + CompactSingleContractResultLane(
                     memory.Substring(lanePrefix.Length));
+            const string legacyPrefix = "压力出现时，你偏向";
+            if (memory.StartsWith(legacyPrefix, System.StringComparison.Ordinal))
+                return "回声记录：" + CompactSingleContractResultLane(
+                    memory.Substring(legacyPrefix.Length));
         }
         foreach (string line in lines)
             if (line.StartsWith("第", System.StringComparison.Ordinal)

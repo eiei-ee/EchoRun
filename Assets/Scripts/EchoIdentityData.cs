@@ -119,7 +119,7 @@ public sealed class EchoMemoryContract
 
         string lane = preferredLane == 0 ? "左侧"
             : preferredLane == 2 ? "右侧" : "中间";
-        return "压力出现时，你偏向" + lane;
+        return "选路记录中，你更常选择" + lane;
     }
 
     private static bool IsFinite(float value)

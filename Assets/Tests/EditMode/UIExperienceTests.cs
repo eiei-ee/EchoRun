@@ -129,7 +129,7 @@ public sealed class UIExperienceTests
     }
 
     [Test]
-    public void MenuMemoryCorridorBackgroundIsBundledAtFullQuality()
+    public void OriginalMenuBackgroundIsBundledAtFullQuality()
     {
         const string path =
             "Assets/Resources/Art/Menu/MemoryCorridorMenu.png";
@@ -144,6 +144,7 @@ public sealed class UIExperienceTests
         Assert.IsNotNull(importer);
         Assert.IsFalse(importer.mipmapEnabled);
         Assert.AreEqual(TextureImporterNPOTScale.None, importer.npotScale);
+        Assert.AreEqual(TextureImporterType.Default, importer.textureType);
         Assert.AreEqual(TextureImporterCompression.Uncompressed,
             importer.textureCompression);
     }

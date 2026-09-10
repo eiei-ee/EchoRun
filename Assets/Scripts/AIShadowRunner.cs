@@ -2014,6 +2014,7 @@ public class AIShadowRunner : MonoBehaviour
             return "第" + promotedIdentity.generation
                    + "代回声已经形成\n它记住了："
                    + promotedIdentity.memoryContract.BuildMemoryText()
+                   + "\n" + EchoRunPresentation.BuildPlayerRouteEvidence(calibrationProgress)
                    + (string.IsNullOrEmpty(evidence)
                        ? "" : "\n" + evidence)
                    + "\n下一局，它会带着这些习惯追上你";

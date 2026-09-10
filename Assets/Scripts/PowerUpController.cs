@@ -2,12 +2,14 @@ using UnityEngine;
 
 public sealed class PowerUpController : MonoBehaviour
 {
+    // Keep historical save/API compatibility, but retire supplies from this release.
+    public static bool IsAvailable => false;
     public static PowerUpController Instance { get; private set; }
 
     public PowerUpId ActivePowerUp { get; private set; } = PowerUpId.None;
     public float TimeRemaining { get; private set; }
-    public bool HasMagnet => ActivePowerUp == PowerUpId.Magnet && TimeRemaining > 0f;
-    public float ScoreMultiplier => ActivePowerUp == PowerUpId.ScoreBoost && TimeRemaining > 0f
+    public bool HasMagnet => IsAvailable && ActivePowerUp == PowerUpId.Magnet && TimeRemaining > 0f;
+    public float ScoreMultiplier => IsAvailable && ActivePowerUp == PowerUpId.ScoreBoost && TimeRemaining > 0f
         ? Mathf.Max(1f, _definition.value)
         : 1f;
     public float MagnetRadius => GameBalanceConfig.Current.gameplay.magnetRadius;
@@ -54,7 +56,7 @@ public sealed class PowerUpController : MonoBehaviour
     public void BeginRun(bool allowSelectedPowerUp)
     {
         ClearActive();
-        if (!allowSelectedPowerUp) return;
+        if (!IsAvailable || !allowSelectedPowerUp) return;
         PowerUpId selected = EchoRunSaveSystem.GetSelectedPowerUp();
         if (selected == PowerUpId.None || !EchoRunSaveSystem.ConsumePowerUp(selected))
             return;
@@ -70,7 +72,7 @@ public sealed class PowerUpController : MonoBehaviour
 
     public bool TryAbsorbCollision()
     {
-        if (ActivePowerUp != PowerUpId.Shield || _shieldCharges <= 0) return false;
+        if (!IsAvailable || ActivePowerUp != PowerUpId.Shield || _shieldCharges <= 0) return false;
         _shieldCharges--;
         AIRunTelemetry.RecordEvent("shield_absorb", (int)PowerUpId.Shield);
         ClearActive();
@@ -79,14 +81,14 @@ public sealed class PowerUpController : MonoBehaviour
 
     public float GetTurboStartBonus()
     {
-        return ActivePowerUp == PowerUpId.TurboStart && _definition != null
+        return IsAvailable && ActivePowerUp == PowerUpId.TurboStart && _definition != null
             ? Mathf.Max(0f, _definition.value)
             : 0f;
     }
 
     public string GetStatusText()
     {
-        if (ActivePowerUp == PowerUpId.None || _definition == null) return "";
+        if (!IsAvailable || ActivePowerUp == PowerUpId.None || _definition == null) return "";
         if (ActivePowerUp == PowerUpId.Shield)
             return _definition.displayName + " · 1 次";
         return _definition.displayName + " · " + TimeRemaining.ToString("0.0") + "s";

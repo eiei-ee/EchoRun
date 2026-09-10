@@ -260,7 +260,8 @@ public class WorldStyler : MonoBehaviour
         RenderSettings.ambientGroundColor = BaseAmbientGround;
         ApplyVisualQuality(VisualQualityController.Current);
 
-        _skyMaterial = CityV7PlayableEnvironment.CreateSky();
+        // City integration replaces the buildings, not the original panoramic sky.
+        _skyMaterial = CreateSeamlessSkyMaterial();
         if (_skyMaterial != null) RenderSettings.skybox = _skyMaterial;
     }
 

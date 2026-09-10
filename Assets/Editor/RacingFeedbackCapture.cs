@@ -509,6 +509,12 @@ public static class RacingFeedbackCapture
         CaptureResultSummary("CoreExperienceV1");
     }
 
+    public static void CaptureScopeClosure()
+    {
+        CaptureInternal(true, "ScopeClosureReadability", false);
+        CaptureResultSummary("ScopeClosureReadability");
+    }
+
     private static void CaptureInternal(bool includeBaseline,
         string suite = "RacingFeedbackV1", bool rebuildPrefab = true)
     {
@@ -813,6 +819,10 @@ public static class RacingFeedbackCapture
                 "LegacyRuntime.ttf"));
             InvokeUiBuilder(manager, "CreateMenuPanel");
             InvokeUiBuilder(manager, "CreateGameOverPanel");
+            InvokeUiBuilder(manager, "CreateSettingsPanel");
+            typeof(UIManager).GetMethod("FitMenuBackgroundToViewport",
+                BindingFlags.Instance | BindingFlags.NonPublic).Invoke(manager,
+                new object[] { width, height });
 
             GameObject menu = GetUiField<GameObject>(manager, "_menuPanel");
             GameObject result = GetUiField<GameObject>(manager, "_gameOverPanel");
@@ -861,6 +871,22 @@ public static class RacingFeedbackCapture
                 });
             CaptureUiManagerState("result-counter-collision", result.transform,
                 camera, width, height, outputDirectory, report);
+
+            result.SetActive(false);
+            InvokeUiBuilder(manager, "ShowSettings");
+            GameObject settings = GetUiField<GameObject>(manager, "_settingsPanel");
+            CaptureUiManagerState("settings-top", settings.transform, camera,
+                width, height, outputDirectory, report);
+            GetUiField<ScrollRect>(manager, "_settingsScroll").verticalNormalizedPosition = 0f;
+            CaptureUiManagerState("settings-bottom", settings.transform, camera,
+                width, height, outputDirectory, report);
+            using (var accessibility = new AccessibilityMemoryOverride())
+            {
+                accessibility.Set(true, false, false);
+                EchoRunAccessibility.ApplyToHierarchy(settings.transform);
+                CaptureUiManagerState("settings-bottom-large", settings.transform, camera,
+                    width, height, outputDirectory, report);
+            }
         }
         finally
         {

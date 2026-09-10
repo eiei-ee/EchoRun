@@ -217,7 +217,8 @@ public sealed class EchoHudView : MonoBehaviour
     public void SetStats(int score, float distance)
     {
         SetTextIfChanged(statsText, _compactLayout
-            ? "分数 " + Mathf.Max(0, score) : string.Format(
+            ? "金币 " + (GameManager.Instance != null ? GameManager.Instance.Coins : 0)
+              + " · 分数 " + Mathf.Max(0, score) : string.Format(
             "SCORE {0:D5}   RANGE {1:000}m", Mathf.Max(0, score),
             Mathf.Max(0, Mathf.FloorToInt(distance))));
     }

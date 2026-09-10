@@ -173,7 +173,8 @@ public class PlayerMotionFeedbackTests
 
             Assert.AreEqual(3, signals.Count,
                 "Duplicate physics settlement must not emit another outcome.");
-            Assert.AreEqual(PlayerActionEdge.ImpactAbsorbed, signals[0].Edge);
+            Assert.AreEqual(PlayerActionEdge.ImpactRecovered, signals[0].Edge,
+                "Archived shields are inactive; basic recovery still applies.");
             Assert.AreEqual(PlayerActionEdge.ImpactRecovered, signals[1].Edge);
             Assert.AreEqual(PlayerActionEdge.FatalImpact, signals[2].Edge);
             Assert.Less(signals[0].Sequence, signals[1].Sequence);

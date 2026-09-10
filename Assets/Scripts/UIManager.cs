@@ -295,7 +295,7 @@ public class UIManager : MonoBehaviour
         _menuReadabilityVeil = veil.GetComponent<RectTransform>();
 
         _menuProtocolText = MakeText("Protocol", _menuPanel.transform,
-            "本机 AI · 实时学习你的操作", 16, TextAnchor.MiddleCenter);
+            "本机回声 · 记录来自你的跑法", 16, TextAnchor.MiddleCenter);
         _menuProtocolText.color = Primary;
         _menuProtocolText.fontStyle = FontStyle.Bold;
 
@@ -368,11 +368,16 @@ public class UIManager : MonoBehaviour
 
     void FitMenuBackground()
     {
+        FitMenuBackgroundToViewport(Screen.width, Screen.height);
+    }
+
+    void FitMenuBackgroundToViewport(int width, int height)
+    {
         if (_menuBackground == null || _menuBackground.texture == null
-            || Screen.width <= 0 || Screen.height <= 0) return;
+            || width <= 0 || height <= 0) return;
         float assetAspect = (float)_menuBackground.texture.width
                             / _menuBackground.texture.height;
-        float screenAspect = (float)Screen.width / Screen.height;
+        float screenAspect = (float)width / height;
         if (screenAspect > assetAspect)
         {
             float visibleHeight = assetAspect / screenAspect;
@@ -446,7 +451,7 @@ public class UIManager : MonoBehaviour
             UILayoutRules.GetHomeNavigationAnchor(0, portrait),
             UILayoutRules.GetHomeNavigationSize(portrait, largeTargets));
         SetButtonLayout(_settingsBtn,
-            UILayoutRules.GetHomeNavigationAnchor(2, portrait),
+            UILayoutRules.GetHomeNavigationAnchor(1, portrait),
             UILayoutRules.GetHomeNavigationSize(portrait, largeTargets));
     }
 
@@ -456,7 +461,7 @@ public class UIManager : MonoBehaviour
 
     void CreateSettingsPanel()
     {
-        _settingsPanel = NewPanel("SettingsPanel", WithAlpha(Backdrop, 0.96f));
+        _settingsPanel = NewPanel("SettingsPanel", Backdrop);
 
         // ScrollRect setup
         _settingsScroll = _settingsPanel.AddComponent<ScrollRect>();
@@ -489,10 +494,12 @@ public class UIManager : MonoBehaviour
         Transform c = content.transform;
         float topY = 0.95f;
 
-        Text title = MakeText("SettingsTitle", c, "设置", 56, TextAnchor.MiddleCenter);
+        Text title = MakeText("SettingsTitle", c, "设置", 44, TextAnchor.MiddleCenter);
         title.color = Color.white;
         title.fontStyle = FontStyle.Bold;
-        AnchorText(title.GetComponent<RectTransform>(), 0.5f, topY, 400, 70);
+        title.verticalOverflow = VerticalWrapMode.Overflow;
+        AnchorText(title.GetComponent<RectTransform>(), 0.5f, topY, 400, 100);
+        MakeLabel("AudioSectionLabel", c, "声音", new Vector2(0.5f, 0.90f));
 
         _masterSlider = MakeSlider("MasterVolumeSlider", c,
             new Vector2(0.5f, 0.81f));
@@ -820,7 +827,7 @@ public class UIManager : MonoBehaviour
 
     void CreateCharacterPanel()
     {
-        _characterPanel = NewPanel("CharacterPanel", WithAlpha(Backdrop, 0.96f));
+        _characterPanel = NewPanel("CharacterPanel", Backdrop);
 
         // ScrollRect
         ScrollRect scroll = _characterPanel.AddComponent<ScrollRect>();
@@ -844,7 +851,7 @@ public class UIManager : MonoBehaviour
         _characterContent.anchorMin = new Vector2(0.5f, 1f);
         _characterContent.anchorMax = new Vector2(0.5f, 1f);
         _characterContent.pivot = new Vector2(0.5f, 1f);
-        _characterContent.sizeDelta = new Vector2(1020, 700);
+        _characterContent.sizeDelta = new Vector2(1020, 1080);
         _characterContent.anchoredPosition = Vector2.zero;
 
         scroll.viewport = vpRT;
@@ -852,19 +859,26 @@ public class UIManager : MonoBehaviour
 
         Transform c = content.transform;
 
-        Text title = MakeText("CharTitle", c, "跑者外观", 50, TextAnchor.MiddleCenter);
+        Text title = MakeText("CharTitle", c, "跑者外观", 44, TextAnchor.MiddleCenter);
         title.color = Color.white;
         title.fontStyle = FontStyle.Bold;
-        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.90f, 400, 60);
+        title.verticalOverflow = VerticalWrapMode.Overflow;
+        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.95f, 400, 100);
 
         _characterSelectionText = MakeText("SelectionStatus", c,
             "选择配色；立即预览并保存", 22, TextAnchor.MiddleCenter);
         _characterSelectionText.color = TextMuted;
-        AnchorText(_characterSelectionText.rectTransform, 0.5f, 0.82f, 620, 40);
+        AnchorText(_characterSelectionText.rectTransform, 0.5f, 0.89f, 620, 40);
+
+        GameObject preview = new GameObject("RunnerPreview", typeof(RawImage));
+        preview.transform.SetParent(c, false);
+        preview.GetComponent<RawImage>().raycastTarget = false;
+        AnchorText(preview.GetComponent<RectTransform>(), 0.5f, 0.67f, 300f, 360f);
+        preview.AddComponent<RunnerColorPreview>();
 
         // 2 rows × 3 columns of color presets inside scroll content
         float[] colX = { 0.18f, 0.5f, 0.82f };
-        float[] rowY = { 0.65f, 0.38f };
+        float[] rowY = { 0.40f, 0.24f };
 
         for (int r = 0; r < 2; r++)
         {
@@ -878,9 +892,10 @@ public class UIManager : MonoBehaviour
             }
         }
 
-        _characterBackBtn = MakeButton("CharBackBtn", c, "返回", 34,
-            new Vector2(0.5f, 0.12f), new Vector2(280, 76),
+        _characterBackBtn = MakeButton("CharBackBtn", _characterPanel.transform, "返回", 34,
+            new Vector2(0f, 1f), new Vector2(280, 76),
             SurfaceRaised, TextMuted);
+        SetTopLeftButtonLayout(_characterBackBtn, new Vector2(280f, 76f));
         _characterBackBtn.onClick.AddListener(HideCharacter);
 
         _characterPanel.SetActive(false);
@@ -975,6 +990,9 @@ public class UIManager : MonoBehaviour
             ? _characterPanel.transform : null);
         ScheduleTextRefresh(_characterPanel != null
             ? _characterPanel.transform : null);
+        Canvas.ForceUpdateCanvases();
+        if (_characterPanel != null)
+            _characterPanel.GetComponent<ScrollRect>().verticalNormalizedPosition = 1f;
     }
 
     void HideCharacter()
@@ -1418,7 +1436,7 @@ public class UIManager : MonoBehaviour
 
         _resumeBtn = MakeButton("ResumeBtn", _pausePanel.transform, "继续游戏", 38,
             new Vector2(0.5f, 0.38f), new Vector2(400, 100),
-            PrimaryStrong, Primary);
+            EchoRunUITheme.ActionAccent, EchoRunUITheme.ActionAccentDark, Ink);
         _resumeBtn.onClick.AddListener(() => _gm.Resume());
 
         _pauseToMenuBtn = MakeButton("PauseToMenuBtn", _pausePanel.transform, "返回主页", 32,
@@ -2140,7 +2158,7 @@ public class UIManager : MonoBehaviour
         if (_characterContent != null)
             _characterContent.sizeDelta = portrait
                 ? new Vector2(900f, 1160f)
-                : new Vector2(1020f, 700f);
+                : new Vector2(1020f, 1080f);
 
         Vector2 sliderSize = portrait
             ? new Vector2(600f, 72f)
@@ -2173,7 +2191,7 @@ public class UIManager : MonoBehaviour
         SetTopLeftButtonLayout(_settingsBackBtn, TouchButtonSize(portrait
             ? new Vector2(300f, 104f) : new Vector2(280f, 76f),
             largeTargets, portrait));
-        SetButtonSize(_characterBackBtn, TouchButtonSize(portrait
+        SetTopLeftButtonLayout(_characterBackBtn, TouchButtonSize(portrait
             ? new Vector2(300f, 104f) : new Vector2(280f, 76f), largeTargets, portrait));
 
         if (_hudStatsPanel != null)
@@ -2329,9 +2347,12 @@ public class UIManager : MonoBehaviour
 
     Text MakeLabel(string name, Transform parent, string content, Vector2 anchor)
     {
-        Text label = MakeText(name, parent, content, 30, TextAnchor.MiddleCenter);
-        label.color = TextMuted;
-        AnchorText(label.GetComponent<RectTransform>(), anchor.x, anchor.y, 300, 40);
+        Text label = MakeText(name, parent, content, 28, TextAnchor.MiddleCenter);
+        label.color = Primary;
+        label.fontStyle = FontStyle.Bold;
+        // CJK font line metrics exceed the old 40px box, yielding no glyphs.
+        label.verticalOverflow = VerticalWrapMode.Overflow;
+        AnchorText(label.GetComponent<RectTransform>(), anchor.x, anchor.y, 300, 60);
         return label;
     }
 

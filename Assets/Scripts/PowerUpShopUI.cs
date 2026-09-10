@@ -25,12 +25,14 @@ public sealed class PowerUpShopUI : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeInstance()
     {
+        if (!PowerUpController.IsAvailable) return;
         if (FindObjectOfType<PowerUpShopUI>() != null) return;
         new GameObject("Power Up Shop UI").AddComponent<PowerUpShopUI>();
     }
 
     IEnumerator Start()
     {
+        if (!PowerUpController.IsAvailable) { enabled = false; yield break; }
         _gameManager = GameManager.Instance;
         Canvas canvas = null;
         for (int i = 0; i < 60

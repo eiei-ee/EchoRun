@@ -12,6 +12,8 @@ WorldStyler 接入城市呈现：直道恢复 GroundPlane 与车道线后隐藏�
 
 构建入口：CityV7DeliveryBuild.Build。输出 TestResults/CityV7Main/Windows/EchoRun.exe，独立产品名 EchoRun-CityV7-MainCharacter，不覆盖旧包或正式存档。构建后恢复主项目产品名。
 
+继续原存档使用 CityV7DeliveryBuild.BuildWithExistingSave，输出 TestResults/CityV7Main/Windows-ExistingSave/EchoRun.exe。该入口保持原 Eiei-ee / EchoRun 存档身份，不迁移或重置数据；启动后正常游戏会继续更新原存档。首次交付前将原存档注册表导出备份到 TestResults/CityV7Main，备份不纳入 Git。
+
 新增测试覆盖直道路面、同变体复用，以及九种序列位置的左右转弯相机净空，共 20 项。更新三项原环境契约测试为 V7 城市/天空与重开局检查，而非继续要求旧堡垒环境可见。
 
 测试、构建和新启动证据保存在 TestResults/CityV7Main；中间失败结果保留。通过测试与启动不等于两局自然通关、陌生玩家理解或全地图人工验收。

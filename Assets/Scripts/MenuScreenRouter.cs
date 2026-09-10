@@ -53,6 +53,11 @@ public sealed class MenuScreenRouter : MonoBehaviour
         Selectable firstSelected = null)
     {
         if (panel == null) return;
+        if (screen == MenuScreen.Supply && !PowerUpController.IsAvailable)
+        {
+            panel.SetActive(false);
+            return;
+        }
         _screens[screen] = new ScreenEntry
         {
             panel = panel,
@@ -70,6 +75,7 @@ public sealed class MenuScreenRouter : MonoBehaviour
 
     public bool Show(MenuScreen screen)
     {
+        if (screen == MenuScreen.Supply && !PowerUpController.IsAvailable) return false;
         if (!_menuVisible || !IsInMenuState() || !_screens.ContainsKey(screen))
             return false;
 

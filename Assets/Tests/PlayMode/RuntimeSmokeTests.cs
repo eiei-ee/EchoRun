@@ -11,6 +11,183 @@ using UnityEngine.UI;
 public sealed class RuntimeSmokeTests
 {
     [UnityTest]
+    public IEnumerator NoInputCalibrationSettlesNaturallyAndCanRestart()
+    {
+        SavePreferenceSnapshot saved = CaptureSavePreferences();
+        try
+        {
+            InstallIsolatedSave(new EchoRunSaveData());
+            SceneManager.LoadScene("SampleScene");
+            yield return null;
+            yield return null;
+            GameManager manager = GameManager.Instance;
+            Assert.IsTrue(manager.TryConfigureGameplayFlow(GameplayFlowMode.SingleContract,
+                new SingleContractValidationConfig { enabled = true, fixedSeed = 1337,
+                    forceStandardDifficulty = true, disablePowerUps = true }));
+            manager.StartGame();
+            yield return null;
+            Assert.IsFalse(AIShadowRunner.Instance.HasActiveOpponent);
+            Assert.AreEqual(PowerUpId.None, PowerUpController.Instance.ActivePowerUp);
+            manager.Pause();
+            float elapsed = manager.RunElapsed;
+            yield return new WaitForSecondsRealtime(.25f);
+            Assert.AreEqual(elapsed, manager.RunElapsed);
+            manager.Resume();
+            // Real frame updates and normal collisions: no teleport, invulnerability,
+            // synthetic gate settlements, time acceleration or forced GameOver.
+            float deadline = Time.realtimeSinceStartup + 85f;
+            while (manager.State == GameState.Playing && Time.realtimeSinceStartup < deadline)
+                yield return null;
+            Assert.AreEqual(GameState.GameOver, manager.State, "The natural run must settle.");
+            yield return new WaitForSecondsRealtime(3f);
+            Assert.IsTrue(manager.LastEndReason == RunEndReason.Collision
+                          || manager.LastEndReason == RunEndReason.FinishReached);
+            Assert.IsFalse(AIShadowRunner.Instance.LastSingleContractIdentityPromoted,
+                "Idle evidence must not invent a formed echo.");
+            Debug.Log("SCOPE_NATURAL_IDLE_RUN reason=" + manager.LastEndReason
+                + " elapsed=" + manager.RunElapsed + " distance=" + manager.Distance);
+            ScopeCapture("natural-idle-result");
+            manager.ReturnToMenu();
+            yield return null;
+            yield return null;
+            manager = GameManager.Instance;
+            Assert.AreEqual(GameState.Menu, manager.State);
+            manager.StartGame();
+            yield return null;
+            Assert.AreEqual(GameState.Playing, manager.State);
+            Assert.IsFalse(AIShadowRunner.Instance.HasActiveOpponent);
+            Assert.AreEqual(RunEndReason.None, manager.LastEndReason);
+            Assert.IsFalse(MenuScreenRouter.Instance.Show(MenuScreen.Supply));
+        }
+        finally
+        {
+            if (GameManager.Instance != null) GameManager.Instance.ReturnToMenu();
+            RestoreSavePreferences(saved);
+        }
+    }
+
+    [UnityTest]
+    public IEnumerator ScopeClosureMenusPreviewAndGameplayCapture()
+    {
+        SavePreferenceSnapshot saved = CaptureSavePreferences();
+        var layers = new Dictionary<GameObject, int>();
+        try
+        {
+            SceneManager.LoadScene("SampleScene");
+            yield return null;
+            yield return null;
+            GameManager manager = GameManager.Instance;
+            if (manager.State != GameState.Menu) manager.ReturnToMenu();
+            yield return null;
+            ScopeCapture("home");
+            Assert.AreSame(Resources.Load<Texture2D>("Art/Menu/MemoryCorridorMenu"),
+                GameObject.Find("MemoryCorridorBackground").GetComponent<RawImage>().texture,
+                "Home must use the original artwork, not a gameplay screenshot.");
+            var model = GameObject.Find("player").transform.Find("CharacterModel");
+            foreach (Transform child in model.GetComponentsInChildren<Transform>(true))
+                layers[child.gameObject] = child.gameObject.layer;
+            GameObject.Find("CharacterBtn").GetComponent<Button>().onClick.Invoke();
+            for (int frame = 0; frame < 5; frame++) yield return null;
+            var preview = Object.FindObjectOfType<RunnerColorPreview>();
+            Assert.IsNotNull(preview);
+            Assert.IsNotNull(preview.GetComponent<RawImage>().texture);
+            AssertVisibleTextGeometry("CharTitle");
+            ScopeCapture("runner");
+            GameObject.Find("PresetBtn_4").GetComponent<Button>().onClick.Invoke();
+            yield return null;
+            ScopeCapture("runner-amber");
+            MenuScreenRouter.Instance.BackToHome();
+            yield return null;
+            foreach (var entry in layers) Assert.AreEqual(entry.Value, entry.Key.layer);
+            GameObject.Find("SettingsBtn").GetComponent<Button>().onClick.Invoke();
+            for (int frame = 0; frame < 5; frame++) yield return null;
+            foreach (string heading in new[] { "SettingsTitle", "FpsLabel", "DifficultyLabel", "AccessibilityLabel" })
+                AssertVisibleTextGeometry(heading);
+            ScopeCapture("settings");
+            MenuScreenRouter.Instance.BackToHome();
+            Assert.IsTrue(manager.TryConfigureGameplayFlow(GameplayFlowMode.SingleContract,
+                new SingleContractValidationConfig { enabled = true, useFixedIdentity = true,
+                    fixedSeed = 1337, freezeDirector = true, disablePowerUps = true,
+                    forceStandardDifficulty = true }));
+            manager.StartGame();
+            yield return new WaitForSecondsRealtime(3f);
+            ScopeCapture("challenge");
+            Canvas[] canvases = Object.FindObjectsOfType<Canvas>();
+            var enabledCanvases = new List<Canvas>();
+            foreach (Canvas canvas in canvases)
+                if (canvas.enabled) { enabledCanvases.Add(canvas); canvas.enabled = false; }
+            try { ScopeCaptureCityBackground(); }
+            finally { foreach (Canvas canvas in enabledCanvases) if (canvas != null) canvas.enabled = true; }
+            foreach (SwipeDirection direction in new[] { SwipeDirection.Left, SwipeDirection.Right,
+                         SwipeDirection.Up, SwipeDirection.Down })
+            {
+                InputManager.Instance.QueueSwipe(direction, InputIntentSource.Keyboard, Time.unscaledTime);
+                yield return new WaitForSecondsRealtime(.25f);
+                ScopeCapture("action-" + direction);
+                yield return new WaitForSecondsRealtime(.6f);
+            }
+            manager.Pause();
+            yield return null;
+            ScopeCapture("pause");
+            manager.Resume();
+            manager.GameOver();
+            yield return new WaitForSecondsRealtime(3f);
+            ScopeCapture("result");
+            manager.ReturnToMenu();
+            yield return null;
+            Assert.AreEqual(GameState.Menu, GameManager.Instance.State);
+            Assert.IsFalse(MenuScreenRouter.Instance.Show(MenuScreen.Supply));
+        }
+        finally
+        {
+            if (MenuScreenRouter.Instance != null) MenuScreenRouter.Instance.BackToHome();
+            RestoreSavePreferences(saved);
+        }
+    }
+
+    private static void ScopeCapture(string name)
+    {
+        string root = System.IO.Path.GetFullPath("TestResults/ScopeClosure/Captures");
+        System.IO.Directory.CreateDirectory(root);
+        typeof(EchoVisualCaptureProbe).GetMethod("CaptureOffscreen",
+            BindingFlags.Static | BindingFlags.NonPublic).Invoke(null,
+            new object[] { System.IO.Path.Combine(root, name + ".png") });
+    }
+
+    private static void AssertVisibleTextGeometry(string name)
+    {
+        Text label = GameObject.Find(name).GetComponent<Text>();
+        Canvas.ForceUpdateCanvases();
+        Assert.Greater(label.cachedTextGenerator.vertexCount, 4,
+            name + " has text but no visible glyph geometry; check line height and clipping.");
+    }
+
+    private static void ScopeCaptureCityBackground()
+    {
+        Camera camera = Camera.main;
+        RenderTexture previous = camera.targetTexture;
+        RenderTexture active = RenderTexture.active;
+        RenderTexture target = RenderTexture.GetTemporary(1920, 1080, 24);
+        Texture2D pixels = new Texture2D(1920, 1080, TextureFormat.RGB24, false);
+        try
+        {
+            camera.targetTexture = target;
+            camera.Render();
+            RenderTexture.active = target;
+            pixels.ReadPixels(new Rect(0, 0, 1920, 1080), 0, 0);
+            pixels.Apply();
+            System.IO.File.WriteAllBytes("TestResults/ScopeClosure/Captures/city-background.png", pixels.EncodeToPNG());
+        }
+        finally
+        {
+            camera.targetTexture = previous;
+            RenderTexture.active = active;
+            RenderTexture.ReleaseTemporary(target);
+            Object.Destroy(pixels);
+        }
+    }
+
+    [UnityTest]
     public IEnumerator BundledAudioAndBalanceLoadInPlayer()
     {
         yield return null;
@@ -330,7 +507,7 @@ public sealed class RuntimeSmokeTests
         yield return null;
 
         Assert.IsNotNull(Object.FindObjectOfType<Canvas>());
-        Assert.IsNotNull(Object.FindObjectOfType<PowerUpShopUI>());
+        Assert.IsNull(Object.FindObjectOfType<PowerUpShopUI>());
         Assert.IsNotNull(Object.FindObjectOfType<AITrainingDashboardUI>());
     }
 
@@ -460,9 +637,12 @@ public sealed class RuntimeSmokeTests
             context + "the runtime skybox is missing.");
         Assert.IsNotNull(RenderSettings.skybox.shader,
             context + "the runtime skybox shader is missing.");
-        Assert.AreEqual("CityAfterimage/QuietSky",
+        Assert.AreEqual(WorldStyler.SeamlessSkyShaderName,
             RenderSettings.skybox.shader.name,
             context + "the authored skybox was not restored.");
+        Assert.AreSame(Resources.Load<Texture2D>("Art/EchoSky"),
+            RenderSettings.skybox.GetTexture("_MainTex"),
+            context + "the original panoramic sky texture was not restored.");
 
         Camera camera = Camera.main;
         Assert.IsNotNull(camera, context + "the main camera is missing.");
@@ -608,174 +788,49 @@ public sealed class RuntimeSmokeTests
     }
 
     [UnityTest]
-    public IEnumerator SupplyLauncherJoinsTheLandscapeHomeActions()
+    public IEnumerator RetiredSupplyHasNoLauncherPanelOrRoute()
     {
         yield return null;
         yield return null;
-
-        if (UILayoutRules.IsCompactPortrait(Screen.width, Screen.height))
-            Assert.Ignore("Landscape launcher placement is not used in portrait.");
-
-        PowerUpShopUI shop = Object.FindObjectOfType<PowerUpShopUI>();
-        Assert.IsNotNull(shop);
-        GameObject launcher = GetPrivateObject(shop, "_launcher");
-        Assert.IsNotNull(launcher);
-        RectTransform rect = launcher.GetComponent<RectTransform>();
-        Assert.AreEqual(0.19f, rect.anchorMin.x, 0.001f);
-        Assert.AreEqual(0.095f, rect.anchorMin.y, 0.001f);
-    }
-
-    [UnityTest]
-    public IEnumerator MenuPanelTextStaysInsideItsPanel()
-    {
-        yield return null;
-        yield return null;
-
-        PowerUpShopUI shop = Object.FindObjectOfType<PowerUpShopUI>();
-        AITrainingDashboardUI training =
-            Object.FindObjectOfType<AITrainingDashboardUI>();
-        Assert.IsNotNull(shop);
+        Assert.IsNull(Object.FindObjectOfType<PowerUpShopUI>());
+        Assert.IsNull(GameObject.Find("PowerUpLauncher"));
+        Assert.IsNull(GameObject.Find("PowerUpShop"));
+        Assert.IsFalse(MenuScreenRouter.Instance.Show(MenuScreen.Supply));
+        var training = Object.FindObjectOfType<AITrainingDashboardUI>();
         Assert.IsNotNull(training);
-
-        GameObject shopPanel = GetPrivatePanel(shop);
-        Assert.IsNotNull(shopPanel);
-        AssertContainedHorizontally(
-            shopPanel.transform.Find("Title") as RectTransform);
-        AssertContainedHorizontally(
-            shopPanel.transform.Find("Feedback") as RectTransform);
-        for (int i = 0; i < 4; i++)
-        {
-            Transform row = shopPanel.transform.Find(
-                "Item_" + (PowerUpId)i);
-            Assert.IsNotNull(row);
-            AssertContainedHorizontally(
-                row.Find("Name") as RectTransform);
-            AssertContainedHorizontally(
-                row.Find("Description") as RectTransform);
-        }
-
-        GameObject trainingPanel = GetPrivatePanel(training);
-        Assert.IsNotNull(trainingPanel);
-        AssertContainedHorizontally(
-            trainingPanel.transform.Find("Title") as RectTransform);
-    }
-
-    [UnityTest]
-    public IEnumerator SupplyBuyAndEquipRemainIndependentActions()
-    {
-        yield return null;
-        yield return null;
-
-        SavePreferenceSnapshot saveBefore = CaptureSavePreferences();
-        int managerCoinsBefore = GameManager.Instance != null
-            ? GameManager.Instance.TotalCoins : 0;
-        try
-        {
-            var isolated = new EchoRunSaveData
-            {
-                totalCoins = 500,
-                powerUpInventory = new[] { 1, 1, 0, 0 },
-                selectedPowerUp = (int)PowerUpId.Magnet
-            };
-            InstallIsolatedSave(isolated);
-
-            PowerUpShopUI shop = Object.FindObjectOfType<PowerUpShopUI>();
-            Assert.IsNotNull(shop);
-            typeof(PowerUpShopUI).GetMethod("Refresh",
-                BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(
-                    shop, null);
-            GameObject panel = GetPrivatePanel(shop);
-            Transform shield = panel.transform.Find("Item_Shield");
-            Assert.IsNotNull(shield);
-            UnityEngine.UI.Button buy = shield.Find("Buy")
-                .GetComponent<UnityEngine.UI.Button>();
-            UnityEngine.UI.Button equip = shield.Find("Equip")
-                .GetComponent<UnityEngine.UI.Button>();
-            PowerUpBalance definition = GameBalanceConfig.GetPowerUp(
-                PowerUpId.Shield);
-
-            Assert.IsTrue(buy.interactable);
-            Assert.IsTrue(equip.interactable);
-            Transform scoreBoost = panel.transform.Find("Item_ScoreBoost");
-            Assert.IsFalse(scoreBoost.Find("Equip")
-                .GetComponent<UnityEngine.UI.Button>().interactable);
-            buy.onClick.Invoke();
-            Assert.AreEqual(2, EchoRunSaveSystem.GetPowerUpCount(
-                PowerUpId.Shield));
-            Assert.AreEqual(PowerUpId.Magnet,
-                EchoRunSaveSystem.GetSelectedPowerUp());
-            Assert.AreEqual(500 - definition.cost,
-                EchoRunSaveSystem.TotalCoins);
-
-            equip.onClick.Invoke();
-            Assert.AreEqual(PowerUpId.Shield,
-                EchoRunSaveSystem.GetSelectedPowerUp());
-            Assert.AreEqual(500 - definition.cost,
-                EchoRunSaveSystem.TotalCoins);
-        }
-        finally
-        {
-            RestoreSavePreferences(saveBefore);
-            if (GameManager.Instance != null)
-                typeof(GameManager).GetField("<TotalCoins>k__BackingField",
-                    BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(
-                        GameManager.Instance, managerCoinsBefore);
-        }
+        AssertContainedHorizontally(GetPrivatePanel(training).transform.Find("Title") as RectTransform);
     }
 
     [TestCase(PowerUpId.Shield)]
     [TestCase(PowerUpId.Magnet)]
     [TestCase(PowerUpId.ScoreBoost)]
     [TestCase(PowerUpId.TurboStart)]
-    public void PurchaseEquipAndConsumeActivatesEachPowerUp(PowerUpId id)
+    public void ArchivedSuppliesCannotActivateOrConsumeInventory(PowerUpId id)
     {
         SavePreferenceSnapshot saveBefore = CaptureSavePreferences();
-
         try
         {
-            var isolated = new EchoRunSaveData
-            {
-                totalCoins = 200,
-                powerUpInventory = new int[4],
-                selectedPowerUp = -1
-            };
-            InstallIsolatedSave(isolated);
-
-            PowerUpBalance definition = GameBalanceConfig.GetPowerUp(id);
-            Assert.IsNotNull(definition);
-            Assert.IsTrue(EchoRunSaveSystem.TryPurchasePowerUp(id, definition.cost));
-            Assert.AreEqual(200 - definition.cost, EchoRunSaveSystem.TotalCoins);
-            Assert.AreEqual(1, EchoRunSaveSystem.GetPowerUpCount(id));
-            Assert.IsTrue(EchoRunSaveSystem.SelectPowerUp(id));
-
-            PowerUpController controller = PowerUpController.Instance;
+            var inventory = new int[4];
+            inventory[(int)id] = 2;
+            InstallIsolatedSave(new EchoRunSaveData {
+                totalCoins = 200, powerUpInventory = inventory,
+                selectedPowerUp = (int)id });
+            Assert.IsFalse(GameManager.Instance.TryPurchasePowerUp(id));
+            Assert.IsFalse(GameManager.Instance.SelectPowerUp(id));
+            var controller = PowerUpController.Instance;
             Assert.IsNotNull(controller);
-            controller.BeginRun();
-
-            Assert.AreEqual(id, controller.ActivePowerUp);
-            Assert.AreEqual(0, EchoRunSaveSystem.GetPowerUpCount(id));
-            Assert.AreEqual(PowerUpId.None,
-                EchoRunSaveSystem.GetSelectedPowerUp());
-
-            if (id == PowerUpId.Shield)
-                Assert.IsTrue(controller.TryAbsorbCollision());
-            else if (id == PowerUpId.Magnet)
-                Assert.IsTrue(controller.HasMagnet);
-            else if (id == PowerUpId.ScoreBoost)
-                Assert.Greater(controller.ScoreMultiplier, 1f);
-            else if (id == PowerUpId.TurboStart)
-                Assert.Greater(controller.GetTurboStartBonus(), 0f);
+            controller.BeginRun(true);
+            Assert.AreEqual(PowerUpId.None, controller.ActivePowerUp);
+            Assert.AreEqual(2, EchoRunSaveSystem.GetPowerUpCount(id));
+            Assert.AreEqual(id, EchoRunSaveSystem.GetSelectedPowerUp());
+            Assert.AreEqual(200, EchoRunSaveSystem.TotalCoins);
+            Assert.IsFalse(controller.TryAbsorbCollision());
+            Assert.IsFalse(controller.HasMagnet);
+            Assert.AreEqual(1f, controller.ScoreMultiplier);
+            Assert.AreEqual(0f, controller.GetTurboStartBonus());
+            Assert.IsEmpty(controller.GetStatusText());
         }
-        finally
-        {
-            if (PowerUpController.Instance != null)
-            {
-                typeof(PowerUpController).GetMethod("ClearActive",
-                    BindingFlags.Instance | BindingFlags.NonPublic)?
-                    .Invoke(PowerUpController.Instance, null);
-            }
-            RestoreSavePreferences(saveBefore);
-        }
+        finally { RestoreSavePreferences(saveBefore); }
     }
 
     private sealed class SavePreferenceSnapshot
