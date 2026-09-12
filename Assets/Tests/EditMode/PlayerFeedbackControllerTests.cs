@@ -56,12 +56,16 @@ public sealed class PlayerFeedbackControllerTests
         Assert.AreEqual(2f, colliderContact.x, 0.0001f);
         Assert.AreEqual(-0.1f, colliderContact.y, 0.0001f);
         Assert.AreEqual(5f, colliderContact.z, 0.0001f);
-        Assert.AreEqual(0.18f,
-            PlayerFeedbackController.ResolveRunTrailInterval(-1f), 0.0001f);
-        Assert.AreEqual(0.135f,
-            PlayerFeedbackController.ResolveRunTrailInterval(0.5f), 0.0001f);
-        Assert.AreEqual(0.09f,
-            PlayerFeedbackController.ResolveRunTrailInterval(2f), 0.0001f);
+        Vector3 left =
+            PlayerFeedbackController.ResolveAlternatingFootfallPosition(
+                Vector3.zero, Vector3.forward, 0);
+        Vector3 right =
+            PlayerFeedbackController.ResolveAlternatingFootfallPosition(
+                Vector3.zero, Vector3.forward, 1);
+        Assert.AreEqual(-0.14f, left.x, 0.0001f);
+        Assert.AreEqual(0.14f, right.x, 0.0001f);
+        Assert.AreEqual(0.012f, left.y, 0.0001f);
+        Assert.AreEqual(left.z, right.z, 0.0001f);
     }
 
     [Test]

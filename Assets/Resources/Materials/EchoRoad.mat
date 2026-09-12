@@ -37,7 +37,7 @@ Material:
     m_Ints: []
     m_Floats:
     - _FlowSpeed: 0.08
-    - _NormalStrength: 0.46
+    - _NormalStrength: 0.28
     - _ReflectionStrength: 0.05
     - _RoadLaneDensity: 1
     - _RoadRole: 0
@@ -48,7 +48,7 @@ Material:
     - _Wetness: 0.18
     m_Colors:
     - _AtlasTiling: {r: 1, g: 4, b: 0, a: 0}
-    - _Color: {r: 0.052, g: 0.057, b: 0.061, a: 1}
+    - _Color: {r: 0.13, g: 0.14, b: 0.155, a: 1}
     - _EdgeColor: {r: 0.62, g: 0.66, b: 0.67, a: 1}
     - _LaneColor: {r: 0.28, g: 0.31, b: 0.32, a: 1}
   m_BuildTextureStacks: []

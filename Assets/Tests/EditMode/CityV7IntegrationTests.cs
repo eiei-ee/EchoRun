@@ -27,13 +27,41 @@ public class CityV7IntegrationTests
         segment.GetComponent<TrackSegmentData>().routeDistance=180;
         CityV7PlayableEnvironment.Decorate(segment,TrackSegmentType.Straight);Assert.That(renderer.enabled,Is.True);
     }
+    [TestCase(TrackSegmentType.TurnLeft)]
+    [TestCase(TrackSegmentType.TurnRight)]
+    public void TurnDecorationRemovesLegacyCityWithoutChangingRoadOrColliders(TrackSegmentType type)
+    {
+        string side=type==TrackSegmentType.TurnLeft?"Left":"Right";
+        var segment=Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/TurnSegment_"+side+".prefab"));
+        owned.Add(segment);segment.SetActive(true);
+        var colliders=segment.GetComponentsInChildren<Collider>(true);
+        var states=new bool[colliders.Length];
+        for(int i=0;i<colliders.Length;i++)states[i]=colliders[i].gameObject.activeInHierarchy&&colliders[i].enabled;
+        for(int reuse=0;reuse<3;reuse++)
+        {
+            segment.SetActive(false);segment.SetActive(true);
+            var variants=segment.GetComponentInChildren<EchoEnvironmentVariantSet>();
+            variants?.SelectFor(42,reuse*180);
+            CityV7PlayableEnvironment.Decorate(segment,type);
+            foreach(var child in segment.GetComponentsInChildren<Transform>())
+                Assert.That(child.name,Does.Not.StartWith("MegacityDistrict"));
+            for(int i=0;i<colliders.Length;i++)
+                Assert.That(colliders[i].gameObject.activeInHierarchy&&colliders[i].enabled,Is.EqualTo(states[i]),colliders[i].name);
+        }
+        if(type==TrackSegmentType.TurnLeft)
+        {
+            Assert.That(segment.GetComponentsInChildren<CityV7ChunkIdentity>(true).Length,Is.EqualTo(1));
+            Assert.That(segment.transform.Find("CityV7Environment").GetComponentsInChildren<Renderer>().Length,Is.GreaterThan(0));
+        }
+    }
     [TestCase(-1,0)] [TestCase(-1,1)] [TestCase(-1,2)] [TestCase(-1,3)] [TestCase(-1,4)] [TestCase(-1,5)] [TestCase(-1,6)] [TestCase(-1,7)] [TestCase(-1,8)]
     [TestCase(1,0)] [TestCase(1,1)] [TestCase(1,2)] [TestCase(1,3)] [TestCase(1,4)] [TestCase(1,5)] [TestCase(1,6)] [TestCase(1,7)] [TestCase(1,8)]
     public void CityDoesNotOccludeCameraSweepAtTurn(int direction,int phase)
     {
         for(int i=0;i<3;i++)Straight(new Vector3(0,0,i*20),Quaternion.identity,(i+phase)*20);
-        var turn=new GameObject("AuditTurn");owned.Add(turn);turn.transform.position=new Vector3(0,0,50);
-        var data=turn.AddComponent<TrackSegmentData>();data.segmentType=direction<0?TrackSegmentType.TurnLeft:TrackSegmentType.TurnRight;data.routeDistance=60;data.turnPointWorld=new Vector3(0,0,60);
+        var turn=Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/TurnSegment_"+(direction<0?"Left":"Right")+".prefab"));owned.Add(turn);turn.SetActive(true);turn.transform.position=new Vector3(0,0,50);
+        var data=turn.GetComponent<TrackSegmentData>();data.segmentType=direction<0?TrackSegmentType.TurnLeft:TrackSegmentType.TurnRight;data.routeDistance=60;data.turnPointWorld=new Vector3(0,0,60);
+        CityV7PlayableEnvironment.Decorate(turn,data.segmentType);
         for(int i=1;i<=6;i++)Straight(new Vector3(direction*i*20,0,60),Quaternion.Euler(0,direction*90,0),60+(i+phase)*20);
         // The production spawn notification must protect already-existing city
         // pieces too, when a new adjacent segment completes a bend.

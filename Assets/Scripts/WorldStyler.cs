@@ -139,7 +139,9 @@ public class WorldStyler : MonoBehaviour
         camera.clearFlags = _skyMaterial != null
             ? CameraClearFlags.Skybox
             : CameraClearFlags.SolidColor;
-        camera.farClipPlane = 140f;
+        // Extend visibility for the authored horizon only; follow position,
+        // lane framing and FOV retain their existing gameplay values.
+        camera.farClipPlane = 420f;
         camera.fieldOfView = GetCameraFieldOfView(portrait);
         camera.backgroundColor = new Color(0.035f, 0.070f, 0.115f);
         CameraFollow follow = camera.GetComponent<CameraFollow>();
@@ -208,6 +210,8 @@ public class WorldStyler : MonoBehaviour
                 runSeed, routeDistance, Mathf.Min(2, variantSet.VariantCount));
         }
         variantSet.SelectFor(runSeed, routeDistance, preferredVariant);
+        if (segmentType != TrackSegmentType.Straight)
+            CityV7PlayableEnvironment.Decorate(segment, segmentType);
     }
 
     private static bool IsColdWhiteFortressEnvironment(Transform environment)
@@ -267,6 +271,10 @@ public class WorldStyler : MonoBehaviour
 
     public static Material CreateSeamlessSkyMaterial()
     {
+        // The city slice uses a latitude-longitude sky with its horizon at
+        // the equator. Preserve the older concept-art remap as a fallback.
+        Material citySky = Resources.Load<Material>("CityV7/ExperienceSky");
+        if (citySky != null) return new Material(citySky);
         Material source = Resources.Load<Material>("Art/EchoSky");
         Material material = source != null && source.shader != null &&
             source.shader.name == SeamlessSkyShaderName

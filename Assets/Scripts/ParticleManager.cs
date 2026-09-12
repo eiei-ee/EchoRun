@@ -51,7 +51,8 @@ public class ParticleManager : MonoBehaviour
         absorbRenderer.cameraVelocityScale = 0f;
         _dustPS  = CreateParticleSystem("DustFX",  new Color(0.16f, 0.32f, 0.42f), 0.25f, 1.5f, 5);
         _deathPS = CreateParticleSystem("DeathFX", new Color(1f, 0.34f, 0.30f), 0.5f, 4f, 30);
-        _trailPS = CreateParticleSystem("TrailFX", new Color(0.12f, 0.76f, 1f), 0.62f, 1f, 12);
+        _trailPS = CreateParticleSystem("RunnerFootfallPulseFX",
+            new Color(1f, 0.72f, 0.24f), 0.22f, 0.35f, 8);
         _contactLinePS = CreateContactSystem("ActionContactLineFX",
             ContactWhite, 34);
         _contactEchoPS = CreateContactSystem("ActionContactEchoFX",
@@ -479,7 +480,7 @@ public class ParticleManager : MonoBehaviour
             var emission = _trailPS.emission;
             emission.enabled = high;
             var main = _trailPS.main;
-            main.startLifetime = high ? 0.62f : 0.25f;
+            main.startLifetime = high ? 0.22f : 0.18f;
         }
         if (!high && _contactEchoPS != null)
         {

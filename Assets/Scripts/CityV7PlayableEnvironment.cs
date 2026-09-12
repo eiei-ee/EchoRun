@@ -12,16 +12,16 @@ public static class CityV7PlayableEnvironment
     static Color Color32ToColor(int rgb){return new Color((rgb>>16&255)/255f,(rgb>>8&255)/255f,(rgb&255)/255f);}
     public static void ApplyAtmosphere(Light key=null,Light fill=null)
     {
-        RenderSettings.fog=true;RenderSettings.fogMode=FogMode.Linear;RenderSettings.fogStartDistance=128;RenderSettings.fogEndDistance=140;
-        RenderSettings.fogColor=Color32ToColor(0xBFCAD0);RenderSettings.ambientMode=UnityEngine.Rendering.AmbientMode.Trilight;
-        RenderSettings.ambientSkyColor=Color32ToColor(0x8FABD6);RenderSettings.ambientEquatorColor=Color32ToColor(0x6485B0)*.85f;RenderSettings.ambientGroundColor=Color32ToColor(0x415C82)*.65f;
-        if(key!=null){key.color=Color32ToColor(0xFFF1DB);key.intensity=1.22f;key.transform.rotation=Quaternion.Euler(53,-40,0);key.shadowStrength=.86f;key.shadowBias=.035f;key.shadowNormalBias=.10f;}
+        RenderSettings.fog=true;RenderSettings.fogMode=FogMode.Linear;RenderSettings.fogStartDistance=65;RenderSettings.fogEndDistance=185;
+        RenderSettings.fogColor=Color32ToColor(0x859BB4);RenderSettings.ambientMode=UnityEngine.Rendering.AmbientMode.Trilight;
+        RenderSettings.ambientSkyColor=Color32ToColor(0xA0B8D6);RenderSettings.ambientEquatorColor=Color32ToColor(0x8197AF);RenderSettings.ambientGroundColor=Color32ToColor(0x5D7086);
+        if(key!=null){key.color=Color32ToColor(0xFFF1DB);key.intensity=1.02f;key.transform.rotation=Quaternion.Euler(53,-40,0);key.shadowStrength=.86f;key.shadowBias=.035f;key.shadowNormalBias=.10f;}
         // A restrained cool fill separates the unchanged runner from the dark road.
-        if(fill!=null){fill.intensity=.32f;fill.color=new Color(.72f,.84f,1f);}
+        if(fill!=null){fill.intensity=.48f;fill.color=new Color(.78f,.87f,1f);}
     }
     public static bool Decorate(GameObject segment,TrackSegmentType type)
     {
-        if(type!=TrackSegmentType.Straight){RefreshClearance();return false;}
+        if(type!=TrackSegmentType.Straight){ReplaceLegacyTurnBuildings(segment,type);RefreshClearance();return false;}
         var data=segment.GetComponent<TrackSegmentData>();
         if(data==null)return false;
         int index=((Mathf.RoundToInt(data.routeDistance/20f)%9)+9)%9;
@@ -47,6 +47,36 @@ public static class CityV7PlayableEnvironment
         visual.AddComponent<CityV7ChunkIdentity>().index=index;
         RefreshClearance();
         return true;
+    }
+
+    static void ReplaceLegacyTurnBuildings(GameObject segment,TrackSegmentType type)
+    {
+        var legacy=segment.transform.Find("EchoEnvironment");
+        var prefab=Resources.Load<GameObject>("CityV7/Chunk0");
+        if(legacy==null||prefab==null)return;
+        bool hasLegacyCity=false;
+        foreach(var child in legacy.GetComponentsInChildren<Transform>(true))
+        {
+            if(child.name=="MegacityDistrictA"||child.name=="MegacityDistrictB")
+            {child.gameObject.SetActive(false);hasLegacyCity=true;}
+            if(child.name=="CornerIsland"||child.name=="CornerIslandCore"||child.name=="CornerIslandSignal")
+                child.gameObject.SetActive(false);
+        }
+        if(!hasLegacyCity||segment.transform.Find("CityV7Environment")!=null)return;
+        // Retain the authored turn road, rails, variant controller and colliders.
+        // The replacement sits outside the bend and participates in clearance.
+        var root=new GameObject("CityV7Environment");
+        root.transform.SetParent(segment.transform,false);
+        root.AddComponent<CityV7ChunkIdentity>().index=-1;
+        var building=Object.Instantiate(prefab,root.transform,false);
+        building.name="CityV7TurnPodium";
+        var renderers=building.GetComponentsInChildren<Renderer>(true);
+        if(renderers.Length==0)return;
+        Bounds bounds=TransformBounds(WorldBounds(renderers[0]),segment.transform.worldToLocalMatrix);
+        for(int i=1;i<renderers.Length;i++)
+            bounds.Encapsulate(TransformBounds(WorldBounds(renderers[i]),segment.transform.worldToLocalMatrix));
+        int direction=type==TrackSegmentType.TurnRight?1:-1;
+        building.transform.localPosition+=new Vector3(-direction*(16f+bounds.extents.x)-bounds.center.x,0,10f-bounds.center.z);
     }
 
     // Re-evaluate when the route pool changes, before a newly planned bend is

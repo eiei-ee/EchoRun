@@ -166,6 +166,8 @@ public sealed class EchoHudView : MonoBehaviour
                 ? predictionText.gameObject : null, false);
             SetActiveIfChanged(predictionPlate, false);
             SetTextIfChanged(calibrationObservationText, data.injuriesText);
+            SetColorIfChanged(calibrationObservationText,
+                data.injuries > 0 ? Coral : Muted);
             SetActiveIfChanged(calibrationObservationText != null
                 ? calibrationObservationText.gameObject : null, true);
             SetTextIfChanged(distanceText, data.finishRemainingText);
@@ -196,6 +198,8 @@ public sealed class EchoHudView : MonoBehaviour
 
         SetTextIfChanged(calibrationObservationText,
             data.injuriesText);
+        SetColorIfChanged(calibrationObservationText,
+            data.injuries > 0 ? Coral : Muted);
         SetActiveIfChanged(calibrationObservationText != null
             ? calibrationObservationText.gameObject : null, true);
         SetTextIfChanged(distanceText, data.finishRemainingText);
@@ -235,21 +239,28 @@ public sealed class EchoHudView : MonoBehaviour
                 compact ? new Vector2(26f, -22f) : Vector2.zero,
                 compact ? new Vector2(0f, 1f) : new Vector2(0.5f, 0.5f));
         if (predictionText != null)
-            SetLayout(predictionText.rectTransform, new Vector2(0f, 1f),
-                compact ? new Vector2(312f, 38f) : new Vector2(420f, 66f),
-                new Vector2(30f, compact ? -176f : -255f), new Vector2(0f, 1f));
+        {
+            // Upcoming route choice belongs near the forward view. Persistent
+            // race statistics stay at the edge, leaving the track unobscured.
+            predictionText.alignment = compact ? TextAnchor.MiddleCenter : TextAnchor.MiddleLeft;
+            SetLayout(predictionText.rectTransform, compact ? new Vector2(.5f, 1f) : new Vector2(0f, 1f),
+                compact ? new Vector2(380f, 44f) : new Vector2(420f, 66f),
+                compact ? new Vector2(0f, -32f) : new Vector2(30f, -255f),
+                compact ? new Vector2(.5f, 1f) : new Vector2(0f, 1f));
+        }
         if (predictionPlate != null)
-            SetLayout(predictionPlate.GetComponent<RectTransform>(), new Vector2(0f, 1f),
-                compact ? new Vector2(330f, 40f) : new Vector2(450f, 68f),
-                new Vector2(22f, compact ? -175f : -254f), new Vector2(0f, 1f));
+            SetLayout(predictionPlate.GetComponent<RectTransform>(), compact ? new Vector2(.5f, 1f) : new Vector2(0f, 1f),
+                compact ? new Vector2(408f, 48f) : new Vector2(450f, 68f),
+                compact ? new Vector2(0f, -30f) : new Vector2(22f, -254f),
+                compact ? new Vector2(.5f, 1f) : new Vector2(0f, 1f));
         if (feedbackText != null)
             SetLayout(feedbackText.rectTransform, new Vector2(0f, 1f),
                 new Vector2(540f, 40f),
-                new Vector2(30f, compact ? -223f : -333f), new Vector2(0f, 1f));
+                new Vector2(30f, compact ? -185f : -333f), new Vector2(0f, 1f));
         if (feedbackPlate != null)
             SetLayout(feedbackPlate.GetComponent<RectTransform>(), new Vector2(0f, 1f),
                 new Vector2(560f, 42f),
-                new Vector2(22f, compact ? -222f : -332f), new Vector2(0f, 1f));
+                new Vector2(22f, compact ? -184f : -332f), new Vector2(0f, 1f));
     }
 
     private static void SetLayout(RectTransform rect, Vector2 anchor,

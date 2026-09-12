@@ -30,9 +30,9 @@ public sealed class PlayerFeedbackController : MonoBehaviour
     private CameraFollow _cameraFollow;
     private AIShadowRunner _shadowRunner;
     private EchoRoadVisualController _roadVisualController;
+    private AudioManager _audioEventSource;
     private GameManager _gameManager;
     private GameManager _stateEventSource;
-    private float _runTrailTimer;
     private int _lastHandledSequence;
     private bool _continuousFeedbackActive;
     private bool _actionAudioPaused;
@@ -51,6 +51,7 @@ public sealed class PlayerFeedbackController : MonoBehaviour
         RefreshGameStateSubscription();
         SubscribePlayer();
         RefreshShadowSubscription();
+        RefreshAudioSubscription();
     }
 
     private void Start()
@@ -59,6 +60,7 @@ public sealed class PlayerFeedbackController : MonoBehaviour
         RefreshGameStateSubscription();
         SubscribePlayer();
         RefreshShadowSubscription();
+        RefreshAudioSubscription();
     }
 
     private void Update()
@@ -72,6 +74,7 @@ public sealed class PlayerFeedbackController : MonoBehaviour
 
         RefreshShadowSubscription();
         RefreshGameStateSubscription();
+        RefreshAudioSubscription();
         if (_cameraFollow == null) ResolveCamera();
 
         bool playing = _gameManager != null
@@ -268,25 +271,32 @@ public sealed class PlayerFeedbackController : MonoBehaviour
 
     private void EmitContinuousContact(PlayerMotionSnapshot motion)
     {
+        if (!motion.IsSliding) return;
         Vector3 contact = ResolveGroundContact(transform.position);
-        if (motion.IsSliding)
-        {
-            ParticleManager.Instance?.EmitSlideSustain(
-                contact, motion.Forward, motion.Slide01);
-            _runTrailTimer = 0f;
-            return;
-        }
-        if (motion.IsJumping)
-        {
-            _runTrailTimer = 0f;
-            return;
-        }
+        ParticleManager.Instance?.EmitSlideSustain(
+            contact, motion.Forward, motion.Slide01);
+    }
 
-        _runTrailTimer += Time.deltaTime;
-        float interval = ResolveRunTrailInterval(motion.Speed01);
-        if (_runTrailTimer < interval) return;
-        _runTrailTimer = 0f;
-        ParticleManager.Instance?.EmitTrail(contact);
+    private void HandleFootstepEmitted(int footstepSequence)
+    {
+        if (!_continuousFeedbackActive || _player == null) return;
+        PlayerMotionSnapshot motion = _player.MotionSnapshot;
+        if (motion.IsJumping || motion.IsSliding) return;
+        Vector3 contact = ResolveGroundContact(transform.position);
+        Vector3 footfall = ResolveAlternatingFootfallPosition(
+            contact, motion.Forward, footstepSequence);
+        ParticleManager.Instance?.EmitTrail(footfall);
+    }
+
+    private void RefreshAudioSubscription()
+    {
+        AudioManager next = AudioManager.Instance;
+        if (_audioEventSource == next) return;
+        if (_audioEventSource != null)
+            _audioEventSource.FootstepEmitted -= HandleFootstepEmitted;
+        _audioEventSource = next;
+        if (_audioEventSource != null)
+            _audioEventSource.FootstepEmitted += HandleFootstepEmitted;
     }
 
     private Vector3 ResolveGroundContact(Vector3 sourcePosition)
@@ -299,7 +309,18 @@ public sealed class PlayerFeedbackController : MonoBehaviour
                     out RaycastHit hit, 6f, groundMask,
                     QueryTriggerInteraction.Ignore))
             {
-                return hit.point;
+                Renderer surfaceRenderer =
+                    hit.collider.GetComponent<Renderer>();
+                if (surfaceRenderer == null)
+                    surfaceRenderer =
+                        hit.collider.GetComponentInParent<Renderer>();
+                Vector3 visualSurface =
+                    EchoRunnerHeroVisual.ResolveVisualSurfacePoint(
+                        hit.point, hit.normal, surfaceRenderer != null,
+                        surfaceRenderer != null
+                            ? surfaceRenderer.bounds
+                            : default);
+                return visualSurface + hit.normal * 0.012f;
             }
         }
 
@@ -315,7 +336,6 @@ public sealed class PlayerFeedbackController : MonoBehaviour
     private void ResetContinuousFeedback()
     {
         _continuousFeedbackActive = false;
-        _runTrailTimer = 0f;
         _characterAnimator?.ClearMotionFeedback();
         // Let FOV and follow distance settle instead of snapping on death or
         // pause; hard restoration is reserved for component teardown.
@@ -335,8 +355,11 @@ public sealed class PlayerFeedbackController : MonoBehaviour
         if (_stateEventSource != null)
             _stateEventSource.OnStateChanged.RemoveListener(
                 HandleGameStateChanged);
+        if (_audioEventSource != null)
+            _audioEventSource.FootstepEmitted -= HandleFootstepEmitted;
         _shadowRunner = null;
         _stateEventSource = null;
+        _audioEventSource = null;
         ResetContinuousFeedback();
         // Unity can keep a managed proxy after the camera component has already
         // been destroyed during scene teardown. The explicit Unity null check
@@ -355,6 +378,8 @@ public sealed class PlayerFeedbackController : MonoBehaviour
         if (_stateEventSource != null)
             _stateEventSource.OnStateChanged.RemoveListener(
                 HandleGameStateChanged);
+        if (_audioEventSource != null)
+            _audioEventSource.FootstepEmitted -= HandleFootstepEmitted;
     }
 
     public static PlayerFeedbackCue CueFor(PlayerActionEdge edge)
@@ -405,8 +430,18 @@ public sealed class PlayerFeedbackController : MonoBehaviour
             rootPosition.x, capsuleBounds.min.y, rootPosition.z);
     }
 
-    public static float ResolveRunTrailInterval(float speed01)
+    public static Vector3 ResolveAlternatingFootfallPosition(
+        Vector3 groundContact, Vector3 forward, int footfallIndex,
+        float lateralOffset = 0.14f)
     {
-        return Mathf.Lerp(0.18f, 0.09f, Mathf.Clamp01(speed01));
+        Vector3 flatForward = Vector3.ProjectOnPlane(forward, Vector3.up);
+        if (flatForward.sqrMagnitude < 0.0001f)
+            flatForward = Vector3.forward;
+        Vector3 right = Vector3.Cross(
+            Vector3.up, flatForward.normalized).normalized;
+        float side = (footfallIndex & 1) == 0 ? -1f : 1f;
+        return groundContact
+               + right * side * Mathf.Max(0f, lateralOffset)
+               + Vector3.up * 0.012f;
     }
 }

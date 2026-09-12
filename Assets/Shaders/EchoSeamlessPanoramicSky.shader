@@ -8,7 +8,7 @@ Shader "EchoRun/SeamlessPanoramicSky"
         _Saturation ("Saturation", Range(0, 1)) = 0.22
         _Rotation ("Rotation", Range(0, 360)) = 0
         _SeamBlend ("Seam Blend", Range(0.001, 0.1)) = 0.07
-        _HorizonTexY ("Source Horizon Height", Range(0.1, 0.45)) = 0.24
+        _HorizonTexY ("Source Horizon Height", Range(0.1, 0.5)) = 0.24
     }
 
     SubShader

@@ -515,6 +515,11 @@ public static class RacingFeedbackCapture
         CaptureResultSummary("ScopeClosureReadability");
     }
 
+    public static void CaptureExperienceSlice()
+    {
+        CaptureInternal(true, "ExperienceSliceV1", false);
+    }
+
     private static void CaptureInternal(bool includeBaseline,
         string suite = "RacingFeedbackV1", bool rebuildPrefab = true)
     {

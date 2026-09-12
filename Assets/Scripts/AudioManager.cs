@@ -4,6 +4,7 @@ using System.Collections.Generic;
 public class AudioManager : MonoBehaviour
 {
     public static AudioManager Instance { get; private set; }
+    public event System.Action<int> FootstepEmitted;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void EnsureRuntimeInstance()
@@ -149,10 +150,12 @@ public class AudioManager : MonoBehaviour
         if (_footstepTimer >= _currentFootstepInterval)
         {
             _footstepTimer = 0f;
+            int footstepSequence = _footstepIndex++;
             AudioClip step = footstepClips != null && footstepClips.Length > 0
-                ? footstepClips[_footstepIndex++ % footstepClips.Length]
+                ? footstepClips[footstepSequence % footstepClips.Length]
                 : footstepClip;
             PlaySFX(step, 0.28f, "footstep");
+            FootstepEmitted?.Invoke(footstepSequence);
         }
     }
 

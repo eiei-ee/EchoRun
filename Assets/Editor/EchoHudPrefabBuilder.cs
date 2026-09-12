@@ -225,7 +225,7 @@ public static class EchoHudPrefabBuilder
         transitionFxObject.SetActive(false);
 
         Button pause = ButtonElement("PauseButton", dynamicLayer.transform, "Ⅱ",
-            new Vector2(1f, 1f), new Vector2(38f, 38f),
+            new Vector2(1f, 1f), new Vector2(52f, 52f),
             new Vector2(-17f, -13f), new Vector2(1f, 1f));
 
         EchoHudView view = root.GetComponent<EchoHudView>();

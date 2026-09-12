@@ -43,7 +43,8 @@ Shader "EchoRun/ExoGrayBlueTech"
         struct Input
         {
             float2 uv_MainTex;
-            float3 viewDir;
+            float3 worldPos;
+            float3 worldNormal;
         };
 
         void surf(Input input, inout SurfaceOutputStandard output)
@@ -51,7 +52,11 @@ Shader "EchoRun/ExoGrayBlueTech"
             fixed3 source = tex2D(_MainTex, input.uv_MainTex).rgb;
             half luminance = dot(source, half3(0.299, 0.587, 0.114));
             half warmAccent = saturate((source.r - max(source.g, source.b) - _AccentThreshold) * 5.0);
-            half rim = pow(saturate(1.0 - abs(normalize(input.viewDir).z)),
+            // Imported meshes need not have a valid tangent basis. Evaluate the
+            // rim in world space so turning cannot flood the suit with emission.
+            half facing = abs(dot(normalize(input.worldNormal),
+                normalize(UnityWorldSpaceViewDir(input.worldPos))));
+            half rim = pow(saturate(1.0 - facing),
                 max(1.0h, _RimPower));
 
             fixed3 blueGray = saturate(

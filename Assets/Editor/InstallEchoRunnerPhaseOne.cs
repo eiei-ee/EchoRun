@@ -25,7 +25,9 @@ public static class InstallEchoRunnerPhaseOne
     private const string ContactShadowShader = "EchoRun/ContactShadow";
 
     private static readonly Vector3 MemorySpineAnchor =
-        new Vector3(0f, 1.36f, -0.205f);
+        new Vector3(0f, 1.24f, -0.205f);
+    private static readonly Vector3 MemorySpineScale =
+        new Vector3(0.78f, 0.80f, 0.80f);
 
     private static readonly float[] SegmentPositions =
         { 0.18f, 0f, -0.18f };
@@ -417,23 +419,26 @@ public static class InstallEchoRunnerPhaseOne
         Transform model, GameObject prefab)
     {
         RemoveExisting(model, "EchoMemorySpine");
-        Animator animator = model.GetComponent<Animator>();
-        Transform chest = animator != null && animator.isHuman
-            ? animator.GetBoneTransform(HumanBodyBones.Chest)
-            : FindDescendant(model, "mixamorig:Spine2");
-        if (chest == null)
-            throw new InvalidOperationException(
-                "Character chest bone was not found.");
-
         GameObject instance =
             (GameObject)PrefabUtility.InstantiatePrefab(prefab);
         instance.name = "EchoMemorySpine";
         Transform spine = instance.transform;
+        FitMemorySpine(model, spine);
+        return spine;
+    }
+
+    public static void FitMemorySpine(Transform model, Transform spine)
+    {
+        Animator animator = model.GetComponent<Animator>();
+        Transform chest = animator != null && animator.isHuman
+            ? animator.GetBoneTransform(HumanBodyBones.Chest)
+            : FindDescendant(model, "mixamorig:Spine2");
+        if (chest == null) throw new InvalidOperationException("Character chest bone was not found.");
+        spine.SetParent(null, true);
         spine.position = model.TransformPoint(MemorySpineAnchor);
         spine.rotation = model.rotation;
-        spine.localScale = model.lossyScale;
+        spine.localScale = Vector3.Scale(model.lossyScale, MemorySpineScale);
         spine.SetParent(chest, true);
-        return spine;
     }
 
     private static Transform AttachContactShadow(

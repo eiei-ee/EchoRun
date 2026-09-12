@@ -146,7 +146,7 @@ public sealed class EchoVisualCaptureProbe : MonoBehaviour
         return false;
     }
 
-    private static void CaptureOffscreen(string path)
+    internal static void CaptureOffscreen(string path)
     {
         Camera camera = Camera.main;
         if (camera == null)

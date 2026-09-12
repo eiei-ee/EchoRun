@@ -162,7 +162,7 @@ public class VisualFoundationTests
     }
 
     [Test]
-    public void RuntimeSkyMapsConceptArtHorizonWithoutDarkGroundOverride()
+    public void RuntimeSkyUsesAuthoredPanoramaAtEquatorWithoutDarkGroundOverride()
     {
         Material material = WorldStyler.CreateSeamlessSkyMaterial();
         try
@@ -176,12 +176,10 @@ public class VisualFoundationTests
             Assert.NotNull(material.GetTexture("_MainTex"));
             Assert.That(material.GetFloat("_SeamBlend"),
                 Is.InRange(0.001f, 0.10f));
-            Assert.That(material.GetFloat("_HorizonTexY"),
-                Is.InRange(0.20f, 0.30f));
-            Assert.AreEqual(WorldStyler.SkyExposure,
-                material.GetFloat("_Exposure"), 0.001f);
-            Assert.AreEqual(WorldStyler.SkySaturation,
-                material.GetFloat("_Saturation"), 0.001f);
+            Assert.AreEqual(.5f, material.GetFloat("_HorizonTexY"), .001f,
+                "A full panorama must preserve its equator instead of stretching a concept painting.");
+            Assert.AreSame(AssetDatabase.LoadAssetAtPath<Texture2D>(
+                "Assets/Art/ExperienceSlice/BlueHourSky.png"), material.GetTexture("_MainTex"));
             Assert.IsFalse(material.HasProperty("_GroundFadeStart"));
             Assert.IsFalse(material.HasProperty("_GroundFadeEnd"));
             Assert.IsFalse(material.HasProperty("_GroundColor"));
@@ -221,8 +219,8 @@ public class VisualFoundationTests
 
         Color road = material.GetColor("_Color");
         Color lane = material.GetColor("_LaneColor");
-        Assert.Less(road.maxColorComponent, 0.10f,
-            "The road foundation must remain deep graphite.");
+        Assert.That(road.maxColorComponent, Is.InRange(0.10f, 0.20f),
+            "The graphite surface must separate from the dark runner without becoming a bright floor.");
         Assert.Less(Mathf.Max(Mathf.Abs(road.r - road.g),
             Mathf.Abs(road.g - road.b)), 0.02f,
             "The road foundation must stay neutral instead of blue-purple.");
