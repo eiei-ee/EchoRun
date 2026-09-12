@@ -640,9 +640,11 @@ public sealed class RuntimeSmokeTests
         Assert.AreEqual(WorldStyler.SeamlessSkyShaderName,
             RenderSettings.skybox.shader.name,
             context + "the authored skybox was not restored.");
-        Assert.AreSame(Resources.Load<Texture2D>("Art/EchoSky"),
+        Material citySky = Resources.Load<Material>("CityV7/ExperienceSky");
+        Assert.IsNotNull(citySky, context + "the current city sky asset is missing.");
+        Assert.AreSame(citySky.GetTexture("_MainTex"),
             RenderSettings.skybox.GetTexture("_MainTex"),
-            context + "the original panoramic sky texture was not restored.");
+            context + "the current city panoramic sky texture was not restored.");
 
         Camera camera = Camera.main;
         Assert.IsNotNull(camera, context + "the main camera is missing.");

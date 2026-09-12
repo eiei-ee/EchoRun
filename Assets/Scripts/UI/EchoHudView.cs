@@ -73,6 +73,12 @@ public sealed class EchoHudView : MonoBehaviour
     private Vector2 _fractureSliceBBase;
     private bool _layoutInitialized;
     private bool _compactLayout;
+    private bool _narrowLayout;
+
+    private void OnRectTransformDimensionsChange()
+    {
+        if (_layoutInitialized) ApplyModeLayout(_compactLayout);
+    }
 
     public Button PauseButton => pauseButton;
 
@@ -229,9 +235,12 @@ public sealed class EchoHudView : MonoBehaviour
 
     private void ApplyModeLayout(bool compact)
     {
-        if (_layoutInitialized && _compactLayout == compact) return;
+        RectTransform viewport = transform as RectTransform;
+        bool narrow = compact && viewport != null && viewport.rect.width < 1400f;
+        if (_layoutInitialized && _compactLayout == compact && _narrowLayout == narrow) return;
         _layoutInitialized = true;
         _compactLayout = compact;
+        _narrowLayout = narrow;
         if (meterGroup != null)
             SetLayout(meterGroup.GetComponent<RectTransform>(),
                 compact ? new Vector2(0f, 1f) : new Vector2(0.5f, 0.855f),
@@ -242,25 +251,25 @@ public sealed class EchoHudView : MonoBehaviour
         {
             // Upcoming route choice belongs near the forward view. Persistent
             // race statistics stay at the edge, leaving the track unobscured.
-            predictionText.alignment = compact ? TextAnchor.MiddleCenter : TextAnchor.MiddleLeft;
-            SetLayout(predictionText.rectTransform, compact ? new Vector2(.5f, 1f) : new Vector2(0f, 1f),
-                compact ? new Vector2(380f, 44f) : new Vector2(420f, 66f),
-                compact ? new Vector2(0f, -32f) : new Vector2(30f, -255f),
-                compact ? new Vector2(.5f, 1f) : new Vector2(0f, 1f));
+            predictionText.alignment = compact && !narrow ? TextAnchor.MiddleCenter : TextAnchor.MiddleLeft;
+            SetLayout(predictionText.rectTransform, compact && !narrow ? new Vector2(.5f, 1f) : new Vector2(0f, 1f),
+                narrow ? new Vector2(312f, 38f) : compact ? new Vector2(380f, 44f) : new Vector2(420f, 66f),
+                narrow ? new Vector2(30f, -176f) : compact ? new Vector2(0f, -32f) : new Vector2(30f, -255f),
+                compact && !narrow ? new Vector2(.5f, 1f) : new Vector2(0f, 1f));
         }
         if (predictionPlate != null)
-            SetLayout(predictionPlate.GetComponent<RectTransform>(), compact ? new Vector2(.5f, 1f) : new Vector2(0f, 1f),
-                compact ? new Vector2(408f, 48f) : new Vector2(450f, 68f),
-                compact ? new Vector2(0f, -30f) : new Vector2(22f, -254f),
-                compact ? new Vector2(.5f, 1f) : new Vector2(0f, 1f));
+            SetLayout(predictionPlate.GetComponent<RectTransform>(), compact && !narrow ? new Vector2(.5f, 1f) : new Vector2(0f, 1f),
+                narrow ? new Vector2(330f, 40f) : compact ? new Vector2(408f, 48f) : new Vector2(450f, 68f),
+                narrow ? new Vector2(22f, -175f) : compact ? new Vector2(0f, -30f) : new Vector2(22f, -254f),
+                compact && !narrow ? new Vector2(.5f, 1f) : new Vector2(0f, 1f));
         if (feedbackText != null)
             SetLayout(feedbackText.rectTransform, new Vector2(0f, 1f),
                 new Vector2(540f, 40f),
-                new Vector2(30f, compact ? -185f : -333f), new Vector2(0f, 1f));
+                new Vector2(30f, narrow ? -223f : compact ? -185f : -333f), new Vector2(0f, 1f));
         if (feedbackPlate != null)
             SetLayout(feedbackPlate.GetComponent<RectTransform>(), new Vector2(0f, 1f),
                 new Vector2(560f, 42f),
-                new Vector2(22f, compact ? -184f : -332f), new Vector2(0f, 1f));
+                new Vector2(22f, narrow ? -222f : compact ? -184f : -332f), new Vector2(0f, 1f));
     }
 
     private static void SetLayout(RectTransform rect, Vector2 anchor,

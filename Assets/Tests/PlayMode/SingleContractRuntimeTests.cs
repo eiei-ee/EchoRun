@@ -847,6 +847,8 @@ public sealed class SingleContractRuntimeTests
         {
             new Vector2(1920f, 1080f),
             new Vector2(1080f, 1920f),
+            new Vector2(1280f, 720f),
+            new Vector2(1400f, 900f),
             new Vector2(2560f, 1080f)
         };
         RectTransform pauseButton = Find(hud,
