@@ -2,24 +2,29 @@
     "schemaVersion": 1,
     "product": "EchoRun",
     "version": "0.2.0-alpha.1",
-    "sourceRevision": "088f4c5629215b1c987251a50848bb2094544a23",
+    "sourceRevision": "14e0166dc64e67fbce4edd73a6d547ca00dff767",
     "sourceBranch": "HEAD",
-    "sourceDirty": true,
-    "builtAtUtc": "2026-09-10T10:33:46.0627326Z",
+    "sourceDirty": false,
+    "builtAtUtc": "2026-09-12T06:38:06.4019015Z",
     "engineVersion": "2022.3.62t8",
     "target": "WebGL",
     "playableUrl": "https://eiei-ee.github.io/EchoRun/",
     "entryPoint": "index.html",
     "artifacts": [
         {
-            "path": "Build/8d26bd05e7918b7d7c4bbeab47c853f7.framework.js.unityweb",
-            "bytes": 79889,
-            "sha256": "D389CF2701AD78B0071638D92CE5A278E8675BA43080DD76786C9EFD75DA4CBC"
+            "path": "Build/1fcd9b2a3631d8e603a74bdf8abfdedf.data.unityweb",
+            "bytes": 20959950,
+            "sha256": "242081E00B19D606F112172A0D3D11B436EA79AEAFAC5F5030A3005E16690B11"
         },
         {
-            "path": "Build/b7c34589edc26f82c3611fe753759faa.data.unityweb",
-            "bytes": 15298469,
-            "sha256": "17BD70AA80418A68107907BF84DB6042C361F223A1CE6C0D753D2A325EF6774A"
+            "path": "Build/8e15f460a836222f14a32fa41d975334.wasm.unityweb",
+            "bytes": 6623223,
+            "sha256": "C763F8D17A4F7A1E7744C8CEEA571A574B4F7A6841C789366B81CEAC42139045"
+        },
+        {
+            "path": "Build/c1a818e41f17d3682549ec3411de4842.framework.js.unityweb",
+            "bytes": 79889,
+            "sha256": "7E6A39E49104159F99DF7A414CD7AF242A76D316C2DF3BC1A431AE3B4FFD5898"
         },
         {
             "path": "Build/d88030906d03a56fce720cdde88dd1d5.loader.js",
@@ -32,14 +37,9 @@
             "sha256": "71EF24489E2AE70AAD31086198595CED2BE4FFE1551A536D891577AA3E97669A"
         },
         {
-            "path": "Build/f41e2c377979cdb7b4a13fcf846f1282.wasm.unityweb",
-            "bytes": 6622689,
-            "sha256": "C8DBCA6F85770D609CABEF87E5DA7EEE50871689872B28B365269B695F2AC468"
-        },
-        {
             "path": "index.html",
             "bytes": 7653,
-            "sha256": "8F9C3D2C6BE6554856FE4C9F4176295D1C324D1C47698C4A00281B1916A5BA41"
+            "sha256": "890FC7EBDA787075EFEE8BBFC3BC15F55DA34A36B1EC78CC307A1EDE680CEC3F"
         }
     ]
 }
