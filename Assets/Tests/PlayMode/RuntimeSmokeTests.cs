@@ -752,23 +752,79 @@ public sealed class RuntimeSmokeTests
         Transform marker = track.transform.Find("FinishMarker");
         Assert.IsNotNull(marker);
         Assert.IsTrue(marker.gameObject.activeInHierarchy);
-        Assert.GreaterOrEqual(marker.GetComponentsInChildren<Renderer>().Length, 10);
-        Assert.IsNotNull(marker.Find("ProtocolCore"));
+        GameObject authoredGate = Resources.Load<GameObject>(FinishGatePresentation.ResourcePath);
+        Assert.IsNotNull(authoredGate);
+        MeshFilter[] authoredFilters = authoredGate.GetComponentsInChildren<MeshFilter>(true);
+        MeshFilter[] runtimeFilters = marker.GetComponentsInChildren<MeshFilter>(true);
+        Assert.IsNotEmpty(authoredFilters, "The finish prefab needs real authored geometry.");
+        Assert.AreEqual(authoredFilters.Length, runtimeFilters.Length);
+        var authoredMeshes = new HashSet<Mesh>();
+        foreach (MeshFilter filter in authoredFilters) authoredMeshes.Add(filter.sharedMesh);
+        foreach (MeshFilter filter in runtimeFilters)
+        {
+            Assert.IsNotNull(filter.sharedMesh);
+            Assert.IsTrue(authoredMeshes.Contains(filter.sharedMesh),
+                "The visible finish must retain its formal city asset instead of primitive substitutes.");
+        }
+        FinishGatePresentation presentation = marker.GetComponent<FinishGatePresentation>();
+        Assert.IsNotNull(presentation);
+        Assert.IsNotEmpty(presentation.signalRenderers);
+        Assert.Less(presentation.signalRenderers.Length,
+            marker.GetComponentsInChildren<Renderer>(true).Length,
+            "Signals must be separate from the structural and lettering surfaces.");
+        foreach (Renderer signal in presentation.signalRenderers)
+        {
+            Assert.IsNotNull(signal);
+            Assert.IsTrue(signal.transform.IsChildOf(marker));
+        }
+        Assert.IsNull(marker.Find("ProtocolCore"));
         Light[] finishLights = marker.GetComponentsInChildren<Light>(true);
         Assert.AreEqual(2, finishLights.Length);
+        CollectionAssert.AreEquivalent(finishLights, presentation.arrivalLights);
         foreach (Light finishLight in finishLights)
         {
-            Assert.LessOrEqual(finishLight.range, 6f);
+            Assert.AreEqual(LightType.Point, finishLight.type);
+            Assert.Greater(finishLight.range, 0f);
+            Assert.LessOrEqual(finishLight.range, 5.5f);
             Assert.AreEqual(LightShadows.None, finishLight.shadows);
         }
-        foreach (Collider collider in marker.GetComponentsInChildren<Collider>())
+        foreach (Collider collider in marker.GetComponentsInChildren<Collider>(true))
             Assert.IsFalse(collider.enabled,
                 "The visual finish marker must never collide with the runner.");
+        Assert.IsEmpty(marker.GetComponentsInChildren<Rigidbody>(true));
         PlayerController player = Object.FindObjectOfType<PlayerController>();
         Assert.IsNotNull(player);
         Vector3 toMarker = marker.position - player.transform.position;
         Assert.Greater(Vector3.Dot(toMarker, player.ForwardDirection), 1f,
             "The finish marker must be visibly ahead of the runner.");
+
+        // Exercise the real MonoBehaviour lifecycle in Play Mode. Edit Mode cannot
+        // prove this because the presentation intentionally does not run in the editor.
+        presentation.SetApproach(1f, true);
+        foreach (Light finishLight in finishLights) Assert.IsTrue(finishLight.enabled);
+        marker.gameObject.SetActive(false);
+        foreach (Light finishLight in finishLights)
+            Assert.IsFalse(finishLight.enabled,
+                "Deactivating the finish gate must release its arrival lights.");
+        marker.gameObject.SetActive(true);
+        updateMarker.Invoke(track, null);
+        Assert.IsTrue(marker.gameObject.activeInHierarchy);
+
+        // Crossing the visibility boundary must hide the same instance and its lights;
+        // advancing toward the finish must reuse it, without affecting course settlement.
+        foreach (float remaining in new[] { 100f, 10f, 0f })
+        {
+            float distance = gameManager.CourseDistance - remaining;
+            typeof(GameManager).GetField("<Distance>k__BackingField",
+                BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(gameManager, distance);
+            typeof(GameManager).GetField("_distanceTraveled",
+                BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(gameManager, distance);
+            updateMarker.Invoke(track, null);
+            Assert.AreSame(marker, track.transform.Find("FinishMarker"));
+            Assert.AreEqual(remaining == 10f, marker.gameObject.activeSelf);
+            if (!marker.gameObject.activeSelf)
+                foreach (Light finishLight in finishLights) Assert.IsFalse(finishLight.enabled);
+        }
     }
 
     [UnityTest]

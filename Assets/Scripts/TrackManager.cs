@@ -115,9 +115,8 @@ public class TrackManager : MonoBehaviour
     private Transform _player;
     private AITrackDirector _aiDirector;
     private GameObject _finishMarker;
-    private Material _finishMarkerMaterial;
+    private FinishGatePresentation _finishGatePresentation;
     private Material _predictionGateMaterial;
-    private Light[] _finishMarkerLights;
     private bool _usesColdWhiteFortressSample;
     private bool _usesColdWhiteFortressLeftSample;
 
@@ -190,6 +189,17 @@ public class TrackManager : MonoBehaviour
     {
         float safeLength = Mathf.Max(1f, routeSegmentLength);
         return safeLength * Mathf.Max(2, planningPoolSize / 2);
+    }
+
+    public static float GeometryLookaheadDistance(float routeSegmentLength,
+        int planningPoolSize = 12)
+    {
+        // Buildings share the road shell. Prepare it beyond the city's fog,
+        // with two segments of margin for facades extending toward the camera.
+        // Content/learning still uses its separate, shorter preparation window.
+        float safeLength = Mathf.Max(1f, routeSegmentLength);
+        return Mathf.Max(ContentLookaheadDistance(safeLength, planningPoolSize),
+            CityV7PlayableEnvironment.FogEndDistance + safeLength * 2f);
     }
 
     public static bool ShouldPrepareSegmentContent(float segmentRouteDistance,
@@ -360,12 +370,13 @@ public class TrackManager : MonoBehaviour
                 ? shadow.DuelPhase : EchoDuelPhase.None;
         int lookaheadPoolSize = PlanningLookaheadPoolSize(
             poolSize, planningPhase);
-        int spawnBudget = Mathf.Max(1, lookaheadPoolSize);
-        while (spawnBudget-- > 0 && TrackSpawnRules.NeedsSegment(
-                   _plannedDistance, playerRouteDistance, segmentLength,
-                   lookaheadPoolSize))
+        float geometryLookahead = GeometryLookaheadDistance(segmentLength, lookaheadPoolSize);
+        int spawnBudget = Mathf.CeilToInt(geometryLookahead / Mathf.Max(1f, segmentLength));
+        bool routeChanged = false;
+        while (spawnBudget-- > 0 && _plannedDistance - playerRouteDistance < geometryLookahead)
         {
             SpawnSegment();
+            routeChanged = true;
         }
         PopulatePreparedSegmentContent(playerRouteDistance,
             lookaheadPoolSize);
@@ -379,7 +390,12 @@ public class TrackManager : MonoBehaviour
                     data.routeDistance, playerRouteDistance, segmentLength,
                     SEGMENT_RECYCLE_MULT)) break;
             RecycleSegment(seg);
+            routeChanged = true;
         }
+
+        // Evaluate the completed route once: a retired road must stop hiding
+        // buildings immediately, even on frames that do not spawn a new road.
+        if (routeChanged) CityV7PlayableEnvironment.RefreshClearance();
 
         UpdateFinishMarker();
     }
@@ -848,7 +864,7 @@ public class TrackManager : MonoBehaviour
             CurrentTurnSegment = data;
         }
 
-        WorldStyler.Instance?.DecorateSegment(segment, segType);
+        WorldStyler.Instance?.DecorateSegment(segment, segType, false);
         AIRunTelemetry.RecordEvent("track_segment", (int)segType,
             plan.safeLane, plan.difficulty, plan.obstacleChance);
         _plannedDistance += segmentLength;
@@ -1378,21 +1394,13 @@ public class TrackManager : MonoBehaviour
         }
 
         EnsureFinishMarker();
-        if (_finishMarkerMaterial != null
-            && _finishMarkerMaterial.HasProperty("_GateProgress"))
-            _finishMarkerMaterial.SetFloat("_GateProgress",
-                Mathf.Clamp01(1f - remaining / visibleDistance));
+        if (_finishMarker == null) return;
         bool enableFinishLights = remaining <= 12f
                                   && VisualQualityController.Current
                                   == VisualQuality.High
                                   && PostFxController.SupportsHighFx(
                                       Application.platform);
-        if (_finishMarkerLights != null)
-        {
-            for (int i = 0; i < _finishMarkerLights.Length; i++)
-                if (_finishMarkerLights[i] != null)
-                    _finishMarkerLights[i].enabled = enableFinishLights;
-        }
+        _finishGatePresentation?.SetApproach(1f - remaining / visibleDistance, enableFinishLights);
         PlayerController controller = _player.GetComponent<PlayerController>();
         Vector3 forward = controller != null
             ? controller.ForwardDirection
@@ -1410,90 +1418,16 @@ public class TrackManager : MonoBehaviour
     private void EnsureFinishMarker()
     {
         if (_finishMarker != null) return;
-
-        _finishMarker = new GameObject("FinishMarker");
-        _finishMarker.transform.SetParent(transform, false);
-        Shader shader = Shader.Find("EchoRun/FinishGate");
-        if (shader == null) shader = Shader.Find("Unlit/Color");
-        if (shader == null) shader = Shader.Find("Standard");
-        if (shader == null) shader = Shader.Find("Mobile/Diffuse");
-        if (shader != null)
+        GameObject prefab = Resources.Load<GameObject>(FinishGatePresentation.ResourcePath);
+        if (prefab == null)
         {
-            _finishMarkerMaterial = new Material(shader)
-            {
-                name = "EchoFinishMarker_Runtime"
-            };
-            if (_finishMarkerMaterial.HasProperty("_Color"))
-                _finishMarkerMaterial.color = new Color(0.05f, 0.95f, 1f, 1f);
+            Debug.LogError("Missing authored city finish gate: " + FinishGatePresentation.ResourcePath);
+            return;
         }
-
-        CreateFinishMarkerPart("LeftPillar", PrimitiveType.Cube,
-            new Vector3(-5.1f, 2.1f, 0f), new Vector3(0.42f, 4.2f, 0.58f), 0f);
-        CreateFinishMarkerPart("RightPillar", PrimitiveType.Cube,
-            new Vector3(5.1f, 2.1f, 0f), new Vector3(0.42f, 4.2f, 0.58f), 0f);
-        CreateFinishMarkerPart("TopBeam", PrimitiveType.Cube,
-            new Vector3(0f, 4.2f, 0f), new Vector3(10.55f, 0.42f, 0.58f), 0f);
-        CreateFinishMarkerPart("LeftSignal", PrimitiveType.Cube,
-            new Vector3(-4.92f, 2.1f, -0.34f), new Vector3(0.10f, 3.3f, 0.08f), 1f);
-        CreateFinishMarkerPart("RightSignal", PrimitiveType.Cube,
-            new Vector3(4.92f, 2.1f, -0.34f), new Vector3(0.10f, 3.3f, 0.08f), 1f);
-        CreateFinishMarkerPart("LaneSignalLeft", PrimitiveType.Cube,
-            new Vector3(-3f, 3.42f, 0f), new Vector3(2.6f, 0.16f, 0.18f), 1f);
-        CreateFinishMarkerPart("LaneSignalCenter", PrimitiveType.Cube,
-            new Vector3(0f, 3.42f, 0f), new Vector3(2.6f, 0.16f, 0.18f), 1f);
-        CreateFinishMarkerPart("LaneSignalRight", PrimitiveType.Cube,
-            new Vector3(3f, 3.42f, 0f), new Vector3(2.6f, 0.16f, 0.18f), 1f);
-        CreateFinishMarkerPart("ProtocolCore", PrimitiveType.Sphere,
-            new Vector3(0f, 4.18f, -0.42f), new Vector3(1.15f, 1.15f, 0.42f), 2f);
-        CreateFinishMarkerPart("CoreSpine", PrimitiveType.Cube,
-            new Vector3(0f, 3.18f, -0.20f), new Vector3(0.16f, 1.45f, 0.16f), 2f);
-        _finishMarkerLights = new[]
-        {
-            CreateFinishPointLight("FinishLightLeft",
-                new Vector3(-3.6f, 2.4f, -0.6f)),
-            CreateFinishPointLight("FinishLightRight",
-                new Vector3(3.6f, 2.4f, -0.6f))
-        };
+        _finishMarker = Instantiate(prefab, transform, false);
+        _finishMarker.name = "FinishMarker";
+        _finishGatePresentation = _finishMarker.GetComponent<FinishGatePresentation>();
         _finishMarker.SetActive(false);
-    }
-
-    private Light CreateFinishPointLight(string name, Vector3 localPosition)
-    {
-        GameObject lightObject = new GameObject(name);
-        lightObject.transform.SetParent(_finishMarker.transform, false);
-        lightObject.transform.localPosition = localPosition;
-        Light point = lightObject.AddComponent<Light>();
-        point.type = LightType.Point;
-        point.range = 5.5f;
-        point.intensity = 0.58f;
-        point.color = new Color(0.18f, 0.82f, 1f);
-        point.shadows = LightShadows.None;
-        point.enabled = false;
-        return point;
-    }
-
-    private void CreateFinishMarkerPart(string name, PrimitiveType primitive,
-        Vector3 localPosition, Vector3 localScale, float role)
-    {
-        GameObject part = GameObject.CreatePrimitive(primitive);
-        part.name = name;
-        part.transform.SetParent(_finishMarker.transform, false);
-        part.transform.localPosition = localPosition;
-        part.transform.localScale = localScale;
-        Collider collider = part.GetComponent<Collider>();
-        if (collider != null)
-        {
-            collider.enabled = false;
-            Destroy(collider);
-        }
-        Renderer renderer = part.GetComponent<Renderer>();
-        if (renderer != null && _finishMarkerMaterial != null)
-        {
-            renderer.sharedMaterial = _finishMarkerMaterial;
-            var properties = new MaterialPropertyBlock();
-            properties.SetFloat("_GateRole", role);
-            renderer.SetPropertyBlock(properties);
-        }
     }
 
     private void SetFinishMarkerActive(bool active)
@@ -2905,7 +2839,6 @@ public class TrackManager : MonoBehaviour
 
     void OnDestroy()
     {
-        DestroyRuntimeObject(_finishMarkerMaterial);
         DestroyRuntimeObject(_predictionGateMaterial);
         if (Instance == this) Instance = null;
     }

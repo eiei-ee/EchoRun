@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 // An authored distant silhouette ring. It follows translation only, so turns
 // retain a consistent horizon; it never participates in track or collision.
@@ -8,9 +9,18 @@ public sealed class CityV7DistantBackdrop : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Create()
     {
-        if (FindObjectOfType<CityV7DistantBackdrop>() != null) return;
+        SceneManager.sceneLoaded -= CreateForScene;
+        SceneManager.sceneLoaded += CreateForScene;
+        CreateForScene(SceneManager.GetActiveScene(), LoadSceneMode.Single);
+    }
+    private static void CreateForScene(Scene scene, LoadSceneMode mode)
+    {
+        if (!CityLowerDistrict.CanCreateInScene<CityV7DistantBackdrop>(scene)) return;
         var prefab = Resources.Load<GameObject>("CityV7/ExperienceSkyline");
-        if (prefab != null) Instantiate(prefab).AddComponent<CityV7DistantBackdrop>();
+        if (prefab == null) return;
+        var host = Instantiate(prefab);
+        SceneManager.MoveGameObjectToScene(host, scene);
+        host.AddComponent<CityV7DistantBackdrop>();
     }
     private void LateUpdate()
     {

@@ -4,6 +4,7 @@ using UnityEngine;
 // All collision, route generation, controls and formal character code are retained.
 public static class CityV7PlayableEnvironment
 {
+    public const float FogEndDistance = 185f;
     public static Material CreateSky()
     {
         var material=new Material(Resources.Load<Shader>("CityV7/CityAfterimageQuietSky"));
@@ -12,16 +13,68 @@ public static class CityV7PlayableEnvironment
     static Color Color32ToColor(int rgb){return new Color((rgb>>16&255)/255f,(rgb>>8&255)/255f,(rgb&255)/255f);}
     public static void ApplyAtmosphere(Light key=null,Light fill=null)
     {
-        RenderSettings.fog=true;RenderSettings.fogMode=FogMode.Linear;RenderSettings.fogStartDistance=65;RenderSettings.fogEndDistance=185;
-        RenderSettings.fogColor=Color32ToColor(0x859BB4);RenderSettings.ambientMode=UnityEngine.Rendering.AmbientMode.Trilight;
-        RenderSettings.ambientSkyColor=Color32ToColor(0xA0B8D6);RenderSettings.ambientEquatorColor=Color32ToColor(0x8197AF);RenderSettings.ambientGroundColor=Color32ToColor(0x5D7086);
-        if(key!=null){key.color=Color32ToColor(0xFFF1DB);key.intensity=1.02f;key.transform.rotation=Quaternion.Euler(53,-40,0);key.shadowStrength=.86f;key.shadowBias=.035f;key.shadowNormalBias=.10f;}
-        // A restrained cool fill separates the unchanged runner from the dark road.
-        if(fill!=null){fill.intensity=.48f;fill.color=new Color(.78f,.87f,1f);}
+        bool high = VisualQualityController.Current == VisualQuality.High;
+        bool desktop = VisualQualityController.DefaultForPlatform(Application.platform)
+                       == VisualQuality.High;
+        if (high && desktop)
+        {
+            // The editor's 40 m default clipped city shadows before the first
+            // cross street. Match the desktop player with a bounded sun pass.
+            QualitySettings.shadows = ShadowQuality.All;
+            QualitySettings.shadowResolution = ShadowResolution.High;
+            QualitySettings.shadowProjection = ShadowProjection.StableFit;
+            QualitySettings.shadowDistance = 110f;
+            QualitySettings.shadowCascades = 4;
+            QualitySettings.shadowCascade4Split = new Vector3(.12f, .30f, .60f);
+            QualitySettings.pixelLightCount = Mathf.Max(2, QualitySettings.pixelLightCount);
+        }
+        RenderSettings.fog = true;
+        RenderSettings.fogMode = FogMode.Linear;
+        RenderSettings.fogStartDistance = 70f;
+        // Both city grids recycle beyond this cutoff. Keep it independent of
+        // the farther skyline and of the sun's nearer shadow distance.
+        RenderSettings.fogEndDistance = FogEndDistance;
+        RenderSettings.fogColor = Color32ToColor(0xB1BDC8);
+        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+        RenderSettings.ambientSkyColor = Color32ToColor(0x9BAEC4);
+        RenderSettings.ambientEquatorColor = Color32ToColor(0x758697);
+        RenderSettings.ambientGroundColor = Color32ToColor(0x4D5965);
+
+        // A fixed authored sky reflection gives the windows and painted metal
+        // a shared environment without rendering extra cameras during a run.
+        Cubemap reflection = Resources.Load<Cubemap>("CityV7/StackedCityReflection");
+        if (reflection != null)
+        {
+            RenderSettings.defaultReflectionMode = UnityEngine.Rendering.DefaultReflectionMode.Custom;
+            RenderSettings.customReflectionTexture = reflection;
+        }
+        RenderSettings.reflectionIntensity = high ? .82f : .30f;
+
+        if (key != null)
+        {
+            key.shadows = high && desktop ? LightShadows.Soft : LightShadows.None;
+            key.color = Color32ToColor(0xFFF0D9);
+            key.intensity = 1.18f;
+            key.transform.rotation = Quaternion.Euler(39f, -48f, 0f);
+            key.shadowStrength = .83f;
+            key.shadowBias = .025f;
+            key.shadowNormalBias = .12f;
+            RenderSettings.sun = key;
+        }
+        // Keep the runner's cool rim, but let the sun and terrace overhangs
+        // describe the buildings instead of filling every facade equally.
+        if (fill != null)
+        {
+            fill.enabled = high;
+            fill.intensity = high ? .24f : 0f;
+            fill.color = Color32ToColor(0xCBDCED);
+            fill.transform.rotation = Quaternion.Euler(28f, 145f, 0f);
+            fill.shadows = LightShadows.None;
+        }
     }
-    public static bool Decorate(GameObject segment,TrackSegmentType type)
+    public static bool Decorate(GameObject segment,TrackSegmentType type,bool refreshClearance=true)
     {
-        if(type!=TrackSegmentType.Straight){ReplaceLegacyTurnBuildings(segment,type);RefreshClearance();return false;}
+        if(type!=TrackSegmentType.Straight){ReplaceLegacyTurnBuildings(segment,type);if(refreshClearance)RefreshClearance();return false;}
         var data=segment.GetComponent<TrackSegmentData>();
         if(data==null)return false;
         int index=((Mathf.RoundToInt(data.routeDistance/20f)%9)+9)%9;
@@ -40,18 +93,19 @@ public static class CityV7PlayableEnvironment
             if(ground)EchoRoadVisualController.Instance.ApplyTo(renderer,RoadSurfaceRole.Main);
         }
         var existing=segment.transform.Find("CityV7Environment");
-        if(existing!=null&&existing.GetComponent<CityV7ChunkIdentity>().index==index){RefreshClearance();return true;}
+        if(existing!=null&&existing.GetComponent<CityV7ChunkIdentity>().index==index){if(refreshClearance)RefreshClearance();return true;}
         if(existing!=null){existing.gameObject.SetActive(false);Object.Destroy(existing.gameObject);}
         var legacy=segment.transform.Find("EchoEnvironment");if(legacy!=null)legacy.gameObject.SetActive(false);
         var visual=Object.Instantiate(prefab,segment.transform,false);visual.name="CityV7Environment";
         visual.AddComponent<CityV7ChunkIdentity>().index=index;
-        RefreshClearance();
+        if(refreshClearance)RefreshClearance();
         return true;
     }
 
     static void ReplaceLegacyTurnBuildings(GameObject segment,TrackSegmentType type)
     {
         var legacy=segment.transform.Find("EchoEnvironment");
+        var quarter=Resources.Load<GameObject>("CityV7/"+(type==TrackSegmentType.TurnRight?"CornerQuarterRight":"CornerQuarterLeft"));
         var prefab=Resources.Load<GameObject>("CityV7/Chunk0");
         if(legacy==null||prefab==null)return;
         bool hasLegacyCity=false;
@@ -62,7 +116,17 @@ public static class CityV7PlayableEnvironment
             if(child.name=="CornerIsland"||child.name=="CornerIslandCore"||child.name=="CornerIslandSignal")
                 child.gameObject.SetActive(false);
         }
-        if(!hasLegacyCity||segment.transform.Find("CityV7Environment")!=null)return;
+        if(segment.transform.Find("CityV7Environment")!=null)return;
+        if(quarter!=null)
+        {
+            // Each authored tower is a separate child, so clearance removes
+            // only an obstructing footprint instead of the entire corner city.
+            var district=Object.Instantiate(quarter,segment.transform,false);
+            district.name="CityV7Environment";
+            district.AddComponent<CityV7ChunkIdentity>().index=-1;
+            return;
+        }
+        if(!hasLegacyCity)return;
         // Retain the authored turn road, rails, variant controller and colliders.
         // The replacement sits outside the bend and participates in clearance.
         var root=new GameObject("CityV7Environment");

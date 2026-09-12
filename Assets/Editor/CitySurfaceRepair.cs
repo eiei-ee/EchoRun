@@ -14,11 +14,12 @@ public static class CitySurfaceRepair
     {
         public Vector3 position, normal;
         public Vector4 tangent;
-        public Vector2 uv;
+        public Vector2 uv, uv2;
         public static Vertex Lerp(Vertex a, Vertex b, float t) => new Vertex {
             position=Vector3.LerpUnclamped(a.position,b.position,t),
             normal=Vector3.LerpUnclamped(a.normal,b.normal,t),
-            tangent=Vector4.LerpUnclamped(a.tangent,b.tangent,t), uv=Vector2.LerpUnclamped(a.uv,b.uv,t)};
+            tangent=Vector4.LerpUnclamped(a.tangent,b.tangent,t), uv=Vector2.LerpUnclamped(a.uv,b.uv,t),
+            uv2=Vector2.LerpUnclamped(a.uv2,b.uv2,t)};
     }
     sealed class Triangle
     {
@@ -77,6 +78,28 @@ public static class CitySurfaceRepair
         Debug.Log(root.name+" final-scale clipped triangles="+removed);
     }
 
+    // A bridge girder extends through the concrete slab. Its end caps used to
+    // share the slab's end plane, so the visible cross section alternated
+    // between dark metal and pale concrete. Keep the concrete face and trim
+    // only the intersecting area of the metal faces; exposed undersides stay.
+    public static int RepairBridgeStructure(GameObject root, string segmentName)
+    {
+        var filters = root.GetComponentsInChildren<MeshFilter>();
+        var triangles = Triangles(filters);
+        foreach (var triangle in triangles)
+            triangle.priority = triangle.owner.GetComponent<Renderer>().sharedMaterial.name == "Concrete" ? 2 : 1;
+        int removed = 0;
+        foreach (var filter in filters)
+            if (filter.GetComponent<Renderer>().sharedMaterial.name == "RoofMetal")
+                // Float interpolation at the pier/crosshead edge can leave
+                // sub-micrometre strips (~2.4e-8 m2). Do not treat those as new
+                // overlaps on every invocation. One square millimetre is far
+                // below a visible bridge feature; other city repairs keep
+                // their existing tolerance.
+                removed += Repair(filter, triangles, "Bridge_" + segmentName, 1e-6f);
+        return removed;
+    }
+
     static List<Triangle> Triangles(MeshFilter[] filters)
     {
         var result=new List<Triangle>();
@@ -96,11 +119,12 @@ public static class CitySurfaceRepair
         return result;
     }
 
-    static int Repair(MeshFilter filter,List<Triangle> all,string chunk)
+    static int Repair(MeshFilter filter,List<Triangle> all,string chunk,float minimumArea=1e-8f)
     {
         var original=filter.sharedMesh;
         if(original.subMeshCount!=1)throw new InvalidOperationException("Expected material-separated city mesh: "+filter.name);
-        var positions=original.vertices;var normals=original.normals;var tangents=original.tangents;var uv=original.uv;
+        var positions=original.vertices;var normals=original.normals;var tangents=original.tangents;var uv=original.uv;var uv2=original.uv2;
+        bool hasUv2=positions.Length>0 && uv2.Length==positions.Length;
         var vertices=new List<Vertex>();var indices=new List<int>();int modified=0;
         var input=original.triangles;int priority=Priority(filter.GetComponent<Renderer>().sharedMaterial.name);
         var candidates=all.Where(t=>t.owner!=filter && t.priority>priority &&
@@ -111,7 +135,8 @@ public static class CitySurfaceRepair
             for(int j=0;j<3;j++)
             {
                 int k=input[i+j];polygon.Add(new Vertex{position=positions[k],normal=normals[k],
-                    tangent=tangents.Length>k?tangents[k]:Vector4.zero,uv=uv.Length>k?uv[k]:Vector2.zero});
+                    tangent=tangents.Length>k?tangents[k]:Vector4.zero,uv=uv.Length>k?uv[k]:Vector2.zero,
+                    uv2=hasUv2?uv2[k]:Vector2.zero});
             }
             Vector3 a=filter.transform.TransformPoint(polygon[0].position),
                 b=filter.transform.TransformPoint(polygon[1].position),c=filter.transform.TransformPoint(polygon[2].position);
@@ -133,10 +158,10 @@ public static class CitySurfaceRepair
                     {
                         Vector3 edgeStart=corners[edge],direction=corners[(edge+1)%3]-edgeStart;
                         Split(inside,filter.transform,edgeStart,direction,normal,out var keep,out var cut);
-                        if(Area(cut)>1e-8f)outside.Add(cut);
+                        if(Area(cut)>minimumArea)outside.Add(cut);
                         inside=keep;
                     }
-                    if(Area(inside)>1e-8f){changed=true;next.AddRange(outside);}else next.Add(piece);
+                    if(Area(inside)>minimumArea){changed=true;next.AddRange(outside);}else next.Add(piece);
                 }
                 pieces=next;
             }
@@ -151,11 +176,12 @@ public static class CitySurfaceRepair
         var mesh=new Mesh{name=original.name,indexFormat=IndexFormat.UInt32};
         mesh.SetVertices(vertices.Select(v=>v.position).ToList());mesh.SetNormals(vertices.Select(v=>v.normal).ToList());
         mesh.SetTangents(vertices.Select(v=>v.tangent).ToList());mesh.SetUVs(0,vertices.Select(v=>v.uv).ToList());
+        if(hasUv2)mesh.SetUVs(1,vertices.Select(v=>v.uv2).ToList());
         mesh.SetTriangles(indices,0);mesh.RecalculateBounds();
         string path="Assets/Art/CityLayers/Clean_"+chunk+"_"+filter.name+".asset";
         var asset=AssetDatabase.LoadAssetAtPath<Mesh>(path);
         if(asset==null){AssetDatabase.CreateAsset(mesh,path);asset=mesh;}
-        else{EditorUtility.CopySerialized(mesh,asset);UnityEngine.Object.DestroyImmediate(mesh);}
+        else{EditorUtility.CopySerialized(mesh,asset);EditorUtility.SetDirty(asset);asset.UploadMeshData(false);UnityEngine.Object.DestroyImmediate(mesh);}
         filter.sharedMesh=asset;
         return modified;
     }

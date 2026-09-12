@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 // Visual-only authored blocks remain fixed in world space until recycled
 // beyond the fog. Unlike the horizon, nearby rooftops must retain parallax.
@@ -13,13 +14,44 @@ public sealed class CityLowerDistrict : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Create()
     {
-        if(FindObjectOfType<CityLowerDistrict>()!=null||Resources.Load<GameObject>("CityV7/LowerBlock0")==null)return;
-        new GameObject("CityLowerDistrict").AddComponent<CityLowerDistrict>();
+        // This callback runs once per player session. The roots themselves are
+        // scene-owned, so Restart and ReturnToMenu need the sceneLoaded hook.
+        SceneManager.sceneLoaded -= CreateForScene;
+        SceneManager.sceneLoaded += CreateForScene;
+        CreateForScene(SceneManager.GetActiveScene(), LoadSceneMode.Single);
+    }
+    static void CreateForScene(Scene scene, LoadSceneMode mode)
+    {
+        if (!CanCreateInScene<CityLowerDistrict>(scene)) return;
+        if (Resources.Load<GameObject>("CityV7/StackedBlock0") == null
+            && Resources.Load<GameObject>("CityV7/LowerBlock0") == null) return;
+        var host = new GameObject("CityLowerDistrict");
+        SceneManager.MoveGameObjectToScene(host, scene);
+        host.AddComponent<CityLowerDistrict>();
+    }
+    // All three city layers use the gameplay scene as their lifetime boundary.
+    // An additive preview/UI scene must neither receive nor duplicate a grid.
+    internal static bool CanCreateInScene<T>(Scene scene) where T : Component
+    {
+        if (!scene.IsValid() || !scene.isLoaded) return false;
+        bool hasGameplay = false;
+        foreach (GameObject root in scene.GetRootGameObjects())
+        {
+            if (root.GetComponentInChildren<T>(true) != null) return false;
+            if (root.GetComponentInChildren<GameManager>() != null)
+                hasGameplay = true;
+        }
+        return hasGameplay;
     }
     void Start()
     {
         for(int x=0;x<Width;x++)for(int z=0;z<Width;z++)
-            blocks[x,z]=Instantiate(Resources.Load<GameObject>("CityV7/LowerBlock"+((x+z*3)%4)),transform).transform;
+        {
+            int variant=(x+z*3)%4;
+            var prefab=Resources.Load<GameObject>("CityV7/StackedBlock"+variant)
+                ??Resources.Load<GameObject>("CityV7/LowerBlock"+variant);
+            blocks[x,z]=Instantiate(prefab,transform).transform;
+        }
         LateUpdate();
     }
     void LateUpdate()

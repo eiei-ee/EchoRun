@@ -160,10 +160,11 @@ public class WorldStyler : MonoBehaviour
             : new Vector3(0f, 3.85f, -6.45f);
     }
 
-    public void DecorateSegment(GameObject segment, TrackSegmentType segmentType)
+    public void DecorateSegment(GameObject segment, TrackSegmentType segmentType,
+        bool refreshCityClearance = true)
     {
         if (segment == null) return;
-        if (CityV7PlayableEnvironment.Decorate(segment, segmentType)) return;
+        if (CityV7PlayableEnvironment.Decorate(segment, segmentType, refreshCityClearance)) return;
         EnsurePalette();
         Transform existing = segment.transform.Find("EchoEnvironment");
         GameObject environment;
@@ -211,7 +212,7 @@ public class WorldStyler : MonoBehaviour
         }
         variantSet.SelectFor(runSeed, routeDistance, preferredVariant);
         if (segmentType != TrackSegmentType.Straight)
-            CityV7PlayableEnvironment.Decorate(segment, segmentType);
+            CityV7PlayableEnvironment.Decorate(segment, segmentType, refreshCityClearance);
     }
 
     private static bool IsColdWhiteFortressEnvironment(Transform environment)
@@ -305,12 +306,27 @@ public class WorldStyler : MonoBehaviour
 
     private void ConfigureLighting()
     {
-        _keyLight = FindObjectOfType<Light>();
-        if (_keyLight != null)
+        // The scene's sun is stable even when authored facade lights are
+        // present. FindObjectOfType can otherwise select a sign or the fill.
+        _keyLight = RenderSettings.sun;
+        if (_keyLight == null || _keyLight.type != LightType.Directional
+            || _keyLight.name == "EchoFillLight")
         {
-            _keyLight.intensity = KeyLightIntensity;
-            _keyLight.color = BaseKeyLight;
-            _keyLight.shadows = LightShadows.Soft;
+            _keyLight = null;
+            foreach (Light candidate in FindObjectsOfType<Light>())
+            {
+                if (candidate.type != LightType.Directional
+                    || !candidate.enabled || candidate.name == "EchoFillLight") continue;
+                _keyLight = candidate;
+                break;
+            }
+        }
+        if (_keyLight == null)
+        {
+            GameObject sunObject = new GameObject("EchoCitySun");
+            sunObject.transform.SetParent(transform, false);
+            _keyLight = sunObject.AddComponent<Light>();
+            _keyLight.type = LightType.Directional;
         }
 
         GameObject fillObject = GameObject.Find("EchoFillLight");
@@ -1164,12 +1180,9 @@ public class WorldStyler : MonoBehaviour
     {
         bool high = quality == VisualQuality.High;
         Shader.SetGlobalFloat("_EchoVisualHigh", high ? 1f : 0f);
-        RenderSettings.reflectionIntensity = high
-            ? HighReflectionIntensity
-            : 0.18f;
-        if (_fillLight == null) return;
-        _fillLight.enabled = high;
-        _fillLight.intensity = high ? HighFillLightIntensity : 0f;
+        // Quality changes and phase changes share the same city lighting;
+        // neither may restore the older fortress fill/reflection values.
+        CityV7PlayableEnvironment.ApplyAtmosphere(_keyLight, _fillLight);
     }
 
     void OnDestroy()

@@ -10,6 +10,7 @@ public class CityLayerTests
     [TestCase("Chunk3")][TestCase("Chunk4")][TestCase("Chunk5")]
     [TestCase("Chunk6")][TestCase("Chunk7")][TestCase("Chunk8")]
     [TestCase("LowerBlock0")][TestCase("LowerBlock1")][TestCase("LowerBlock2")][TestCase("LowerBlock3")]
+    [TestCase("CornerQuarterLeft")][TestCase("CornerQuarterRight")]
     public void ExposedCityFacesDoNotHaveCompetingCoplanarMaterials(string resource)
     {
         var type=System.Type.GetType("CitySurfaceReview, TempleRun.Editor",true);

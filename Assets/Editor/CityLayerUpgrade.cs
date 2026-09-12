@@ -166,6 +166,7 @@ public static class CityLayerUpgrade
             Box(group.transform,"PierCrosshead",support+Vector3.up*12.2f,new Vector3(9,1.2f,2.2f),roof);
             foreach(int side in new[]{-1,1})Box(group.transform,"Pier",support+Vector3.right*side*3.8f,new Vector3(1.5f,25.6f,2),concrete);
             Combine(group,name+"Bridge",true);
+            CitySurfaceRepair.RepairBridgeStructure(group, name);
             PrefabUtility.SaveAsPrefabAsset(root,path);
         }
         finally{PrefabUtility.UnloadPrefabContents(root);}
