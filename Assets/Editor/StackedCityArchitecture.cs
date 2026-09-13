@@ -221,7 +221,12 @@ public static class StackedCityArchitecture
                 // consistent sign system, but neighbouring buildings get new wording.
                 string model = StackedCityWallCatalog.NoticeModel(choice);
                 Vector2 size = new Vector2(2.6f, 2.2f);
-                if (TryStory(root.transform, batches, occupied, blockers, wall, model, size, 3.3f, choice + 1)) signs++;
+                float scale = StackedCityWallCatalog.NoticeScale(model);
+                bool placed = TryStory(root.transform, batches, occupied, blockers, wall, model, size, 3.3f, choice + 1, scale);
+                // Narrow piers keep the original sign instead of losing it or covering windows.
+                if (!placed && scale > 1f)
+                    placed = TryStory(root.transform, batches, occupied, blockers, wall, model, size, 3.3f, choice + 1);
+                if (placed) signs++;
             }
             if (services < 2 && TryStory(root.transform, batches, occupied, blockers, wall,
                 "WallService", new Vector2(1.4f, 1.6f), 2.0f, choice + 2)) services++;
@@ -248,8 +253,9 @@ public static class StackedCityArchitecture
     }
 
     static bool TryStory(Transform root, Dictionary<string, List<CombineInstance>> batches, List<Bounds> occupied, List<Wall> blockers,
-        Wall wall, string model, Vector2 size, float preferredHeight, int variant)
+        Wall wall, string model, Vector2 size, float preferredHeight, int variant, float scale = 1f)
     {
+        size *= scale;
         const float border = .18f;
         if (wall.Width < size.x + border * 2f || wall.Height < size.y + border * 2f) return false;
         float low = wall.minV + size.y * .5f + border;
@@ -273,15 +279,16 @@ public static class StackedCityArchitecture
                 || !Exposed(wall, blockers, u, v, size)) continue;
             Vector3 position = wall.Point(u, v, .016f);
             Quaternion rotation = Quaternion.LookRotation(wall.normal, Vector3.up);
-            AddModule(batches, root, model, position, rotation, Vector3.one, true);
+            AddModule(batches, root, model, position, rotation, new Vector3(scale, scale, 1f), true);
             occupied.Add(new Bounds(wall.Point(u, v, .15f), Abs(wall.right) * (size.x + .28f)
                 + Vector3.up * (size.y + .28f) + Abs(wall.normal) * .3f));
             // Inspection anchors are stripped from player builds; no per-sign scripts or fonts.
             var anchor = new GameObject("Story_" + model);
             anchor.tag = "EditorOnly";
             anchor.transform.SetPositionAndRotation(position, rotation);
+            anchor.transform.localScale = new Vector3(scale, scale, 1f);
             anchor.transform.SetParent(root, true);
-            Debug.Log("STACKED_WALL_PLACED " + root.parent.name + " " + model + " at=" + position + " normal=" + wall.normal);
+            Debug.Log("STACKED_WALL_PLACED " + root.parent.name + " " + model + " at=" + position + " normal=" + wall.normal + " scale=" + scale);
             return true;
         }
         return false;

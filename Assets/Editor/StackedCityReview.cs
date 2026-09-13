@@ -76,6 +76,13 @@ public static class StackedCityReview
     public static void StreamingBuild() { BuildInto("TestResults/CityStreaming", "EchoRun-CityStreaming"); }
     public static void FinishGateCapture() { CaptureInto("TestResults/CityFinishGate", false, includeFinishGate: true); }
     public static void FinishGateBuild() { BuildInto("TestResults/CityFinishGate", "EchoRun-CityFinishGate"); }
+    public static void NoticeReadabilityBefore() { CaptureInto("TestResults/CityNoticeReadability/Before", true, true, true); }
+    public static void NoticeReadabilityInstallAndBuild()
+    {
+        StackedCityDistricts.Install();
+        CaptureInto("TestResults/CityNoticeReadability/After", true, true, true);
+        BuildInto("TestResults/CityNoticeReadability", "EchoRun-CityNoticeReadability");
+    }
 
     private static void CaptureInto(string output, bool includeFacadeDetails, bool includeWallStories = false,
         bool includeCornerLanes = false, bool includeFlicker = false, bool includeFinishGate = false)
