@@ -2,29 +2,29 @@
     "schemaVersion": 1,
     "product": "EchoRun",
     "version": "0.2.0-alpha.1",
-    "sourceRevision": "14e0166dc64e67fbce4edd73a6d547ca00dff767",
+    "sourceRevision": "bf123a8dffe86096b5f7c0da1f51a766361e7d63",
     "sourceBranch": "HEAD",
     "sourceDirty": false,
-    "builtAtUtc": "2026-09-12T06:38:06.4019015Z",
+    "builtAtUtc": "2026-09-12T19:34:44.5700268Z",
     "engineVersion": "2022.3.62t8",
     "target": "WebGL",
     "playableUrl": "https://eiei-ee.github.io/EchoRun/",
     "entryPoint": "index.html",
     "artifacts": [
         {
-            "path": "Build/1fcd9b2a3631d8e603a74bdf8abfdedf.data.unityweb",
-            "bytes": 20959950,
-            "sha256": "242081E00B19D606F112172A0D3D11B436EA79AEAFAC5F5030A3005E16690B11"
+            "path": "Build/855b2f52fa41b80f495a4afea3776802.data.unityweb",
+            "bytes": 46042809,
+            "sha256": "861974E722D447F083A8C12DF2A7358A212CE2F4611E8593D0C515E3880ED06B"
         },
         {
-            "path": "Build/8e15f460a836222f14a32fa41d975334.wasm.unityweb",
-            "bytes": 6623223,
-            "sha256": "C763F8D17A4F7A1E7744C8CEEA571A574B4F7A6841C789366B81CEAC42139045"
+            "path": "Build/b9514a256c12e11bd2e8effc714a5734.wasm.unityweb",
+            "bytes": 6627427,
+            "sha256": "FF20F505C7BDB61C5CA9EC8AC317D7FD61DD958727A936D0932DE028668346AD"
         },
         {
-            "path": "Build/c1a818e41f17d3682549ec3411de4842.framework.js.unityweb",
-            "bytes": 79889,
-            "sha256": "7E6A39E49104159F99DF7A414CD7AF242A76D316C2DF3BC1A431AE3B4FFD5898"
+            "path": "Build/c46b03f6b172b8354729c2878ff52474.framework.js.unityweb",
+            "bytes": 79902,
+            "sha256": "82AB662829363301A48F64A3E18039ED0330991D804A85A3D61D166506861A7B"
         },
         {
             "path": "Build/d88030906d03a56fce720cdde88dd1d5.loader.js",
@@ -39,7 +39,7 @@
         {
             "path": "index.html",
             "bytes": 7653,
-            "sha256": "890FC7EBDA787075EFEE8BBFC3BC15F55DA34A36B1EC78CC307A1EDE680CEC3F"
+            "sha256": "3FF1B09B2393D0DAB64A7680653B6C00D87FE2DFF53945289FED0400209903E6"
         }
     ]
 }
