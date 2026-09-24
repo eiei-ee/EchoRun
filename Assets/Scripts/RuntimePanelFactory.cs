@@ -140,6 +140,10 @@ public static class RuntimePanelFactory
 
     private static bool UsesTouchLayout()
     {
+#if MINIGAME_SUBPLATFORM_WEIXIN
+        return true;
+#else
         return Application.isMobilePlatform || Input.touchSupported;
+#endif
     }
 }

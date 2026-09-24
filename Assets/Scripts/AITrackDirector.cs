@@ -291,6 +291,18 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
             _gameManager.OnStateChanged.AddListener(OnGameStateChanged);
     }
 
+    // Async uses the ordinary director decisions, with a read-only model for this run.
+    public void PrepareForRun()
+    {
+        GameManager manager = _gameManager != null ? _gameManager : GameManager.Instance;
+        if (manager == null || !manager.IsAsyncChallengeRun) return;
+        _sessionPolicy = new AILinUcbPolicy(EchoRunSaveSystem.GetDirectorWeights(),
+            EchoRunSaveSystem.GetDirectorPolicyJson());
+        ModelUpdateCount = EchoRunSaveSystem.DirectorModelUpdateCount;
+        _activeDecision = null;
+        _plannedDecisions.Clear();
+    }
+
     public AITrackPlan CreatePlan(float baseDifficulty, float baseObstacleChance,
         float baseCoinChance, float baseTurnChance, int previousSafeLane, bool canTurn,
         float segmentEndDistance)
@@ -381,7 +393,8 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
                 segmentEndDistance),
             telemetryDecisionId = telemetryDecisionId,
             policyUpdateEligible = selectedAction >= 0
-                                   && !freezeDirector
+                                    && !freezeDirector
+                                    && AllowsDirectorTrainingForRun()
                                    && (singleContractRun
                                        || IsPolicyAttributionEligible(
                                            activeContract))
@@ -606,8 +619,13 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
         GameManager manager = _gameManager != null
             ? _gameManager : GameManager.Instance;
         return manager != null
-               && manager.ActiveGameplayFlowMode
-               == GameplayFlowMode.SingleContract;
+               && manager.UsesSingleContractRules;
+    }
+
+    private bool AllowsDirectorTrainingForRun()
+    {
+        GameManager manager = _gameManager != null ? _gameManager : GameManager.Instance;
+        return manager == null || manager.ActiveRunRules.AllowDirectorTraining;
     }
 
     private bool IsDirectorFrozenForRun()
@@ -707,7 +725,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
 
         AIPlayerSkillEstimator.RecordSegmentOutcome(
             hitGain == 0, distanceGain);
-        if (decision.action < 0 || _sessionPolicy == null
+        if (!AllowsDirectorTrainingForRun() || decision.action < 0 || _sessionPolicy == null
             || !decision.policyUpdateEligible) return;
 
         float reward = 0.15f
@@ -727,7 +745,7 @@ public class AITrackDirector : MonoBehaviour, IShadowDirectiveSource
 
     private void SaveDirectorModel()
     {
-        if (_sessionPolicy == null) return;
+        if (_sessionPolicy == null || !AllowsDirectorTrainingForRun()) return;
         EchoRunSaveSystem.SaveDirector(
             _sessionPolicy.ExportWeights(), ModelUpdateCount,
             _sessionPolicy.ExportStateJson());

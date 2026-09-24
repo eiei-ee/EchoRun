@@ -5,10 +5,28 @@ using UnityEngine;
 public static class CityV7PlayableEnvironment
 {
     public const float FogEndDistance = 185f;
+    public static readonly Color FogColor = Color32ToColor(0x8B97B2);
+    public static readonly Color AmbientSkyColor = Color32ToColor(0xB6C6E3);
+    public static readonly Color AmbientEquatorColor = Color32ToColor(0x8793AC);
+    public static readonly Color AmbientGroundColor = Color32ToColor(0x565B6F);
+    public static readonly Color SkyTint = Color32ToColor(0xC4BBDF);
+    public static readonly Color KeyLightColor = Color32ToColor(0xF8E7E0);
+    public static readonly Color FillLightColor = Color32ToColor(0xABBEE7);
+
+    // The existing cloud panorama remains the authored sky. The same values are
+    // used by the offline material installer and by the runtime sky clone.
+    public static void StyleSky(Material material)
+    {
+        if (material == null) return;
+        if (material.HasProperty("_Tint")) material.SetColor("_Tint", SkyTint);
+        if (material.HasProperty("_Exposure")) material.SetFloat("_Exposure", .55f);
+        if (material.HasProperty("_Saturation")) material.SetFloat("_Saturation", .65f);
+    }
+
     public static Material CreateSky()
     {
         var material=new Material(Resources.Load<Shader>("CityV7/CityAfterimageQuietSky"));
-        material.SetColor("_Zenith",Color32ToColor(0x84A7CC));material.SetColor("_Horizon",Color32ToColor(0xC1D4DD));material.SetColor("_Ground",Color32ToColor(0xAEB9BA));return material;
+        material.SetColor("_Zenith",Color32ToColor(0x607CAC));material.SetColor("_Horizon",Color32ToColor(0xB0A1BD));material.SetColor("_Ground",FogColor);return material;
     }
     static Color Color32ToColor(int rgb){return new Color((rgb>>16&255)/255f,(rgb>>8&255)/255f,(rgb&255)/255f);}
     public static void ApplyAtmosphere(Light key=null,Light fill=null)
@@ -34,11 +52,11 @@ public static class CityV7PlayableEnvironment
         // Both city grids recycle beyond this cutoff. Keep it independent of
         // the farther skyline and of the sun's nearer shadow distance.
         RenderSettings.fogEndDistance = FogEndDistance;
-        RenderSettings.fogColor = Color32ToColor(0xB1BDC8);
+        RenderSettings.fogColor = FogColor;
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
-        RenderSettings.ambientSkyColor = Color32ToColor(0x9BAEC4);
-        RenderSettings.ambientEquatorColor = Color32ToColor(0x758697);
-        RenderSettings.ambientGroundColor = Color32ToColor(0x4D5965);
+        RenderSettings.ambientSkyColor = AmbientSkyColor;
+        RenderSettings.ambientEquatorColor = AmbientEquatorColor;
+        RenderSettings.ambientGroundColor = AmbientGroundColor;
 
         // A fixed authored sky reflection gives the windows and painted metal
         // a shared environment without rendering extra cameras during a run.
@@ -48,26 +66,26 @@ public static class CityV7PlayableEnvironment
             RenderSettings.defaultReflectionMode = UnityEngine.Rendering.DefaultReflectionMode.Custom;
             RenderSettings.customReflectionTexture = reflection;
         }
-        RenderSettings.reflectionIntensity = high ? .82f : .30f;
+        RenderSettings.reflectionIntensity = high ? .45f : .22f;
 
         if (key != null)
         {
             key.shadows = high && desktop ? LightShadows.Soft : LightShadows.None;
-            key.color = Color32ToColor(0xFFF0D9);
+            key.color = KeyLightColor;
             key.intensity = 1.18f;
             key.transform.rotation = Quaternion.Euler(39f, -48f, 0f);
-            key.shadowStrength = .83f;
+            key.shadowStrength = .68f;
             key.shadowBias = .025f;
             key.shadowNormalBias = .12f;
             RenderSettings.sun = key;
         }
-        // Keep the runner's cool rim, but let the sun and terrace overhangs
-        // describe the buildings instead of filling every facade equally.
+        // Broad neutral fill keeps the elevated-road shadows and building
+        // undersides readable; warm dusk light preserves material hue differences.
         if (fill != null)
         {
             fill.enabled = high;
-            fill.intensity = high ? .24f : 0f;
-            fill.color = Color32ToColor(0xCBDCED);
+            fill.intensity = high ? .22f : 0f;
+            fill.color = FillLightColor;
             fill.transform.rotation = Quaternion.Euler(28f, 145f, 0f);
             fill.shadows = LightShadows.None;
         }

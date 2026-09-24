@@ -187,7 +187,7 @@ public static class EchoRunPresentation
         SingleContractFeedbackFadeInSeconds + SingleContractFeedbackHoldSeconds
         + SingleContractFeedbackFadeOutSeconds;
     public const string SingleContractRouteGuide =
-        "红框：预测 / 青三角：反制 / 白双线：安全";
+        "方框：预测 / 三角：反制 / 双线：安全";
     public static EchoMenuViewData BuildMenu(int generation,
         PlayerStyleData style, int minimumJumpSamples, int minimumSlideSamples,
         EchoContractData contractPreview = null, float echoClarity = 1f)

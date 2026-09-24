@@ -31,7 +31,9 @@ its attribution and terms to this file before redistributing it.
 - Upstream SHA-256:
   `2C76254F6FC379FDDFCE0A7E84FB5385BB135D3E399294F6EEB6680D0365B74B`.
 - Bundled subset SHA-256:
-  `CCCAD320E18B33279AB48E88517D6312A9541B5DE06E65E3C777B67BA09724FA`.
+  `0CB2A65839604754D09BAFA67E7F447750032DF4038B04B3B7897B1B033D6623`.
+- Bundled subset: 457,256 bytes, 1,053 Unicode characters, including the
+  asynchronous challenge panel, invitations, results and leaderboard text.
 - The subset retains the upstream Adobe copyright and Google trademark
   acknowledgement, but its user-facing family and PostScript names are
   `EchoRun Sans SC` and `EchoRunSansSC-Regular` so it cannot be mistaken for
@@ -40,6 +42,9 @@ its attribution and terms to this file before redistributing it.
   `python Tools/Fonts/build_echorun_font.py <official-2.004-regular.otf>`.
   The pinned input hash, Unicode set, naming, weight and static-font checks are
   enforced by the script.
+- Verify the bundled font against the pinned Unicode list and actual WeChat
+  C# string literals after changing UI copy:
+  `python Tools/Fonts/check_echorun_font.py`.
 
 ## Release checklist
 

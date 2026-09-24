@@ -30,14 +30,14 @@ public static class EchoHudPrefabBuilder
         GameObject dynamicLayer = Layer("HudDynamicCanvas", root.transform, 20, true);
 
         Image topInformationRail = Panel("TopInformationRail", staticLayer.transform,
-            new Vector2(0f, 1f), new Vector2(360f, 160f),
+            new Vector2(0f, 1f), new Vector2(386f, 176f),
             new Vector2(16f, -16f), new Vector2(0f, 1f), Backdrop)
             .GetComponent<Image>();
 
         Text stats = TextElement("StatsText", staticLayer.transform,
-            "SCORE 00000   RANGE 000m", 18, TextAnchor.MiddleLeft,
+            "金币 0 · 分数 0", 22, TextAnchor.MiddleLeft,
             TextMuted, new Vector2(0f, 1f), new Vector2(340f, 28f),
-            new Vector2(26f, -140f), new Vector2(0f, 1f));
+            new Vector2(32f, -150f), new Vector2(0f, 1f));
         Image statsPlate = Panel("StatsPlate", stats.transform.parent,
             stats.rectTransform, Color.clear, true);
 
@@ -65,22 +65,22 @@ public static class EchoHudPrefabBuilder
         }
 
         GameObject calibrationRail = Panel("CalibrationRail", staticLayer.transform,
-            new Vector2(0f, 1f), new Vector2(332f, 34f),
-            new Vector2(26f, -100f), new Vector2(0f, 1f), Color.clear);
+            new Vector2(0f, 1f), new Vector2(332f, 40f),
+            new Vector2(32f, -112f), new Vector2(0f, 1f), Color.clear);
         Text calibrationObservation = TextStretch("CalibrationObservation",
-            calibrationRail.transform, "路线  记录中    节奏  采集中", 19,
+            calibrationRail.transform, "路线  记录中    节奏  采集中", 22,
             TextAnchor.MiddleLeft, TextMuted, Vector2.zero, Vector2.one);
 
         Text distance = TextElement("DistanceText", staticLayer.transform,
-            "终点 700m", 20, TextAnchor.MiddleLeft, TextPrimary,
+            "终点 700m", 26, TextAnchor.MiddleLeft, TextPrimary,
             new Vector2(0f, 1f), new Vector2(332f, 36f),
-            new Vector2(26f, -64f), new Vector2(0f, 1f));
+            new Vector2(32f, -70f), new Vector2(0f, 1f));
         Image distancePlate = Panel("DistancePlate", distance.transform.parent,
             distance.rectTransform, Color.clear, true);
 
         GameObject leadGroup = Panel("LeadGroup", staticLayer.transform,
-            new Vector2(0f, 1f), new Vector2(332f, 44f),
-            new Vector2(26f, -18f), new Vector2(0f, 1f), Color.clear);
+            new Vector2(0f, 1f), new Vector2(344f, 50f),
+            new Vector2(32f, -20f), new Vector2(0f, 1f), Color.clear);
         Image leadLine = ImageStretch("LeadLine", leadGroup.transform,
             new Color(Cyan.r, Cyan.g, Cyan.b, 0.28f),
             new Vector2(0f, 0.02f), new Vector2(1f, 0.045f));
@@ -90,7 +90,7 @@ public static class EchoHudPrefabBuilder
             new Vector2(0.5f, 0.5f));
         leadMarkerImage.raycastTarget = false;
         RectTransform leadMarker = leadMarkerImage.rectTransform;
-        Text leadText = TextStretch("LeadText", leadGroup.transform, "+0.0m", 24,
+        Text leadText = TextStretch("LeadText", leadGroup.transform, "+0.0m", 38,
             TextAnchor.MiddleLeft, TextPrimary,
             Vector2.zero, Vector2.one);
 
@@ -138,7 +138,7 @@ public static class EchoHudPrefabBuilder
             new Vector2(22f, -254f), new Vector2(0f, 1f),
             EchoRunUITheme.HudPredictionVeil);
         Text prediction = TextElement("Prediction", dynamicLayer.transform,
-            "预判右路", 20, TextAnchor.MiddleLeft, Coral,
+            "预判右路", 24, TextAnchor.MiddleLeft, Coral,
             new Vector2(0f, 1f), new Vector2(312f, 38f),
             new Vector2(30f, -255f), new Vector2(0f, 1f));
         Image stateAccentBar = ImageElement("StateAccentBar",
@@ -183,7 +183,7 @@ public static class EchoHudPrefabBuilder
             feedbackObject.transform, new Vector2(0f, 1f), new Vector2(560f, 42f),
             new Vector2(22f, -222f), new Vector2(0f, 1f),
             EchoRunUITheme.HudPredictionVeil);
-        Text feedback = TextElement("Feedback", feedbackObject.transform, "", 20,
+        Text feedback = TextElement("Feedback", feedbackObject.transform, "", 24,
             TextAnchor.MiddleLeft, EchoRunUITheme.HudSuccessText,
             new Vector2(0f, 1f),
             new Vector2(540f, 40f), new Vector2(30f, -223f),
@@ -225,8 +225,8 @@ public static class EchoHudPrefabBuilder
         transitionFxObject.SetActive(false);
 
         Button pause = ButtonElement("PauseButton", dynamicLayer.transform, "Ⅱ",
-            new Vector2(1f, 1f), new Vector2(52f, 52f),
-            new Vector2(-17f, -13f), new Vector2(1f, 1f));
+            new Vector2(1f, 1f), new Vector2(68f, 64f),
+            new Vector2(-20f, -20f), new Vector2(1f, 1f));
 
         EchoHudView view = root.GetComponent<EchoHudView>();
         SerializedObject serialized = new SerializedObject(view);
@@ -287,7 +287,7 @@ public static class EchoHudPrefabBuilder
         Object.DestroyImmediate(root);
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
-        Debug.Log("ECHO_HUD_PREFAB_BUILD_OK style=floating-information-rail path=" +
+        Debug.Log("ECHO_HUD_PREFAB_BUILD_OK style=violet-echo-race path=" +
             PrefabPath);
     }
 
@@ -348,6 +348,10 @@ public static class EchoHudPrefabBuilder
         text.fontSize = size;
         text.alignment = alignment;
         text.color = color;
+        // Noto CJK's line box is taller than its visible glyphs. Fixed HUD
+        // rows must not silently discard a whole line when that box exceeds
+        // the row, including when the player's large-text option is enabled.
+        text.verticalOverflow = VerticalWrapMode.Overflow;
         text.raycastTarget = false;
         Shadow shadow = go.AddComponent<Shadow>();
         shadow.effectColor = EchoRunUITheme.HudTextShadow;

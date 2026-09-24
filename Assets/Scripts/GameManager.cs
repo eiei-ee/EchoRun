@@ -14,6 +14,8 @@ public class GameManager : MonoBehaviour
     private static GameplayFlowMode? _gameplayFlowAfterSceneLoad;
     private static SingleContractValidationConfig
         _validationAfterSceneLoad;
+    private static ActiveEchoIdentity _asyncOpponentAfterSceneLoad;
+    private static AsyncChallengeRunParameters _asyncParametersAfterSceneLoad;
 
     [Header("Speed")]
     public float startSpeed = 10f;
@@ -65,6 +67,22 @@ public class GameManager : MonoBehaviour
                 _activeSingleContractValidationConfig);
     public bool IsSingleContractRun =>
         ActiveGameplayFlowMode == GameplayFlowMode.SingleContract;
+    public bool IsAsyncChallengeRun =>
+        ActiveGameplayFlowMode == GameplayFlowMode.AsyncChallenge;
+    public EchoRunRules ActiveRunRules => EchoRunRules.For(ActiveGameplayFlowMode);
+    public bool UsesSingleContractRules => State == GameState.Menu
+        ? EchoRunRules.For(gameplayFlowMode).UsesSingleContractRules
+        : ActiveRunRules.UsesSingleContractRules;
+    public AsyncChallengeRunParameters ConfiguredAsyncChallengeParameters =>
+        _configuredAsyncParameters;
+    public ActiveEchoIdentity ActiveOpponentIdentityPreview =>
+        _activeRunOpponent != null ? _activeRunOpponent.Clone() : null;
+    public AsyncChallengeResult LastAsyncChallengeResult { get; private set; }
+    public System.Func<string> ChallengeIdFactory { get; set; } =
+        () => System.Guid.NewGuid().ToString("N");
+    public event System.Action<AsyncChallengeRunParameters> AsyncChallengeStarted;
+    public event System.Action<AsyncChallengeResult> AsyncChallengeCompleted;
+    public event System.Action LocalSingleContractSettled;
     public RunDifficultyLevel ActiveRunDifficulty { get; private set; } =
         RunDifficultySettings.DefaultLevel;
 
@@ -86,6 +104,14 @@ public class GameManager : MonoBehaviour
     private float _powerUpBonusScore;
     private float _collisionRecoverySpeedDebt;
     private bool _telemetryFinished;
+    private ActiveEchoIdentity _configuredAsyncOpponent;
+    private AsyncChallengeRunParameters _configuredAsyncParameters;
+    private ActiveEchoIdentity _activeRunOpponent;
+    private AsyncChallengeRunParameters _activeAsyncParameters;
+    private bool _hasAsyncSpeedOverride;
+    private float _ordinaryStartSpeed;
+    private float _ordinaryMaxSpeed;
+    private float _ordinaryAcceleration;
     private SingleContractValidationConfig
         _activeSingleContractValidationConfig =
             new SingleContractValidationConfig();
@@ -107,8 +133,12 @@ public class GameManager : MonoBehaviour
             singleContractValidationConfig =
                 SingleContractValidationConfig.CopyOf(
                     _validationAfterSceneLoad);
+            _configuredAsyncOpponent = _asyncOpponentAfterSceneLoad;
+            _configuredAsyncParameters = _asyncParametersAfterSceneLoad;
             _gameplayFlowAfterSceneLoad = null;
             _validationAfterSceneLoad = null;
+            _asyncOpponentAfterSceneLoad = null;
+            _asyncParametersAfterSceneLoad = null;
         }
         ApplySingleContractValidationLaunchOptions(
             System.Environment.GetCommandLineArgs());
@@ -160,15 +190,26 @@ public class GameManager : MonoBehaviour
         return Application.targetFrameRate;
     }
 
+#if UNITY_WEBGL && !UNITY_EDITOR && !MINIGAME_SUBPLATFORM_WEIXIN
+    [System.Runtime.InteropServices.DllImport("__Internal")]
+    private static extern int EchoRun_SetWebFrameRate(int fps);
+
+    private void LateUpdate()
+    {
+        // The engine can reset scheduling during startup or focus changes.
+        // The bridge only changes it when it differs from the selected target.
+        EchoRun_SetWebFrameRate(Application.targetFrameRate);
+    }
+#endif
+
     public bool SupportsHighFrameRate => !IsFrameRateConstrainedPlatform();
 
     public static bool ShouldConstrainHighFrameRate(bool isAndroid,
         bool isWebGl, bool usesTouchLayout)
     {
-        // Native Android can request the display's high-refresh mode through
-        // Application.targetFrameRate. Mobile WebGL remains capped because
-        // browser frame pacing is outside the player's control.
-        return isWebGl && usesTouchLayout;
+        // Touch capability does not identify a low-refresh display. Let all
+        // platforms request 120; the display/browser still determines delivery.
+        return false;
     }
 
     public static int NormalizeFrameRate(int requested, bool constrainedPlatform)
@@ -258,9 +299,31 @@ public class GameManager : MonoBehaviour
 
     public void StartGame()
     {
-        if (State != GameState.Menu) return;
+        if (!TryStartConfiguredRun(out string error)
+            && error != "RUN_ALREADY_STARTED")
+            Debug.LogWarning("Run could not start: " + error);
+    }
+
+    public bool TryStartConfiguredRun(out string error)
+    {
+        error = "";
+        if (State != GameState.Menu)
+        {
+            error = "RUN_ALREADY_STARTED";
+            return false;
+        }
+        if (gameplayFlowMode == GameplayFlowMode.AsyncChallenge
+            && (_configuredAsyncOpponent == null
+                || _configuredAsyncParameters == null))
+        {
+            error = "ASYNC_CHALLENGE_NOT_CONFIGURED";
+            return false;
+        }
+        if (gameplayFlowMode == GameplayFlowMode.AsyncChallenge
+            && !_configuredAsyncParameters.TryValidate(out error)) return false;
 
         FreezeGameplayFlowConfiguration();
+        LastAsyncChallengeResult = null;
 
         int runSequence = EchoRunSaveSystem.ReserveRunSequence();
         bool fixedSingleContractRun = IsSingleContractRun
@@ -270,7 +333,8 @@ public class GameManager : MonoBehaviour
             Debug.Log("Single-contract validation run started: seed="
                       + _activeSingleContractValidationConfig.fixedSeed);
         }
-        RunSeed = fixedSingleContractRun
+        RunSeed = IsAsyncChallengeRun ? _activeAsyncParameters.runSeed
+            : fixedSingleContractRun
             ? _activeSingleContractValidationConfig.fixedSeed
             : _nextRunSeed ?? CreateRunSeed(runSequence);
         _nextRunSeed = null;
@@ -278,19 +342,22 @@ public class GameManager : MonoBehaviour
                                        && SingleContractValidationIdentity
                                            .IsEnabled(
                                                _activeSingleContractValidationConfig);
-        int runGeneration = fixedValidationIdentity
+        int runGeneration = IsAsyncChallengeRun ? _activeRunOpponent.generation
+            : fixedValidationIdentity
             ? SingleContractValidationIdentity.Generation
             : AIShadowRunner.Instance != null
                 ? AIShadowRunner.Instance.Generation : 0;
         AIRunRandom.BeginRun(RunSeed);
-        AIPlayerSkillEstimator.BeginRun();
-        StyleTracker.BeginRun();
+        AIPlayerSkillEstimator.BeginRun(ActiveRunRules.AllowPlayerTraining);
+        StyleTracker.BeginRun(ActiveRunRules.AllowPlayerTraining);
+        AITrackDirector.Instance?.PrepareForRun();
         AIRunTelemetry.BeginRun(RunSeed, runSequence, HighScore,
             runGeneration,
             AITrackDirector.Instance != null
                 ? AITrackDirector.Instance.ModelUpdateCount
                 : EchoRunSaveSystem.DirectorModelUpdateCount,
-            AIShadowRunner.Instance != null
+            IsAsyncChallengeRun ? (float[])_activeRunOpponent.policyWeights.Clone()
+            : AIShadowRunner.Instance != null
                 ? AIShadowRunner.Instance.GetModelWeightsSnapshot()
                 : null,
             AITrackDirector.Instance != null
@@ -299,9 +366,15 @@ public class GameManager : MonoBehaviour
             AITrackDirector.Instance != null
                 ? AITrackDirector.Instance.GetPolicyStateSnapshot()
                 : EchoRunSaveSystem.GetDirectorPolicyJson(),
-            AIShadowRunner.Instance != null
+            IsAsyncChallengeRun ? JsonUtility.ToJson(new AIShadowSequenceState
+            {
+                transitions = (float[])_activeRunOpponent.sequenceTransitions.Clone(),
+                pairCount = _activeRunOpponent.sequencePairCount
+            }) : AIShadowRunner.Instance != null
                 ? AIShadowRunner.Instance.GetSequenceStateSnapshot()
-                : "");
+                : "", ActiveGameplayFlowMode,
+            IsAsyncChallengeRun ? _activeAsyncParameters.rulesVersion : 0,
+            IsAsyncChallengeRun ? _activeRunOpponent.identityId : "");
 
         Time.timeScale = 1f;
         // Retired supplies must neither activate nor consume archived inventory.
@@ -324,13 +397,15 @@ public class GameManager : MonoBehaviour
         _collisionRecoverySpeedDebt = 0f;
         _telemetryFinished = false;
         GameplayBalance balance = GameBalanceConfig.Current.gameplay;
-        ActiveEchoIdentity singleContractIdentity = IsSingleContractRun
-            ? EchoRunSaveSystem.GetActiveEchoIdentity() : null;
+        ActiveEchoIdentity singleContractIdentity = IsAsyncChallengeRun
+            ? _activeRunOpponent : IsSingleContractRun
+                ? EchoRunSaveSystem.GetActiveEchoIdentity() : null;
         bool hasSingleContractOpponent = fixedValidationIdentity
                                          || singleContractIdentity != null
                                          && !singleContractIdentity
                                              .RequiresRouteCalibration;
-        CourseTargetDuration = IsSingleContractRun
+        CourseTargetDuration = IsAsyncChallengeRun
+            ? AsyncChallengeRules.CourseDurationSeconds : IsSingleContractRun
             ? SingleContractCourseDuration(hasSingleContractOpponent)
             : SelectCourseDuration(runGeneration,
                 balance.calibrationDuration, balance.challengeDuration);
@@ -339,6 +414,8 @@ public class GameManager : MonoBehaviour
         FinishScheduleCount = 1;
         _telemetryPlayer = null;
         State = GameState.Playing;
+        if (IsAsyncChallengeRun)
+            InvokeOptional(AsyncChallengeStarted, _activeAsyncParameters);
         OnStateChanged.Invoke(State);
         OnScoreChanged.Invoke(0);
         OnCoinsChanged.Invoke(0);
@@ -346,16 +423,61 @@ public class GameManager : MonoBehaviour
         OnDistanceChanged.Invoke(0);
         InputManager.Instance?.ClearInput();
         AudioManager.Instance?.StartFootsteps();
+        return true;
     }
 
     public bool TryConfigureGameplayFlow(GameplayFlowMode mode,
         SingleContractValidationConfig validation = null)
     {
         if (State != GameState.Menu) return false;
+        if (mode == GameplayFlowMode.AsyncChallenge) return false;
+        ClearAsyncChallengeConfiguration();
         gameplayFlowMode = NormalizeGameplayFlowMode(mode);
         singleContractValidationConfig =
             SingleContractValidationConfig.CopyOf(validation);
         return true;
+    }
+
+    public bool TryConfigureAsyncChallenge(ActiveEchoIdentity opponent,
+        AsyncChallengeRunParameters parameters, out string error)
+    {
+        error = "";
+        if (State != GameState.Menu)
+        {
+            error = "RUN_ALREADY_STARTED";
+            return false;
+        }
+        if (parameters == null)
+        {
+            error = "INVALID_CHALLENGE_PARAMETERS";
+            return false;
+        }
+        if (!parameters.TryValidate(out error)) return false;
+        // Serialize without Normalize: an unknown input version must stay unknown.
+        if (!ActiveEchoIdentity.TryFromExternalJson(
+                opponent != null ? JsonUtility.ToJson(opponent) : "",
+                out ActiveEchoIdentity validated, out error)) return false;
+        _configuredAsyncOpponent = validated;
+        _configuredAsyncParameters = parameters;
+        gameplayFlowMode = GameplayFlowMode.AsyncChallenge;
+        singleContractValidationConfig = new SingleContractValidationConfig();
+        return true;
+    }
+
+    private void ClearAsyncChallengeConfiguration()
+    {
+        _configuredAsyncOpponent = null;
+        _configuredAsyncParameters = null;
+        RestoreOrdinarySpeeds();
+    }
+
+    private void RestoreOrdinarySpeeds()
+    {
+        if (!_hasAsyncSpeedOverride) return;
+        startSpeed = _ordinaryStartSpeed;
+        maxSpeed = _ordinaryMaxSpeed;
+        speedIncreaseRate = _ordinaryAcceleration;
+        _hasAsyncSpeedOverride = false;
     }
 
     private void ApplySingleContractValidationLaunchOptions(
@@ -382,6 +504,23 @@ public class GameManager : MonoBehaviour
     private void FreezeGameplayFlowConfiguration()
     {
         ActiveGameplayFlowMode = NormalizeGameplayFlowMode(gameplayFlowMode);
+        _activeAsyncParameters = IsAsyncChallengeRun ? _configuredAsyncParameters : null;
+        _activeRunOpponent = IsAsyncChallengeRun && _configuredAsyncOpponent != null
+            ? _configuredAsyncOpponent.Clone() : null;
+        if (IsAsyncChallengeRun)
+        {
+            if (!_hasAsyncSpeedOverride)
+            {
+                _ordinaryStartSpeed = startSpeed;
+                _ordinaryMaxSpeed = maxSpeed;
+                _ordinaryAcceleration = speedIncreaseRate;
+                _hasAsyncSpeedOverride = true;
+            }
+            startSpeed = AsyncChallengeRules.StartSpeed;
+            maxSpeed = AsyncChallengeRules.MaximumSpeed;
+            speedIncreaseRate = AsyncChallengeRules.Acceleration;
+        }
+        else RestoreOrdinarySpeeds();
         _activeSingleContractValidationConfig =
             SingleContractValidationConfig.CopyOf(
                 singleContractValidationConfig);
@@ -390,7 +529,7 @@ public class GameManager : MonoBehaviour
                              && _activeSingleContractValidationConfig.enabled
                              && _activeSingleContractValidationConfig
                                  .forceStandardDifficulty;
-        ActiveRunDifficulty = forceStandard
+        ActiveRunDifficulty = IsAsyncChallengeRun || forceStandard
             ? RunDifficultyLevel.Standard
             : RunDifficultySettings.Current;
     }
@@ -398,6 +537,7 @@ public class GameManager : MonoBehaviour
     private static GameplayFlowMode NormalizeGameplayFlowMode(
         GameplayFlowMode mode)
     {
+        if (mode == GameplayFlowMode.AsyncChallenge) return mode;
         return mode == GameplayFlowMode.SingleContract
             ? GameplayFlowMode.SingleContract
             : GameplayFlowMode.SixPhaseLegacy;
@@ -435,6 +575,11 @@ public class GameManager : MonoBehaviour
             ? RunEndReason.Abandoned
             : LastEndReason);
         EchoRunSaveSystem.SaveLegacyState();
+        if (gameplayFlowMode == GameplayFlowMode.AsyncChallenge)
+        {
+            ClearAsyncChallengeConfiguration();
+            gameplayFlowMode = GameplayFlowMode.SingleContract;
+        }
         PreserveGameplayFlowAcrossSceneLoad();
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
@@ -545,6 +690,11 @@ public class GameManager : MonoBehaviour
         Time.timeScale = 1f;
         AudioManager.Instance?.StopFootsteps();
         InputManager.Instance?.ClearInput();
+        if (IsAsyncChallengeRun)
+        {
+            AIShadowRunner.Instance?.FinalizeRunIfNeeded();
+            PrepareAsyncRetry();
+        }
         FinishTelemetry(LastEndReason == RunEndReason.None
             ? RunEndReason.Abandoned
             : LastEndReason);
@@ -554,12 +704,26 @@ public class GameManager : MonoBehaviour
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
+    private void PrepareAsyncRetry()
+    {
+        string id = ChallengeIdFactory != null ? ChallengeIdFactory() : "";
+        var next = _activeAsyncParameters.WithChallengeId(id);
+        if (!next.TryValidate(out _) || id == _activeAsyncParameters.challengeId)
+            next = _activeAsyncParameters.WithChallengeId(System.Guid.NewGuid().ToString("N"));
+        _configuredAsyncParameters = next;
+        _configuredAsyncOpponent = _activeRunOpponent.Clone();
+    }
+
     private void PreserveGameplayFlowAcrossSceneLoad()
     {
         _gameplayFlowAfterSceneLoad = gameplayFlowMode;
         _validationAfterSceneLoad =
             SingleContractValidationConfig.CopyOf(
                 singleContractValidationConfig);
+        _asyncOpponentAfterSceneLoad = gameplayFlowMode == GameplayFlowMode.AsyncChallenge
+            ? _configuredAsyncOpponent?.Clone() : null;
+        _asyncParametersAfterSceneLoad = gameplayFlowMode == GameplayFlowMode.AsyncChallenge
+            ? _configuredAsyncParameters : null;
     }
 
     public void AddCoins(int amount)
@@ -601,6 +765,11 @@ public class GameManager : MonoBehaviour
 
     void SaveHighScore()
     {
+        if (!ActiveRunRules.PersistRunProgress)
+        {
+            IsNewHighScore = false;
+            return;
+        }
         IsNewHighScore = Score > HighScore;
         if (IsNewHighScore) HighScore = Score;
         TotalCoins += Coins;
@@ -625,7 +794,7 @@ public class GameManager : MonoBehaviour
     public float ScheduleCourseFinishAfter(float seconds)
     {
         if (State != GameState.Playing) return CourseDistance;
-        if (IsSingleContractRun) return CourseDistance;
+        if (UsesSingleContractRules) return CourseDistance;
         float window = Mathf.Max(0f, seconds);
         CourseDistance = CalculateScheduledCourseDistance(
             Distance, CurrentSpeed, maxSpeed, speedIncreaseRate, window);
@@ -675,11 +844,13 @@ public class GameManager : MonoBehaviour
             AIRunTelemetry.IsCompletedTrainingReason(reason));
         StyleTracker.EndRun();
         AIRunTelemetry.FinishRun(this, reason,
-            AIShadowRunner.Instance != null ? AIShadowRunner.Instance.Generation : 0,
+            IsAsyncChallengeRun ? _activeRunOpponent.generation
+            : AIShadowRunner.Instance != null ? AIShadowRunner.Instance.Generation : 0,
             AITrackDirector.Instance != null
                 ? AITrackDirector.Instance.ModelUpdateCount
                 : EchoRunSaveSystem.DirectorModelUpdateCount,
-            AIShadowRunner.Instance != null
+            IsAsyncChallengeRun ? (float[])_activeRunOpponent.policyWeights.Clone()
+            : AIShadowRunner.Instance != null
                 ? AIShadowRunner.Instance.GetModelWeightsSnapshot()
                 : null,
             AITrackDirector.Instance != null
@@ -688,9 +859,49 @@ public class GameManager : MonoBehaviour
             AITrackDirector.Instance != null
                 ? AITrackDirector.Instance.GetPolicyStateSnapshot()
                 : EchoRunSaveSystem.GetDirectorPolicyJson(),
-            AIShadowRunner.Instance != null
+            IsAsyncChallengeRun ? JsonUtility.ToJson(new AIShadowSequenceState
+            {
+                transitions = (float[])_activeRunOpponent.sequenceTransitions.Clone(),
+                pairCount = _activeRunOpponent.sequencePairCount
+            }) : AIShadowRunner.Instance != null
                 ? AIShadowRunner.Instance.GetSequenceStateSnapshot()
                 : "");
+    }
+
+    internal void CompleteAsyncChallenge(RunEndReason reason, float playerLead)
+    {
+        if (!IsAsyncChallengeRun || LastAsyncChallengeResult != null
+            || _activeAsyncParameters == null || _activeRunOpponent == null) return;
+        LastAsyncChallengeResult = new AsyncChallengeResult(_activeAsyncParameters,
+            _activeRunOpponent.identityId, Distance, playerLead, reason,
+            reason == RunEndReason.FinishReached && playerLead >= 0f);
+        InvokeOptional(AsyncChallengeCompleted, LastAsyncChallengeResult);
+    }
+
+    internal void NotifyLocalSingleContractSettled()
+    {
+        if (!IsSingleContractRun || LocalSingleContractSettled == null) return;
+        foreach (System.Action handler in LocalSingleContractSettled.GetInvocationList())
+        {
+            try { handler(); }
+            catch (System.Exception exception)
+            {
+                Debug.LogWarning("Optional run listener failed: " + exception.GetType().Name);
+            }
+        }
+    }
+
+    private static void InvokeOptional<T>(System.Action<T> handlers, T value)
+    {
+        if (handlers == null) return;
+        foreach (System.Action<T> handler in handlers.GetInvocationList())
+        {
+            try { handler(value); }
+            catch (System.Exception exception)
+            {
+                Debug.LogWarning("Optional run listener failed: " + exception.GetType().Name);
+            }
+        }
     }
 
     public static string ToTelemetryReason(RunEndReason endReason)
@@ -720,6 +931,12 @@ public class GameManager : MonoBehaviour
 
     void OnDestroy()
     {
+        if (IsAsyncChallengeRun && (State == GameState.Playing || State == GameState.Paused))
+        {
+            LastEndReason = RunEndReason.Abandoned;
+            AIShadowRunner.Instance?.FinalizeRunIfNeeded();
+            FinishTelemetry(LastEndReason);
+        }
         if (Instance == this) Instance = null;
     }
 }

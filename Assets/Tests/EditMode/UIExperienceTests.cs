@@ -129,6 +129,22 @@ public sealed class UIExperienceTests
     }
 
     [Test]
+    public void PortraitMenuBackgroundIsBundledWithoutMipmapsOrCpuCopy()
+    {
+        const string path = "Assets/Resources/Art/Menu/MemoryCorridorMenuPortrait.png";
+        var background = Resources.Load<Texture2D>("Art/Menu/MemoryCorridorMenuPortrait");
+        Assert.IsNotNull(background);
+        Assert.GreaterOrEqual(background.width, 768);
+        Assert.That((float)background.height / background.width, Is.InRange(1.9f, 2.1f));
+        var importer = (TextureImporter)AssetImporter.GetAtPath(path);
+        Assert.IsFalse(importer.mipmapEnabled);
+        Assert.IsFalse(importer.isReadable);
+        Assert.AreEqual(TextureImporterAlphaSource.None, importer.alphaSource);
+        Assert.AreEqual(TextureWrapMode.Clamp, importer.wrapMode);
+        Assert.LessOrEqual(importer.maxTextureSize, 2048);
+    }
+
+    [Test]
     public void OriginalMenuBackgroundIsBundledAtFullQuality()
     {
         const string path =
@@ -347,7 +363,7 @@ public sealed class UIExperienceTests
             string actual = BitConverter.ToString(
                 sha.ComputeHash(File.ReadAllBytes(path))).Replace("-", "");
             Assert.AreEqual(
-                "CCCAD320E18B33279AB48E88517D6312A9541B5DE06E65E3C777B67BA09724FA",
+                "0CB2A65839604754D09BAFA67E7F447750032DF4038B04B3B7897B1B033D6623",
                 actual,
                 "The bundled font must stay the validated static Regular 400 subset.");
         }

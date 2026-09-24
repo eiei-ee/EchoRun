@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 
 public struct EchoEncounterLaneChoice
@@ -1199,11 +1199,11 @@ public class TrackManager : MonoBehaviour
         switch (role)
         {
             case PredictionGateRole.Predicted:
-                return new Color(1f, 0.12f, 0.08f, 1f);
+                return EchoRunUITheme.Echo;
             case PredictionGateRole.Counter:
-                return new Color(0.05f, 0.92f, 1f, 1f);
+                return EchoRunUITheme.ActionAccent;
             default:
-                return new Color(0.92f, 0.96f, 1f, 1f);
+                return EchoRunUITheme.TextPrimary;
         }
     }
 
@@ -1364,8 +1364,7 @@ public class TrackManager : MonoBehaviour
     {
         GameManager manager = GameManager.Instance;
         return manager != null
-               && manager.ActiveGameplayFlowMode
-               == GameplayFlowMode.SingleContract;
+               && manager.UsesSingleContractRules;
     }
 
     private static RunDifficultyLevel ActiveRunDifficulty()

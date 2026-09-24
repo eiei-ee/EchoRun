@@ -79,8 +79,14 @@ public sealed class EchoRunnerHeroVisualTests
         {
             Color body = AIShadowRunner.ResolveGhostBodyColor(
                 false, false, 0f);
-            Assert.That(body.a, Is.InRange(0.10f, 0.20f));
-            Assert.Less(body.maxColorComponent, 0.20f);
+            // The echo remains translucent but has a readable lilac body,
+            // rather than disappearing into the blue street except at its rim.
+            Assert.That(body.a, Is.InRange(0.30f, 0.60f));
+            Assert.Greater(body.b, body.r);
+            Assert.Greater(body.r, body.g);
+            Assert.AreEqual(
+                AIShadowRunner.ResolveGhostBodyColor(false, true, 0f),
+                AIShadowRunner.ResolveGhostBodyColor(false, true, 17f));
             Assert.LessOrEqual(ghost.GetFloat("_EmissionStrength"), 0.5f);
             Assert.LessOrEqual(ghost.GetFloat("_ScanStrength"), 0.25f);
             Assert.LessOrEqual(ghost.GetFloat("_GlitchStrength"), 0.03f);

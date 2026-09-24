@@ -14,6 +14,13 @@ public sealed class StackedCityRuntimeReview : MonoBehaviour
     private const string SideLanesArgument = "-echo-stacked-city-side-lanes";
     private const string ReloadArgument = "-echo-stacked-city-reload-review";
     private const string FinishGateArgument = "-echo-finish-gate-review";
+    private bool reviewOrangeArt;
+    private bool preserveRunnerArtPalette;
+    private bool artTintApplied;
+    private static readonly float[] ArtActionDistances = { 25f, 65f, 105f, 145f };
+    private int artActionStep;
+    private float artCaptureAt = -1f;
+    private string artCaptureName;
     private readonly float[] distances = { 1, 12, 40, 70, 110, 180, 260, 350, 450, 500 };
     private readonly float[] finishRemainingDistances = { 28, 20, 10, 3 };
     private readonly List<Transform> vehicles = new List<Transform>();
@@ -70,6 +77,9 @@ public sealed class StackedCityRuntimeReview : MonoBehaviour
         var review = new GameObject("StackedCityRuntimeReview").AddComponent<StackedCityRuntimeReview>();
         review.reviewSideLanes = Array.IndexOf(arguments, SideLanesArgument) >= 0;
         review.reviewFinishGate = Array.IndexOf(arguments, FinishGateArgument) >= 0;
+        review.reviewOrangeArt = Array.IndexOf(arguments, "-echo-orange-art-review") >= 0;
+        review.preserveRunnerArtPalette = Array.IndexOf(arguments, "-echo-runner-art-review") >= 0;
+        review.reviewOrangeArt |= review.preserveRunnerArtPalette;
         // Finish review owns one complete natural course, not the 500 m reload phases.
         review.reviewReload = !review.reviewFinishGate && Array.IndexOf(arguments, ReloadArgument) >= 0;
         if (review.reviewReload) DontDestroyOnLoad(review.gameObject);
@@ -137,6 +147,7 @@ public sealed class StackedCityRuntimeReview : MonoBehaviour
         {
             laneFrames[Mathf.Clamp(player.CurrentLane, 0, 2)]++;
             if (reviewSideLanes) DriveSideLanes(gm.Distance);
+            if (reviewOrangeArt) ReviewOrangeActions(gm.Distance);
         }
         if (now >= nextAudit)
         {
@@ -285,8 +296,34 @@ public sealed class StackedCityRuntimeReview : MonoBehaviour
         queuedLaneInputs++;
     }
 
+    private void ReviewOrangeActions(float distance)
+    {
+        // Real controller inputs in the existing isolated visual harness.
+        if (!artTintApplied)
+        {
+            if (!preserveRunnerArtPalette)
+                RunnerAppearanceService.Apply(player.characterModel,
+                    new Color(.047f,.07f,.092f), new Color(.8f,.235f,.067f), Color.black);
+            artTintApplied = true; // Memory-only; keep the user's saved cosmetic.
+        }
+        if (artCaptureAt >= 0f && Time.unscaledTime >= artCaptureAt)
+        {
+            Capture(artCaptureName + "-jumping-" + player.IsJumping + "-sliding-" + player.IsSliding);
+            artCaptureAt = -1f;
+        }
+        if (artActionStep >= 4 || InputManager.Instance == null) return;
+        if (distance < ArtActionDistances[artActionStep] || player.IsJumping || player.IsSliding) return;
+        bool jump = artActionStep % 2 == 0;
+        InputManager.Instance.QueueSwipe(jump ? SwipeDirection.Up : SwipeDirection.Down,
+            InputIntentSource.Replay, Time.unscaledTime);
+        artCaptureName = "outfit-" + (jump ? "jump" : "slide") + "-" + artActionStep;
+        artCaptureAt = Time.unscaledTime + .23f;
+        artActionStep++;
+    }
+
     private void RestartReview(GameManager gm)
     {
+        artActionStep = 0; artTintApplied = false; artCaptureAt = -1f;
         WriteReport("Completed 500-metre visual diagnostic before normal Restart", "report-before-reload.txt");
         previousGameManagerId = gm.GetInstanceID();
         restartCount = 1;
@@ -331,6 +368,16 @@ public sealed class StackedCityRuntimeReview : MonoBehaviour
             if (segment.segmentType != TrackSegmentType.Straight) continue;
             Transform ground = segment.transform.Find("GroundPlane");
             Renderer renderer = ground != null ? ground.GetComponent<Renderer>() : null;
+            Transform roadArt = segment.transform.Find(OrangeEchoRoadVisuals.RootName);
+            if (roadArt != null)
+            {
+                Renderer[] roadRenderers = roadArt.GetComponentsInChildren<Renderer>();
+                bool visibleDeck = false;
+                foreach (Renderer roadRenderer in roadRenderers)
+                    if (roadRenderer.enabled && roadRenderer.name.EndsWith("OE_RoadDeck")) visibleDeck = true;
+                if (!visibleDeck) missingRoad = true;
+                continue;
+            }
             if (renderer == null || !renderer.enabled || !renderer.gameObject.activeInHierarchy)
             { missingRoad = true; }
         }
@@ -412,8 +459,54 @@ public sealed class StackedCityRuntimeReview : MonoBehaviour
             + (reviewFinishGate ? " | remaining=" + GameManager.Instance.RemainingDistance
                 .ToString("F2", CultureInfo.InvariantCulture) : ""));
         Debug.Log("STACKED_CITY_RUNTIME_FRAME " + path);
+        if (reviewOrangeArt && player != null
+            && (name == "distance-040" || name.StartsWith("outfit-", StringComparison.Ordinal)))
+            CaptureOutfitInspection(name);
         if (reviewSideLanes && player != null && player.CurrentLane != 1)
             CaptureDownwardInspection(name);
+    }
+
+    private void CaptureOutfitInspection(string name)
+    {
+        Camera camera = Camera.main;
+        if (camera == null || player.characterModel == null) return;
+        Vector3 position = camera.transform.position;
+        Quaternion rotation = camera.transform.rotation;
+        float fieldOfView = camera.fieldOfView;
+        try
+        {
+            // Same animated frame and lighting, with an inspection camera only.
+            // Keep the normal gameplay capture above as the framing reference.
+            Vector3 forward = player.ForwardDirection;
+            Vector3 right = Vector3.Cross(Vector3.up, forward);
+            Vector3 target = player.characterModel.position + Vector3.up * .9f;
+            // The animated skeleton can move relative to CharacterModel. Frame
+            // the current baked garment, not its controller/culling origin.
+            foreach (var skin in player.characterModel.GetComponentsInChildren<SkinnedMeshRenderer>())
+            {
+                if (!skin.enabled || skin.name != "OE_OrangeEchoClothing") continue;
+                var posed = new Mesh();
+                try
+                {
+                    skin.BakeMesh(posed);
+                    target = skin.transform.TransformPoint(posed.bounds.center);
+                }
+                finally { Destroy(posed); }
+                break;
+            }
+            camera.fieldOfView = 34f;
+            camera.transform.position = target - forward * 3.4f + right * 1.3f + Vector3.up * .25f;
+            camera.transform.LookAt(target);
+            EchoVisualCaptureProbe.CaptureOffscreen(Path.Combine(directory, name + "-close-rear.png"));
+            camera.transform.position = target + right * 3.7f + Vector3.up * .15f;
+            camera.transform.LookAt(target);
+            EchoVisualCaptureProbe.CaptureOffscreen(Path.Combine(directory, name + "-close-side.png"));
+        }
+        finally
+        {
+            camera.transform.SetPositionAndRotation(position, rotation);
+            camera.fieldOfView = fieldOfView;
+        }
     }
 
     private void CaptureDownwardInspection(string name)

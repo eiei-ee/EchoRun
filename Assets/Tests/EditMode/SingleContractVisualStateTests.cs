@@ -15,20 +15,13 @@ public sealed class SingleContractVisualStateTests
         EchoPhaseVisualStyle finale = EchoPhaseVisualController.StyleFor(
             SingleContractVisualState.Finale);
 
-        Assert.Greater(calibration.tint.b, calibration.tint.r,
-            "Calibration must remain blue.");
-        Assert.Greater(challenge.tint.g, challenge.tint.r,
-            "Challenge must retain its cyan component.");
-        Assert.AreEqual(challenge.tint.g, challenge.tint.b, 0.08f,
-            "Challenge must read as restrained cyan, not violet-blue neon.");
-        Assert.Greater(relearn.tint.r, relearn.tint.g + 0.5f,
-            "Relearn must be an unmistakable red pulse.");
-        Assert.Greater(finale.tint.r, finale.tint.g);
-        Assert.Greater(finale.tint.g, finale.tint.b,
-            "Finale must remain gold-orange.");
+        AssertColor(EchoRunUITheme.HudCalibrationAccent, calibration.tint);
+        AssertColor(EchoRunUITheme.HudChallengeAccent, challenge.tint);
+        AssertColor(EchoRunUITheme.HudRelearnAccent, relearn.tint);
+        AssertColor(EchoRunUITheme.HudFinaleAccent, finale.tint);
 
         Assert.Greater(ColorDistance(calibration.tint, challenge.tint), 0.2f);
-        Assert.Greater(ColorDistance(challenge.tint, relearn.tint), 0.5f);
+        Assert.Greater(ColorDistance(challenge.tint, relearn.tint), 0.3f);
         Assert.Greater(ColorDistance(relearn.tint, finale.tint), 0.3f);
     }
 
@@ -41,7 +34,10 @@ public sealed class SingleContractVisualStateTests
             SingleContractVisualState.RelearnPulse, true);
 
         AssertColor(normal.tint, reduced.tint);
-        Assert.Greater(reduced.tint.r, reduced.tint.g + 0.5f);
+        Assert.Greater(ColorDistance(reduced.tint,
+            EchoPhaseVisualController.StyleFor(
+                SingleContractVisualState.Challenge, true).tint), 0.3f,
+            "Reduced motion must keep relearning distinct from the challenge phase.");
         Assert.GreaterOrEqual(reduced.intensity, 0.4f);
         Assert.GreaterOrEqual(reduced.coral, 0.5f);
         Assert.Greater(reduced.bloomBoost, 0f,

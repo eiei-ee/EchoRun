@@ -142,7 +142,7 @@ public sealed class SingleContractFlow : IEchoGameplayFlowRuntime
     private float[] _gatePresentedElapsedTimes;
     private RunSettlement _finishedSettlement;
 
-    public GameplayFlowMode Mode => GameplayFlowMode.SingleContract;
+    public GameplayFlowMode Mode { get; private set; } = GameplayFlowMode.SingleContract;
     public bool OwnsSpecialEncounters => true;
     public bool OwnsLeadSettlement => true;
     public bool OwnsFinishSchedule => true;
@@ -254,11 +254,14 @@ public sealed class SingleContractFlow : IEchoGameplayFlowRuntime
 
     public void BeginRun(EchoRunContext context)
     {
+        Mode = context.mode == GameplayFlowMode.AsyncChallenge
+            ? GameplayFlowMode.AsyncChallenge : GameplayFlowMode.SingleContract;
         RunSequence = context.runSequence;
         RunSeed = context.runSeed;
         IdentityGeneration = context.generation;
         HasOpponent = context.hasOpponent;
-        RunDurationSeconds = HasOpponent
+        RunDurationSeconds = Mode == GameplayFlowMode.AsyncChallenge
+            ? AsyncChallengeRules.CourseDurationSeconds : HasOpponent
             ? ChallengeDurationSeconds : CalibrationDurationSeconds;
         _settlements.Clear();
         _collectedGateIds.Clear();
@@ -287,7 +290,8 @@ public sealed class SingleContractFlow : IEchoGameplayFlowRuntime
                 RunSequence, RunSeed, _originalHabitLane, windows)
             : PredictionGateTemplates.CreateCalibration(
                 RunSequence, RunSeed, _originalHabitLane, windows);
-        _gatePlan = new SingleContractGatePlan(definitions);
+        _gatePlan = new SingleContractGatePlan(definitions,
+            EchoRunRules.For(Mode).AllowGateRelearning);
         _gatePresentedElapsedTimes = new float[_gatePlan.GateCount];
         for (int i = 0; i < _gatePresentedElapsedTimes.Length; i++)
             _gatePresentedElapsedTimes[i] = -1f;

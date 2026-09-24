@@ -2,7 +2,8 @@
   "name": "TempleRun.PlayModeTests",
   "rootNamespace": "TempleRun.Tests",
   "references": [
-    "TempleRun.Runtime"
+    "TempleRun.Runtime",
+    "TempleRun.WeixinMiniGame"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

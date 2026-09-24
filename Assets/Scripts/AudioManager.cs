@@ -16,6 +16,14 @@ public class AudioManager : MonoBehaviour
     [Header("Audio Sources")]
     private AudioSource _sfxSource;
     private AudioSource _musicSource;
+    private AudioLowPassFilter _musicFilter;
+    private bool _hasFocus = true;
+    private bool _applicationPaused;
+    private bool _musicSuspended;
+    private float _musicEnvelope;
+    private float _duckRemaining;
+    private const float MusicHeadroom = 0.55f;
+    private const float EffectsHeadroom = 0.7f;
     private AudioSource _slideLoopSource;
     private AudioSource _impactSource;
     private AudioSource _dodgeResultSource;
@@ -49,7 +57,8 @@ public class AudioManager : MonoBehaviour
     public bool muted;
 
     public bool IsMuted => muted;
-    public float EffectiveMasterVolume => muted ? 0f : masterVolume;
+    public float EffectiveMasterVolume => muted || !_hasFocus || _applicationPaused
+        ? 0f : Mathf.Clamp01(masterVolume);
 
     [Header("Footsteps")]
     public float footstepInterval = 0.35f;
@@ -85,6 +94,7 @@ public class AudioManager : MonoBehaviour
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
         DontDestroyOnLoad(gameObject);
+        _hasFocus = Application.isFocused;
         EchoRunSaveSystem.EnsureInitialized();
 
         _sfxSource = gameObject.AddComponent<AudioSource>();
@@ -92,10 +102,16 @@ public class AudioManager : MonoBehaviour
         _sfxSource.loop = false;
         _sfxSource.spatialBlend = 0f;
 
-        _musicSource = gameObject.AddComponent<AudioSource>();
+        // Filters affect every source on their GameObject: keep music isolated.
+        var musicObject = new GameObject("Music Bus");
+        musicObject.transform.SetParent(transform, false);
+        _musicSource = musicObject.AddComponent<AudioSource>();
         _musicSource.playOnAwake = false;
         _musicSource.loop = true;
         _musicSource.spatialBlend = 0f;
+        _musicFilter = musicObject.AddComponent<AudioLowPassFilter>();
+        _musicFilter.cutoffFrequency = 2400f;
+        _musicFilter.lowpassResonanceQ = 1f;
 
         _slideLoopSource = gameObject.AddComponent<AudioSource>();
         _slideLoopSource.playOnAwake = false;
@@ -137,11 +153,13 @@ public class AudioManager : MonoBehaviour
         AudioClip music = bgmClip != null ? bgmClip : GetProceduralClip("bgm");
         if (music == null) return;
         _musicSource.clip = music;
-        _musicSource.Play();
+        if (_hasFocus && !_applicationPaused) _musicSource.Play();
+        else _musicSuspended = true;
     }
 
     void Update()
     {
+        UpdateMusic(Time.unscaledDeltaTime);
         AdvanceSpeedFeedback(Time.deltaTime);
         if (!ShouldEmitFootsteps(_isPlayingFootsteps,
                 _footstepsPausedForAction)) return;
@@ -310,6 +328,7 @@ public class AudioManager : MonoBehaviour
     public void PlayCollision() => PlayImpactResult(false);
     public void PlayCounterSuccess()
     {
+        DuckMusic();
         // Contract rewrite is the semantic result of the pass. Replace only
         // the generic dodge channel, never jump/land/coin/UI one-shots.
         if (_dodgeResultSource != null) _dodgeResultSource.Stop();
@@ -329,6 +348,7 @@ public class AudioManager : MonoBehaviour
 
         _lastImpactFrame = Time.frameCount;
         _lastImpactWasFatal = fatal;
+        DuckMusic(fatal ? 0.8f : 0.45f);
         AudioClip clip = fatal
             ? (impactFatalClip != null ? impactFatalClip : deathClip)
             : (impactRecoverClip != null ? impactRecoverClip : collisionClip);
@@ -448,21 +468,19 @@ public class AudioManager : MonoBehaviour
 
     private void ApplyOutputVolumes()
     {
+        float master = EffectiveMasterVolume;
         if (_musicSource != null)
-            _musicSource.volume = ResolveOutputVolume(
-                masterVolume, musicVolume, muted);
+            _musicSource.volume = master * Mathf.Clamp01(musicVolume)
+                * MusicHeadroom * _musicEnvelope;
         if (_sfxSource != null)
-            _sfxSource.volume = ResolveOutputVolume(
-                masterVolume, 1f, muted);
+            _sfxSource.volume = master * Mathf.Clamp01(sfxVolume) * EffectsHeadroom;
         if (_impactSource != null)
-            _impactSource.volume = ResolveOutputVolume(
-                masterVolume, 1f, muted);
+            _impactSource.volume = master * Mathf.Clamp01(sfxVolume) * EffectsHeadroom;
         if (_dodgeResultSource != null)
-            _dodgeResultSource.volume = ResolveOutputVolume(
-                masterVolume, 1f, muted);
+            _dodgeResultSource.volume = master * Mathf.Clamp01(sfxVolume) * EffectsHeadroom;
         if (_slideLoopSource != null)
             _slideLoopSource.volume = ResolveOutputVolume(
-                masterVolume, sfxVolume * slideLoopVolume, muted);
+                master, sfxVolume * slideLoopVolume * EffectsHeadroom, muted);
         ApplySpeedWindOutputVolume();
     }
 
@@ -472,7 +490,73 @@ public class AudioManager : MonoBehaviour
         float windVolume = ResolveSpeedWindVolumeScale(_speedFeedback01,
             speedWindLoopVolume);
         _speedWindLoopSource.volume = ResolveOutputVolume(
-            masterVolume, sfxVolume * windVolume, muted);
+            EffectiveMasterVolume, sfxVolume * windVolume * EffectsHeadroom, muted);
+    }
+
+    private void UpdateMusic(float deltaTime)
+    {
+        if (!_hasFocus || _applicationPaused) return;
+        GameManager game = GameManager.Instance;
+        GameState state = game != null ? game.State : GameState.Menu;
+        bool challenge = AIShadowRunner.Instance != null
+            && AIShadowRunner.Instance.HasActiveOpponent;
+        bool finished = game != null && game.LastEndReason == RunEndReason.FinishReached;
+        float level = state == GameState.Playing ? (challenge ? 1f : 0.76f)
+            : state == GameState.Paused ? 0.3f
+            : state == GameState.GameOver ? (finished ? 0.62f : 0.38f) : 0.48f;
+        float cutoff = state == GameState.Playing ? (challenge ? 18000f : 8500f)
+            : state == GameState.Paused ? 1800f
+            : state == GameState.GameOver ? (finished ? 6500f : 2000f) : 3200f;
+        _duckRemaining = Mathf.Max(0f, _duckRemaining - deltaTime);
+        if (_duckRemaining > 0f) level *= 0.45f;
+        // Unscaled time lets settings and pause transitions finish while gameplay is frozen.
+        float response = level < _musicEnvelope ? 10f : 2.5f;
+        _musicEnvelope = Mathf.Lerp(_musicEnvelope, level,
+            1f - Mathf.Exp(-response * Mathf.Max(0f, deltaTime)));
+        if (_musicFilter != null)
+            _musicFilter.cutoffFrequency = Mathf.Lerp(_musicFilter.cutoffFrequency,
+                cutoff, 1f - Mathf.Exp(-3f * Mathf.Max(0f, deltaTime)));
+        ApplyOutputVolumes();
+    }
+
+    private void DuckMusic(float duration = 0.4f)
+    {
+        _duckRemaining = Mathf.Max(_duckRemaining, duration);
+    }
+
+    void OnApplicationFocus(bool hasFocus)
+    {
+        _hasFocus = hasFocus;
+        RefreshApplicationAudio();
+    }
+
+    void OnApplicationPause(bool paused)
+    {
+        _applicationPaused = paused;
+        RefreshApplicationAudio();
+    }
+
+    private void RefreshApplicationAudio()
+    {
+        bool suspended = !_hasFocus || _applicationPaused;
+        if (suspended)
+        {
+            if (_musicSource != null && _musicSource.isPlaying) _musicSource.Pause();
+            _musicSuspended = true;
+            _musicEnvelope = 0f;
+            _duckRemaining = 0f;
+            // Do not replay old action tails when returning to the application.
+            _sfxSource?.Stop();
+            _impactSource?.Stop();
+            _dodgeResultSource?.Stop();
+        }
+        else if (_musicSuspended && _musicSource != null && _musicSource.clip != null)
+        {
+            _musicSource.UnPause();
+            if (!_musicSource.isPlaying) _musicSource.Play();
+            _musicSuspended = false;
+        }
+        ApplyOutputVolumes();
     }
 
     private void SaveAudioSettings(bool flush)
@@ -487,7 +571,7 @@ public class AudioManager : MonoBehaviour
             clip = GetProceduralClip(procKey);
 
         if (clip == null || _sfxSource == null) return;
-        _sfxSource.PlayOneShot(clip, sfxVolume * volumeScale);
+        _sfxSource.PlayOneShot(clip, volumeScale);
     }
 
     private void PlayImpactSFX(AudioClip clip, float volumeScale,
@@ -497,7 +581,7 @@ public class AudioManager : MonoBehaviour
             clip = GetProceduralClip(procKey);
 
         if (clip == null || _impactSource == null) return;
-        _impactSource.PlayOneShot(clip, sfxVolume * volumeScale);
+        _impactSource.PlayOneShot(clip, volumeScale);
     }
 
     private void PlayDodgeResultSFX(AudioClip clip, float volumeScale,
@@ -506,7 +590,7 @@ public class AudioManager : MonoBehaviour
         if (clip == null && !string.IsNullOrEmpty(procKey))
             clip = GetProceduralClip(procKey);
         if (clip == null || _dodgeResultSource == null) return;
-        _dodgeResultSource.PlayOneShot(clip, sfxVolume * volumeScale);
+        _dodgeResultSource.PlayOneShot(clip, volumeScale);
     }
 
     private void WarmActionFallbacks()

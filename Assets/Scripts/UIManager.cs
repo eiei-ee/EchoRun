@@ -26,6 +26,7 @@ public class UIManager : MonoBehaviour
     GameObject _menuPanel;
     RawImage _menuBackground;
     RectTransform _menuReadabilityVeil;
+    RectTransform _menuHeaderSurface;
     Button _startBtn, _settingsBtn, _characterBtn;
     Text _menuProtocolText, _menuTitleText, _menuEnglishText, _menuTaglineText;
     Text _menuGenerationText, _menuLearnedText, _menuRuleText, _menuObjectiveText;
@@ -44,6 +45,9 @@ public class UIManager : MonoBehaviour
     Button _settingsBackBtn;
     RectTransform _settingsContent;
     ScrollRect _settingsScroll;
+    static readonly Color SettingsAccent = EchoRunUITheme.ActionAccent;
+    static readonly Color SettingsSelected = EchoRunUITheme.SurfaceSelected;
+    static readonly Color SettingsControl = EchoRunUITheme.SurfaceRaised;
 
     // ── Character (sub-panel of menu) ──
     GameObject _characterPanel;
@@ -62,7 +66,8 @@ public class UIManager : MonoBehaviour
     Image _contractProgressFill;
     GameObject _buffGroup;
     Text _buffText;
-    Button _pauseBtn;
+    Button _pauseBtn, _runSettingsBtn;
+    bool _runSettingsOpen;
     EchoHudView _echoHudView;
     EchoHudPresenter _echoHudPresenter;
     GameObject _controlHint;
@@ -71,7 +76,7 @@ public class UIManager : MonoBehaviour
 
     // ── Pause ──
     GameObject _pausePanel;
-    Button _resumeBtn, _pauseToMenuBtn;
+    Button _resumeBtn, _pauseToMenuBtn, _pauseSettingsBtn;
 
     // ── GameOver ──
     GameObject _gameOverPanel;
@@ -89,6 +94,10 @@ public class UIManager : MonoBehaviour
     private MenuScreenRouter _menuRouter;
     private CanvasScaler _canvasScaler;
     private RectTransform _safeAreaRoot;
+    public RectTransform PlatformOverlayRoot => _safeAreaRoot;
+#if MINIGAME_SUBPLATFORM_WEIXIN
+    private RectTransform _safeAreaTopCover, _safeAreaBottomCover;
+#endif
     private Rect _lastSafeArea;
     private Vector2Int _lastScreenSize;
     private float _controlHintTimer;
@@ -290,14 +299,20 @@ public class UIManager : MonoBehaviour
         GameObject veil = new GameObject("MenuReadabilityVeil", typeof(Image));
         veil.transform.SetParent(_menuPanel.transform, false);
         Image veilImage = veil.GetComponent<Image>();
-        veilImage.color = WithAlpha(Ink, 0.48f);
+        veilImage.color = WithAlpha(Surface, 0.97f);
         veilImage.raycastTarget = false;
+        ApplyRounded(veilImage);
         _menuReadabilityVeil = veil.GetComponent<RectTransform>();
+
+        GameObject header = new GameObject("MenuHeaderSurface", typeof(Image));
+        header.transform.SetParent(_menuPanel.transform, false);
+        header.GetComponent<Image>().color = WithAlpha(Backdrop, 0.88f);
+        header.GetComponent<Image>().raycastTarget = false;
+        _menuHeaderSurface = header.GetComponent<RectTransform>();
 
         _menuProtocolText = MakeText("Protocol", _menuPanel.transform,
             "本机回声 · 记录来自你的跑法", 16, TextAnchor.MiddleCenter);
-        _menuProtocolText.color = Primary;
-        _menuProtocolText.fontStyle = FontStyle.Bold;
+        _menuProtocolText.color = TextMuted;
 
         _menuTitleText = MakeText("Title", _menuPanel.transform, "影迹",
             76, TextAnchor.MiddleLeft);
@@ -305,45 +320,44 @@ public class UIManager : MonoBehaviour
         _menuTitleText.fontStyle = FontStyle.Bold;
         _menuTitleText.horizontalOverflow = HorizontalWrapMode.Overflow;
         _menuTitleText.verticalOverflow = VerticalWrapMode.Overflow;
-        AddShadow(_menuTitleText.gameObject, WithAlpha(PrimaryStrong, 0.85f));
 
         _menuEnglishText = MakeText("EnglishTitle", _menuPanel.transform,
-            "E C H O // R U N", 23, TextAnchor.MiddleLeft);
+            "", 23, TextAnchor.MiddleLeft);
         if (_titleFont != null) _menuEnglishText.font = _titleFont;
-        _menuEnglishText.color = TextPrimary;
-        _menuEnglishText.fontStyle = FontStyle.Bold;
+        _menuEnglishText.gameObject.SetActive(false);
 
         _menuTaglineText = MakeText("Tagline", _menuPanel.transform,
-            "《影迹》——你的过去，正在追上你", 25, TextAnchor.MiddleLeft);
-        _menuTaglineText.color = Primary;
+            "你的过去，正在追上你", 25, TextAnchor.MiddleLeft);
+        _menuTaglineText.color = TextMuted;
 
         _menuGenerationText = MakeText("EchoGeneration", _menuPanel.transform,
             "你的操作，会变成下一局的对手", 30, TextAnchor.MiddleLeft);
-        _menuGenerationText.color = Primary;
+        _menuGenerationText.color = TextPrimary;
         _menuGenerationText.fontStyle = FontStyle.Bold;
 
         _menuLearnedText = MakeBriefLine("EchoLearned",
-            "最近选路：还需要观察", 0f, TextPrimary);
+            "最近选路：还需要观察", 0f, Primary);
         _menuRuleText = MakeBriefLine("EchoRule",
             "尝试选路、跳跃和滑铲，让回声认识你的跑法",
-            0f, TextPrimary);
+            0f, TextMuted);
         _menuObjectiveText = MakeBriefLine("EchoObjective",
             "跑到终点；观察充分后形成下一局的回声",
-            0f, Reward);
+            0f, TextPrimary);
 
         _startBtn = MakeButton("StartBtn", _menuPanel.transform, "开始第一局", 28,
             new Vector2(0.19f, 0.245f), new Vector2(520f, 78f),
             EchoRunUITheme.ActionAccent, EchoRunUITheme.ActionAccentDark, Ink);
+        _startBtn.GetComponentInChildren<Text>().fontStyle = FontStyle.Bold;
         _startBtn.onClick.AddListener(StartGameFromHome);
 
         _settingsBtn = MakeButton("SettingsBtn", _menuPanel.transform, "设置", 24,
             new Vector2(0.28f, 0.095f), new Vector2(180f, 56f),
-            WithAlpha(SurfaceRaised, 0.96f), TextMuted);
+            SurfaceRaised, PrimaryStrong, TextPrimary);
         _settingsBtn.onClick.AddListener(ShowSettings);
 
         _characterBtn = MakeButton("CharacterBtn", _menuPanel.transform, "跑者", 24,
             new Vector2(0.10f, 0.095f), new Vector2(180f, 56f),
-            WithAlpha(SurfaceRaised, 0.96f), TextMuted);
+            SurfaceRaised, PrimaryStrong, TextPrimary);
         _characterBtn.onClick.AddListener(ShowCharacter);
 
         LayoutMenu(false, false);
@@ -352,14 +366,10 @@ public class UIManager : MonoBehaviour
 
     void CreateMenuBackground()
     {
-        GameObject background = new GameObject("MemoryCorridorBackground",
+        GameObject background = new GameObject("MenuSceneVeil",
             typeof(RawImage));
         background.transform.SetParent(_menuPanel.transform, false);
         _menuBackground = background.GetComponent<RawImage>();
-        _menuBackground.texture = Resources.Load<Texture2D>(
-            "Art/Menu/MemoryCorridorMenu");
-        _menuBackground.color = _menuBackground.texture != null
-            ? Color.white : Backdrop;
         _menuBackground.raycastTarget = false;
         Stretch(_menuBackground.rectTransform);
         _menuBackground.transform.SetAsFirstSibling();
@@ -368,28 +378,21 @@ public class UIManager : MonoBehaviour
 
     void FitMenuBackground()
     {
-        FitMenuBackgroundToViewport(Screen.width, Screen.height);
+        Rect safe = UILayoutRules.NormalizeSafeArea(
+            WeChatSafeArea.Resolve(Screen.safeArea, Screen.width, Screen.height),
+            Screen.width, Screen.height);
+        FitMenuBackgroundToViewport(Mathf.RoundToInt(safe.width),
+            Mathf.RoundToInt(safe.height));
     }
 
     void FitMenuBackgroundToViewport(int width, int height)
     {
-        if (_menuBackground == null || _menuBackground.texture == null
-            || width <= 0 || height <= 0) return;
-        float assetAspect = (float)_menuBackground.texture.width
-                            / _menuBackground.texture.height;
-        float screenAspect = (float)width / height;
-        if (screenAspect > assetAspect)
-        {
-            float visibleHeight = assetAspect / screenAspect;
-            _menuBackground.uvRect = new Rect(0f,
-                (1f - visibleHeight) * 0.5f, 1f, visibleHeight);
-        }
-        else
-        {
-            float visibleWidth = screenAspect / assetAspect;
-            _menuBackground.uvRect = new Rect(
-                (1f - visibleWidth) * 0.5f, 0f, visibleWidth, 1f);
-        }
+        if (_menuBackground == null || width <= 0 || height <= 0) return;
+        // The loaded game world provides the backdrop; a tint stabilizes its
+        // contrast without substituting a separate advertising illustration.
+        _menuBackground.texture = null;
+        _menuBackground.color = WithAlpha(Backdrop, 0.62f);
+        _menuBackground.uvRect = new Rect(0f, 0f, 1f, 1f);
     }
 
     Text MakeBriefLine(string name, string content, float anchorY, Color color)
@@ -408,51 +411,123 @@ public class UIManager : MonoBehaviour
 
     void LayoutMenu(bool portrait, bool largeTargets)
     {
-        float x = portrait ? 0.5f : 0.19f;
-        float width = portrait ? 820f : 620f;
+        if (_menuPanel == null) return; // Safe-area setup also runs before panel creation.
+        Vector2 menuViewport = ((RectTransform)_menuPanel.transform).rect.size;
+        if (_menuHeaderSurface != null)
+        {
+            _menuHeaderSurface.gameObject.SetActive(portrait);
+            _menuHeaderSurface.anchorMin = new Vector2(0f, 0.83f);
+            _menuHeaderSurface.anchorMax = Vector2.one;
+            _menuHeaderSurface.offsetMin = Vector2.zero;
+            _menuHeaderSurface.offsetMax = Vector2.zero;
+        }
+        if (portrait)
+        {
+            if (_menuReadabilityVeil != null)
+            {
+                _menuReadabilityVeil.anchorMin = new Vector2(0.045f, 0.01f);
+                _menuReadabilityVeil.anchorMax = new Vector2(0.955f, 0.485f);
+                _menuReadabilityVeil.offsetMin = Vector2.zero;
+                _menuReadabilityVeil.offsetMax = Vector2.zero;
+            }
+            // Let the live runner and city occupy the middle of the screen.
+            // The compact lower surface owns all pre-run information/actions.
+            LayoutHomeText(_menuTitleText, 0.932f, 0f, 112f, 76);
+            LayoutHomeText(_menuTaglineText, 0.865f, 0f, 64f, 28);
+            LayoutHomeText(_menuGenerationText, 0.434f, 0f, 80f, 34);
+            LayoutHomeText(_menuLearnedText, 0.377f, 0f, 62f, 28);
+            LayoutHomeText(_menuRuleText, 0.309f, 0f, 138f, 28);
+            LayoutHomeText(_menuObjectiveText, 0.238f, 0f, 76f, 28);
+            LayoutHomeText(_menuProtocolText, 0.105f, 0f, 56f, 26);
+            SetButtonLayout(_startBtn, new Vector2(0.5f, 0.166f),
+                UILayoutRules.GetPrimaryActionSize(Mathf.RoundToInt(menuViewport.x),
+                    Mathf.RoundToInt(menuViewport.y), true));
+            SetButtonLayout(_characterBtn, new Vector2(0.35f, 0.04f),
+                UILayoutRules.GetHomeNavigationSize(true, true));
+            SetButtonLayout(_settingsBtn, new Vector2(0.65f, 0.04f),
+                UILayoutRules.GetHomeNavigationSize(true, true));
+            SetHomeButtonFont(_startBtn, 40);
+            SetHomeButtonFont(_characterBtn, 34);
+            SetHomeButtonFont(_settingsBtn, 34);
+            return;
+        }
+        // Restore authored desktop typography after rotating out of portrait.
+        SetHomeFont(_menuTitleText, 68);
+        SetHomeFont(_menuEnglishText, 23);
+        SetHomeFont(_menuTaglineText, 25);
+        SetHomeFont(_menuGenerationText, 30);
+        SetHomeFont(_menuLearnedText, 24);
+        SetHomeFont(_menuRuleText, 24);
+        SetHomeFont(_menuObjectiveText, 24);
+        SetHomeFont(_menuProtocolText, 16);
+        SetHomeButtonFont(_startBtn, 32);
+        SetHomeButtonFont(_characterBtn, 24);
+        SetHomeButtonFont(_settingsBtn, 24);
+        const float x = 0.22f;
+        const float width = 620f;
         if (_menuReadabilityVeil != null)
         {
-            _menuReadabilityVeil.anchorMin = Vector2.zero;
-            _menuReadabilityVeil.anchorMax = new Vector2(
-                portrait ? 1f : 0.47f, 1f);
+            _menuReadabilityVeil.anchorMin = new Vector2(0.025f, 0.04f);
+            _menuReadabilityVeil.anchorMax = new Vector2(0.415f, 0.74f);
             _menuReadabilityVeil.offsetMin = Vector2.zero;
             _menuReadabilityVeil.offsetMax = Vector2.zero;
         }
         if (_menuProtocolText != null)
             AnchorText(_menuProtocolText.rectTransform, x,
-                portrait ? 0.92f : 0.90f, width, 30f);
+                0.16f, width, 42f);
         if (_menuTitleText != null)
             AnchorText(_menuTitleText.rectTransform, x,
-                portrait ? 0.84f : 0.81f, width, portrait ? 148f : 128f);
+                0.90f, width, 112f);
         if (_menuEnglishText != null)
             AnchorText(_menuEnglishText.rectTransform, x,
                 portrait ? 0.775f : 0.725f, width, 38f);
         if (_menuTaglineText != null)
             AnchorText(_menuTaglineText.rectTransform, x,
-                portrait ? 0.715f : 0.665f, width, 42f);
+                0.815f, width, 50f);
         if (_menuGenerationText != null)
             AnchorText(_menuGenerationText.rectTransform, x,
-                portrait ? 0.625f : 0.565f, width, 48f);
+                0.655f, width, 82f);
         if (_menuLearnedText != null)
             AnchorText(_menuLearnedText.rectTransform, x,
-                portrait ? 0.545f : 0.495f, width, 54f);
+                0.55f, width, 64f);
         if (_menuRuleText != null)
             AnchorText(_menuRuleText.rectTransform, x,
-                portrait ? 0.475f : 0.425f, width, 78f);
+                0.455f, width, 92f);
         if (_menuObjectiveText != null)
             AnchorText(_menuObjectiveText.rectTransform, x,
-                portrait ? 0.405f : 0.355f, width, 54f);
+                0.35f, width, 70f);
 
         SetButtonLayout(_startBtn,
-            new Vector2(x, portrait ? 0.285f : 0.235f),
+            new Vector2(x, 0.245f),
             UILayoutRules.GetPrimaryActionSize(
-                Screen.width, Screen.height, UsesTouchLayout()));
+                Mathf.RoundToInt(menuViewport.x), Mathf.RoundToInt(menuViewport.y), UsesTouchLayout()));
         SetButtonLayout(_characterBtn,
-            UILayoutRules.GetHomeNavigationAnchor(0, portrait),
+            new Vector2(0.145f, 0.09f),
             UILayoutRules.GetHomeNavigationSize(portrait, largeTargets));
         SetButtonLayout(_settingsBtn,
-            UILayoutRules.GetHomeNavigationAnchor(1, portrait),
+            new Vector2(0.295f, 0.09f),
             UILayoutRules.GetHomeNavigationSize(portrait, largeTargets));
+    }
+
+    static void SetHomeFont(Text text, int size)
+    {
+        if (text == null) return;
+        text.resizeTextForBestFit = false;
+        EchoRunAccessibility.SetBaseFontSize(text, size);
+    }
+
+    static void SetHomeButtonFont(Button button, int size)
+    {
+        if (button != null) SetHomeFont(button.GetComponentInChildren<Text>(), size);
+    }
+
+    static void LayoutHomeText(Text text, float anchorY, float offsetY,
+        float height, int size)
+    {
+        if (text == null) return;
+        SetHomeFont(text, size);
+        AnchorText(text.rectTransform, 0.5f, anchorY, 900f, height);
+        text.rectTransform.anchoredPosition = new Vector2(0f, offsetY);
     }
 
     // ═══════════════════════════════════════════════════
@@ -476,7 +551,7 @@ public class UIManager : MonoBehaviour
         viewport.GetComponent<Mask>().showMaskGraphic = false;
         RectTransform vpRT = viewport.GetComponent<RectTransform>();
         vpRT.anchorMin = new Vector2(0, 0); vpRT.anchorMax = new Vector2(1, 1);
-        vpRT.offsetMin = new Vector2(20, 20); vpRT.offsetMax = new Vector2(-20, -20);
+        vpRT.offsetMin = new Vector2(32, 24); vpRT.offsetMax = new Vector2(-32, -132);
 
         // Content
         GameObject content = new GameObject("Content");
@@ -492,13 +567,22 @@ public class UIManager : MonoBehaviour
         _settingsScroll.content = _settingsContent;
 
         Transform c = content.transform;
-        float topY = 0.95f;
+        foreach (string section in new[] { "AudioCard", "DisplayCard" })
+        {
+            var card = new GameObject(section, typeof(Image));
+            card.transform.SetParent(c, false);
+            Image surface = card.GetComponent<Image>();
+            surface.color = Surface;
+            surface.raycastTarget = false;
+            ApplyRounded(surface);
+        }
 
-        Text title = MakeText("SettingsTitle", c, "设置", 44, TextAnchor.MiddleCenter);
-        title.color = Color.white;
+        Text title = MakeText("SettingsTitle", _settingsPanel.transform, "设置", 40, TextAnchor.MiddleCenter);
+        title.color = TextPrimary;
         title.fontStyle = FontStyle.Bold;
         title.verticalOverflow = VerticalWrapMode.Overflow;
-        AnchorText(title.GetComponent<RectTransform>(), 0.5f, topY, 400, 100);
+        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 1f, 400, 80);
+        title.rectTransform.anchoredPosition = new Vector2(0, -64);
         MakeLabel("AudioSectionLabel", c, "声音", new Vector2(0.5f, 0.90f));
 
         _masterSlider = MakeSlider("MasterVolumeSlider", c,
@@ -537,6 +621,9 @@ public class UIManager : MonoBehaviour
         _fpsStatusText = MakeText("FpsStatus", c, "目标 60 · 正在测量…", 24,
             TextAnchor.MiddleRight);
         _fpsStatusText.color = TextMuted;
+        Text fpsHint = MakeText("FpsHint", c,
+            "高帧率需要屏幕与设备支持，实际以运行帧率为准。", 22, TextAnchor.UpperLeft);
+        fpsHint.color = TextMuted;
         AnchorText(_fpsStatusText.rectTransform, 0.72f, 0.42f, 340, 40);
         _fps30Btn  = MakeSmallButton("Fps30", c, "30",
             new Vector2(0.25f, 0.36f), new Vector2(140, 60), SurfaceRaised);
@@ -608,6 +695,7 @@ public class UIManager : MonoBehaviour
         // is being assembled and invalidate early direct-child Text geometry.
         CreateVolumeReadouts(c);
         RefreshVolumeLabels();
+        LayoutSettings(UILayoutRules.IsCompactPortrait(Screen.width, Screen.height));
 
         _settingsPanel.SetActive(false);
     }
@@ -636,18 +724,36 @@ public class UIManager : MonoBehaviour
         readout.horizontalOverflow = HorizontalWrapMode.Overflow;
         readout.verticalOverflow = VerticalWrapMode.Overflow;
         AnchorText(readout.rectTransform, 0.5f, anchorY, 520f, 48f);
-        AddOutline(readout.gameObject, new Color(0f, 0f, 0f, 0.78f));
         readout.transform.SetAsLastSibling();
         return readout;
     }
 
     void ShowSettings()
     {
-        if (_menuRouter != null) _menuRouter.Show(MenuScreen.Settings);
+        if (_gm != null && (_gm.State == GameState.Playing || _gm.State == GameState.Paused))
+        {
+            if (_gm.IsDeathSequence) return;
+            if (_gm.State == GameState.Playing) _gm.Pause();
+            InputManager.Instance?.ClearInput();
+            _runSettingsOpen = true;
+            _pausePanel.SetActive(false);
+            _hudPanel.SetActive(false);
+            _settingsPanel.SetActive(true);
+            _settingsPanel.transform.SetAsLastSibling();
+            SelectForNavigation(_masterSlider);
+        }
+        else if (_menuRouter != null) _menuRouter.Show(MenuScreen.Settings);
         else
         {
             if (_menuPanel != null) _menuPanel.SetActive(false);
             if (_settingsPanel != null) _settingsPanel.SetActive(true);
+        }
+        AudioManager audio = AudioManager.Instance;
+        if (audio != null)
+        {
+            _masterSlider.SetValueWithoutNotify(audio.masterVolume);
+            _bgmSlider.SetValueWithoutNotify(audio.musicVolume);
+            _sfxSlider.SetValueWithoutNotify(audio.sfxVolume);
         }
         RefreshVolumeLabels();
         RefreshVolumeReadoutGeometry();
@@ -658,6 +764,7 @@ public class UIManager : MonoBehaviour
         Canvas.ForceUpdateCanvases();
         if (_settingsScroll != null)
             _settingsScroll.verticalNormalizedPosition = 1f;
+        HighlightDifficulty();
     }
 
     void RefreshVolumeReadoutGeometry()
@@ -678,6 +785,13 @@ public class UIManager : MonoBehaviour
     void HideSettings()
     {
         EchoRunSaveSystem.SaveLegacyState();
+        if (_runSettingsOpen)
+        {
+            _runSettingsOpen = false;
+            InputManager.Instance?.ClearInput();
+            OnGameStateChanged(_gm.State);
+            return;
+        }
         if (_menuRouter != null) _menuRouter.BackToHome();
         else
         {
@@ -686,11 +800,18 @@ public class UIManager : MonoBehaviour
         }
     }
 
+    public bool TryCloseRunSettings()
+    {
+        if (!_runSettingsOpen) return false;
+        HideSettings();
+        return true;
+    }
+
     void HighlightFps()
     {
         int cur = _gm != null ? _gm.GetFrameRate() : 60;
-        Color active = PrimaryStrong;
-        Color inactive = SurfaceRaised;
+        Color active = SettingsSelected;
+        Color inactive = SettingsControl;
         SetBtnColor(_fps30Btn,  cur == 30  ? active : inactive);
         SetBtnColor(_fps60Btn,  cur == 60  ? active : inactive);
         SetBtnColor(_fps120Btn, cur == 120 ? active : inactive);
@@ -726,7 +847,9 @@ public class UIManager : MonoBehaviour
         SetButtonLabel(_difficultyIntenseBtn,
             level == RunDifficultyLevel.Intense ? "✓ 高压" : "高压");
         if (_difficultyStatusText != null)
-            _difficultyStatusText.text = RunDifficultySettings.Description(level);
+            _difficultyStatusText.text = _runSettingsOpen
+                ? "下次开跑生效 · 本局保持原难度"
+                : RunDifficultySettings.Description(level);
     }
 
     void UpdateFrameRateStatus()
@@ -808,6 +931,11 @@ public class UIManager : MonoBehaviour
     void SetBtnColor(Button btn, Color c)
     {
         if (btn == null) return;
+        if (_settingsPanel != null && btn.transform.IsChildOf(_settingsPanel.transform))
+        {
+            if (c == PrimaryStrong) c = SettingsSelected;
+            else if (c == SurfaceRaised) c = SettingsControl;
+        }
         var img = btn.GetComponent<Image>();
         if (img != null) img.color = c;
     }
@@ -817,12 +945,12 @@ public class UIManager : MonoBehaviour
     // ═══════════════════════════════════════════════════
 
     static readonly (string name, Color dark, Color light, Color emission)[] _presets = {
-        ("原型", new Color(0.030f, 0.060f, 0.10f), new Color(0.32f, 0.46f, 0.60f), new Color(0.95f, 0.72f, 0.48f)),
-        ("警戒", new Color(0.16f, 0.035f, 0.04f), new Color(0.88f, 0.26f, 0.22f), new Color(1.60f, 0.24f, 0.18f)),
-        ("深海", new Color(0.025f, 0.06f, 0.18f), new Color(0.14f, 0.38f, 0.86f), new Color(0.12f, 0.62f, 1.75f)),
-        ("脉冲", new Color(0.03f, 0.14f, 0.08f), new Color(0.12f, 0.68f, 0.36f), new Color(0.15f, 1.45f, 0.72f)),
-        ("琥珀", new Color(0.18f, 0.10f, 0.025f), new Color(0.90f, 0.61f, 0.12f), new Color(1.80f, 0.78f, 0.12f)),
-        ("夜行", new Color(0.018f, 0.022f, 0.03f), new Color(0.18f, 0.20f, 0.24f), new Color(0.72f, 0.82f, 0.90f)),
+        ("明黄", EchoRunUITheme.Backdrop, EchoRunUITheme.ActionAccent, Color.black),
+        ("回声紫", EchoRunUITheme.Backdrop, EchoRunUITheme.Echo, Color.black),
+        ("莓红", EchoRunUITheme.Backdrop, new Color(0.929f, 0.392f, 0.545f), Color.black),
+        ("夜蓝", EchoRunUITheme.Backdrop, new Color(0.424f, 0.353f, 0.831f), Color.black),
+        ("葡萄紫", EchoRunUITheme.Backdrop, new Color(0.616f, 0.310f, 0.729f), Color.black),
+        ("浅粉", EchoRunUITheme.Backdrop, new Color(0.859f, 0.588f, 0.773f), Color.black),
     };
 
     void CreateCharacterPanel()
@@ -842,7 +970,7 @@ public class UIManager : MonoBehaviour
         vp.GetComponent<Mask>().showMaskGraphic = false;
         RectTransform vpRT = vp.GetComponent<RectTransform>();
         vpRT.anchorMin = new Vector2(0, 0); vpRT.anchorMax = new Vector2(1, 1);
-        vpRT.offsetMin = new Vector2(20, 20); vpRT.offsetMax = new Vector2(-20, -20);
+        vpRT.offsetMin = new Vector2(20, 20); vpRT.offsetMax = new Vector2(-20, -132);
 
         // Content
         GameObject content = new GameObject("Content");
@@ -859,26 +987,27 @@ public class UIManager : MonoBehaviour
 
         Transform c = content.transform;
 
-        Text title = MakeText("CharTitle", c, "跑者外观", 44, TextAnchor.MiddleCenter);
-        title.color = Color.white;
+        Text title = MakeText("CharTitle", _characterPanel.transform, "跑者外观", 40, TextAnchor.MiddleCenter);
+        title.color = TextPrimary;
         title.fontStyle = FontStyle.Bold;
         title.verticalOverflow = VerticalWrapMode.Overflow;
-        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.95f, 400, 100);
+        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 1f, 400, 80);
+        title.rectTransform.anchoredPosition = new Vector2(0f, -64f);
 
         _characterSelectionText = MakeText("SelectionStatus", c,
             "选择配色；立即预览并保存", 22, TextAnchor.MiddleCenter);
         _characterSelectionText.color = TextMuted;
-        AnchorText(_characterSelectionText.rectTransform, 0.5f, 0.89f, 620, 40);
+        AnchorText(_characterSelectionText.rectTransform, 0.5f, 0.94f, 620, 56);
 
         GameObject preview = new GameObject("RunnerPreview", typeof(RawImage));
         preview.transform.SetParent(c, false);
         preview.GetComponent<RawImage>().raycastTarget = false;
-        AnchorText(preview.GetComponent<RectTransform>(), 0.5f, 0.67f, 300f, 360f);
+        AnchorText(preview.GetComponent<RectTransform>(), 0.5f, 0.69f, 360f, 430f);
         preview.AddComponent<RunnerColorPreview>();
 
         // 2 rows × 3 columns of color presets inside scroll content
         float[] colX = { 0.18f, 0.5f, 0.82f };
-        float[] rowY = { 0.40f, 0.24f };
+        float[] rowY = { 0.38f, 0.18f };
 
         for (int r = 0; r < 2; r++)
         {
@@ -898,14 +1027,46 @@ public class UIManager : MonoBehaviour
         SetTopLeftButtonLayout(_characterBackBtn, new Vector2(280f, 76f));
         _characterBackBtn.onClick.AddListener(HideCharacter);
 
+        LayoutCharacter(UILayoutRules.IsCompactPortrait(Screen.width, Screen.height));
         _characterPanel.SetActive(false);
+    }
+
+    void LayoutCharacter(bool portrait)
+    {
+        if (_characterContent == null) return;
+        _characterContent.sizeDelta = portrait
+            ? new Vector2(960f, 1540f) : new Vector2(1640f, 800f);
+
+        RectTransform preview = _characterContent.Find("RunnerPreview") as RectTransform;
+        if (preview != null)
+            AnchorText(preview, portrait ? 0.5f : 0.25f,
+                portrait ? 0.735f : 0.50f,
+                portrait ? 520f : 624f, portrait ? 650f : 780f);
+
+        if (_characterSelectionText != null)
+        {
+            AnchorText(_characterSelectionText.rectTransform,
+                portrait ? 0.5f : 0.73f, portrait ? 0.48f : 0.83f,
+                portrait ? 860f : 740f, 70f);
+            SetHomeFont(_characterSelectionText, portrait ? 30 : 28);
+        }
+
+        for (int i = 0; i < _presetButtons.Length; i++)
+        {
+            Vector2 anchor = portrait
+                ? new Vector2(0.17f + (i % 3) * 0.33f, 0.335f - (i / 3) * 0.18f)
+                : new Vector2(0.62f + (i % 2) * 0.22f, 0.66f - (i / 2) * 0.235f);
+            SetButtonLayout(_presetButtons[i], anchor, portrait
+                ? new Vector2(272f, 212f) : new Vector2(300f, 164f));
+            SetHomeFont(_presetLabels[i], portrait ? 30 : 26);
+        }
     }
 
     void CreatePresetButton(string label, Color dark, Color light, int index,
         Vector2 anchor, Transform parent)
     {
         Button btn = MakeSmallButton("PresetBtn_" + index, parent, "",
-            anchor, new Vector2(190, 138), SurfaceRaised);
+            anchor, new Vector2(240, 164), SurfaceRaised);
         _presetButtons[index] = btn;
         btn.onClick.AddListener(() => ApplyCharacterColor(index));
 
@@ -938,7 +1099,7 @@ public class UIManager : MonoBehaviour
         Text nameLabel = MakeText("PresetLabel_" + index, btn.transform,
             label, 24, TextAnchor.MiddleCenter);
         nameLabel.color = TextPrimary;
-        nameLabel.fontStyle = FontStyle.Bold;
+        nameLabel.fontStyle = FontStyle.Normal;
         RectTransform labelRect = nameLabel.rectTransform;
         labelRect.anchorMin = new Vector2(0f, 0.02f);
         labelRect.anchorMax = new Vector2(1f, 0.32f);
@@ -1041,6 +1202,7 @@ public class UIManager : MonoBehaviour
             {
                 _echoHudPresenter.Initialize(_echoHudView, _gm);
                 _pauseBtn = _echoHudView.PauseButton;
+                CreateRunSettingsButton();
                 _hudPanel.SetActive(false);
                 return;
             }
@@ -1165,7 +1327,26 @@ public class UIManager : MonoBehaviour
             WithAlpha(SurfaceRaised, 0.96f));
         _pauseBtn.onClick.AddListener(() => _gm.Pause());
 
+        CreateRunSettingsButton();
+
         _hudPanel.SetActive(false);
+    }
+
+    void CreateRunSettingsButton()
+    {
+        _runSettingsBtn = MakeButton("RunSettingsBtn", _hudPanel.transform,
+            "设置", 24, new Vector2(1f, 1f), new Vector2(120f, 64f),
+            SurfaceRaised, TextPrimary);
+        _runSettingsBtn.onClick.AddListener(ShowSettings);
+    }
+
+    static void LayoutTopRightControl(Button button, Vector2 size, Vector2 offset)
+    {
+        if (button == null) return;
+        RectTransform rect = button.GetComponent<RectTransform>();
+        rect.anchorMin = rect.anchorMax = rect.pivot = Vector2.one;
+        rect.sizeDelta = size;
+        rect.anchoredPosition = offset;
     }
 
     GameObject CreateHudSurface(string name, Transform parent, Vector2 anchor,
@@ -1331,9 +1512,10 @@ public class UIManager : MonoBehaviour
 
     bool IsSingleContractPresentation(AIShadowRunner shadow)
     {
-        if (_gm != null) return _gm.IsSingleContractRun;
-        return shadow != null && shadow.ActiveGameplayFlowMode
-            == GameplayFlowMode.SingleContract;
+        if (_gm != null) return _gm.UsesSingleContractRules;
+        return shadow != null && (shadow.ActiveGameplayFlowMode
+            == GameplayFlowMode.SingleContract || shadow.ActiveGameplayFlowMode
+            == GameplayFlowMode.AsyncChallenge);
     }
 
     static Color SingleContractFeedbackColor(
@@ -1429,20 +1611,27 @@ public class UIManager : MonoBehaviour
         _pausePanel = NewPanel("PausePanel", WithAlpha(Backdrop, 0.92f));
 
         Text title = MakeText("PauseTitle", _pausePanel.transform, "跑局已暂停", 42, TextAnchor.MiddleCenter);
-        title.color = Color.white;
+        title.color = TextPrimary;
         title.fontStyle = FontStyle.Bold;
-        AddOutline(title.gameObject, new Color(0, 0, 0, 0.6f));
-        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.58f, 400, 80);
+        AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.58f, 620, 100);
 
         _resumeBtn = MakeButton("ResumeBtn", _pausePanel.transform, "继续游戏", 38,
             new Vector2(0.5f, 0.38f), new Vector2(400, 100),
             EchoRunUITheme.ActionAccent, EchoRunUITheme.ActionAccentDark, Ink);
+        _resumeBtn.GetComponentInChildren<Text>().fontStyle = FontStyle.Bold;
         _resumeBtn.onClick.AddListener(() => _gm.Resume());
 
         _pauseToMenuBtn = MakeButton("PauseToMenuBtn", _pausePanel.transform, "返回主页", 32,
             new Vector2(0.5f, 0.22f), new Vector2(320, 80),
             SurfaceRaised, TextMuted);
         _pauseToMenuBtn.onClick.AddListener(() => _gm.ReturnToMenu());
+
+        _pauseSettingsBtn = MakeButton("PauseSettingsBtn", _pausePanel.transform,
+            "设置", 28, Vector2.one, new Vector2(160f, 76f),
+            SurfaceRaised, TextPrimary);
+        _pauseSettingsBtn.onClick.AddListener(ShowSettings);
+        LayoutTopRightControl(_pauseSettingsBtn, new Vector2(160f, 76f),
+            new Vector2(-24f, -24f));
 
         _pausePanel.SetActive(false);
     }
@@ -1455,19 +1644,16 @@ public class UIManager : MonoBehaviour
     {
         _gameOverPanel = NewPanel("GameOverPanel", WithAlpha(Backdrop, 0.94f));
 
-        Text title = MakeText("GOTitle", _gameOverPanel.transform, "Game Over", 68, TextAnchor.MiddleCenter);
+        Text title = MakeText("GOTitle", _gameOverPanel.transform, "本局结束", 68, TextAnchor.MiddleCenter);
         title.color = Danger;
         title.fontStyle = FontStyle.Bold;
-        AddOutline(title.gameObject, new Color(0.5f, 0.05f, 0f));
-        AddShadow(title.gameObject, new Color(0, 0, 0, 0.8f));
         AnchorText(title.GetComponent<RectTransform>(), 0.5f, 0.76f, 500, 90);
         title.gameObject.SetActive(false);
 
         // Session score
         _finalScoreText = MakeText("FinalScore", _gameOverPanel.transform, "得分: 0", 48, TextAnchor.MiddleCenter);
-        _finalScoreText.color = Color.white;
+        _finalScoreText.color = TextPrimary;
         _finalScoreText.fontStyle = FontStyle.Bold;
-        AddOutline(_finalScoreText.gameObject, new Color(0, 0, 0, 0.6f));
         AnchorText(_finalScoreText.GetComponent<RectTransform>(), 0.5f, 0.61f, 450, 70);
         _finalScoreText.gameObject.SetActive(false);
 
@@ -1475,7 +1661,6 @@ public class UIManager : MonoBehaviour
         _highScoreText = MakeText("HighScore", _gameOverPanel.transform, "最高分: 0", 36, TextAnchor.MiddleCenter);
         _highScoreText.color = Reward;
         _highScoreText.fontStyle = FontStyle.Bold;
-        AddOutline(_highScoreText.gameObject, new Color(0.3f, 0.2f, 0f));
         AnchorText(_highScoreText.GetComponent<RectTransform>(), 0.5f, 0.52f, 400, 50);
         _highScoreText.gameObject.SetActive(false);
 
@@ -1505,6 +1690,7 @@ public class UIManager : MonoBehaviour
         _restartBtn = MakeButton("RestartBtn", _gameOverPanel.transform, "重新挑战", 30,
             new Vector2(0.5f, 0.18f), new Vector2(380, 76),
             EchoRunUITheme.ActionAccent, EchoRunUITheme.ActionAccentDark, Ink);
+        _restartBtn.GetComponentInChildren<Text>().fontStyle = FontStyle.Bold;
         _restartBtn.onClick.AddListener(() => _gm.Restart());
 
         // Back to menu
@@ -1519,7 +1705,6 @@ public class UIManager : MonoBehaviour
             "本局结果", 48, TextAnchor.MiddleCenter);
         _gameOverTitleText.color = Danger;
         _gameOverTitleText.fontStyle = FontStyle.Bold;
-        AddOutline(_gameOverTitleText.gameObject, new Color(0f, 0f, 0f, 0.45f));
         AnchorText(_gameOverTitleText.GetComponent<RectTransform>(), 0.5f, 0.81f, 700, 80);
 
         _gameOverStatsText = MakeText("GameOverStats", _gameOverPanel.transform,
@@ -1527,7 +1712,6 @@ public class UIManager : MonoBehaviour
         _gameOverStatsText.color = TextMuted;
         _gameOverStatsText.fontStyle = FontStyle.Normal;
         _gameOverStatsText.lineSpacing = 1.05f;
-        AddOutline(_gameOverStatsText.gameObject, new Color(0, 0, 0, 0.7f));
         AnchorText(_gameOverStatsText.GetComponent<RectTransform>(), 0.5f, 0.68f, 1080, 60);
 
         _gameOverPanel.SetActive(false);
@@ -1692,6 +1876,7 @@ public class UIManager : MonoBehaviour
 
     void OnGameStateChanged(GameState state)
     {
+        _runSettingsOpen = false;
         bool resumedFromPause = state == GameState.Playing
                                 && _pausePanel != null
                                 && _pausePanel.activeSelf;
@@ -1766,6 +1951,7 @@ public class UIManager : MonoBehaviour
                     ? resultShadow.FinalizeRunIfNeeded() : "";
                 bool singleContractResult = IsSingleContractPresentation(
                     resultShadow);
+                bool asyncResult = _gm != null && _gm.IsAsyncChallengeRun;
                 if (singleContractResult && resultShadow != null)
                 {
                     SingleContractHudData resultView =
@@ -1778,6 +1964,13 @@ public class UIManager : MonoBehaviour
                 bool wasChallenge = resultShadow != null
                                     && resultShadow.LastRunWasChallenge;
                 bool won = resultShadow != null && resultShadow.LastRunWon;
+                AsyncChallengeResult asyncSnapshot = asyncResult
+                    ? _gm.LastAsyncChallengeResult : null;
+                if (asyncSnapshot != null)
+                {
+                    resultReason = asyncSnapshot.reason;
+                    won = asyncSnapshot.won;
+                }
                 bool settlementSaved = resultShadow != null
                                        && (resultShadow
                                                .LastSingleContractCommitSucceeded
@@ -1794,7 +1987,7 @@ public class UIManager : MonoBehaviour
                                         && !resultIdentity
                                             .RequiresRouteCalibration;
                 if (_restartBtn != null)
-                    SetButtonLabel(_restartBtn, singleContractResult
+                    SetButtonLabel(_restartBtn, asyncResult ? "再挑战" : singleContractResult
                         ? GetSingleContractGameOverActionLabel(resultReason,
                             wasChallenge, identityPromoted, resultGeneration,
                             routeMemoryReady)
@@ -1802,7 +1995,13 @@ public class UIManager : MonoBehaviour
                             wasChallenge, won, resultGeneration));
                 if (_gameOverTitleText != null && resultShadow != null)
                 {
-                    if (singleContractResult)
+                    if (asyncResult)
+                    {
+                        _gameOverTitleText.text = GetAsyncChallengeGameOverTitle(
+                            resultReason, won);
+                        _gameOverTitleText.color = won ? Success : Danger;
+                    }
+                    else if (singleContractResult)
                     {
                         _gameOverTitleText.text =
                             GetSingleContractGameOverTitle(
@@ -1852,10 +2051,29 @@ public class UIManager : MonoBehaviour
                 }
                 PresentResultSummary(singleContractResultText,
                     _gameOverTitleText != null ? _gameOverTitleText.text : "", singleContractResult);
+                if (asyncResult)
+                {
+                    if (_gameOverStatsText != null)
+                        _gameOverStatsText.text = "距离 "
+                            + (asyncSnapshot != null ? asyncSnapshot.distanceMeters : _gm.Distance).ToString("0.0")
+                            + "m · 本局金币 " + _gm.Coins + "（不入钱包）";
+                    if (_shadowResultText != null)
+                        _shadowResultText.text = asyncSnapshot != null
+                            ? "领先 " + asyncSnapshot.playerLeadMeters.ToString("+0.0;-0.0;0.0")
+                              + "m\n本局不影响你的回声成长和本地纪录"
+                            : singleContractResultText;
+                    if (_resultDetailsBtn != null) _resultDetailsBtn.gameObject.SetActive(false);
+                }
                 ScheduleTextRefresh(_gameOverPanel != null
                     ? _gameOverPanel.transform : null);
                 break;
         }
+    }
+
+    public static string GetAsyncChallengeGameOverTitle(RunEndReason reason, bool won)
+    {
+        if (reason != RunEndReason.FinishReached) return "好友挑战中断";
+        return won ? "你跑赢了好友影子" : "好友影子领先";
     }
 
     public static string GetGameOverActionLabel(RunEndReason endReason,
@@ -2113,14 +2331,19 @@ public class UIManager : MonoBehaviour
 
     private static bool UsesTouchLayout()
     {
+#if MINIGAME_SUBPLATFORM_WEIXIN
+        return true;
+#else
         return Application.isMobilePlatform || Input.touchSupported;
+#endif
     }
 
     void ApplySafeArea(bool force = false)
     {
         if (_safeAreaRoot == null || Screen.width <= 0 || Screen.height <= 0) return;
         Rect safeArea = UILayoutRules.NormalizeSafeArea(
-            Screen.safeArea, Screen.width, Screen.height);
+            WeChatSafeArea.Resolve(Screen.safeArea, Screen.width, Screen.height),
+            Screen.width, Screen.height);
         Vector2Int screenSize = new Vector2Int(Screen.width, Screen.height);
         if (!force && safeArea == _lastSafeArea && screenSize == _lastScreenSize) return;
 
@@ -2139,7 +2362,100 @@ public class UIManager : MonoBehaviour
         _safeAreaRoot.anchoredPosition = Vector2.zero;
         _safeAreaRoot.localScale = Vector3.one;
         _safeAreaRoot.localRotation = Quaternion.identity;
+#if MINIGAME_SUBPLATFORM_WEIXIN
+        UpdateSafeAreaCover(ref _safeAreaTopCover, "WeChatTopInset",
+            new Vector2(0f, anchorMax.y), Vector2.one);
+        UpdateSafeAreaCover(ref _safeAreaBottomCover, "WeChatBottomInset",
+            Vector2.zero, new Vector2(1f, anchorMin.y));
+#endif
         ApplyResponsiveLayout();
+    }
+
+#if MINIGAME_SUBPLATFORM_WEIXIN
+    void UpdateSafeAreaCover(ref RectTransform cover, string name,
+        Vector2 min, Vector2 max)
+    {
+        if (cover == null)
+        {
+            var image = new GameObject(name, typeof(Image)).GetComponent<Image>();
+            image.transform.SetParent(_safeAreaRoot.parent, false);
+            image.color = Ink;
+            image.raycastTarget = false;
+            cover = image.rectTransform;
+        }
+        cover.anchorMin = min;
+        cover.anchorMax = max;
+        cover.offsetMin = cover.offsetMax = Vector2.zero;
+    }
+#endif
+
+    // Keep visual track thickness independent of the generous slider hit area.
+    // Landscape uses the available width; portrait stacks the same controls.
+    void LayoutSettings(bool portrait)
+    {
+        if (_settingsContent == null) return;
+        _settingsContent.sizeDelta = portrait ? new Vector2(900, 1520) : new Vector2(1440, 800);
+        float left = portrait ? 64 : 56;
+        float right = portrait ? 64 : 772;
+        float width = portrait ? 772 : 612;
+        float secondTop = portrait ? 690 : 0;
+        PlaceSetting("AudioCard", 0, 0, portrait ? 900 : 688, portrait ? 650 : 780);
+        PlaceSetting("DisplayCard", portrait ? 0 : 716, secondTop,
+            portrait ? 900 : 724, portrait ? 810 : 780);
+        PlaceSetting("AudioSectionLabel", left, 36, width, 48);
+        string[] labels = { "MasterVolumeValue", "BgmValue", "SfxValue" };
+        string[] sliders = { "MasterVolumeSlider", "BgmSlider", "SfxSlider" };
+        for (int i = 0; i < 3; i++)
+        {
+            PlaceSetting(labels[i], left, 124 + i * 134, width, 44);
+            PlaceSetting(sliders[i], left + 14, 174 + i * 134, width - 28, 64);
+        }
+        PlaceSetting("AudioMute", left, 554, 230, 72);
+        PlaceSetting("FpsLabel", right, secondTop + 36, width, 44);
+        PlaceSetting("FpsStatus", right, secondTop + 86, width, 38);
+        PlaceSetting("FpsHint", right, secondTop + 234, width, 64);
+        PlaceSetting("DifficultyLabel", right, secondTop + 338, width, 44);
+        PlaceSetting("DifficultyStatus", right, secondTop + 386, width, 40);
+        PlaceSetting("AccessibilityLabel", right, secondTop + 576, width, 44);
+        string[][] rows = {
+            new[] { "Fps30", "Fps60", "Fps120" },
+            new[] { "DifficultyRelaxed", "DifficultyStandard", "DifficultyIntense" },
+            new[] { "LargeText", "HighContrast", "ReducedMotion" }
+        };
+        float[] rowY = { 144, 446, 644 };
+        float buttonWidth = (width - 24) / 3;
+        for (int row = 0; row < rows.Length; row++)
+            for (int col = 0; col < 3; col++)
+                PlaceSetting(rows[row][col], right + col * (buttonWidth + 12),
+                    secondTop + rowY[row], buttonWidth, portrait ? 104 : 72);
+        foreach (Text text in _settingsContent.GetComponentsInChildren<Text>(true))
+        {
+            bool button = text.GetComponentInParent<Button>(true) != null;
+            text.alignment = button ? TextAnchor.MiddleCenter : TextAnchor.MiddleLeft;
+            if (!button) text.verticalOverflow = VerticalWrapMode.Overflow;
+            int size = portrait ? 40 : 28;
+            if (text == _fpsStatusText || text == _difficultyStatusText)
+                size = portrait ? 32 : 24;
+            else if (text.name == "FpsHint") size = portrait ? 30 : 22;
+            EchoRunAccessibility.SetBaseFontSize(text, size);
+            text.color = TextPrimary;
+            if (!button && text.name.EndsWith("Label")) text.color = SettingsAccent;
+            else if (text == _fpsStatusText || text == _difficultyStatusText || text.name == "FpsHint")
+                text.color = TextMuted;
+            Outline outline = text.GetComponent<Outline>();
+            if (outline != null) outline.enabled = false;
+        }
+        SetTopLeftButtonLayout(_settingsBackBtn, new Vector2(180, portrait ? 104 : 76));
+        EchoRunAccessibility.ApplyToHierarchy(_settingsContent);
+    }
+
+    void PlaceSetting(string name, float x, float y, float width, float height)
+    {
+        RectTransform rect = _settingsContent.Find(name) as RectTransform;
+        if (rect == null) return;
+        rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0, 1);
+        rect.anchoredPosition = new Vector2(x, -y);
+        rect.sizeDelta = new Vector2(width, height);
     }
 
     void ApplyResponsiveLayout()
@@ -2151,48 +2467,11 @@ public class UIManager : MonoBehaviour
         if (_canvasScaler != null)
             _canvasScaler.referenceResolution = UILayoutRules.GetReferenceResolution(
                 Screen.width, Screen.height);
-        if (_settingsContent != null)
-            _settingsContent.sizeDelta = portrait
-                ? new Vector2(900f, 1790f)
-                : new Vector2(1020f, 1260f);
-        if (_characterContent != null)
-            _characterContent.sizeDelta = portrait
-                ? new Vector2(900f, 1160f)
-                : new Vector2(1020f, 1080f);
+        LayoutCharacter(portrait);
 
-        Vector2 sliderSize = portrait
-            ? new Vector2(600f, 72f)
-            : new Vector2(500f, 40f);
-        sliderSize = UILayoutRules.EnsureTouchSliderSize(
-            sliderSize, largeTargets, portrait);
-        if (_masterSlider != null) _masterSlider.GetComponent<RectTransform>().sizeDelta = sliderSize;
-        if (_bgmSlider != null) _bgmSlider.GetComponent<RectTransform>().sizeDelta = sliderSize;
-        if (_sfxSlider != null) _sfxSlider.GetComponent<RectTransform>().sizeDelta = sliderSize;
-        Vector2 fpsSize = portrait
-            ? new Vector2(180f, 104f)
-            : new Vector2(140f, 60f);
-        fpsSize = UILayoutRules.EnsureTouchButtonSize(
-            fpsSize, largeTargets, portrait);
-        SetButtonSize(_fps30Btn, fpsSize);
-        SetButtonSize(_fps60Btn, fpsSize);
-        SetButtonSize(_fps120Btn, fpsSize);
-        SetButtonSize(_difficultyRelaxedBtn, fpsSize);
-        SetButtonSize(_difficultyStandardBtn, fpsSize);
-        SetButtonSize(_difficultyIntenseBtn, fpsSize);
-        SetButtonSize(_muteBtn, TouchButtonSize(portrait
-            ? new Vector2(260f, 104f) : new Vector2(220f, 60f),
-            largeTargets, portrait));
-        SetButtonSize(_largeTextBtn, TouchButtonSize(portrait
-            ? new Vector2(230f, 104f) : new Vector2(210f, 60f), largeTargets, portrait));
-        SetButtonSize(_highContrastBtn, TouchButtonSize(portrait
-            ? new Vector2(230f, 104f) : new Vector2(210f, 60f), largeTargets, portrait));
-        SetButtonSize(_reducedMotionBtn, TouchButtonSize(portrait
-            ? new Vector2(250f, 104f) : new Vector2(230f, 60f), largeTargets, portrait));
-        SetTopLeftButtonLayout(_settingsBackBtn, TouchButtonSize(portrait
-            ? new Vector2(300f, 104f) : new Vector2(280f, 76f),
-            largeTargets, portrait));
         SetTopLeftButtonLayout(_characterBackBtn, TouchButtonSize(portrait
-            ? new Vector2(300f, 104f) : new Vector2(280f, 76f), largeTargets, portrait));
+            ? new Vector2(180f, 104f) : new Vector2(180f, 76f), largeTargets, portrait));
+        LayoutSettings(portrait);
 
         if (_hudStatsPanel != null)
         {
@@ -2241,6 +2520,10 @@ public class UIManager : MonoBehaviour
         SetButtonSize(_pauseBtn, largeTargets
             ? new Vector2(104f, 104f)
             : new Vector2(48f, 48f));
+        Vector2 settingsSize = largeTargets ? new Vector2(144f, 96f) : new Vector2(120f, 64f);
+        LayoutTopRightControl(_runSettingsBtn, settingsSize, new Vector2(-18f, -16f));
+        LayoutTopRightControl(_pauseBtn, largeTargets ? new Vector2(96f, 96f)
+            : new Vector2(64f, 64f), new Vector2(-30f - settingsSize.x, -16f));
         SetButtonSize(_resumeBtn, TouchButtonSize(
             new Vector2(400f, 100f), largeTargets, portrait));
         SetButtonSize(_pauseToMenuBtn, TouchButtonSize(portrait
@@ -2374,7 +2657,7 @@ public class UIManager : MonoBehaviour
         Vector2 anchor, Vector2 size, Color mainColor, Color edgeColor)
     {
         return MakeButton(name, parent, label, fontSize, anchor, size,
-            mainColor, edgeColor, Color.white);
+            mainColor, edgeColor, TextPrimary);
     }
 
     Button MakeButton(string name, Transform parent, string label, int fontSize,
@@ -2393,20 +2676,9 @@ public class UIManager : MonoBehaviour
         background.color = mainColor;
         ApplyRounded(background);
 
-        GameObject edge = new GameObject("SignalRule", typeof(Image));
-        edge.transform.SetParent(go.transform, false);
-        Image edgeImage = edge.GetComponent<Image>();
-        edgeImage.color = edgeColor;
-        ApplyRounded(edgeImage);
-        RectTransform edgeRt = edge.GetComponent<RectTransform>();
-        edgeRt.anchorMin = new Vector2(0f, 0f);
-        edgeRt.anchorMax = new Vector2(1f, 0f);
-        edgeRt.sizeDelta = new Vector2(0f, 3f);
-        edgeRt.anchoredPosition = Vector2.zero;
-
         Text labelT = MakeText("Label", go.transform, label, fontSize, TextAnchor.MiddleCenter);
         labelT.color = labelColor;
-        labelT.fontStyle = FontStyle.Bold;
+        labelT.fontStyle = FontStyle.Normal;
         Stretch(labelT.GetComponent<RectTransform>());
 
         Button button = go.GetComponent<Button>();
@@ -2437,8 +2709,8 @@ public class UIManager : MonoBehaviour
         ApplyRounded(image);
 
         Text labelT = MakeText("Label", go.transform, label, 28, TextAnchor.MiddleCenter);
-        labelT.color = Color.white;
-        labelT.fontStyle = FontStyle.Bold;
+        labelT.color = TextPrimary;
+        labelT.fontStyle = FontStyle.Normal;
         Stretch(labelT.GetComponent<RectTransform>());
 
         Button button = go.GetComponent<Button>();
@@ -2477,32 +2749,35 @@ public class UIManager : MonoBehaviour
 
     Slider MakeSlider(string name, Transform parent, Vector2 anchor)
     {
-        GameObject go = new GameObject(name, typeof(Slider));
+        GameObject go = new GameObject(name, typeof(Image), typeof(Slider));
         go.transform.SetParent(parent, false);
+        go.GetComponent<Image>().color = Color.clear;
 
         // Background
         GameObject bg = new GameObject("Background", typeof(Image));
         bg.transform.SetParent(go.transform, false);
         Image bgImage = bg.GetComponent<Image>();
-        bgImage.color = SurfaceRaised;
+        bgImage.color = SettingsControl;
         ApplyRounded(bgImage);
         RectTransform bgRT = bg.GetComponent<RectTransform>();
         bgRT.anchorMin = new Vector2(0, 0.5f); bgRT.anchorMax = new Vector2(1, 0.5f);
-        bgRT.sizeDelta = new Vector2(0, 16);
+        bgRT.sizeDelta = new Vector2(0, 8);
         bgRT.anchoredPosition = Vector2.zero;
 
         // Fill area
         GameObject fillArea = new GameObject("Fill Area", typeof(RectTransform));
         fillArea.transform.SetParent(go.transform, false);
         RectTransform faRT = fillArea.GetComponent<RectTransform>();
-        Stretch(faRT);
-        faRT.offsetMin = Vector2.zero; faRT.offsetMax = Vector2.zero;
+        faRT.anchorMin = new Vector2(0, 0.5f);
+        faRT.anchorMax = new Vector2(1, 0.5f);
+        faRT.sizeDelta = new Vector2(0, 8);
+        faRT.anchoredPosition = Vector2.zero;
 
         // Fill
         GameObject fill = new GameObject("Fill", typeof(Image));
         fill.transform.SetParent(fillArea.transform, false);
         Image fillImage = fill.GetComponent<Image>();
-        fillImage.color = Primary;
+        fillImage.color = SettingsAccent;
         ApplyRounded(fillImage);
         RectTransform fRT = fill.GetComponent<RectTransform>();
         Stretch(fRT);
@@ -2511,18 +2786,20 @@ public class UIManager : MonoBehaviour
         GameObject handleArea = new GameObject("Handle Slide Area", typeof(RectTransform));
         handleArea.transform.SetParent(go.transform, false);
         RectTransform haRT = handleArea.GetComponent<RectTransform>();
-        Stretch(haRT);
-        haRT.offsetMin = new Vector2(-14, 0); haRT.offsetMax = new Vector2(14, 0);
+        haRT.anchorMin = new Vector2(0, 0.5f);
+        haRT.anchorMax = new Vector2(1, 0.5f);
+        haRT.sizeDelta = Vector2.zero;
+        haRT.anchoredPosition = Vector2.zero;
 
         // Handle
         GameObject handle = new GameObject("Handle", typeof(Image));
         handle.transform.SetParent(handleArea.transform, false);
         Image handleImage = handle.GetComponent<Image>();
-        handleImage.color = Color.white;
+        handleImage.color = TextPrimary;
         ApplyRounded(handleImage);
         RectTransform hRT = handle.GetComponent<RectTransform>();
         hRT.anchorMin = new Vector2(0, 0.5f); hRT.anchorMax = new Vector2(0, 0.5f);
-        float handleSize = UsesTouchLayout() ? 56f : 32f;
+        float handleSize = 28f;
         hRT.sizeDelta = new Vector2(handleSize, handleSize);
         hRT.anchoredPosition = Vector2.zero;
 

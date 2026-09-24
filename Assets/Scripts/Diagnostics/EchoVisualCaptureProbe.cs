@@ -10,19 +10,22 @@ public sealed class EchoVisualCaptureProbe : MonoBehaviour
     public const string CaptureDistancesArgumentPrefix =
         "-echo-qa-capture-distances=";
     public const string OffscreenCaptureArgument = "-echo-qa-offscreen-capture";
+    public const string MenuCaptureArgument = "-echo-qa-capture-menu";
 
     private const string CaptureDirectoryName = "VisualCaptures";
     private const float DistanceTolerance = 0.0001f;
 
     private float[] _targetDistances;
     private bool _offscreenCapture;
+    private bool _captureMenu;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void CreateWhenExplicitlyRequested()
     {
         string[] arguments = Environment.GetCommandLineArgs();
         float[] distances = ParseCaptureDistances(arguments);
-        if (distances.Length == 0) return;
+        bool captureMenu = Array.IndexOf(arguments, MenuCaptureArgument) >= 0;
+        if (distances.Length == 0 && !captureMenu) return;
 
         GameObject host = new GameObject("EchoVisualCaptureProbe_Runtime");
         DontDestroyOnLoad(host);
@@ -30,10 +33,27 @@ public sealed class EchoVisualCaptureProbe : MonoBehaviour
             host.AddComponent<EchoVisualCaptureProbe>();
         probe._targetDistances = distances;
         probe._offscreenCapture = UsesOffscreenCapture(arguments);
+        probe._captureMenu = captureMenu;
     }
 
     private IEnumerator Start()
     {
+        if (_captureMenu)
+        {
+            // Read-only diagnostic: wait for the normal menu and its text/sky
+            // initialization. Do not enter a run, alter cosmetics, or touch saves.
+            float deadline = Time.realtimeSinceStartup + 15f;
+            while (GameManager.Instance == null && Time.realtimeSinceStartup < deadline)
+                yield return null;
+            yield return new WaitForSecondsRealtime(2f);
+            if (GameManager.Instance != null && GameManager.Instance.State == GameState.Menu)
+            {
+                string directory = CaptureOutputDirectory();
+                Directory.CreateDirectory(directory);
+                CaptureOffscreen(Path.Combine(directory, "menu-" + Screen.width + "x" + Screen.height + ".png"));
+                Debug.Log("ECHO_MENU_CAPTURE_COMPLETE");
+            }
+        }
         if (_targetDistances == null || _targetDistances.Length == 0)
         {
             yield break;
@@ -159,6 +179,8 @@ public sealed class EchoVisualCaptureProbe : MonoBehaviour
         RenderTexture previousTarget = camera.targetTexture;
         int previousCullingMask = camera.cullingMask;
         var overlayStates = new List<OverlayCanvasState>();
+        var overlayLayers = new Dictionary<GameObject, int>();
+        Camera overlayCamera = null;
         // Collect every state before changing a parent canvas, since a child
         // can report a different effective render mode after that change.
         foreach (Canvas canvas in FindObjectsOfType<Canvas>())
@@ -174,18 +196,38 @@ public sealed class EchoVisualCaptureProbe : MonoBehaviour
             target = RenderTexture.GetTemporary(width, height, 24,
                 RenderTextureFormat.ARGB32);
             camera.targetTexture = target;
+            // Overlay UI is drawn after the game's post-processing. Rendering
+            // it through the gameplay camera falsely adds bloom/color grading
+            // to buttons and text, so composite it in a separate clean pass.
+            if (overlayStates.Count > 0)
+            {
+                overlayCamera = new GameObject("EchoCaptureOverlayCamera").AddComponent<Camera>();
+                overlayCamera.enabled = false;
+                overlayCamera.clearFlags = CameraClearFlags.Depth;
+                overlayCamera.cullingMask = 1 << 31;
+                overlayCamera.targetTexture = target;
+                overlayCamera.nearClipPlane = 0.01f;
+                overlayCamera.farClipPlane = 10f;
+                overlayCamera.allowHDR = false;
+                overlayCamera.allowMSAA = false;
+                camera.cullingMask &= ~(1 << 31);
+            }
             foreach (OverlayCanvasState state in overlayStates)
             {
                 Canvas canvas = state.canvas;
                 canvas.renderMode = RenderMode.ScreenSpaceCamera;
-                canvas.worldCamera = camera;
-                canvas.planeDistance = camera.nearClipPlane + 0.01f;
-                // Overlay UI does not normally depend on camera culling.
+                canvas.worldCamera = overlayCamera;
+                canvas.planeDistance = 1f;
                 foreach (Transform child in canvas.GetComponentsInChildren<Transform>(true))
-                    camera.cullingMask |= 1 << child.gameObject.layer;
+                {
+                    if (!overlayLayers.ContainsKey(child.gameObject))
+                        overlayLayers.Add(child.gameObject, child.gameObject.layer);
+                    child.gameObject.layer = 31;
+                }
             }
             Canvas.ForceUpdateCanvases();
             camera.Render();
+            if (overlayCamera != null) overlayCamera.Render();
             RenderTexture.active = target;
             image = new Texture2D(width, height, TextureFormat.RGB24, false);
             image.ReadPixels(new Rect(0f, 0f, width, height), 0, 0);
@@ -198,6 +240,9 @@ public sealed class EchoVisualCaptureProbe : MonoBehaviour
         {
             for (int index = overlayStates.Count - 1; index >= 0; index--)
                 overlayStates[index].Restore();
+            foreach (var entry in overlayLayers)
+                if (entry.Key != null) entry.Key.layer = entry.Value;
+            if (overlayCamera != null) Destroy(overlayCamera.gameObject);
             camera.targetTexture = previousTarget;
             camera.cullingMask = previousCullingMask;
             RenderTexture.active = previousActive;

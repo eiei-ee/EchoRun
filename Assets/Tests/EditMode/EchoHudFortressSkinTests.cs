@@ -12,6 +12,28 @@ public sealed class EchoHudFortressSkinTests
         if (_instance != null) Object.DestroyImmediate(_instance);
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public void PersistentRaceNumbersGenerateVisibleGlyphs(bool largeText)
+    {
+        _instance = Object.Instantiate(Resources.Load<GameObject>("UI/EchoHud"));
+        foreach (string path in new[]
+                 {
+                     "HudStaticCanvas/StatsText",
+                     "HudStaticCanvas/DistanceText",
+                     "HudStaticCanvas/CalibrationRail/CalibrationObservation",
+                     "HudStaticCanvas/LeadGroup/LeadText"
+                 })
+        {
+            Text text = _instance.transform.Find(path).GetComponent<Text>();
+            if (largeText) text.fontSize = Mathf.RoundToInt(text.fontSize * 1.12f);
+            text.cachedTextGenerator.Populate(text.text,
+                text.GetGenerationSettings(text.rectTransform.rect.size));
+            Assert.Greater(text.cachedTextGenerator.vertexCount, 4,
+                path + " must render glyphs, not silently truncate its CJK line box.");
+        }
+    }
+
     [Test]
     public void FourStatesShareOneNeutralFoundationAndUseDistinctAccents()
     {

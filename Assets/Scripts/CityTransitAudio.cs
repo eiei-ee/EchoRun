@@ -20,7 +20,7 @@ public sealed class CityTransitAudio : MonoBehaviour
         AudioManager audio = AudioManager.Instance;
         GameState state = game != null ? game.State : GameState.Menu;
         source.volume = ResolveVolume(state, Time.timeScale, baseVolume,
-            audio != null ? audio.masterVolume : 0f,
+            audio != null ? audio.EffectiveMasterVolume : 0f,
             audio != null ? audio.sfxVolume : 0f, audio == null || audio.IsMuted);
 
         if (state == GameState.Menu || state == GameState.GameOver)

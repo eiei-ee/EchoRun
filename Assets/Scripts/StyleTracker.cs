@@ -39,10 +39,10 @@ public static class StyleTracker
         _profile.Normalize();
     }
 
-    public static void BeginRun()
+    public static void BeginRun(bool trainingEnabled = true)
     {
         EnsureInitialized();
-        _runActive = true;
+        _runActive = trainingEnabled;
         _laneSampleTimer = 0f;
         _rhythmProximityMean = 0f;
         _rhythmProximityM2 = 0f;

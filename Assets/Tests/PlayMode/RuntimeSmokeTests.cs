@@ -11,6 +11,107 @@ using UnityEngine.UI;
 public sealed class RuntimeSmokeTests
 {
     [UnityTest]
+    public IEnumerator RunSettingsAndMusicRespectPauseFocusAndVolume()
+    {
+        SavePreferenceSnapshot saved = CaptureSavePreferences();
+        AudioManager audio = null;
+        try
+        {
+            InstallIsolatedSave(new EchoRunSaveData());
+            SceneManager.LoadScene("SampleScene");
+            yield return null;
+            yield return null;
+            GameManager game = GameManager.Instance;
+            UIManager ui = Object.FindObjectOfType<UIManager>();
+            audio = AudioManager.Instance;
+            audio.SendMessage("OnApplicationFocus", true);
+            audio.SendMessage("OnApplicationPause", false);
+            audio.SetMuted(false);
+            audio.SetMasterVolume(1f);
+            audio.SetMusicVolume(1f);
+            audio.SetSfxVolume(1f);
+            AudioSource music = audio.transform.Find("Music Bus").GetComponent<AudioSource>();
+            Assert.IsNotNull(music.GetComponent<AudioLowPassFilter>());
+            Assert.IsNull(audio.GetComponent<AudioLowPassFilter>(), "SFX must not be filtered with music.");
+            game.StartGame();
+            // Initial scene load may consume most of the first real-time wait;
+            // observe the fade reaching an audible run level before comparing pause.
+            float fadeDeadline = Time.realtimeSinceStartup + 8f;
+            while (music.volume < 0.24f && Time.realtimeSinceStartup < fadeDeadline)
+                yield return null;
+            Assert.AreEqual(GameState.Playing, game.State);
+            Assert.GreaterOrEqual(music.volume, 0.24f);
+            Assert.Greater(music.volume, 0f);
+            Assert.LessOrEqual(music.volume, 0.55f);
+            float runningLevel = music.volume;
+            ScopeCapture("audio-settings-running");
+            GameObject.Find("RunSettingsBtn").GetComponent<Button>().onClick.Invoke();
+            Assert.AreEqual(GameState.Paused, game.State);
+            Assert.IsNotNull(GameObject.Find("SettingsPanel"));
+            Assert.AreEqual(1f, GameObject.Find("BgmSlider").GetComponent<Slider>().value);
+            float elapsed = game.RunElapsed;
+            yield return new WaitForSecondsRealtime(0.5f);
+            Assert.AreEqual(elapsed, game.RunElapsed, "Settings must freeze the active run.");
+            Assert.Less(music.volume, runningLevel);
+            ScopeCapture("audio-settings-overlay");
+            Assert.IsTrue(ui.TryCloseRunSettings(), "Escape closes settings before resuming.");
+            Assert.AreEqual(GameState.Paused, game.State);
+            Assert.IsNotNull(GameObject.Find("PausePanel"));
+            GameObject.Find("PauseSettingsBtn").GetComponent<Button>().onClick.Invoke();
+            GameObject.Find("SettingsBackBtn").GetComponent<Button>().onClick.Invoke();
+            Assert.AreEqual(GameState.Paused, game.State);
+            ScopeCapture("audio-settings-pause");
+            GameObject.Find("ResumeBtn").GetComponent<Button>().onClick.Invoke();
+            Assert.AreEqual(GameState.Playing, game.State);
+            Assert.IsNull(GameObject.Find("SettingsPanel"));
+            game.Pause();
+            audio.SendMessage("OnApplicationFocus", false);
+            Assert.AreEqual(0f, audio.EffectiveMasterVolume);
+            Assert.AreEqual(0f, music.volume);
+            audio.SendMessage("OnApplicationPause", true);
+            audio.SendMessage("OnApplicationFocus", true);
+            Assert.AreEqual(0f, audio.EffectiveMasterVolume, "Focus alone cannot undo OS suspension.");
+            audio.SendMessage("OnApplicationPause", false);
+            yield return new WaitForSecondsRealtime(0.4f);
+            Assert.Greater(music.volume, 0f);
+            Assert.AreEqual(GameState.Paused, game.State);
+            audio.SetMusicVolume(0f);
+            Assert.AreEqual(0f, music.volume);
+            audio.SetSfxVolume(0f);
+            foreach (AudioSource source in audio.GetComponents<AudioSource>())
+                Assert.AreEqual(0f, source.volume, "Changing the SFX slider must mute active voices too.");
+            audio.SetMuted(true);
+            Assert.AreEqual(0f, audio.EffectiveMasterVolume);
+            game.ReturnToMenu();
+            yield return null;
+            yield return null;
+            Assert.AreEqual(1, Object.FindObjectsOfType<AudioManager>().Length);
+            Assert.IsNotNull(GameObject.Find("MenuPanel"));
+            GameObject.Find("SettingsBtn").GetComponent<Button>().onClick.Invoke();
+            GameObject.Find("SettingsBackBtn").GetComponent<Button>().onClick.Invoke();
+            Assert.IsTrue(MenuScreenRouter.Instance.IsHome);
+        }
+        finally
+        {
+            if (audio != null)
+            {
+                audio.SendMessage("OnApplicationFocus", true);
+                audio.SendMessage("OnApplicationPause", false);
+            }
+            if (GameManager.Instance != null) GameManager.Instance.ReturnToMenu();
+            RestoreSavePreferences(saved);
+            if (audio != null)
+            {
+                audio.masterVolume = PlayerPrefs.GetFloat("MasterVolume", 1f);
+                audio.musicVolume = PlayerPrefs.GetFloat("MusicVolume", 0.5f);
+                audio.sfxVolume = PlayerPrefs.GetFloat("SfxVolume", 1f);
+                audio.muted = PlayerPrefs.GetInt("AudioMuted", 0) != 0;
+                audio.SendMessage("ApplyOutputVolumes");
+            }
+        }
+    }
+
+    [UnityTest]
     public IEnumerator NoInputCalibrationSettlesNaturallyAndCanRestart()
     {
         SavePreferenceSnapshot saved = CaptureSavePreferences();
@@ -80,9 +181,11 @@ public sealed class RuntimeSmokeTests
             if (manager.State != GameState.Menu) manager.ReturnToMenu();
             yield return null;
             ScopeCapture("home");
-            Assert.AreSame(Resources.Load<Texture2D>("Art/Menu/MemoryCorridorMenu"),
-                GameObject.Find("MemoryCorridorBackground").GetComponent<RawImage>().texture,
-                "Home must use the original artwork, not a gameplay screenshot.");
+            RawImage sceneVeil = GameObject.Find("MenuSceneVeil").GetComponent<RawImage>();
+            Assert.IsNull(sceneVeil.texture, "Home must retain the live game scene behind its tint.");
+            Assert.Less(sceneVeil.color.a, 1f, "The home tint must not obscure the live scene.");
+            AssertVisibleTextGeometry("Title");
+            Assert.IsTrue(GameObject.Find("StartBtn").GetComponent<Button>().interactable);
             var model = GameObject.Find("player").transform.Find("CharacterModel");
             foreach (Transform child in model.GetComponentsInChildren<Transform>(true))
                 layers[child.gameObject] = child.gameObject.layer;
@@ -95,7 +198,7 @@ public sealed class RuntimeSmokeTests
             ScopeCapture("runner");
             GameObject.Find("PresetBtn_4").GetComponent<Button>().onClick.Invoke();
             yield return null;
-            ScopeCapture("runner-amber");
+            ScopeCapture("runner-grape");
             MenuScreenRouter.Instance.BackToHome();
             yield return null;
             foreach (var entry in layers) Assert.AreEqual(entry.Value, entry.Key.layer);
@@ -147,7 +250,7 @@ public sealed class RuntimeSmokeTests
 
     private static void ScopeCapture(string name)
     {
-        string root = System.IO.Path.GetFullPath("TestResults/ScopeClosure/Captures");
+        string root = System.IO.Path.GetFullPath("TestResults/VisualSystem-20260923/RuntimeCaptures");
         System.IO.Directory.CreateDirectory(root);
         typeof(EchoVisualCaptureProbe).GetMethod("CaptureOffscreen",
             BindingFlags.Static | BindingFlags.NonPublic).Invoke(null,
@@ -176,7 +279,7 @@ public sealed class RuntimeSmokeTests
             RenderTexture.active = target;
             pixels.ReadPixels(new Rect(0, 0, 1920, 1080), 0, 0);
             pixels.Apply();
-            System.IO.File.WriteAllBytes("TestResults/ScopeClosure/Captures/city-background.png", pixels.EncodeToPNG());
+            System.IO.File.WriteAllBytes("TestResults/VisualSystem-20260923/RuntimeCaptures/city-background.png", pixels.EncodeToPNG());
         }
         finally
         {
@@ -575,6 +678,24 @@ public sealed class RuntimeSmokeTests
         AssertSoundReadout(master, "主音量");
         AssertSoundReadout(music, "音乐音量");
         AssertSoundReadout(effects, "音效音量");
+        foreach (string field in new[] { "_masterSlider", "_bgmSlider", "_sfxSlider" })
+        {
+            Slider slider = GetPrivateField<Slider>(ui, field);
+            Assert.LessOrEqual(slider.fillRect.rect.height, 10f,
+                "Visual track must not stretch with the touch hit area.");
+            Assert.LessOrEqual(slider.handleRect.rect.height, 32f,
+                "The handle must remain compact inside the touch hit area.");
+            Assert.GreaterOrEqual(((RectTransform)slider.transform).rect.height, 64f);
+        }
+        Button highFrameRate = GetPrivateField<Button>(ui, "_fps120Btn");
+        Assert.IsTrue(highFrameRate.gameObject.activeInHierarchy);
+        int previousRate = GameManager.Instance.GetFrameRate();
+        try
+        {
+            highFrameRate.onClick.Invoke();
+            Assert.AreEqual(120, GameManager.Instance.GetFrameRate());
+        }
+        finally { GameManager.Instance.SetFrameRate(previousRate); }
         Button back = GetPrivateField<Button>(ui, "_settingsBackBtn");
         GameObject settingsPanel = GetPrivateField<GameObject>(
             ui, "_settingsPanel");

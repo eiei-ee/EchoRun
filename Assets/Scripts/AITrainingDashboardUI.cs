@@ -91,14 +91,14 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         bool compactPortrait = UILayoutRules.IsCompactPortrait(
             Screen.width, Screen.height);
         Vector2 launcherAnchor = compactPortrait
-            ? new Vector2(0.78f, 0.94f)
+            ? new Vector2(0.78f, 0.93f)
             : new Vector2(0.90f, 0.91f);
         Vector2 launcherSize = compactPortrait
-            ? new Vector2(260f, 96f)
+            ? UILayoutRules.GetHomeNavigationSize(true, true)
             : new Vector2(220f, 58f);
         Button launcher = RuntimePanelFactory.Button("AITrainingLauncher", parent,
             "回声报告", launcherAnchor, launcherSize,
-            RuntimePanelFactory.Raised, compactPortrait ? 30 : 26);
+            RuntimePanelFactory.Raised, compactPortrait ? 34 : 26);
         launcher.onClick.AddListener(Open);
         _launcher = launcher.gameObject;
 
@@ -199,9 +199,7 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
 
     private void Refresh()
     {
-        if (_gameManager != null
-            && _gameManager.ConfiguredGameplayFlowMode
-            == GameplayFlowMode.SingleContract)
+        if (_gameManager != null && _gameManager.UsesSingleContractRules)
         {
             BuildSingleContractReport(
                 EchoRunSaveSystem.GetActiveEchoIdentity(),
@@ -334,16 +332,18 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         SetButtonBaseFont(_resetButton, portrait ? 28 : 22);
         SetButtonBaseFont(_closeButton, portrait ? 28 : 22);
         Vector2 launcherSize = RuntimePanelFactory.TouchButtonSize(
-            portrait ? new Vector2(260f, 96f) : new Vector2(220f, 58f),
+            portrait ? UILayoutRules.GetHomeNavigationSize(true, true) : new Vector2(220f, 58f),
             portrait);
         if (_launcher != null)
         {
             RuntimePanelFactory.Place(_launcher.GetComponent<RectTransform>(),
-                portrait ? new Vector2(0.78f, 0.94f) : new Vector2(0.90f, 0.91f),
+                // The lower portrait surface owns the start action and control
+                // hint; keep this secondary entry beside the title.
+                portrait ? new Vector2(0.78f, 0.93f) : new Vector2(0.90f, 0.91f),
                 launcherSize, Vector2.zero);
             Text launcherLabel = _launcher.GetComponentInChildren<Text>();
-            if (launcherLabel != null) launcherLabel.fontSize = portrait ? 30 : 26;
-            SetButtonBaseFont(_launcher.GetComponent<Button>(), portrait ? 30 : 26);
+            if (launcherLabel != null) launcherLabel.fontSize = portrait ? 34 : 26;
+            SetButtonBaseFont(_launcher.GetComponent<Button>(), portrait ? 34 : 26);
         }
         _panelRect.sizeDelta = portrait
             ? new Vector2(900f, 1500f)

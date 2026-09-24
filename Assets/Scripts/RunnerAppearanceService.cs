@@ -14,6 +14,7 @@ public static class RunnerAppearanceService
         if (model == null) return 0;
 
         int changedSlots = 0;
+        bool orangeOutfit = model.Find("OrangeEchoOutfit") != null;
         MaterialPropertyBlock properties = new MaterialPropertyBlock();
         Renderer[] renderers = model.GetComponentsInChildren<Renderer>(true);
         foreach (Renderer renderer in renderers)
@@ -23,6 +24,19 @@ public static class RunnerAppearanceService
             {
                 Material material = materials[index];
                 if (material == null) continue;
+
+                if (orangeOutfit)
+                {
+                    // Only authored accent cloth changes; skin, lining, rubber
+                    // and the relay remain independent material families.
+                    if (!material.name.StartsWith("OE_Jacket_Accent")) continue;
+                    properties.Clear();
+                    renderer.GetPropertyBlock(properties, index);
+                    properties.SetColor(ColorProperty, light);
+                    renderer.SetPropertyBlock(properties, index);
+                    changedSlots++;
+                    continue;
+                }
 
                 bool techMaterial = material.HasProperty(DarkColor)
                                     || material.HasProperty(LightColor)

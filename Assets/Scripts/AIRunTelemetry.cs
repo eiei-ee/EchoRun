@@ -211,6 +211,9 @@ public sealed class AIRunCapsule
 public sealed class AIRunTelemetryData
 {
     public int schemaVersion = AIRunTelemetry.SchemaVersion;
+    public GameplayFlowMode gameplayFlowMode;
+    public int rulesVersion;
+    public string opponentIdentityId = "";
     public string runId;
     public int seed;
     public int runSequence;
@@ -258,7 +261,7 @@ public sealed class AIRunTelemetryData
 
 public static class AIRunTelemetry
 {
-    public const int SchemaVersion = 10;
+    public const int SchemaVersion = 11;
     public const float StateSampleInterval = 0.25f;
     public const string CompletedTrainingReason = "finish_reached";
 
@@ -304,13 +307,16 @@ public static class AIRunTelemetry
     public static bool IsCompletedTrainingRun(AIRunTelemetryData data)
     {
         return data != null && data.completed
+               && data.gameplayFlowMode != GameplayFlowMode.AsyncChallenge
                && IsCompletedTrainingReason(data.finishReason);
     }
 
     public static void BeginRun(int seed, int sequence, int highScore,
         int shadowGeneration, int directorUpdates, float[] shadowWeights,
         float[] directorWeights, string directorPolicyState,
-        string shadowSequenceState = "")
+        string shadowSequenceState = "",
+        GameplayFlowMode gameplayFlowMode = GameplayFlowMode.SixPhaseLegacy,
+        int rulesVersion = 0, string opponentIdentityId = "")
     {
         long now = DateTime.UtcNow.Ticks;
         string runId = seed.ToString("X8") + "-" + sequence.ToString("D6");
@@ -318,6 +324,9 @@ public static class AIRunTelemetry
         string platform = Application.platform.ToString();
         _active = new AIRunTelemetryData
         {
+            gameplayFlowMode = gameplayFlowMode,
+            rulesVersion = rulesVersion,
+            opponentIdentityId = opponentIdentityId ?? "",
             runId = runId,
             seed = seed,
             runSequence = Mathf.Max(0, sequence),

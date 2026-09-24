@@ -232,6 +232,13 @@ public sealed class ActiveEchoIdentity
         }
     }
 
+    // Cloud input is strict; keep FromJson's existing local-save compatibility.
+    public static bool TryFromExternalJson(string json,
+        out ActiveEchoIdentity identity, out string error)
+    {
+        return EchoIdentityExternalPayload.TryRead(json, out identity, out error);
+    }
+
     public static ActiveEchoIdentity FromLegacySnapshot(
         EchoGenerationSnapshot snapshot, int sourceRunSequence)
     {

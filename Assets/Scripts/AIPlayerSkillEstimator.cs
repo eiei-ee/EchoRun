@@ -162,10 +162,10 @@ public static class AIPlayerSkillEstimator
         _profile.Normalize();
     }
 
-    public static void BeginRun()
+    public static void BeginRun(bool trainingEnabled = true)
     {
         EnsureInitialized();
-        _runActive = true;
+        _runActive = trainingEnabled;
         _lastJumpProximity = -1f;
         _lastSlideProximity = -1f;
     }

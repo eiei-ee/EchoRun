@@ -259,6 +259,10 @@ public class BuildConfig
             RestoreWeixinProfileForSourceControl(
                 "Assets/WeixinMiniGame/BuildProfiles/WeChatV0.asset",
                 "Builds/WeixinMiniGameV0-Clean");
+            // Restore through the editor API before saving; ProjectSettings can
+            // remain memory-mapped even after ReleaseCachedFileHandles.
+            PlayerSettings.MiniGame.SetActiveSubplatform(
+                MiniGameBuildSubtarget.WeChat, false);
             AssetDatabase.SaveAssets();
             RestoreSerializedWeixinBuildState(
                 "Assets/WeixinMiniGame/BuildProfiles/WeChatV0.asset",
@@ -309,15 +313,16 @@ public class BuildConfig
         }
 
         string profileText = System.IO.File.ReadAllText(profileFullPath);
-        string[] profileLines = profileText.Split(new[] { "\r\n", "\n" },
-            System.StringSplitOptions.None);
+        // Retain the original newline tokens, including mixed LF/CRLF files.
+        string[] profileLines = Regex.Split(profileText, @"(\r\n|\n)");
+        bool profileChanged = false;
         bool appIdRestored = false;
         bool relativeDstRestored = false;
         bool dstRestored = false;
         int appIdMatches = 0;
         int relativeDstMatches = 0;
         int dstMatches = 0;
-        for (int i = 0; i < profileLines.Length; i++)
+        for (int i = 0; i < profileLines.Length; i += 2)
         {
             string trimmed = profileLines[i].TrimStart();
             string indentation = profileLines[i].Substring(
@@ -325,22 +330,36 @@ public class BuildConfig
             if (trimmed.StartsWith("Appid:",
                     System.StringComparison.Ordinal))
             {
-                profileLines[i] = $"{indentation}Appid:";
+                if (trimmed.Substring("Appid:".Length).Trim().Length != 0)
+                {
+                    profileLines[i] = $"{indentation}Appid:";
+                    profileChanged = true;
+                }
                 appIdRestored = true;
                 appIdMatches++;
             }
             else if (trimmed.StartsWith("relativeDST:",
                          System.StringComparison.Ordinal))
             {
-                profileLines[i] =
-                    $"{indentation}relativeDST: {relativeOutputDir}";
+                if (trimmed.Substring("relativeDST:".Length).Trim()
+                    != relativeOutputDir)
+                {
+                    profileLines[i] =
+                        $"{indentation}relativeDST: {relativeOutputDir}";
+                    profileChanged = true;
+                }
                 relativeDstRestored = true;
                 relativeDstMatches++;
             }
             else if (trimmed.StartsWith("DST:",
                          System.StringComparison.Ordinal))
             {
-                profileLines[i] = $"{indentation}DST: {relativeOutputDir}";
+                if (trimmed.Substring("DST:".Length).Trim()
+                    != relativeOutputDir)
+                {
+                    profileLines[i] = $"{indentation}DST: {relativeOutputDir}";
+                    profileChanged = true;
+                }
                 dstRestored = true;
                 dstMatches++;
             }
@@ -352,8 +371,12 @@ public class BuildConfig
             throw new BuildFailedException(
                 "Unable to restore serialized WeChat profile fields.");
 
-        System.IO.File.WriteAllText(
-            profileFullPath, string.Join("\n", profileLines));
+        if (profileChanged)
+        {
+            AssetDatabase.ReleaseCachedFileHandles();
+            System.IO.File.WriteAllText(
+                profileFullPath, string.Concat(profileLines));
+        }
 
         const string projectSettingsPath =
             "ProjectSettings/ProjectSettings.asset";
@@ -368,21 +391,23 @@ public class BuildConfig
         }
 
         string text = System.IO.File.ReadAllText(fullPath);
-        string[] lines = text.Split(new[] { "\r\n", "\n" },
-            System.StringSplitOptions.None);
+        string[] lines = Regex.Split(text, @"(\r\n|\n)");
+        bool settingsChanged = false;
         bool replaced = false;
         int activeSubplatformMatches = 0;
-        for (int i = 0; i < lines.Length; i++)
+        for (int i = 0; i < lines.Length; i += 2)
         {
-            if (!lines[i].TrimStart().StartsWith(
+            string trimmed = lines[i].TrimStart();
+            if (!trimmed.StartsWith(
                     "activeSubplatform:",
                     System.StringComparison.Ordinal))
                 continue;
 
-            string indentation = lines[i].Substring(
-                0, lines[i].Length - lines[i].TrimStart().Length);
-            lines[i] =
-                $"{indentation}activeSubplatform: {activeSubplatform}";
+            if (trimmed.Substring("activeSubplatform:".Length).Trim()
+                != activeSubplatform.ToString())
+            {
+                settingsChanged = true;
+            }
             replaced = true;
             activeSubplatformMatches++;
         }
@@ -391,7 +416,11 @@ public class BuildConfig
             throw new BuildFailedException(
                 "Unable to restore the serialized MiniGame subplatform.");
 
-        System.IO.File.WriteAllText(fullPath, string.Join("\n", lines));
+        if (settingsChanged)
+        {
+            throw new BuildFailedException(
+                "The MiniGame settings API did not restore the serialized subplatform.");
+        }
     }
 
     static void EnsureOfficialWeixinSdkInstalled()
@@ -574,6 +603,30 @@ public class BuildConfig
             gameJsPath, "$COMPRESS_DATA_PACKAGE", "false");
 
         string gameJs = File.ReadAllText(gameJsPath, Encoding.UTF8);
+        // The SDK falls back to CDN loading when the data package is too large.
+        // Supply a deployment URL (or a loopback URL for DevTools) per build.
+        string resourceCdn = System.Environment.GetEnvironmentVariable(
+            "WECHAT_MINIGAME_CDN");
+        if (!string.IsNullOrWhiteSpace(resourceCdn))
+        {
+            if (!System.Uri.TryCreate(resourceCdn.Trim(),
+                    System.UriKind.Absolute, out var cdnUri)
+                || (cdnUri.Scheme != "https"
+                    && !(cdnUri.Scheme == "http" && cdnUri.IsLoopback)))
+                throw new BuildFailedException(
+                    "WECHAT_MINIGAME_CDN must be HTTPS or a local preview URL.");
+            string cdnLiteral = JsonUtility.ToJson(
+                new WeixinCdnValue { value = resourceCdn.Trim().TrimEnd('/') });
+            cdnLiteral = cdnLiteral.Substring(9, cdnLiteral.Length - 10);
+            gameJs = Regex.Replace(gameJs, @"DATA_CDN:\s*'[^']*'",
+                _ => "DATA_CDN: " + cdnLiteral);
+        }
+        else if (gameJs.Contains("loadDataPackageFromSubpackage: false"))
+        {
+            Debug.LogWarning("WeChat export requires external resources. Set "
+                + "WECHAT_MINIGAME_CDN or run Tools/WeChat/local-preview.cjs "
+                + "for DevTools. This export is not ready for phone preview.");
+        }
         const string checkVersionImport =
             "import checkVersion from './check-version';";
         if (!gameJs.Contains(checkVersionImport))
@@ -616,16 +669,12 @@ public class BuildConfig
         File.WriteAllText(gameJsPath, gameJs, new UTF8Encoding(false));
 
         string gameJson = File.ReadAllText(gameJsonPath, Encoding.UTF8);
-        const string objectArrayPattern =
-            @"""parallelPreloadSubpackages""\s*:\s*\[\s*"
-            + @"\{\s*""name""\s*:\s*""wasmcode""\s*\}\s*,\s*"
-            + @"\{\s*""name""\s*:\s*""data-package""\s*\}\s*\]";
-        const string stringArray =
-            "\"parallelPreloadSubpackages\" : [\n"
-            + "    \"wasmcode\",\n"
-            + "    \"data-package\"\n"
-            + "  ]";
-        gameJson = Regex.Replace(gameJson, objectArrayPattern, stringArray);
+        gameJson = Regex.Replace(gameJson,
+            @"(""parallelPreloadSubpackages""\s*:\s*\[)([^\]]*)(\])",
+            match => match.Groups[1].Value
+                + Regex.Replace(match.Groups[2].Value,
+                    @"\{\s*""name""\s*:\s*(""[^""]+"")\s*\}", "$1")
+                + match.Groups[3].Value);
         File.WriteAllText(gameJsonPath, gameJson, new UTF8Encoding(false));
 
         var staleCheckVersionImport = new Regex(
@@ -648,6 +697,12 @@ public class BuildConfig
                     "Unversioned check-version import in " + path);
             }
         }
+    }
+
+    [System.Serializable]
+    private sealed class WeixinCdnValue
+    {
+        public string value;
     }
 
     static void RewriteCheckVersionImports(
@@ -1121,10 +1176,20 @@ public class BuildConfig
                    System.Diagnostics.Process.Start(start))
             {
                 if (process == null) return false;
-                output = process.StandardOutput.ReadToEnd().Trim();
-                process.StandardError.ReadToEnd();
-                if (!process.WaitForExit(5000) || process.ExitCode != 0)
+                // Drain both pipes together: a dirty worktree can emit enough
+                // CRLF warnings to fill stderr while stdout waits for Git to exit.
+                var standardOutput = process.StandardOutput.ReadToEndAsync();
+                var standardError = process.StandardError.ReadToEndAsync();
+                if (!process.WaitForExit(5000))
+                {
+                    try { process.Kill(); } catch (System.InvalidOperationException) { }
                     return false;
+                }
+                if (!System.Threading.Tasks.Task.WaitAll(
+                        new System.Threading.Tasks.Task[] { standardOutput, standardError }, 1000)
+                    || process.ExitCode != 0)
+                    return false;
+                output = standardOutput.Result.Trim();
                 return true;
             }
         }

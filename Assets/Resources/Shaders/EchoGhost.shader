@@ -3,9 +3,9 @@ Shader "EchoRun/GhostRunner"
     Properties
     {
         _MainTex ("Source Texture", 2D) = "white" {}
-        _Color ("Transparent Body", Color) = (0.018, 0.045, 0.075, 0.14)
-        [HDR] _RimColor ("Rim Color", Color) = (0.18, 0.72, 0.92, 1)
-        _RimPower ("Rim Power", Range(1, 7)) = 3.4
+        _Color ("Transparent Body", Color) = (0.773, 0.604, 0.937, 0.42)
+        [HDR] _RimColor ("Rim Color", Color) = (0.773, 0.604, 0.937, 1)
+        _RimPower ("Rim Power", Range(1, 7)) = 2.6
         _EmissionStrength ("Rim Emission", Range(0, 1)) = 0.38
         _ScanStrength ("Scan Strength", Range(0, 0.5)) = 0.16
         _GlitchStrength ("Horizontal Glitch", Range(0, 0.04)) = 0.014

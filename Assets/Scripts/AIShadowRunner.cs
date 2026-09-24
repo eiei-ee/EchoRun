@@ -41,7 +41,9 @@ public class AIShadowRunner : MonoBehaviour
     public event Action<PredictionGateSettlement>
         PredictionGateSettlementConsumed;
     public GameplayFlowMode ActiveGameplayFlowMode => _activeGameplayFlowMode;
-    public int Generation => IsSingleContractRuntime()
+    public int Generation => IsAsyncChallengeRuntime()
+        ? _asyncOpponentIdentity != null ? _asyncOpponentIdentity.generation : 0
+        : IsSingleContractRuntime()
         ? _activeSingleContractIdentity != null
             ? _activeSingleContractIdentity.generation : 0
         : _activeGeneration != null
@@ -107,7 +109,9 @@ public class AIShadowRunner : MonoBehaviour
                     minimumJumpSamples, minimumSlideSamples);
         }
     }
-    public float EchoClarity => IsSingleContractRuntime()
+    public float EchoClarity => IsAsyncChallengeRuntime()
+        ? _asyncOpponentIdentity != null ? Mathf.Clamp01(_asyncOpponentIdentity.clarity) : 0f
+        : IsSingleContractRuntime()
         ? _activeSingleContractIdentity != null
             ? Mathf.Clamp01(_activeSingleContractIdentity.clarity) : 0f
         : _activeGeneration != null
@@ -207,6 +211,7 @@ public class AIShadowRunner : MonoBehaviour
         get
         {
             ActiveEchoIdentity identity = _frozenSingleContractIdentity
+                                          ?? _asyncOpponentIdentity
                                           ?? _activeSingleContractIdentity;
             if (identity == null)
                 return "你的选择尚未形成稳定模式";
@@ -235,6 +240,8 @@ public class AIShadowRunner : MonoBehaviour
     public ActiveEchoIdentity ActiveSingleContractIdentityPreview =>
         _activeSingleContractIdentity != null
             ? _activeSingleContractIdentity.Clone() : null;
+    public ActiveEchoIdentity OpponentIdentityPreview =>
+        (_frozenSingleContractIdentity ?? _asyncOpponentIdentity)?.Clone();
 
     private const int SamplesPerCheckpoint = 4;
     public const float SingleContractOpeningReplayRevealSeconds = 0.18f;
@@ -266,6 +273,7 @@ public class AIShadowRunner : MonoBehaviour
         GameplayFlowMode.SixPhaseLegacy;
     private ActiveEchoIdentity _activeSingleContractIdentity;
     private ActiveEchoIdentity _frozenSingleContractIdentity;
+    private ActiveEchoIdentity _asyncOpponentIdentity;
     private RunIdentityDraft _runIdentityDraft;
     private RunAdaptationState _runAdaptationState;
     private SingleContractFlow _singleContractFlow;
@@ -874,6 +882,7 @@ public class AIShadowRunner : MonoBehaviour
         if (IsSingleContractRuntime())
         {
             ActiveEchoIdentity identity = _frozenSingleContractIdentity
+                                          ?? _asyncOpponentIdentity
                                           ?? _activeSingleContractIdentity;
             return identity != null && identity.policyWeights != null
                 ? (float[])identity.policyWeights.Clone() : null;
@@ -889,6 +898,7 @@ public class AIShadowRunner : MonoBehaviour
         if (IsSingleContractRuntime())
         {
             ActiveEchoIdentity identity = _frozenSingleContractIdentity
+                                          ?? _asyncOpponentIdentity
                                           ?? _activeSingleContractIdentity;
             if (identity == null) return "";
             return JsonUtility.ToJson(new AIShadowSequenceState
@@ -1180,6 +1190,7 @@ public class AIShadowRunner : MonoBehaviour
 
     private void BeginSingleContractRun()
     {
+        bool asyncChallenge = IsAsyncChallengeRuntime();
         SingleContractValidationConfig validation = _gameManager != null
             ? _gameManager.ActiveSingleContractValidationConfig
             : new SingleContractValidationConfig();
@@ -1187,15 +1198,18 @@ public class AIShadowRunner : MonoBehaviour
             EchoRunSaveSystem.GetActiveEchoIdentity();
         _persistentIdentityJsonBeforeValidation = persistedIdentity != null
             ? persistedIdentity.ToJson() : "";
-        _usesTransientValidationIdentity =
+        _usesTransientValidationIdentity = !asyncChallenge &&
             SingleContractValidationIdentity.IsEnabled(validation);
         _activeSingleContractIdentity = _usesTransientValidationIdentity
             ? SingleContractValidationIdentity.Create()
             : persistedIdentity;
-        _frozenSingleContractIdentity = _activeSingleContractIdentity != null
-            ? _activeSingleContractIdentity.Clone() : null;
+        _frozenSingleContractIdentity = asyncChallenge
+            ? _gameManager.ActiveOpponentIdentityPreview
+            : _activeSingleContractIdentity != null
+                ? _activeSingleContractIdentity.Clone() : null;
+        _asyncOpponentIdentity = asyncChallenge ? _frozenSingleContractIdentity?.Clone() : null;
         int runSequence = ResolveCurrentRunSequence();
-        _runIdentityDraft = RunIdentityDraft.Create(
+        _runIdentityDraft = asyncChallenge ? null : RunIdentityDraft.Create(
             _frozenSingleContractIdentity, runSequence);
         _runAdaptationState = new RunAdaptationState
         {
@@ -1271,7 +1285,8 @@ public class AIShadowRunner : MonoBehaviour
             ? Mathf.Max(startSpeed, _gameManager.maxSpeed) : 40f;
         float acceleration = _gameManager != null
             ? Mathf.Max(0f, _gameManager.speedIncreaseRate) : 0.5f;
-        float courseDuration = HasActiveOpponent
+        float courseDuration = asyncChallenge ? AsyncChallengeRules.CourseDurationSeconds
+            : HasActiveOpponent
             ? SingleContractFlow.ChallengeDurationSeconds
             : SingleContractFlow.CalibrationDurationSeconds;
         if (_runIdentityDraft != null
@@ -1298,7 +1313,7 @@ public class AIShadowRunner : MonoBehaviour
             originalHabitLane, memoryConfidence);
         _singleContractFlow.BeginRun(new EchoRunContext
         {
-            mode = GameplayFlowMode.SingleContract,
+            mode = asyncChallenge ? GameplayFlowMode.AsyncChallenge : GameplayFlowMode.SingleContract,
             runSequence = runSequence,
             runSeed = _gameManager != null ? _gameManager.RunSeed : 1337,
             generation = _frozenSingleContractIdentity != null
@@ -1717,6 +1732,11 @@ public class AIShadowRunner : MonoBehaviour
                 _ghostProgress + _appliedContractShadowBonus);
         }
         _singleContractFlow?.FinishRun(endReason, PlayerLead);
+        if (IsAsyncChallengeRuntime())
+        {
+            FinishAsyncChallengeRun(endReason, challengedOpponent);
+            return;
+        }
         _runIdentityDraft?.FinalizeStyle();
 
         bool reachedFinish = endReason == RunEndReason.FinishReached;
@@ -1876,6 +1896,27 @@ public class AIShadowRunner : MonoBehaviour
         HasActiveOpponent = false;
         SetGhostActive(false);
         DiscardSingleContractRunState();
+        if (saveResult.succeeded) _gameManager?.NotifyLocalSingleContractSettled();
+    }
+
+    private void FinishAsyncChallengeRun(RunEndReason endReason, bool challengedOpponent)
+    {
+        LastRunWasChallenge = challengedOpponent;
+        LastRunWon = IsSingleContractVictory(PlayerLead, challengedOpponent, endReason);
+        LastSingleContractCommitSucceeded = false;
+        LastSingleContractIdentityPromoted = false;
+        string title = endReason == RunEndReason.Abandoned ? "好友挑战已结束"
+            : LastRunWon ? "好友挑战成功" : "好友影子领先";
+        LastResult = title + "\n距离 " + _playerPhysicalProgress.ToString("0.0")
+                     + "m · 领先 " + PlayerLead.ToString("+0.0;-0.0;0.0")
+                     + "m\n本局不影响你的回声成长和本地纪录";
+        CurrentStatus = LastResult;
+        AIRunTelemetry.RecordEvent("async_shadow_result", LastRunWon ? 1 : -1,
+            _ghostLane, PlayerLead, _ghostMistakes);
+        HasActiveOpponent = false;
+        SetGhostActive(false);
+        DiscardSingleContractRunState();
+        _gameManager?.CompleteAsyncChallenge(endReason, PlayerLead);
     }
 
     private void FinishTransientValidationRun(RunEndReason endReason,
@@ -2111,6 +2152,7 @@ public class AIShadowRunner : MonoBehaviour
         float jumpTimingOffset, bool airLaneChange,
         bool matchedActionObstacle)
     {
+        if (IsAsyncChallengeRuntime()) return;
         int lane = features != null && features.Length > 1
             ? Mathf.RoundToInt(features[1] + 1f)
             : 1;
@@ -2643,6 +2685,15 @@ public class AIShadowRunner : MonoBehaviour
         _lastOpponentAction = (int)action;
     }
 
+    public static float SmoothGhostVisualValue(float current, float target,
+        ref float velocity, float smoothTime, float maxSpeed, float deltaTime)
+    {
+        // Resume/reload may reach LateUpdate while this frame still has zero deltaTime.
+        // SmoothDamp divides by deltaTime at its target and would poison velocity with NaN.
+        if (deltaTime <= 0f) return current;
+        return Mathf.SmoothDamp(current, target, ref velocity, smoothTime, maxSpeed, deltaTime);
+    }
+
     private void UpdateGhostPose()
     {
         if (_ghost == null || _player == null) return;
@@ -2674,10 +2725,10 @@ public class AIShadowRunner : MonoBehaviour
         }
         else
         {
-            _displayedGap = Mathf.SmoothDamp(_displayedGap, targetGap,
+            _displayedGap = SmoothGhostVisualValue(_displayedGap, targetGap,
                 ref _gapSmoothVelocity, Mathf.Max(0.02f, distanceSmoothTime),
                 80f, Time.deltaTime);
-            _displayedGhostLane = Mathf.SmoothDamp(
+            _displayedGhostLane = SmoothGhostVisualValue(
                 _displayedGhostLane, _ghostLane,
                 ref _laneSmoothVelocity, Mathf.Max(0.02f, laneSmoothTime),
                 12f, Time.deltaTime);
@@ -2827,6 +2878,7 @@ public class AIShadowRunner : MonoBehaviour
 
     private ShadowAIDirective GetShadowDirective()
     {
+        if (IsAsyncChallengeRuntime()) return ShadowAIDirective.Neutral;
         if (_directiveSource == null)
             _directiveSource = AITrackDirector.Instance;
         return _directiveSource != null
@@ -3417,16 +3469,23 @@ public class AIShadowRunner : MonoBehaviour
 
     private bool IsSingleContractRuntime()
     {
-        if (_activeGameplayFlowMode == GameplayFlowMode.SingleContract)
+        if (EchoRunRules.For(_activeGameplayFlowMode).UsesSingleContractRules)
             return true;
         GameManager manager = _gameManager != null
             ? _gameManager : GameManager.Instance;
         if (manager == null) return false;
         return manager.State == GameState.Menu
-            ? manager.ConfiguredGameplayFlowMode
-              == GameplayFlowMode.SingleContract
-            : manager.ActiveGameplayFlowMode
-              == GameplayFlowMode.SingleContract;
+            ? EchoRunRules.For(manager.ConfiguredGameplayFlowMode).UsesSingleContractRules
+            : manager.UsesSingleContractRules;
+    }
+
+    private bool IsAsyncChallengeRuntime()
+    {
+        if (_runStarted) return _activeGameplayFlowMode == GameplayFlowMode.AsyncChallenge;
+        GameManager manager = _gameManager != null ? _gameManager : GameManager.Instance;
+        return manager != null && (manager.State == GameState.Menu
+            ? manager.ConfiguredGameplayFlowMode == GameplayFlowMode.AsyncChallenge
+            : manager.IsAsyncChallengeRun);
     }
 
     private int GetDraftActionSampleCount(ShadowAction action)
@@ -3568,19 +3627,25 @@ public class AIShadowRunner : MonoBehaviour
         bool stumbling, bool reducedMotion, float time)
     {
         if (stumbling)
-            return new Color(0.11f, 0.022f, 0.030f, 0.18f);
+        {
+            Color hurt = EchoRunUITheme.Danger;
+            hurt.a = 0.46f;
+            return hurt;
+        }
 
         float alpha = reducedMotion
-            ? 0.14f
-            : 0.14f + Mathf.Sin(time * 2.2f) * 0.012f;
-        return new Color(0.018f, 0.045f, 0.075f, alpha);
+            ? 0.42f
+            : 0.42f + Mathf.Sin(time * 2.2f) * 0.012f;
+        Color body = EchoRunUITheme.Echo;
+        body.a = alpha;
+        return body;
     }
 
     public static Color ResolveGhostRimColor(bool stumbling)
     {
         return stumbling
-            ? new Color(0.95f, 0.20f, 0.18f, 1f)
-            : new Color(0.18f, 0.72f, 0.92f, 1f);
+            ? EchoRunUITheme.Danger
+            : EchoRunUITheme.Echo;
     }
 
     private void ApplyGhostMaterial(GameObject visual)
@@ -3601,7 +3666,7 @@ public class AIShadowRunner : MonoBehaviour
         if (_ghostMaterial.HasProperty("_RimColor"))
             _ghostMaterial.SetColor("_RimColor", ResolveGhostRimColor(false));
         if (_ghostMaterial.HasProperty("_RimPower"))
-            _ghostMaterial.SetFloat("_RimPower", 3.4f);
+            _ghostMaterial.SetFloat("_RimPower", 2.6f);
         if (_ghostMaterial.HasProperty("_EmissionStrength"))
             _ghostMaterial.SetFloat("_EmissionStrength", 0.38f);
         if (_ghostMaterial.HasProperty("_ScanStrength"))
@@ -3787,6 +3852,10 @@ public class AIShadowRunner : MonoBehaviour
 
     void OnDestroy()
     {
+        // Frozen mode and the cached managed run context survive either destruction order.
+        if (_activeGameplayFlowMode == GameplayFlowMode.AsyncChallenge
+            && _runStarted && !_runFinalized)
+            FinishRunWithReason(RunEndReason.Abandoned);
         if (IsSingleContractRuntime())
             DiscardSingleContractRunState();
         else

@@ -43,6 +43,8 @@ public class InputManager : MonoBehaviour
 
         if (Input.GetKeyDown(KeyCode.Escape))
         {
+            UIManager ui = FindObjectOfType<UIManager>();
+            if (ui != null && ui.TryCloseRunSettings()) return;
             if (gameManager.State == GameState.Playing)
                 gameManager.Pause();
             else if (gameManager.State == GameState.Paused)

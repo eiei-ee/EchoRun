@@ -23,6 +23,7 @@ public sealed class SingleContractGatePlan
     private readonly PredictionGateController[] _gates;
     private readonly Dictionary<int, PredictionGateController> _gatesById;
     private readonly HashSet<int> _recordedSettlements = new HashSet<int>();
+    private readonly bool _allowRelearning;
 
     public int GateCount => _gates.Length;
     public int HypothesisVersion { get; private set; }
@@ -30,9 +31,11 @@ public sealed class SingleContractGatePlan
     public bool RelearnTriggered { get; private set; }
     public int CounterSuccessStreak { get; private set; }
 
-    public SingleContractGatePlan(PredictionGateDefinition[] definitions)
+    public SingleContractGatePlan(PredictionGateDefinition[] definitions,
+        bool allowRelearning = true)
     {
         ValidateDefinitions(definitions);
+        _allowRelearning = allowRelearning;
 
         HypothesisVersion = definitions[0].hypothesisVersion;
         PredictedStrategy = definitions[0].predictedStrategy;
@@ -75,7 +78,7 @@ public sealed class SingleContractGatePlan
         CounterSuccessStreak = settlement.IsCounterSuccess
             ? CounterSuccessStreak + 1 : 0;
 
-        if (RelearnTriggered || CounterSuccessStreak < 2
+        if (!_allowRelearning || RelearnTriggered || CounterSuccessStreak < 2
             || CountScheduledGates() < 2)
             return CurrentResult(true, false, 0);
 

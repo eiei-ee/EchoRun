@@ -507,11 +507,11 @@ public class GameStateTests
     }
 
     [Test]
-    public void NativeAndroidAndDesktopWebGlKeepThe120FrameRateOption()
+    public void NativeAndroidAndTouchOrDesktopWebGlKeepThe120FrameRateOption()
     {
         Assert.IsFalse(GameManager.ShouldConstrainHighFrameRate(
             false, true, false));
-        Assert.IsTrue(GameManager.ShouldConstrainHighFrameRate(
+        Assert.IsFalse(GameManager.ShouldConstrainHighFrameRate(
             false, true, true));
         Assert.IsFalse(GameManager.ShouldConstrainHighFrameRate(
             true, false, false));

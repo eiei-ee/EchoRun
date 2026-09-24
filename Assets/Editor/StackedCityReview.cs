@@ -84,7 +84,7 @@ public static class StackedCityReview
         BuildInto("TestResults/CityNoticeReadability", "EchoRun-CityNoticeReadability");
     }
 
-    private static void CaptureInto(string output, bool includeFacadeDetails, bool includeWallStories = false,
+    internal static void CaptureInto(string output, bool includeFacadeDetails, bool includeWallStories = false,
         bool includeCornerLanes = false, bool includeFlicker = false, bool includeFinishGate = false)
     {
         if (EditorApplication.isPlaying)
@@ -148,6 +148,10 @@ public static class StackedCityReview
             var styleHost = new GameObject("ReviewPickupStyler");
             styleHost.SetActive(false);
             WorldStyler styler = styleHost.AddComponent<WorldStyler>();
+            // This inactive diagnostic host deliberately skips Awake. Prepare
+            // the same shared obstacle materials before styling its test route.
+            typeof(WorldStyler).GetMethod("EnsurePalette", BindingFlags.Instance | BindingFlags.NonPublic)
+                .Invoke(styler, null);
             GameObject player = Object.Instantiate(sourcePlayer);
             player.name = "ReviewPlayer";
             foreach (MonoBehaviour script in player.GetComponentsInChildren<MonoBehaviour>(true))
@@ -332,6 +336,9 @@ public static class StackedCityReview
             : Vector3.right * (type == TrackSegmentType.TurnRight ? 1 : -1);
         data.turnPointWorld = position + data.entryDirection * 10f;
         CityV7PlayableEnvironment.Decorate(segment, type);
+        // Match the current WorldStyler art binding, including straight and turn
+        // decks. Capturing the legacy fallback road gave misleading comparisons.
+        OrangeEchoRoadVisuals.Apply(segment, type);
         if (type != TrackSegmentType.Straight) return;
         for (int row = 0; row < 3; row++)
         {
@@ -343,8 +350,12 @@ public static class StackedCityReview
             styler.StyleCoin(pickup);
         }
         if (Mathf.RoundToInt(distance / 20f) % 3 == 0)
-            Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Obstacle_Low.prefab"),
-                segment.transform.TransformPoint(new Vector3(-3, 0, 7)), rotation, segment.transform).SetActive(true);
+        {
+            var obstacle = Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Obstacle_Low.prefab"),
+                segment.transform.TransformPoint(new Vector3(-3, 0, 7)), rotation, segment.transform);
+            obstacle.SetActive(true);
+            styler.StyleObstacle(obstacle);
+        }
     }
 
     internal static void CaptureView(Camera camera, GameObject player, Vector3 offset, Vector3 anchor,
@@ -741,7 +752,7 @@ public static class StackedCityReview
         BuildInto(CornerOutput, "EchoRun-StackedCity-Continuity");
     }
 
-    private static void BuildInto(string output, string reviewProductName)
+    internal static void BuildInto(string output, string reviewProductName)
     {
         string executable = Path.GetFullPath(output + "/Windows/EchoRun.exe");
         Directory.CreateDirectory(Path.GetDirectoryName(executable));

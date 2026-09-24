@@ -96,7 +96,8 @@ public class VisualEnhancementTests
             EchoWorldPhasePalette palette = WorldStyler.BuildPhasePalette(
                 EchoPhaseVisualController.StyleFor(phases[i]));
             Assert.AreEqual(1f, palette.skyTint.a, 0.0001f);
-            Assert.Greater(palette.cyanEmission.maxColorComponent, 0.25f);
+            Assert.That(palette.cyanEmission.maxColorComponent, Is.InRange(0.05f, 0.30f),
+                "City signals remain visible without turning facade lighting into bloom.");
             for (int j = 0; j < i; j++)
             {
                   EchoWorldPhasePalette previous = WorldStyler.BuildPhasePalette(
@@ -105,8 +106,8 @@ public class VisualEnhancementTests
                       previous.skyTint), 0.008f,
                       phases[j] + " and " + phases[i]
                       + " restrained global sky shift");
-                Assert.Greater(ColorDistance(palette.cyanEmission,
-                    previous.cyanEmission), 0.035f,
+                Assert.Greater(ColorDistance(palette.cyan,
+                    previous.cyan), 0.035f,
                     phases[j] + " and " + phases[i] + " city signals");
             }
         }

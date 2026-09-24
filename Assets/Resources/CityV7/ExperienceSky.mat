@@ -29,11 +29,11 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _Exposure: 0.72
+    - _Exposure: 0.55
     - _HorizonTexY: 0.5
     - _Rotation: 35
-    - _Saturation: 0.82
+    - _Saturation: 0.65
     - _SeamBlend: 0.025
     m_Colors:
-    - _Tint: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+    - _Tint: {r: 0.76862746, g: 0.73333335, b: 0.8745098, a: 1}
   m_BuildTextureStacks: []

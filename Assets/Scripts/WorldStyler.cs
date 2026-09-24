@@ -46,23 +46,24 @@ public class WorldStyler : MonoBehaviour
     public const string ColdWhiteFortressPhaseAccentMaterialName =
         "ColdWhiteFortress_PhaseAccent";
 
-    private static readonly Color BaseFog = new Color(0.42f, 0.46f, 0.48f);
-    private static readonly Color BaseAmbientSky = new Color(0.38f, 0.42f, 0.46f);
-    private static readonly Color BaseAmbientEquator = new Color(0.24f, 0.27f, 0.30f);
-    private static readonly Color BaseAmbientGround = new Color(0.10f, 0.12f, 0.14f);
-    private static readonly Color BaseSkyTint = new Color(0.78f, 0.82f, 0.84f, 1f);
-    private static readonly Color BaseKeyLight = new Color(0.98f, 0.99f, 1f);
-    private static readonly Color BaseFillLight = new Color(0.78f, 0.84f, 0.90f);
-    private static readonly Color BaseStructure = new Color(0.62f, 0.66f, 0.68f);
-    private static readonly Color BaseStructureEmission = new Color(0.008f, 0.018f, 0.034f);
-    private static readonly Color BaseDepth = new Color(0.055f, 0.085f, 0.14f);
-    private static readonly Color BaseDepthEmission = new Color(0.004f, 0.010f, 0.020f);
-    private static readonly Color BaseCyan = new Color(0.22f, 0.84f, 1.00f);
-    private static readonly Color BaseCyanEmission = new Color(0.020f, 0.34f, 0.56f);
-    private static readonly Color BaseCoral = new Color(1.00f, 0.40f, 0.35f);
-    private static readonly Color BaseCoralEmission = new Color(0.58f, 0.060f, 0.028f);
-    private static readonly Color BaseGold = new Color(0.94f, 0.68f, 0.24f);
-    private static readonly Color BaseGoldEmission = new Color(0.48f, 0.19f, 0.015f);
+    private static readonly Color BaseFog = CityV7PlayableEnvironment.FogColor;
+    private static readonly Color BaseAmbientSky = CityV7PlayableEnvironment.AmbientSkyColor;
+    private static readonly Color BaseAmbientEquator = CityV7PlayableEnvironment.AmbientEquatorColor;
+    private static readonly Color BaseAmbientGround = CityV7PlayableEnvironment.AmbientGroundColor;
+    private static readonly Color BaseSkyTint = CityV7PlayableEnvironment.SkyTint;
+    private static readonly Color BaseKeyLight = CityV7PlayableEnvironment.KeyLightColor;
+    private static readonly Color BaseFillLight = CityV7PlayableEnvironment.FillLightColor;
+    private static readonly Color BaseStructure = new Color32(103, 128, 159, 255);
+    private static readonly Color BaseStructureEmission = new Color(0.009f, 0.006f, 0.014f);
+    private static readonly Color BaseDepth = EchoRunUITheme.Backdrop;
+    private static readonly Color BaseDepthEmission = new Color(0.004f, 0.003f, 0.007f);
+    // Keep legacy material family names so authored prefab bindings remain stable.
+    private static readonly Color BaseCyan = EchoRunUITheme.Echo;
+    private static readonly Color BaseCyanEmission = new Color(0.085f, 0.035f, 0.12f);
+    private static readonly Color BaseCoral = EchoRunUITheme.Danger;
+    private static readonly Color BaseCoralEmission = new Color(0.12f, 0.018f, 0.045f);
+    private static readonly Color BaseGold = EchoRunUITheme.ActionAccent;
+    private static readonly Color BaseGoldEmission = new Color(0.08f, 0.095f, 0.018f);
 
     public static WorldStyler Instance { get; private set; }
 
@@ -143,7 +144,7 @@ public class WorldStyler : MonoBehaviour
         // lane framing and FOV retain their existing gameplay values.
         camera.farClipPlane = 420f;
         camera.fieldOfView = GetCameraFieldOfView(portrait);
-        camera.backgroundColor = new Color(0.035f, 0.070f, 0.115f);
+        camera.backgroundColor = new Color32(20, 13, 36, 255);
         CameraFollow follow = camera.GetComponent<CameraFollow>();
         if (follow != null) follow.offset = GetCameraOffset(portrait);
     }
@@ -164,7 +165,11 @@ public class WorldStyler : MonoBehaviour
         bool refreshCityClearance = true)
     {
         if (segment == null) return;
-        if (CityV7PlayableEnvironment.Decorate(segment, segmentType, refreshCityClearance)) return;
+        if (CityV7PlayableEnvironment.Decorate(segment, segmentType, refreshCityClearance))
+        {
+            OrangeEchoRoadVisuals.Apply(segment, segmentType);
+            return;
+        }
         EnsurePalette();
         Transform existing = segment.transform.Find("EchoEnvironment");
         GameObject environment;
@@ -213,6 +218,7 @@ public class WorldStyler : MonoBehaviour
         variantSet.SelectFor(runSeed, routeDistance, preferredVariant);
         if (segmentType != TrackSegmentType.Straight)
             CityV7PlayableEnvironment.Decorate(segment, segmentType, refreshCityClearance);
+        OrangeEchoRoadVisuals.Apply(segment, segmentType);
     }
 
     private static bool IsColdWhiteFortressEnvironment(Transform environment)
@@ -275,7 +281,12 @@ public class WorldStyler : MonoBehaviour
         // The city slice uses a latitude-longitude sky with its horizon at
         // the equator. Preserve the older concept-art remap as a fallback.
         Material citySky = Resources.Load<Material>("CityV7/ExperienceSky");
-        if (citySky != null) return new Material(citySky);
+        if (citySky != null)
+        {
+            var cityRuntimeSky = new Material(citySky);
+            CityV7PlayableEnvironment.StyleSky(cityRuntimeSky);
+            return cityRuntimeSky;
+        }
         Material source = Resources.Load<Material>("Art/EchoSky");
         Material material = source != null && source.shader != null &&
             source.shader.name == SeamlessSkyShaderName
@@ -348,21 +359,20 @@ public class WorldStyler : MonoBehaviour
     {
         if (_structureMaterial != null) return;
         _structureMaterial = MakeMaterial("EchoStructure",
-            new Color(0.14f, 0.20f, 0.29f), new Color(0.008f, 0.018f, 0.034f),
+            BaseStructure, BaseStructureEmission,
             StructureMetallic, StructureSmoothness);
         _deepStructureMaterial = MakeMaterial("EchoDepth",
-            new Color(0.055f, 0.085f, 0.14f), new Color(0.004f, 0.010f, 0.020f),
+            BaseDepth, BaseDepthEmission,
             0.10f, 0.27f);
         _cyanMaterial = MakeMaterial("EchoCyan",
-            new Color(0.22f, 0.84f, 1.00f), new Color(0.020f, 0.34f, 0.56f), 0.24f, 0.68f);
+            BaseCyan, BaseCyanEmission, 0.12f, 0.42f);
         _coralMaterial = MakeMaterial("EchoCoral",
-            new Color(1.00f, 0.40f, 0.35f), new Color(0.58f, 0.060f, 0.028f), 0.14f, 0.50f);
+            BaseCoral, BaseCoralEmission, 0.10f, 0.36f);
         _goldMaterial = MakeMaterial("EchoGold",
-            new Color(0.94f, 0.68f, 0.24f), new Color(0.48f, 0.19f, 0.015f), 0.52f, 0.72f);
+            BaseGold, BaseGoldEmission, 0.18f, 0.42f);
         _fortressPhaseAccentMaterial = MakeMaterial(
             ColdWhiteFortressPhaseAccentMaterialName,
-            new Color(0.16f, 0.72f, 0.90f),
-            new Color(0.04f, 0.38f, 0.62f), 0.18f, 0.66f);
+            BaseCyan, BaseCyanEmission, 0.12f, 0.42f);
     }
 
     private void BuildStraightEnvironment(Transform parent,
@@ -696,10 +706,10 @@ public class WorldStyler : MonoBehaviour
             palette.coralEmission);
         ApplyMaterialColors(_goldMaterial, palette.gold,
             palette.goldEmission);
-        Color accent = PhaseHue(new Color(0.16f, 0.72f, 0.90f),
+        Color accent = PhaseHue(BaseCyan,
             style.tint, 0.72f + intensity * 0.28f);
         Color accentEmission = style.tint
-            * Mathf.Lerp(0.42f, 0.92f, intensity);
+            * Mathf.Lerp(0.08f, 0.16f, intensity);
         accentEmission.a = 1f;
         ApplyMaterialColors(_fortressPhaseAccentMaterial, accent,
             accentEmission);

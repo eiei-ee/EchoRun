@@ -2,7 +2,8 @@
   "name": "TempleRun.EditModeTests",
   "rootNamespace": "TempleRun.Tests",
   "references": [
-    "TempleRun.Runtime"
+    "TempleRun.Runtime",
+    "TempleRun.WeixinMiniGame"
   ],
   "includePlatforms": [
     "Editor"

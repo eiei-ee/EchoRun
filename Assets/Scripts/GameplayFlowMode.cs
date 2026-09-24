@@ -2,8 +2,9 @@ using System;
 
 public enum GameplayFlowMode
 {
-    SixPhaseLegacy,
-    SingleContract
+    SixPhaseLegacy = 0,
+    SingleContract = 1,
+    AsyncChallenge = 2
 }
 
 [Serializable]

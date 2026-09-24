@@ -41,7 +41,7 @@ public sealed class EchoHudView : MonoBehaviour
     [SerializeField] private CanvasGroup feedbackGroup;
     [SerializeField] private Button pauseButton;
 
-    [Header("Cold White Fortress Skin")]
+    [Header("Echo Visual System")]
     [SerializeField] private Image[] skinPanels;
     [SerializeField] private Image[] skinRules;
     [SerializeField] private Image[] phaseAccentRules;
@@ -245,7 +245,7 @@ public sealed class EchoHudView : MonoBehaviour
             SetLayout(meterGroup.GetComponent<RectTransform>(),
                 compact ? new Vector2(0f, 1f) : new Vector2(0.5f, 0.855f),
                 compact ? new Vector2(332f, 40f) : new Vector2(520f, 34f),
-                compact ? new Vector2(26f, -22f) : Vector2.zero,
+                compact ? new Vector2(32f, -26f) : Vector2.zero,
                 compact ? new Vector2(0f, 1f) : new Vector2(0.5f, 0.5f));
         if (predictionText != null)
         {
@@ -253,23 +253,23 @@ public sealed class EchoHudView : MonoBehaviour
             // race statistics stay at the edge, leaving the track unobscured.
             predictionText.alignment = compact && !narrow ? TextAnchor.MiddleCenter : TextAnchor.MiddleLeft;
             SetLayout(predictionText.rectTransform, compact && !narrow ? new Vector2(.5f, 1f) : new Vector2(0f, 1f),
-                narrow ? new Vector2(312f, 38f) : compact ? new Vector2(380f, 44f) : new Vector2(420f, 66f),
-                narrow ? new Vector2(30f, -176f) : compact ? new Vector2(0f, -32f) : new Vector2(30f, -255f),
+                narrow ? new Vector2(500f, 72f) : compact ? new Vector2(500f, 72f) : new Vector2(420f, 66f),
+                narrow ? new Vector2(32f, -208f) : compact ? new Vector2(0f, -32f) : new Vector2(30f, -255f),
                 compact && !narrow ? new Vector2(.5f, 1f) : new Vector2(0f, 1f));
         }
         if (predictionPlate != null)
             SetLayout(predictionPlate.GetComponent<RectTransform>(), compact && !narrow ? new Vector2(.5f, 1f) : new Vector2(0f, 1f),
-                narrow ? new Vector2(330f, 40f) : compact ? new Vector2(408f, 48f) : new Vector2(450f, 68f),
-                narrow ? new Vector2(22f, -175f) : compact ? new Vector2(0f, -30f) : new Vector2(22f, -254f),
+                narrow ? new Vector2(532f, 80f) : compact ? new Vector2(532f, 80f) : new Vector2(450f, 68f),
+                narrow ? new Vector2(16f, -204f) : compact ? new Vector2(0f, -30f) : new Vector2(22f, -254f),
                 compact && !narrow ? new Vector2(.5f, 1f) : new Vector2(0f, 1f));
         if (feedbackText != null)
             SetLayout(feedbackText.rectTransform, new Vector2(0f, 1f),
-                new Vector2(540f, 40f),
-                new Vector2(30f, narrow ? -223f : compact ? -185f : -333f), new Vector2(0f, 1f));
+                new Vector2(540f, 58f),
+                new Vector2(32f, narrow ? -304f : compact ? -210f : -333f), new Vector2(0f, 1f));
         if (feedbackPlate != null)
             SetLayout(feedbackPlate.GetComponent<RectTransform>(), new Vector2(0f, 1f),
-                new Vector2(560f, 42f),
-                new Vector2(22f, narrow ? -222f : compact ? -184f : -332f), new Vector2(0f, 1f));
+                new Vector2(572f, 64f),
+                new Vector2(16f, narrow ? -300f : compact ? -206f : -332f), new Vector2(0f, 1f));
     }
 
     private static void SetLayout(RectTransform rect, Vector2 anchor,

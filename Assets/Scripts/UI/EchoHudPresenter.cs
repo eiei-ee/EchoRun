@@ -145,7 +145,7 @@ public sealed class EchoHudPresenter : MonoBehaviour
                 gameManager.BuffName ?? "Buff", gameManager.BuffTimeRemaining);
         }
 
-        return EchoRunPresentation.BuildSingleContractHud(
+        SingleContractHudData data = EchoRunPresentation.BuildSingleContractHud(
             new SingleContractHudInput
             {
                 visualState = shadow != null
@@ -199,6 +199,12 @@ public sealed class EchoHudPresenter : MonoBehaviour
                     : default,
                 result = shadow != null ? shadow.LastResult : ""
             });
+        if (gameManager != null && gameManager.IsAsyncChallengeRun)
+        {
+            data.openingTitle = "好友影子";
+            data.memory = "好友影子 · " + data.memory;
+        }
+        return data;
     }
 
     public void ReleaseSingleContractVisualState()
@@ -429,9 +435,10 @@ public sealed class EchoHudPresenter : MonoBehaviour
 
     private bool IsSingleContractPresentation(AIShadowRunner shadow)
     {
-        if (_gameManager != null) return _gameManager.IsSingleContractRun;
-        return shadow != null && shadow.ActiveGameplayFlowMode
-            == GameplayFlowMode.SingleContract;
+        if (_gameManager != null) return _gameManager.UsesSingleContractRules;
+        return shadow != null && (shadow.ActiveGameplayFlowMode
+            == GameplayFlowMode.SingleContract || shadow.ActiveGameplayFlowMode
+            == GameplayFlowMode.AsyncChallenge);
     }
 
     private static Color SingleContractFeedbackColor(

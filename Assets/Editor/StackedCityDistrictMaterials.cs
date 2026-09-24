@@ -26,13 +26,19 @@ public static class StackedCityDistrictMaterials
 
     // Each row is one architectural palette, ordered by Role. Coloured mineral
     // bodies, pale infill, tinted glass and complementary metal read together.
-    static readonly Color[,] Colors =
+    static readonly int[,] Palette =
     {
-        { C(.72f,.43f,.31f), C(.86f,.69f,.53f), C(.44f,.51f,.53f), C(.38f,.29f,.25f), C(.76f,.65f,.47f), C(.91f,.82f,.68f) },
-        { C(.38f,.62f,.53f), C(.65f,.77f,.68f), C(.28f,.43f,.37f), C(.27f,.39f,.35f), C(.71f,.72f,.55f), C(.82f,.89f,.80f) },
-        { C(.40f,.53f,.68f), C(.67f,.74f,.81f), C(.28f,.41f,.54f), C(.27f,.36f,.46f), C(.73f,.72f,.64f), C(.82f,.88f,.91f) },
-        { C(.78f,.65f,.44f), C(.89f,.81f,.65f), C(.53f,.56f,.48f), C(.44f,.37f,.26f), C(.77f,.67f,.47f), C(.93f,.87f,.72f) }
+        { 0xA85C77, 0xB88296, 0x424C66, 0x513A50, 0xD1BFA4, 0xB8AABB },
+        { 0x607F9C, 0x8CACC3, 0x345D66, 0x304259, 0xC5C6AC, 0xB4C2CD },
+        { 0x53769F, 0x8CA5C4, 0x324B6B, 0x293D58, 0xC5C2AF, 0xB5C1D5 },
+        { 0x926277, 0xAF8DA6, 0x50536A, 0x4E4058, 0xCEC0AC, 0xC2B3C3 }
     };
+    public static int PaletteRgb(int theme, int role)
+    {
+        ValidateTheme(theme);
+        ValidateRole((Role)role);
+        return Palette[theme, role];
+    }
     static readonly Color[] GlassEmission =
     {
         C(.035f,.048f,.054f), C(.033f,.060f,.047f), C(.030f,.050f,.071f), C(.055f,.054f,.039f)
@@ -94,7 +100,8 @@ public static class StackedCityDistrictMaterials
                     EditorUtility.CopySerialized(source, material);
                 }
                 material.name = "District_" + ThemeNames[theme] + "_" + role;
-                material.color = Colors[theme, index];
+                int rgb = PaletteRgb(theme, index);
+                material.color = new Color32((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb, 255);
                 material.enableInstancing = true;
                 switch (role)
                 {
