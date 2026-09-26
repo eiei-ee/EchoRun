@@ -8,8 +8,60 @@ using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
 
-public sealed class RuntimeSmokeTests
+public sealed partial class RuntimeSmokeTests
 {
+    [UnityTest]
+    public IEnumerator CameraViewSettingChangesTheLiveRunAndPersists()
+    {
+        SavePreferenceSnapshot saved = CaptureSavePreferences();
+        try
+        {
+            InstallIsolatedSave(new EchoRunSaveData());
+            SceneManager.LoadScene("SampleScene");
+            yield return null;
+            yield return WaitForFreshRun(null, false);
+            GameManager game = GameManager.Instance;
+            game.StartGame();
+            for (int frame = 0; frame < 180
+                 && game.State != GameState.Playing; frame++)
+                yield return null;
+            Assert.AreEqual(GameState.Playing, game.State);
+            Camera camera = Camera.main;
+            CameraFollow follow = camera.GetComponent<CameraFollow>();
+            Assert.IsNotNull(follow);
+            Assert.IsNotNull(follow.target);
+
+            string captureRoot = System.IO.Path.GetFullPath(
+                "TestResults/CameraView-20260924");
+            System.IO.Directory.CreateDirectory(captureRoot);
+            EchoRunSaveSystem.SaveCameraViewHeight(CameraViewHeight.Low);
+            yield return new WaitForSecondsRealtime(2f);
+            Assert.AreEqual(GameState.Playing, game.State);
+            float lowY = camera.transform.position.y - follow.target.position.y;
+            CaptureOffscreen(System.IO.Path.Combine(captureRoot,
+                "low-view.png"));
+
+            EchoRunSaveSystem.SaveCameraViewHeight(CameraViewHeight.High);
+            yield return new WaitForSecondsRealtime(1.2f);
+            Assert.AreEqual(GameState.Playing, game.State);
+            float highY = camera.transform.position.y - follow.target.position.y;
+            CaptureOffscreen(System.IO.Path.Combine(captureRoot,
+                "high-view.png"));
+            Assert.Greater(highY, lowY + 0.8f,
+                "High view must visibly raise the live gameplay camera.");
+
+            ResetSaveSystemCache();
+            EchoRunSaveSystem.EnsureInitialized();
+            Assert.AreEqual(CameraViewHeight.High, CameraViewSettings.Current,
+                "Reloading the save archive must retain the camera choice.");
+        }
+        finally
+        {
+            if (GameManager.Instance != null) GameManager.Instance.ReturnToMenu();
+            RestoreSavePreferences(saved);
+        }
+    }
+
     [UnityTest]
     public IEnumerator RunSettingsAndMusicRespectPauseFocusAndVolume()
     {
@@ -252,9 +304,14 @@ public sealed class RuntimeSmokeTests
     {
         string root = System.IO.Path.GetFullPath("TestResults/VisualSystem-20260923/RuntimeCaptures");
         System.IO.Directory.CreateDirectory(root);
+        CaptureOffscreen(System.IO.Path.Combine(root, name + ".png"));
+    }
+
+    private static void CaptureOffscreen(string path)
+    {
         typeof(EchoVisualCaptureProbe).GetMethod("CaptureOffscreen",
             BindingFlags.Static | BindingFlags.NonPublic).Invoke(null,
-            new object[] { System.IO.Path.Combine(root, name + ".png") });
+            new object[] { path });
     }
 
     private static void AssertVisibleTextGeometry(string name)
@@ -696,6 +753,15 @@ public sealed class RuntimeSmokeTests
             Assert.AreEqual(120, GameManager.Instance.GetFrameRate());
         }
         finally { GameManager.Instance.SetFrameRate(previousRate); }
+        Button highCamera = GetPrivateField<Button>(ui, "_cameraHighBtn");
+        Button lowCamera = GetPrivateField<Button>(ui, "_cameraLowBtn");
+        highCamera.onClick.Invoke();
+        Assert.AreEqual(CameraViewHeight.High, CameraViewSettings.Current);
+        Assert.AreEqual((int)CameraViewHeight.High,
+            PlayerPrefs.GetInt(CameraViewSettings.PreferenceKey));
+        Assert.IsTrue(highCamera.GetComponentInChildren<Text>().text.Contains("✓"));
+        lowCamera.onClick.Invoke();
+        Assert.AreEqual(CameraViewHeight.Low, CameraViewSettings.Current);
         Button back = GetPrivateField<Button>(ui, "_settingsBackBtn");
         GameObject settingsPanel = GetPrivateField<GameObject>(
             ui, "_settingsPanel");
@@ -1038,7 +1104,8 @@ public sealed class RuntimeSmokeTests
         "TotalCoins",
         "TargetFrameRate",
         "AudioMuted",
-        "CharacterPreset"
+        "CharacterPreset",
+        CameraViewSettings.PreferenceKey
     };
 
     private static readonly string[] SaveFloatKeys =

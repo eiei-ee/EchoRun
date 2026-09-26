@@ -29,9 +29,9 @@ public static class EchoRunUITheme
     public static readonly Color Surface = new Color32(29, 48, 77, 255);
     public static readonly Color SurfaceRaised = new Color32(42, 61, 89, 255);
     public static readonly Color SurfaceSelected = new Color32(54, 79, 114, 255);
-    public static readonly Color Echo = new Color32(197, 154, 239, 255);
-    public static readonly Color ActionAccent = new Color32(243, 231, 142, 255);
-    public static readonly Color ActionAccentDark = new Color32(124, 110, 53, 255);
+    public static readonly Color Echo = new Color32(91, 220, 245, 255);
+    public static readonly Color ActionAccent = new Color32(255, 158, 65, 255);
+    public static readonly Color ActionAccentDark = new Color32(145, 70, 25, 255);
     public static readonly Color Reward = new Color32(232, 215, 132, 255);
     public static readonly Color Danger = new Color32(214, 108, 140, 255);
     public static readonly Color Success = ActionAccent;
@@ -40,6 +40,19 @@ public static class EchoRunUITheme
     public static readonly Color Ink = Backdrop;
     public static readonly Color RouteCyan = Echo;
     public static readonly Color RouteCyanDark = SurfaceSelected;
+
+    // Menus and modal sheets sit over the dusk city. Keep their hierarchy
+    // separate from the dark, high-contrast race HUD.
+    public static readonly Color PageBackdrop = new Color32(22, 34, 43, 255);
+    public static readonly Color PageSurface = new Color32(36, 51, 63, 255);
+    public static readonly Color PageRaised = new Color32(47, 65, 77, 255);
+    public static readonly Color PageSelected = new Color32(47, 98, 111, 255);
+    public static readonly Color PageInk = new Color32(249, 244, 232, 255);
+    public static readonly Color PageMuted = new Color32(187, 204, 210, 255);
+    public static readonly Color PageEcho = new Color32(114, 214, 220, 255);
+    public static readonly Color PageDanger = new Color32(255, 155, 164, 255);
+    public static readonly Color PageRule = new Color32(160, 190, 199, 65);
+    public static readonly Color PageSelectedEdge = new Color32(114, 214, 220, 190);
 
     public static readonly Color MenuPaper = Backdrop;
     public static readonly Color MenuInk = TextPrimary;

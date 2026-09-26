@@ -21,6 +21,13 @@ public class UIManager : MonoBehaviour
     private static readonly Color TextPrimary = EchoRunUITheme.TextPrimary;
     private static readonly Color TextMuted = EchoRunUITheme.TextMuted;
     private static readonly Color Ink = EchoRunUITheme.Ink;
+    private static readonly Color PageBackdrop = EchoRunUITheme.PageBackdrop;
+    private static readonly Color PageSurface = EchoRunUITheme.PageSurface;
+    private static readonly Color PageRaised = EchoRunUITheme.PageRaised;
+    private static readonly Color PageSelected = EchoRunUITheme.PageSelected;
+    private static readonly Color PageInk = EchoRunUITheme.PageInk;
+    private static readonly Color PageMuted = EchoRunUITheme.PageMuted;
+    private static readonly Color PageEcho = EchoRunUITheme.PageEcho;
 
     // ── Menu ──
     GameObject _menuPanel;
@@ -41,19 +48,22 @@ public class UIManager : MonoBehaviour
     Button _fps30Btn, _fps60Btn, _fps120Btn;
     Button _difficultyRelaxedBtn, _difficultyStandardBtn,
         _difficultyIntenseBtn;
+    Button _cameraLowBtn, _cameraHighBtn;
     Button _largeTextBtn, _highContrastBtn, _reducedMotionBtn;
     Button _settingsBackBtn;
     RectTransform _settingsContent;
     ScrollRect _settingsScroll;
-    static readonly Color SettingsAccent = EchoRunUITheme.ActionAccent;
-    static readonly Color SettingsSelected = EchoRunUITheme.SurfaceSelected;
-    static readonly Color SettingsControl = EchoRunUITheme.SurfaceRaised;
+    static readonly Color SettingsAccent = EchoRunUITheme.PageEcho;
+    static readonly Color SettingsSelected = EchoRunUITheme.PageSelected;
+    static readonly Color SettingsControl = EchoRunUITheme.PageRaised;
 
     // ── Character (sub-panel of menu) ──
     GameObject _characterPanel;
     Button _characterBackBtn;
     RectTransform _characterContent;
     Text _characterSelectionText;
+    RunnerColorPreview _runnerPreview;
+    Button _runnerFullViewBtn, _runnerFaceViewBtn;
     readonly Button[] _presetButtons = new Button[6];
     readonly Text[] _presetLabels = new Text[6];
     int _selectedPreset;
@@ -176,6 +186,9 @@ public class UIManager : MonoBehaviour
     void Update()
     {
         ApplySafeArea();
+#if MINIGAME_SUBPLATFORM_WEIXIN
+        RefreshSafeAreaCoverTone();
+#endif
         UpdateLandscapeGuard();
         UpdateFrameRateStatus();
         if (_pendingTextRefreshFrames > 0)
@@ -296,17 +309,26 @@ public class UIManager : MonoBehaviour
         _menuPanel = NewPanel("MenuPanel", Color.clear);
         CreateMenuBackground();
 
+        var titleScrim = new GameObject("MenuTitleScrim", typeof(VerticalScrim));
+        titleScrim.transform.SetParent(_menuPanel.transform, false);
+        VerticalScrim scrim = titleScrim.GetComponent<VerticalScrim>();
+        scrim.color = WithAlpha(PageBackdrop, .62f);
+        scrim.raycastTarget = false;
+        scrim.rectTransform.anchorMin = new Vector2(0f, .70f);
+        scrim.rectTransform.anchorMax = Vector2.one;
+        scrim.rectTransform.offsetMin = scrim.rectTransform.offsetMax = Vector2.zero;
+
         GameObject veil = new GameObject("MenuReadabilityVeil", typeof(Image));
         veil.transform.SetParent(_menuPanel.transform, false);
         Image veilImage = veil.GetComponent<Image>();
-        veilImage.color = WithAlpha(Surface, 0.97f);
+        veilImage.color = WithAlpha(PageBackdrop, 0.99f);
         veilImage.raycastTarget = false;
-        ApplyRounded(veilImage);
+        UIEdgeTreatment.Surface(veilImage, EchoRunUITheme.PageRule);
         _menuReadabilityVeil = veil.GetComponent<RectTransform>();
 
-        GameObject header = new GameObject("MenuHeaderSurface", typeof(Image));
+        GameObject header = new GameObject("MenuDockRule", typeof(Image));
         header.transform.SetParent(_menuPanel.transform, false);
-        header.GetComponent<Image>().color = WithAlpha(Backdrop, 0.88f);
+        header.GetComponent<Image>().color = WithAlpha(PageEcho, 0.78f);
         header.GetComponent<Image>().raycastTarget = false;
         _menuHeaderSurface = header.GetComponent<RectTransform>();
 
@@ -314,9 +336,9 @@ public class UIManager : MonoBehaviour
             "本机回声 · 记录来自你的跑法", 16, TextAnchor.MiddleCenter);
         _menuProtocolText.color = TextMuted;
 
-        _menuTitleText = MakeText("Title", _menuPanel.transform, "影迹",
+        _menuTitleText = MakeText("Title", _menuPanel.transform, "影迹回声",
             76, TextAnchor.MiddleLeft);
-        _menuTitleText.color = TextPrimary;
+        _menuTitleText.color = PageInk;
         _menuTitleText.fontStyle = FontStyle.Bold;
         _menuTitleText.horizontalOverflow = HorizontalWrapMode.Overflow;
         _menuTitleText.verticalOverflow = VerticalWrapMode.Overflow;
@@ -328,7 +350,7 @@ public class UIManager : MonoBehaviour
 
         _menuTaglineText = MakeText("Tagline", _menuPanel.transform,
             "你的过去，正在追上你", 25, TextAnchor.MiddleLeft);
-        _menuTaglineText.color = TextMuted;
+        _menuTaglineText.color = PageMuted;
 
         _menuGenerationText = MakeText("EchoGeneration", _menuPanel.transform,
             "你的操作，会变成下一局的对手", 30, TextAnchor.MiddleLeft);
@@ -336,13 +358,15 @@ public class UIManager : MonoBehaviour
         _menuGenerationText.fontStyle = FontStyle.Bold;
 
         _menuLearnedText = MakeBriefLine("EchoLearned",
-            "最近选路：还需要观察", 0f, Primary);
+            "最近选路：还需要观察", 0f, PageEcho);
         _menuRuleText = MakeBriefLine("EchoRule",
             "尝试选路、跳跃和滑铲，让回声认识你的跑法",
-            0f, TextMuted);
+            0f, PageMuted);
         _menuObjectiveText = MakeBriefLine("EchoObjective",
             "跑到终点；观察充分后形成下一局的回声",
-            0f, TextPrimary);
+            0f, PageInk);
+        _menuGenerationText.color = PageInk;
+        _menuProtocolText.color = PageMuted;
 
         _startBtn = MakeButton("StartBtn", _menuPanel.transform, "开始第一局", 28,
             new Vector2(0.19f, 0.245f), new Vector2(520f, 78f),
@@ -352,12 +376,12 @@ public class UIManager : MonoBehaviour
 
         _settingsBtn = MakeButton("SettingsBtn", _menuPanel.transform, "设置", 24,
             new Vector2(0.28f, 0.095f), new Vector2(180f, 56f),
-            SurfaceRaised, PrimaryStrong, TextPrimary);
+            WithAlpha(PageRaised, 0.80f), PageSelected, PageInk);
         _settingsBtn.onClick.AddListener(ShowSettings);
 
         _characterBtn = MakeButton("CharacterBtn", _menuPanel.transform, "跑者", 24,
             new Vector2(0.10f, 0.095f), new Vector2(180f, 56f),
-            SurfaceRaised, PrimaryStrong, TextPrimary);
+            WithAlpha(PageRaised, 0.80f), PageSelected, PageInk);
         _characterBtn.onClick.AddListener(ShowCharacter);
 
         LayoutMenu(false, false);
@@ -388,10 +412,8 @@ public class UIManager : MonoBehaviour
     void FitMenuBackgroundToViewport(int width, int height)
     {
         if (_menuBackground == null || width <= 0 || height <= 0) return;
-        // The loaded game world provides the backdrop; a tint stabilizes its
-        // contrast without substituting a separate advertising illustration.
         _menuBackground.texture = null;
-        _menuBackground.color = WithAlpha(Backdrop, 0.62f);
+        _menuBackground.color = WithAlpha(Backdrop, 0.06f);
         _menuBackground.uvRect = new Rect(0f, 0f, 1f, 1f);
     }
 
@@ -416,8 +438,8 @@ public class UIManager : MonoBehaviour
         if (_menuHeaderSurface != null)
         {
             _menuHeaderSurface.gameObject.SetActive(portrait);
-            _menuHeaderSurface.anchorMin = new Vector2(0f, 0.83f);
-            _menuHeaderSurface.anchorMax = Vector2.one;
+            _menuHeaderSurface.anchorMin = new Vector2(0.085f, 0.341f);
+            _menuHeaderSurface.anchorMax = new Vector2(0.18f, 0.343f);
             _menuHeaderSurface.offsetMin = Vector2.zero;
             _menuHeaderSurface.offsetMax = Vector2.zero;
         }
@@ -425,32 +447,33 @@ public class UIManager : MonoBehaviour
         {
             if (_menuReadabilityVeil != null)
             {
-                _menuReadabilityVeil.anchorMin = new Vector2(0.045f, 0.01f);
-                _menuReadabilityVeil.anchorMax = new Vector2(0.955f, 0.485f);
-                _menuReadabilityVeil.offsetMin = Vector2.zero;
-                _menuReadabilityVeil.offsetMax = Vector2.zero;
+                _menuReadabilityVeil.anchorMin = Vector2.zero;
+                _menuReadabilityVeil.anchorMax = new Vector2(1f, 0.347f);
+                _menuReadabilityVeil.offsetMin = new Vector2(28f, 8f);
+                _menuReadabilityVeil.offsetMax = new Vector2(-28f, 0f);
             }
-            // Let the live runner and city occupy the middle of the screen.
-            // The compact lower surface owns all pre-run information/actions.
-            LayoutHomeText(_menuTitleText, 0.932f, 0f, 112f, 76);
-            LayoutHomeText(_menuTaglineText, 0.865f, 0f, 64f, 28);
-            LayoutHomeText(_menuGenerationText, 0.434f, 0f, 80f, 34);
-            LayoutHomeText(_menuLearnedText, 0.377f, 0f, 62f, 28);
-            LayoutHomeText(_menuRuleText, 0.309f, 0f, 138f, 28);
-            LayoutHomeText(_menuObjectiveText, 0.238f, 0f, 76f, 28);
-            LayoutHomeText(_menuProtocolText, 0.105f, 0f, 56f, 26);
-            SetButtonLayout(_startBtn, new Vector2(0.5f, 0.166f),
-                UILayoutRules.GetPrimaryActionSize(Mathf.RoundToInt(menuViewport.x),
-                    Mathf.RoundToInt(menuViewport.y), true));
-            SetButtonLayout(_characterBtn, new Vector2(0.35f, 0.04f),
-                UILayoutRules.GetHomeNavigationSize(true, true));
-            SetButtonLayout(_settingsBtn, new Vector2(0.65f, 0.04f),
-                UILayoutRules.GetHomeNavigationSize(true, true));
-            SetHomeButtonFont(_startBtn, 40);
-            SetHomeButtonFont(_characterBtn, 34);
-            SetHomeButtonFont(_settingsBtn, 34);
+            // Keep the runner fully visible above one compact action dock.
+            // The detailed objective is available on the report page.
+            _menuObjectiveText.gameObject.SetActive(false);
+            _menuProtocolText.gameObject.SetActive(false);
+            LayoutHomeText(_menuTitleText, 0.885f, 0f, 112f, 82);
+            LayoutHomeText(_menuTaglineText, 0.824f, 0f, 54f, 30);
+            LayoutHomeText(_menuGenerationText, 0.295f, 0f, 86f, 40);
+            LayoutHomeText(_menuLearnedText, 0.246f, 0f, 54f, 30);
+            LayoutHomeText(_menuRuleText, 0.189f, 0f, 96f, 27);
+            SetButtonLayout(_startBtn, new Vector2(0.5f, 0.109f),
+                new Vector2(900f, 116f));
+            SetButtonLayout(_characterBtn, new Vector2(0.27f, 0.037f),
+                new Vector2(410f, 104f));
+            SetButtonLayout(_settingsBtn, new Vector2(0.73f, 0.037f),
+                new Vector2(410f, 104f));
+            SetHomeButtonFont(_startBtn, 46);
+            SetHomeButtonFont(_characterBtn, 32);
+            SetHomeButtonFont(_settingsBtn, 32);
             return;
         }
+        _menuObjectiveText.gameObject.SetActive(true);
+        _menuProtocolText.gameObject.SetActive(true);
         // Restore authored desktop typography after rotating out of portrait.
         SetHomeFont(_menuTitleText, 68);
         SetHomeFont(_menuEnglishText, 23);
@@ -536,7 +559,8 @@ public class UIManager : MonoBehaviour
 
     void CreateSettingsPanel()
     {
-        _settingsPanel = NewPanel("SettingsPanel", Backdrop);
+        _settingsPanel = NewPanel("SettingsPanel", PageBackdrop);
+        AddPageArtwork(_settingsPanel.transform);
 
         // ScrollRect setup
         _settingsScroll = _settingsPanel.AddComponent<ScrollRect>();
@@ -567,18 +591,20 @@ public class UIManager : MonoBehaviour
         _settingsScroll.content = _settingsContent;
 
         Transform c = content.transform;
-        foreach (string section in new[] { "AudioCard", "DisplayCard" })
+        foreach (string section in new[] { "AudioCard", "DisplayCard",
+                     "DifficultyCard", "CameraCard", "AccessibilityCard" })
         {
             var card = new GameObject(section, typeof(Image));
             card.transform.SetParent(c, false);
             Image surface = card.GetComponent<Image>();
-            surface.color = Surface;
+            surface.color = PageSurface;
             surface.raycastTarget = false;
             ApplyRounded(surface);
+            UIEdgeTreatment.Surface(surface, EchoRunUITheme.PageRule);
         }
 
         Text title = MakeText("SettingsTitle", _settingsPanel.transform, "设置", 40, TextAnchor.MiddleCenter);
-        title.color = TextPrimary;
+        title.color = PageInk;
         title.fontStyle = FontStyle.Bold;
         title.verticalOverflow = VerticalWrapMode.Overflow;
         AnchorText(title.GetComponent<RectTransform>(), 0.5f, 1f, 400, 80);
@@ -614,23 +640,23 @@ public class UIManager : MonoBehaviour
         });
 
         _muteBtn = MakeSmallButton("AudioMute", c, "一键静音",
-            new Vector2(0.5f, 0.47f), new Vector2(220, 60), SurfaceRaised);
+            new Vector2(0.5f, 0.47f), new Vector2(220, 60), PageRaised);
         _muteBtn.onClick.AddListener(ToggleAudioMute);
 
         MakeLabel("FpsLabel", c, "画面帧率", new Vector2(0.34f, 0.42f));
         _fpsStatusText = MakeText("FpsStatus", c, "目标 60 · 正在测量…", 24,
             TextAnchor.MiddleRight);
-        _fpsStatusText.color = TextMuted;
+        _fpsStatusText.color = PageMuted;
         Text fpsHint = MakeText("FpsHint", c,
             "高帧率需要屏幕与设备支持，实际以运行帧率为准。", 22, TextAnchor.UpperLeft);
-        fpsHint.color = TextMuted;
+        fpsHint.color = PageMuted;
         AnchorText(_fpsStatusText.rectTransform, 0.72f, 0.42f, 340, 40);
         _fps30Btn  = MakeSmallButton("Fps30", c, "30",
-            new Vector2(0.25f, 0.36f), new Vector2(140, 60), SurfaceRaised);
+            new Vector2(0.25f, 0.36f), new Vector2(140, 60), PageRaised);
         _fps60Btn  = MakeSmallButton("Fps60", c, "60",
-            new Vector2(0.5f, 0.36f), new Vector2(140, 60), SurfaceRaised);
+            new Vector2(0.5f, 0.36f), new Vector2(140, 60), PageRaised);
         _fps120Btn = MakeSmallButton("Fps120", c, "120",
-            new Vector2(0.75f, 0.36f), new Vector2(140, 60), SurfaceRaised);
+            new Vector2(0.75f, 0.36f), new Vector2(140, 60), PageRaised);
 
         _fps30Btn.onClick.AddListener(() => { _gm.SetFrameRate(30);  HighlightFps(); });
         _fps60Btn.onClick.AddListener(() => { _gm.SetFrameRate(60);  HighlightFps(); });
@@ -647,18 +673,18 @@ public class UIManager : MonoBehaviour
             new Vector2(0.34f, 0.28f));
         _difficultyStatusText = MakeText("DifficultyStatus", c, "", 24,
             TextAnchor.MiddleRight);
-        _difficultyStatusText.color = TextMuted;
+        _difficultyStatusText.color = PageMuted;
         AnchorText(_difficultyStatusText.rectTransform, 0.72f, 0.28f,
             360, 40);
         _difficultyRelaxedBtn = MakeSmallButton("DifficultyRelaxed", c,
             "休闲", new Vector2(0.25f, 0.22f), new Vector2(180, 60),
-            SurfaceRaised);
+            PageRaised);
         _difficultyStandardBtn = MakeSmallButton("DifficultyStandard", c,
             "标准", new Vector2(0.5f, 0.22f), new Vector2(180, 60),
-            SurfaceRaised);
+            PageRaised);
         _difficultyIntenseBtn = MakeSmallButton("DifficultyIntense", c,
             "高压", new Vector2(0.75f, 0.22f), new Vector2(180, 60),
-            SurfaceRaised);
+            PageRaised);
         _difficultyRelaxedBtn.onClick.AddListener(() =>
             SetRunDifficulty(RunDifficultyLevel.Relaxed));
         _difficultyStandardBtn.onClick.AddListener(() =>
@@ -667,13 +693,31 @@ public class UIManager : MonoBehaviour
             SetRunDifficulty(RunDifficultyLevel.Intense));
         HighlightDifficulty();
 
+        MakeLabel("CameraViewLabel", c, "跑道视角",
+            new Vector2(0.34f, 0.17f));
+        _cameraLowBtn = MakeSmallButton("CameraViewLow", c,
+            "低视角", new Vector2(0.32f, 0.12f), new Vector2(260, 60),
+            PageRaised);
+        _cameraHighBtn = MakeSmallButton("CameraViewHigh", c,
+            "高视角", new Vector2(0.68f, 0.12f), new Vector2(260, 60),
+            PageRaised);
+        _cameraLowBtn.onClick.AddListener(() =>
+            SetCameraViewHeight(CameraViewHeight.Low));
+        _cameraHighBtn.onClick.AddListener(() =>
+            SetCameraViewHeight(CameraViewHeight.High));
+        Text cameraHint = MakeText("CameraViewHint", c,
+            "高视角能多看到前方路况，随时可以切换。", 22,
+            TextAnchor.UpperLeft);
+        cameraHint.color = PageMuted;
+        HighlightCameraViewHeight();
+
         MakeLabel("AccessibilityLabel", c, "辅助显示", new Vector2(0.34f, 0.14f));
         _largeTextBtn = MakeSmallButton("LargeText", c, "大字",
-            new Vector2(0.22f, 0.08f), new Vector2(210, 60), SurfaceRaised);
+            new Vector2(0.22f, 0.08f), new Vector2(210, 60), PageRaised);
         _highContrastBtn = MakeSmallButton("HighContrast", c, "高对比",
-            new Vector2(0.50f, 0.08f), new Vector2(210, 60), SurfaceRaised);
+            new Vector2(0.50f, 0.08f), new Vector2(210, 60), PageRaised);
         _reducedMotionBtn = MakeSmallButton("ReducedMotion", c, "减少动态",
-            new Vector2(0.78f, 0.08f), new Vector2(230, 60), SurfaceRaised);
+            new Vector2(0.78f, 0.08f), new Vector2(230, 60), PageRaised);
         _largeTextBtn.onClick.AddListener(() =>
             EchoRunAccessibility.SetLargeText(!EchoRunAccessibility.LargeText));
         _highContrastBtn.onClick.AddListener(() =>
@@ -685,7 +729,7 @@ public class UIManager : MonoBehaviour
         _settingsBackBtn = MakeButton("SettingsBackBtn",
             _settingsPanel.transform, "返回", 34,
             new Vector2(0f, 1f), new Vector2(280, 76),
-            SurfaceRaised, TextMuted);
+            PageRaised, PageSelected, PageInk);
         SetTopLeftButtonLayout(_settingsBackBtn, new Vector2(280f, 76f));
         _settingsBackBtn.transform.SetAsLastSibling();
         _settingsBackBtn.onClick.AddListener(HideSettings);
@@ -765,6 +809,7 @@ public class UIManager : MonoBehaviour
         if (_settingsScroll != null)
             _settingsScroll.verticalNormalizedPosition = 1f;
         HighlightDifficulty();
+        HighlightCameraViewHeight();
     }
 
     void RefreshVolumeReadoutGeometry()
@@ -829,6 +874,25 @@ public class UIManager : MonoBehaviour
         RunDifficultySettings.Set(level);
         EchoRunSaveSystem.SaveLegacyState();
         HighlightDifficulty();
+    }
+
+    void SetCameraViewHeight(CameraViewHeight height)
+    {
+        EchoRunSaveSystem.SaveCameraViewHeight(height);
+        HighlightCameraViewHeight();
+    }
+
+    void HighlightCameraViewHeight()
+    {
+        CameraViewHeight height = CameraViewSettings.Current;
+        SetBtnColor(_cameraLowBtn,
+            height == CameraViewHeight.Low ? SettingsSelected : SettingsControl);
+        SetBtnColor(_cameraHighBtn,
+            height == CameraViewHeight.High ? SettingsSelected : SettingsControl);
+        SetButtonLabel(_cameraLowBtn,
+            height == CameraViewHeight.Low ? "✓ 低视角" : "低视角");
+        SetButtonLabel(_cameraHighBtn,
+            height == CameraViewHeight.High ? "✓ 高视角" : "高视角");
     }
 
     void HighlightDifficulty()
@@ -938,6 +1002,7 @@ public class UIManager : MonoBehaviour
         }
         var img = btn.GetComponent<Image>();
         if (img != null) img.color = c;
+        UIEdgeTreatment.Selection(btn, c == SettingsSelected || c == PrimaryStrong);
     }
 
     // ═══════════════════════════════════════════════════
@@ -945,8 +1010,8 @@ public class UIManager : MonoBehaviour
     // ═══════════════════════════════════════════════════
 
     static readonly (string name, Color dark, Color light, Color emission)[] _presets = {
-        ("明黄", EchoRunUITheme.Backdrop, EchoRunUITheme.ActionAccent, Color.black),
-        ("回声紫", EchoRunUITheme.Backdrop, EchoRunUITheme.Echo, Color.black),
+        ("日光橙", EchoRunUITheme.Backdrop, EchoRunUITheme.ActionAccent, Color.black),
+        ("回声青", EchoRunUITheme.Backdrop, EchoRunUITheme.Echo, Color.black),
         ("莓红", EchoRunUITheme.Backdrop, new Color(0.929f, 0.392f, 0.545f), Color.black),
         ("夜蓝", EchoRunUITheme.Backdrop, new Color(0.424f, 0.353f, 0.831f), Color.black),
         ("葡萄紫", EchoRunUITheme.Backdrop, new Color(0.616f, 0.310f, 0.729f), Color.black),
@@ -955,7 +1020,8 @@ public class UIManager : MonoBehaviour
 
     void CreateCharacterPanel()
     {
-        _characterPanel = NewPanel("CharacterPanel", Backdrop);
+        _characterPanel = NewPanel("CharacterPanel", PageBackdrop);
+        AddPageArtwork(_characterPanel.transform);
 
         // ScrollRect
         ScrollRect scroll = _characterPanel.AddComponent<ScrollRect>();
@@ -988,7 +1054,7 @@ public class UIManager : MonoBehaviour
         Transform c = content.transform;
 
         Text title = MakeText("CharTitle", _characterPanel.transform, "跑者外观", 40, TextAnchor.MiddleCenter);
-        title.color = TextPrimary;
+        title.color = PageInk;
         title.fontStyle = FontStyle.Bold;
         title.verticalOverflow = VerticalWrapMode.Overflow;
         AnchorText(title.GetComponent<RectTransform>(), 0.5f, 1f, 400, 80);
@@ -996,14 +1062,29 @@ public class UIManager : MonoBehaviour
 
         _characterSelectionText = MakeText("SelectionStatus", c,
             "选择配色；立即预览并保存", 22, TextAnchor.MiddleCenter);
-        _characterSelectionText.color = TextMuted;
+        _characterSelectionText.color = PageMuted;
         AnchorText(_characterSelectionText.rectTransform, 0.5f, 0.94f, 620, 56);
+
+        GameObject previewCard = new GameObject("RunnerPreviewCard", typeof(Image));
+        previewCard.transform.SetParent(c, false);
+        Image previewCardImage = previewCard.GetComponent<Image>();
+        previewCardImage.color = PageSurface;
+        previewCardImage.raycastTarget = false;
+        ApplyRounded(previewCardImage);
+        UIEdgeTreatment.Surface(previewCardImage, EchoRunUITheme.PageRule);
 
         GameObject preview = new GameObject("RunnerPreview", typeof(RawImage));
         preview.transform.SetParent(c, false);
         preview.GetComponent<RawImage>().raycastTarget = false;
         AnchorText(preview.GetComponent<RectTransform>(), 0.5f, 0.69f, 360f, 430f);
-        preview.AddComponent<RunnerColorPreview>();
+        _runnerPreview = preview.AddComponent<RunnerColorPreview>();
+        _runnerFullViewBtn = MakeSmallButton("RunnerFullView", c, "全身",
+            new Vector2(.35f, .5f), new Vector2(230f, 104f), PageSelected);
+        _runnerFaceViewBtn = MakeSmallButton("RunnerFaceView", c, "面容",
+            new Vector2(.65f, .5f), new Vector2(230f, 104f), PageRaised);
+        _runnerFullViewBtn.onClick.AddListener(() => SetRunnerPreviewMode(false));
+        _runnerFaceViewBtn.onClick.AddListener(() => SetRunnerPreviewMode(true));
+        SetRunnerPreviewMode(false);
 
         // 2 rows × 3 columns of color presets inside scroll content
         float[] colX = { 0.18f, 0.5f, 0.82f };
@@ -1023,7 +1104,7 @@ public class UIManager : MonoBehaviour
 
         _characterBackBtn = MakeButton("CharBackBtn", _characterPanel.transform, "返回", 34,
             new Vector2(0f, 1f), new Vector2(280, 76),
-            SurfaceRaised, TextMuted);
+            PageRaised, PageSelected, PageInk);
         SetTopLeftButtonLayout(_characterBackBtn, new Vector2(280f, 76f));
         _characterBackBtn.onClick.AddListener(HideCharacter);
 
@@ -1035,18 +1116,32 @@ public class UIManager : MonoBehaviour
     {
         if (_characterContent == null) return;
         _characterContent.sizeDelta = portrait
-            ? new Vector2(960f, 1540f) : new Vector2(1640f, 800f);
+            ? new Vector2(960f, 1720f) : new Vector2(1640f, 800f);
 
         RectTransform preview = _characterContent.Find("RunnerPreview") as RectTransform;
         if (preview != null)
             AnchorText(preview, portrait ? 0.5f : 0.25f,
-                portrait ? 0.735f : 0.50f,
-                portrait ? 520f : 624f, portrait ? 650f : 780f);
+                portrait ? 0.765f : 0.57f,
+                portrait ? 616f : 624f, portrait ? 770f : 660f);
+        RectTransform previewCard = _characterContent.Find("RunnerPreviewCard") as RectTransform;
+        if (previewCard != null)
+            AnchorText(previewCard, portrait ? 0.5f : 0.25f,
+                portrait ? 0.765f : 0.57f,
+                portrait ? 826f : 704f, portrait ? 810f : 700f);
+
+        SetButtonLayout(_runnerFullViewBtn,
+            portrait ? new Vector2(.35f, .493f) : new Vector2(.16f, .06f),
+            portrait ? new Vector2(230f, 104f) : new Vector2(220f, 76f));
+        SetButtonLayout(_runnerFaceViewBtn,
+            portrait ? new Vector2(.65f, .493f) : new Vector2(.34f, .06f),
+            portrait ? new Vector2(230f, 104f) : new Vector2(220f, 76f));
+        SetHomeButtonFont(_runnerFullViewBtn, portrait ? 32 : 26);
+        SetHomeButtonFont(_runnerFaceViewBtn, portrait ? 32 : 26);
 
         if (_characterSelectionText != null)
         {
             AnchorText(_characterSelectionText.rectTransform,
-                portrait ? 0.5f : 0.73f, portrait ? 0.48f : 0.83f,
+                portrait ? 0.5f : 0.73f, portrait ? 0.432f : 0.83f,
                 portrait ? 860f : 740f, 70f);
             SetHomeFont(_characterSelectionText, portrait ? 30 : 28);
         }
@@ -1054,7 +1149,7 @@ public class UIManager : MonoBehaviour
         for (int i = 0; i < _presetButtons.Length; i++)
         {
             Vector2 anchor = portrait
-                ? new Vector2(0.17f + (i % 3) * 0.33f, 0.335f - (i / 3) * 0.18f)
+                ? new Vector2(0.17f + (i % 3) * 0.33f, 0.315f - (i / 3) * 0.17f)
                 : new Vector2(0.62f + (i % 2) * 0.22f, 0.66f - (i / 2) * 0.235f);
             SetButtonLayout(_presetButtons[i], anchor, portrait
                 ? new Vector2(272f, 212f) : new Vector2(300f, 164f));
@@ -1062,11 +1157,20 @@ public class UIManager : MonoBehaviour
         }
     }
 
+    void SetRunnerPreviewMode(bool portrait)
+    {
+        if (_runnerPreview != null) _runnerPreview.SetPortraitMode(portrait);
+        SetBtnColor(_runnerFullViewBtn, portrait ? PageRaised : PageSelected);
+        SetBtnColor(_runnerFaceViewBtn, portrait ? PageSelected : PageRaised);
+        SetButtonLabel(_runnerFullViewBtn, portrait ? "全身" : "✓ 全身");
+        SetButtonLabel(_runnerFaceViewBtn, portrait ? "✓ 面容" : "面容");
+    }
+
     void CreatePresetButton(string label, Color dark, Color light, int index,
         Vector2 anchor, Transform parent)
     {
         Button btn = MakeSmallButton("PresetBtn_" + index, parent, "",
-            anchor, new Vector2(240, 164), SurfaceRaised);
+            anchor, new Vector2(240, 164), PageSurface);
         _presetButtons[index] = btn;
         btn.onClick.AddListener(() => ApplyCharacterColor(index));
 
@@ -1098,7 +1202,7 @@ public class UIManager : MonoBehaviour
 
         Text nameLabel = MakeText("PresetLabel_" + index, btn.transform,
             label, 24, TextAnchor.MiddleCenter);
-        nameLabel.color = TextPrimary;
+        nameLabel.color = PageInk;
         nameLabel.fontStyle = FontStyle.Normal;
         RectTransform labelRect = nameLabel.rectTransform;
         labelRect.anchorMin = new Vector2(0f, 0.02f);
@@ -1172,7 +1276,7 @@ public class UIManager : MonoBehaviour
         {
             bool selected = i == _selectedPreset;
             SetBtnColor(_presetButtons[i], selected
-                ? EchoRunUITheme.SurfaceSelected : SurfaceRaised);
+                ? PageSelected : PageSurface);
             if (_presetLabels[i] != null)
                 _presetLabels[i].text = selected
                     ? "✓ " + _presets[i].name
@@ -2372,6 +2476,20 @@ public class UIManager : MonoBehaviour
     }
 
 #if MINIGAME_SUBPLATFORM_WEIXIN
+    void RefreshSafeAreaCoverTone()
+    {
+        bool menuHome = _menuPanel != null && _menuPanel.activeSelf;
+        bool lightPage = (_gm != null && _gm.State == GameState.Menu)
+            || (_settingsPanel != null && _settingsPanel.activeSelf)
+            || (_characterPanel != null && _characterPanel.activeSelf);
+        Color tone = lightPage ? PageBackdrop : Ink;
+        if (_safeAreaTopCover != null)
+            _safeAreaTopCover.GetComponent<Image>().color = menuHome
+                ? new Color32(0, 12, 27, 255) : tone;
+        if (_safeAreaBottomCover != null)
+            _safeAreaBottomCover.GetComponent<Image>().color = tone;
+    }
+
     void UpdateSafeAreaCover(ref RectTransform cover, string name,
         Vector2 min, Vector2 max)
     {
@@ -2394,54 +2512,77 @@ public class UIManager : MonoBehaviour
     void LayoutSettings(bool portrait)
     {
         if (_settingsContent == null) return;
-        _settingsContent.sizeDelta = portrait ? new Vector2(900, 1520) : new Vector2(1440, 800);
+        _settingsContent.sizeDelta = portrait ? new Vector2(900, 1964) : new Vector2(1440, 972);
         float left = portrait ? 64 : 56;
         float right = portrait ? 64 : 772;
         float width = portrait ? 772 : 612;
-        float secondTop = portrait ? 690 : 0;
-        PlaceSetting("AudioCard", 0, 0, portrait ? 900 : 688, portrait ? 650 : 780);
-        PlaceSetting("DisplayCard", portrait ? 0 : 716, secondTop,
-            portrait ? 900 : 724, portrait ? 810 : 780);
+        float controlsHeight = portrait ? 104 : 72;
+        float displayTop = portrait ? 690 : 0;
+        float difficultyTop = portrait ? 1080 : 324;
+        float cameraTop = portrait ? 1364 : 594;
+        float accessibilityTop = portrait ? 1706 : 714;
+        float accessibilityLeft = portrait ? right : left;
+        float cardX = portrait ? 0 : 716;
+        PlaceSetting("AudioCard", 0, 0, portrait ? 900 : 688, portrait ? 666 : 690);
+        PlaceSetting("DisplayCard", cardX, displayTop, portrait ? 900 : 724,
+            portrait ? 366 : 300);
+        PlaceSetting("DifficultyCard", cardX, difficultyTop,
+            portrait ? 900 : 724, portrait ? 260 : 246);
+        PlaceSetting("CameraCard", cardX, cameraTop,
+            portrait ? 900 : 724, portrait ? 318 : 310);
+        PlaceSetting("AccessibilityCard", 0, accessibilityTop,
+            portrait ? 900 : 688, 234);
         PlaceSetting("AudioSectionLabel", left, 36, width, 48);
         string[] labels = { "MasterVolumeValue", "BgmValue", "SfxValue" };
         string[] sliders = { "MasterVolumeSlider", "BgmSlider", "SfxSlider" };
         for (int i = 0; i < 3; i++)
         {
-            PlaceSetting(labels[i], left, 124 + i * 134, width, 44);
-            PlaceSetting(sliders[i], left + 14, 174 + i * 134, width - 28, 64);
+            PlaceSetting(labels[i], left, 108 + i * 126, width, 44);
+            PlaceSetting(sliders[i], left + 20, 158 + i * 126, width - 40, 72);
         }
-        PlaceSetting("AudioMute", left, 554, 230, 72);
-        PlaceSetting("FpsLabel", right, secondTop + 36, width, 44);
-        PlaceSetting("FpsStatus", right, secondTop + 86, width, 38);
-        PlaceSetting("FpsHint", right, secondTop + 234, width, 64);
-        PlaceSetting("DifficultyLabel", right, secondTop + 338, width, 44);
-        PlaceSetting("DifficultyStatus", right, secondTop + 386, width, 40);
-        PlaceSetting("AccessibilityLabel", right, secondTop + 576, width, 44);
+        PlaceSetting("AudioMute", left, 528, 250, controlsHeight);
+        PlaceSetting("FpsLabel", right, displayTop + 36, width, 44);
+        PlaceSetting("FpsStatus", right, displayTop + 86, width, 38);
+        PlaceSetting("FpsHint", right, displayTop + (portrait ? 274 : 232), width, 64);
+        PlaceSetting("DifficultyLabel", right, difficultyTop + 32, width, 44);
+        PlaceSetting("DifficultyStatus", right, difficultyTop + 82, width, 40);
+        PlaceSetting("CameraViewLabel", right, cameraTop + 32, width, 44);
+        float cameraButtonWidth = (width - 12) / 2;
+        PlaceSetting("CameraViewLow", right, cameraTop + 102,
+            cameraButtonWidth, controlsHeight);
+        PlaceSetting("CameraViewHigh", right + cameraButtonWidth + 12,
+            cameraTop + 102, cameraButtonWidth, controlsHeight);
+        PlaceSetting("CameraViewHint", right, cameraTop + (portrait ? 230 : 200), width, 64);
+        PlaceSetting("AccessibilityLabel", accessibilityLeft,
+            accessibilityTop + 32, width, 44);
         string[][] rows = {
             new[] { "Fps30", "Fps60", "Fps120" },
             new[] { "DifficultyRelaxed", "DifficultyStandard", "DifficultyIntense" },
             new[] { "LargeText", "HighContrast", "ReducedMotion" }
         };
-        float[] rowY = { 144, 446, 644 };
+        float[] rowY = { displayTop + 144, difficultyTop + 140,
+            accessibilityTop + 102 };
         float buttonWidth = (width - 24) / 3;
         for (int row = 0; row < rows.Length; row++)
             for (int col = 0; col < 3; col++)
-                PlaceSetting(rows[row][col], right + col * (buttonWidth + 12),
-                    secondTop + rowY[row], buttonWidth, portrait ? 104 : 72);
+                PlaceSetting(rows[row][col], (row == 2 ? accessibilityLeft : right)
+                    + col * (buttonWidth + 12), rowY[row], buttonWidth, controlsHeight);
         foreach (Text text in _settingsContent.GetComponentsInChildren<Text>(true))
         {
             bool button = text.GetComponentInParent<Button>(true) != null;
             text.alignment = button ? TextAnchor.MiddleCenter : TextAnchor.MiddleLeft;
             if (!button) text.verticalOverflow = VerticalWrapMode.Overflow;
-            int size = portrait ? 40 : 28;
+            int size = portrait ? (button ? 34 : 38) : 28;
             if (text == _fpsStatusText || text == _difficultyStatusText)
-                size = portrait ? 32 : 24;
-            else if (text.name == "FpsHint") size = portrait ? 30 : 22;
+                size = portrait ? 30 : 24;
+            else if (text.name == "FpsHint" || text.name == "CameraViewHint")
+                size = portrait ? 28 : 22;
             EchoRunAccessibility.SetBaseFontSize(text, size);
-            text.color = TextPrimary;
+            text.color = PageInk;
             if (!button && text.name.EndsWith("Label")) text.color = SettingsAccent;
-            else if (text == _fpsStatusText || text == _difficultyStatusText || text.name == "FpsHint")
-                text.color = TextMuted;
+            else if (text == _fpsStatusText || text == _difficultyStatusText
+                     || text.name == "FpsHint" || text.name == "CameraViewHint")
+                text.color = PageMuted;
             Outline outline = text.GetComponent<Outline>();
             if (outline != null) outline.enabled = false;
         }
@@ -2575,6 +2716,35 @@ public class UIManager : MonoBehaviour
         rt.anchoredPosition = Vector2.zero;
     }
 
+    static void AddPageArtwork(Transform parent)
+    {
+        // These pages share the live city behind their translucent surface.
+        // A separate concept-art world made the menu promise different gameplay.
+        Image surface = parent.GetComponent<Image>();
+        if (surface != null) surface.color = WithAlpha(PageBackdrop, 0.94f);
+        var header = new GameObject("PageHeader", typeof(Image));
+        header.transform.SetParent(parent, false);
+        Image headerImage = header.GetComponent<Image>();
+        headerImage.color = WithAlpha(PageSurface, .65f);
+        headerImage.raycastTarget = false;
+        RectTransform headerRect = headerImage.rectTransform;
+        headerRect.anchorMin = new Vector2(0f, 1f);
+        headerRect.anchorMax = Vector2.one;
+        headerRect.pivot = new Vector2(.5f, 1f);
+        headerRect.sizeDelta = new Vector2(0f, 132f);
+        headerRect.anchoredPosition = Vector2.zero;
+        var divider = new GameObject("HeaderRule", typeof(Image));
+        divider.transform.SetParent(header.transform, false);
+        Image dividerImage = divider.GetComponent<Image>();
+        dividerImage.color = EchoRunUITheme.PageRule;
+        dividerImage.raycastTarget = false;
+        RectTransform dividerRect = dividerImage.rectTransform;
+        dividerRect.anchorMin = new Vector2(.04f, 0f);
+        dividerRect.anchorMax = new Vector2(.96f, 0f);
+        dividerRect.sizeDelta = new Vector2(0f, 1.6f);
+        dividerRect.anchoredPosition = Vector2.zero;
+    }
+
     void AddMenuGrid(Transform parent)
     {
         for (int i = 0; i < 12; i++)
@@ -2602,6 +2772,7 @@ public class UIManager : MonoBehaviour
         accent.transform.SetParent(parent, false);
         Image image = accent.GetComponent<Image>();
         image.color = color;
+        image.raycastTarget = false;
         ApplyRounded(image);
         RectTransform rt = accent.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0f, 1f);
@@ -2675,6 +2846,15 @@ public class UIManager : MonoBehaviour
         Image background = go.GetComponent<Image>();
         background.color = mainColor;
         ApplyRounded(background);
+        UIEdgeTreatment.Surface(background,
+            mainColor == EchoRunUITheme.ActionAccent
+                ? WithAlpha(Color.white, .30f) : EchoRunUITheme.PageRule, true);
+        if (mainColor == EchoRunUITheme.ActionAccent)
+        {
+            Shadow edge = go.AddComponent<Shadow>();
+            edge.effectColor = WithAlpha(edgeColor, .65f);
+            edge.effectDistance = new Vector2(0f, -5f);
+        }
 
         Text labelT = MakeText("Label", go.transform, label, fontSize, TextAnchor.MiddleCenter);
         labelT.color = labelColor;
@@ -2682,13 +2862,7 @@ public class UIManager : MonoBehaviour
         Stretch(labelT.GetComponent<RectTransform>());
 
         Button button = go.GetComponent<Button>();
-        ColorBlock colors = button.colors;
-        colors.normalColor = Color.white;
-        colors.highlightedColor = new Color(1.08f, 1.08f, 1.08f, 1f);
-        colors.pressedColor = new Color(0.78f, 0.84f, 0.81f, 1f);
-        colors.selectedColor = colors.highlightedColor;
-        colors.fadeDuration = 0.08f;
-        button.colors = colors;
+        UIEdgeTreatment.ButtonStates(button);
         button.onClick.AddListener(() => AudioManager.Instance?.PlayUIClick());
         return button;
     }
@@ -2707,13 +2881,15 @@ public class UIManager : MonoBehaviour
         Image image = go.GetComponent<Image>();
         image.color = color;
         ApplyRounded(image);
+        UIEdgeTreatment.Surface(image, EchoRunUITheme.PageRule, true);
 
         Text labelT = MakeText("Label", go.transform, label, 28, TextAnchor.MiddleCenter);
-        labelT.color = TextPrimary;
+        labelT.color = PageInk;
         labelT.fontStyle = FontStyle.Normal;
         Stretch(labelT.GetComponent<RectTransform>());
 
         Button button = go.GetComponent<Button>();
+        UIEdgeTreatment.ButtonStates(button);
         button.onClick.AddListener(() => AudioManager.Instance?.PlayUIClick());
         return button;
     }
@@ -2736,6 +2912,7 @@ public class UIManager : MonoBehaviour
         Image image = go.GetComponent<Image>();
         image.color = color;
         ApplyRounded(image);
+        UIEdgeTreatment.Surface(image, EchoRunUITheme.PageRule, true);
 
         Text labelT = MakeText("Label", go.transform, label, 28, TextAnchor.MiddleCenter);
         labelT.color = Color.white;
@@ -2743,6 +2920,7 @@ public class UIManager : MonoBehaviour
         Stretch(labelT.GetComponent<RectTransform>());
 
         Button button = go.GetComponent<Button>();
+        UIEdgeTreatment.ButtonStates(button);
         button.onClick.AddListener(() => AudioManager.Instance?.PlayUIClick());
         return button;
     }
@@ -2795,11 +2973,12 @@ public class UIManager : MonoBehaviour
         GameObject handle = new GameObject("Handle", typeof(Image));
         handle.transform.SetParent(handleArea.transform, false);
         Image handleImage = handle.GetComponent<Image>();
-        handleImage.color = TextPrimary;
+        handleImage.color = PageInk;
         ApplyRounded(handleImage);
+        UIEdgeTreatment.Surface(handleImage, PageBackdrop, true);
         RectTransform hRT = handle.GetComponent<RectTransform>();
         hRT.anchorMin = new Vector2(0, 0.5f); hRT.anchorMax = new Vector2(0, 0.5f);
-        float handleSize = 28f;
+        float handleSize = 38f;
         hRT.sizeDelta = new Vector2(handleSize, handleSize);
         hRT.anchoredPosition = Vector2.zero;
 

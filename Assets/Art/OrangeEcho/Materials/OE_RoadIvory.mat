@@ -27,7 +27,7 @@ Material:
     m_Floats:
     - _Grain: 0
     - _Metallic: 0.02
-    - _Smoothness: 0.24
+    - _Smoothness: 0.2
     m_Colors:
-    - _Color: {r: 0.6509804, g: 0.6509804, b: 0.7058824, a: 1}
+    - _Color: {r: 0.60784316, g: 0.654902, b: 0.6627451, a: 1}
   m_BuildTextureStacks: []

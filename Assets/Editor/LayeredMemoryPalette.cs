@@ -65,6 +65,7 @@ public static class LayeredMemoryPalette
             SetFloat(material, "_Glossiness", surface.smoothness);
             SetFloat(material, "_Smoothness", surface.smoothness);
             SetFloat(material, "_Metallic", surface.metallic);
+            ConfigureRoadDeck(material, surface.path);
             if (material.HasProperty("_EmissionColor"))
             {
                 Color emission = Rgb(surface.emission) * surface.emissionStrength;
@@ -85,6 +86,74 @@ public static class LayeredMemoryPalette
                   + " sky=authored-panorama backup=" + BackupRoot);
     }
 
+    public static void InstallRoadSurfaces()
+    {
+        foreach (Surface surface in BuildSurfaces())
+        {
+            if (!surface.path.StartsWith(Outfit + "OE_Road", StringComparison.Ordinal)) continue;
+            Material material = RequiredMaterial(surface.path);
+            ConfigureRoadDeck(material, surface.path);
+            if (material.HasProperty("_Color")) material.SetColor("_Color", Rgb(surface.color));
+            SetFloat(material, "_Smoothness", surface.smoothness);
+            SetFloat(material, "_Metallic", surface.metallic);
+            EditorUtility.SetDirty(material);
+        }
+        AssetDatabase.SaveAssets();
+    }
+
+    [MenuItem("Tools/EchoRun/Art/Polish City Presentation")]
+    public static void InstallCityPresentation()
+    {
+        // A narrow re-authoring pass for the existing road and horizon assets.
+        // It does not recolour the runner, echo or district facade families.
+        List<Surface> surfaces = BuildSurfaces().FindAll(surface =>
+            surface.path.StartsWith(Outfit + "OE_Road", StringComparison.Ordinal)
+            || surface.path == OriginalCity + "SkyMiddle.mat"
+            || surface.path == OriginalCity + "SkyFar.mat"
+            || surface.path == "Assets/Art/ExperienceSlice/DistantCity.mat"
+            || surface.path == "Assets/Art/CityLayers/HorizonHaze.mat");
+        var materials = new List<Material>();
+        foreach (Surface surface in surfaces) materials.Add(RequiredMaterial(surface.path));
+        Material sky = RequiredMaterial(SkyPath);
+        const string reviewRoot = "TestResults/CityDetailPolish-20260925/";
+        foreach (Surface surface in surfaces) Backup(surface.path, reviewRoot + "Before/");
+        Backup(SkyPath, reviewRoot + "Before/");
+
+        var report = new List<string>
+        {
+            "City road and horizon presentation. Existing assets edited in place.",
+            "No added meshes, lights, texture samples or render passes.",
+            "Palette target: cool mineral city, graphite road, clear pale markings."
+        };
+        for (int i = 0; i < surfaces.Count; i++)
+        {
+            Surface surface = surfaces[i];
+            Material material = materials[i];
+            ConfigureRoadDeck(material, surface.path);
+            if (material.HasProperty("_Color")) material.SetColor("_Color", Rgb(surface.color));
+            SetFloat(material, "_Glossiness", surface.smoothness);
+            SetFloat(material, "_Smoothness", surface.smoothness);
+            SetFloat(material, "_Metallic", surface.metallic);
+            EditorUtility.SetDirty(material);
+            report.Add(surface.path + " #" + surface.color.ToString("X6"));
+        }
+        CityV7PlayableEnvironment.StyleSky(sky);
+        EditorUtility.SetDirty(sky);
+        AssetDatabase.SaveAssets();
+        Directory.CreateDirectory(reviewRoot);
+        File.WriteAllLines(reviewRoot + "city-presentation-install.txt", report);
+        Debug.Log("CITY_PRESENTATION_POLISH_READY materials=" + surfaces.Count + " sky=authored-panorama");
+    }
+
+    private static void ConfigureRoadDeck(Material material, string path)
+    {
+        if (!path.EndsWith("OE_RoadDeck.mat", StringComparison.Ordinal)) return;
+        Shader surface = Shader.Find("EchoRun/OrangeEchoSurface");
+        if (surface == null) throw new InvalidOperationException("Authored road surface shader missing.");
+        material.shader = surface;
+        material.SetFloat("_Grain", .025f);
+    }
+
     private static List<Surface> BuildSurfaces()
     {
         var result = new List<Surface>
@@ -99,11 +168,11 @@ public static class LayeredMemoryPalette
             new Surface(Outfit + "OE_RelaySignal.mat", 0xC59AEF, .28f, .08f),
             // Road boundaries remain neutral. Acid yellow is reserved for the
             // player/action channel, not a continuous brightly glowing road edge.
-            new Surface(Outfit + "OE_RoadDeck.mat", 0x8E99AC, .18f, 0f),
-            new Surface(Outfit + "OE_RoadJoint.mat", 0x414B60, .15f, 0f),
-            new Surface(Outfit + "OE_RoadPaint.mat", 0xC6C2C7, .19f, 0f),
-            new Surface(Outfit + "OE_RoadIvory.mat", 0xA6A6B4, .24f, .02f),
-            new Surface(Outfit + "OE_RoadOrange.mat", 0x68799A, .24f, .02f),
+            new Surface(Outfit + "OE_RoadDeck.mat", 0x77818D, .18f, 0f),
+            new Surface(Outfit + "OE_RoadJoint.mat", 0x64707C, .15f, 0f),
+            new Surface(Outfit + "OE_RoadPaint.mat", 0xD6DADF, .19f, 0f),
+            new Surface(Outfit + "OE_RoadIvory.mat", 0x9BA7A9, .20f, .02f),
+            new Surface(Outfit + "OE_RoadOrange.mat", 0x597B86, .24f, .02f),
             new Surface(City + "SC_Concrete.mat", 0x6584A2, .20f),
             new Surface(City + "SC_Metal.mat", 0x35435D, .32f, .20f),
             new Surface(City + "SC_White.mat", 0xA8B4C9, .24f, .05f),
@@ -125,16 +194,16 @@ public static class LayeredMemoryPalette
             new Surface(OriginalCity + "CityV7_Structure.mat", 0x425875, .23f, .08f),
             new Surface(OriginalCity + "CityV7_Glass.mat", 0x3C5373, .55f, .16f, 0xA1B7DC, .025f),
             new Surface(OriginalCity + "CityV7_Scale.mat", 0x93A6C0, .22f, .03f),
-            new Surface(OriginalCity + "SkyMiddle.mat", 0x7084A7, .20f, 0f),
-            new Surface(OriginalCity + "SkyFar.mat", 0x8997B7, .20f, 0f),
-            new Surface("Assets/Art/ExperienceSlice/DistantCity.mat", 0x7084A7, .20f, 0f),
+            new Surface(OriginalCity + "SkyMiddle.mat", 0x657E8C, .20f, 0f),
+            new Surface(OriginalCity + "SkyFar.mat", 0x869BA5, .20f, 0f),
+            new Surface("Assets/Art/ExperienceSlice/DistantCity.mat", 0x708792, .20f, 0f),
             new Surface("Assets/Art/ExperienceSlice/WindowFrame.mat", 0x324459, .30f, .20f),
             new Surface("Assets/Art/ExperienceSlice/WarmWindow.mat", 0xC4BA9D, .35f, .06f, 0xDED2AE, .10f),
             new Surface("Assets/Art/CityLayers/Concrete.mat", 0x6E89AB, .23f, .015f),
             new Surface("Assets/Art/CityLayers/RoofMetal.mat", 0x465C7B, .31f, .20f),
             new Surface("Assets/Art/CityLayers/OxideTrim.mat", 0x914961, .22f, .02f),
             new Surface("Assets/Art/CityLayers/LowerStreets.mat", 0x4A5873, .18f, .01f),
-            new Surface("Assets/Art/CityLayers/HorizonHaze.mat", 0x8A8DA9, .20f, 0f)
+            new Surface("Assets/Art/CityLayers/HorizonHaze.mat", 0x708792, .20f, 0f)
         };
 
         // Four established district IDs retain their bindings. Palette values
@@ -163,9 +232,9 @@ public static class LayeredMemoryPalette
         return material;
     }
 
-    private static void Backup(string path)
+    private static void Backup(string path, string backupRoot = BackupRoot)
     {
-        string destination = BackupRoot + path;
+        string destination = backupRoot + path;
         Directory.CreateDirectory(Path.GetDirectoryName(destination));
         if (!File.Exists(destination)) File.Copy(path, destination);
         if (File.Exists(path + ".meta") && !File.Exists(destination + ".meta"))

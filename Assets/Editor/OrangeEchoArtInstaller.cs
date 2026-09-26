@@ -143,6 +143,17 @@ public static class OrangeEchoArtInstaller
         string name = source.name.Replace(" (Instance)", "");
         if (!name.StartsWith("OE_"))
         {
+            // The preserved BODY atlas contains the face and hands. Keep their
+            // native texture shading when re-authoring the outfit.
+            string faceMaterial = name == "Body_MAT" ? "OE_RunnerSkin"
+                : name == "Eye_MAT" ? "OE_RunnerEyes"
+                : name == "Brows_MAT" ? "OE_RunnerLashes"
+                : name == "Eye_Spec_MAT" ? "OE_RunnerEyeCover" : null;
+            if (faceMaterial != null)
+            {
+                Material skin = AssetDatabase.LoadAssetAtPath<Material>(Root + "/Materials/" + faceMaterial + ".mat");
+                if (skin != null) return skin;
+            }
             string legacy = "Assets/Models/Mixamo/ExoGray/Materials/" + name + "_BlueTech.mat";
             Material existing = AssetDatabase.LoadAssetAtPath<Material>(legacy);
             if (existing != null) return existing;

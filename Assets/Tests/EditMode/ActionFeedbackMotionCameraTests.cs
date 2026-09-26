@@ -77,6 +77,27 @@ public sealed class ActionFeedbackMotionCameraTests
     }
 
     [Test]
+    public void HighCameraViewKeepsOrientationBaseAndShowsMoreTrack()
+    {
+        foreach (bool portrait in new[] { true, false })
+        {
+            Vector3 baseOffset = WorldStyler.GetCameraOffset(portrait);
+            Vector3 low = CameraFollow.ResolveViewOffset(
+                baseOffset, CameraViewHeight.Low);
+            Vector3 high = CameraFollow.ResolveViewOffset(
+                baseOffset, CameraViewHeight.High);
+
+            Assert.AreEqual(baseOffset, low,
+                "Low view must retain the current phone and desktop framing.");
+            Assert.AreEqual(baseOffset.y + 1.25f, high.y, 0.0001f);
+            Assert.AreEqual(baseOffset.z, high.z, 0.0001f,
+                "Camera height must not change turn clearance behind the player.");
+            Assert.Greater(CameraFollow.ResolveLookAhead(CameraViewHeight.High),
+                CameraFollow.ResolveLookAhead(CameraViewHeight.Low));
+        }
+    }
+
+    [Test]
     public void CameraPulseAndDampingAreBoundedDeterministicFunctions()
     {
         Assert.AreEqual(0f,

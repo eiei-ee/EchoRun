@@ -4,7 +4,7 @@ using UnityEngine;
 [Serializable]
 public sealed class EchoRunSaveData
 {
-    public int version = 9;
+    public int version = 10;
     public int highScore;
     public int totalCoins;
     public int targetFrameRate = 60;
@@ -14,6 +14,7 @@ public sealed class EchoRunSaveData
     public bool audioMuted;
     public int characterPreset;
     public int runDifficulty = (int)RunDifficultyLevel.Standard;
+    public int cameraViewHeight = (int)CameraViewHeight.Low;
     public string shadowProfileJson = "";
     public float[] directorWeights;
     public int directorModelUpdateCount;
@@ -52,7 +53,7 @@ public static class EchoRunSaveSystem
     public const string TrainingResetPendingKey =
         "EchoRunTrainingResetV1.Pending";
     public const string TelemetryKey = "EchoRunLastTelemetryV1";
-    public const int CurrentVersion = 9;
+    public const int CurrentVersion = 10;
 
     private const string ShadowProfileKey = "AIShadowProfileV1";
     private const int SaveEnvelopeVersion = 1;
@@ -605,6 +606,15 @@ public static class EchoRunSaveSystem
         WriteArchive(true);
     }
 
+    public static void SaveCameraViewHeight(CameraViewHeight height)
+    {
+        EnsureInitialized();
+        _data.cameraViewHeight = (int)CameraViewSettings.Normalize((int)height);
+        PlayerPrefs.SetInt(CameraViewSettings.PreferenceKey,
+            _data.cameraViewHeight);
+        WriteArchive(true);
+    }
+
     public static void SaveLegacyState()
     {
         EnsureInitialized();
@@ -635,6 +645,8 @@ public static class EchoRunSaveSystem
             _data.runDifficulty = (int)RunDifficultyLevel.Standard;
         _data.runDifficulty = (int)RunDifficultySettings.Normalize(
             _data.runDifficulty);
+        _data.cameraViewHeight = (int)CameraViewSettings.Normalize(
+            _data.cameraViewHeight);
         _data.shadowProfileJson = _data.shadowProfileJson ?? "";
         _data.directorWeights = Clone(_data.directorWeights);
         if (_data.directorWeights != null
@@ -666,7 +678,8 @@ public static class EchoRunSaveSystem
                || PlayerPrefs.HasKey("SfxVolume")
                || PlayerPrefs.HasKey("AudioMuted")
                || PlayerPrefs.HasKey("CharacterPreset")
-               || PlayerPrefs.HasKey(RunDifficultySettings.PreferenceKey);
+               || PlayerPrefs.HasKey(RunDifficultySettings.PreferenceKey)
+               || PlayerPrefs.HasKey(CameraViewSettings.PreferenceKey);
     }
 
     private static void CaptureLegacyKeys()
@@ -691,6 +704,9 @@ public static class EchoRunSaveSystem
         _data.runDifficulty = (int)RunDifficultySettings.Normalize(
             PlayerPrefs.GetInt(RunDifficultySettings.PreferenceKey,
                 _data.runDifficulty));
+        _data.cameraViewHeight = (int)CameraViewSettings.Normalize(
+            PlayerPrefs.GetInt(CameraViewSettings.PreferenceKey,
+                _data.cameraViewHeight));
         _data.shadowProfileJson = PlayerPrefs.GetString(
             ShadowProfileKey, _data.shadowProfileJson ?? "");
     }
@@ -707,6 +723,8 @@ public static class EchoRunSaveSystem
         PlayerPrefs.SetInt("CharacterPreset", _data.characterPreset);
         PlayerPrefs.SetInt(RunDifficultySettings.PreferenceKey,
             _data.runDifficulty);
+        PlayerPrefs.SetInt(CameraViewSettings.PreferenceKey,
+            _data.cameraViewHeight);
         if (!string.IsNullOrEmpty(_data.shadowProfileJson))
             PlayerPrefs.SetString(ShadowProfileKey, _data.shadowProfileJson);
         else

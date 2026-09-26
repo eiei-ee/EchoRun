@@ -5,13 +5,15 @@ using UnityEngine;
 public static class CityV7PlayableEnvironment
 {
     public const float FogEndDistance = 185f;
-    public static readonly Color FogColor = Color32ToColor(0x8B97B2);
-    public static readonly Color AmbientSkyColor = Color32ToColor(0xB6C6E3);
-    public static readonly Color AmbientEquatorColor = Color32ToColor(0x8793AC);
-    public static readonly Color AmbientGroundColor = Color32ToColor(0x565B6F);
-    public static readonly Color SkyTint = Color32ToColor(0xC4BBDF);
-    public static readonly Color KeyLightColor = Color32ToColor(0xF8E7E0);
-    public static readonly Color FillLightColor = Color32ToColor(0xABBEE7);
+    // A quiet blue-grey distance layer leaves the warm runner, pale lane paint
+    // and cyan echo above it in contrast. Avoid a violet cast on every surface.
+    public static readonly Color FogColor = Color32ToColor(0x8296A0);
+    public static readonly Color AmbientSkyColor = Color32ToColor(0xBCC9DB);
+    public static readonly Color AmbientEquatorColor = Color32ToColor(0x8B98AA);
+    public static readonly Color AmbientGroundColor = Color32ToColor(0x616C7D);
+    public static readonly Color SkyTint = Color32ToColor(0xADBBD0);
+    public static readonly Color KeyLightColor = Color32ToColor(0xF4F5F7);
+    public static readonly Color FillLightColor = Color32ToColor(0xC1D5DE);
 
     // The existing cloud panorama remains the authored sky. The same values are
     // used by the offline material installer and by the runtime sky clone.
@@ -19,14 +21,16 @@ public static class CityV7PlayableEnvironment
     {
         if (material == null) return;
         if (material.HasProperty("_Tint")) material.SetColor("_Tint", SkyTint);
-        if (material.HasProperty("_Exposure")) material.SetFloat("_Exposure", .55f);
-        if (material.HasProperty("_Saturation")) material.SetFloat("_Saturation", .65f);
+        // The sky shader multiplies by unity_ColorSpaceDouble in linear colour
+        // space. The old .55 exposure clipped the bright clouds to near-white.
+        if (material.HasProperty("_Exposure")) material.SetFloat("_Exposure", .40f);
+        if (material.HasProperty("_Saturation")) material.SetFloat("_Saturation", .34f);
     }
 
     public static Material CreateSky()
     {
         var material=new Material(Resources.Load<Shader>("CityV7/CityAfterimageQuietSky"));
-        material.SetColor("_Zenith",Color32ToColor(0x607CAC));material.SetColor("_Horizon",Color32ToColor(0xB0A1BD));material.SetColor("_Ground",FogColor);return material;
+        material.SetColor("_Zenith",Color32ToColor(0x57788C));material.SetColor("_Horizon",Color32ToColor(0x9BAAB0));material.SetColor("_Ground",FogColor);return material;
     }
     static Color Color32ToColor(int rgb){return new Color((rgb>>16&255)/255f,(rgb>>8&255)/255f,(rgb&255)/255f);}
     public static void ApplyAtmosphere(Light key=null,Light fill=null)
@@ -48,7 +52,7 @@ public static class CityV7PlayableEnvironment
         }
         RenderSettings.fog = true;
         RenderSettings.fogMode = FogMode.Linear;
-        RenderSettings.fogStartDistance = 70f;
+        RenderSettings.fogStartDistance = 90f;
         // Both city grids recycle beyond this cutoff. Keep it independent of
         // the farther skyline and of the sun's nearer shadow distance.
         RenderSettings.fogEndDistance = FogEndDistance;
@@ -66,13 +70,13 @@ public static class CityV7PlayableEnvironment
             RenderSettings.defaultReflectionMode = UnityEngine.Rendering.DefaultReflectionMode.Custom;
             RenderSettings.customReflectionTexture = reflection;
         }
-        RenderSettings.reflectionIntensity = high ? .45f : .22f;
+        RenderSettings.reflectionIntensity = high ? .30f : .16f;
 
         if (key != null)
         {
             key.shadows = high && desktop ? LightShadows.Soft : LightShadows.None;
             key.color = KeyLightColor;
-            key.intensity = 1.18f;
+            key.intensity = 1.12f;
             key.transform.rotation = Quaternion.Euler(39f, -48f, 0f);
             key.shadowStrength = .68f;
             key.shadowBias = .025f;
@@ -80,7 +84,7 @@ public static class CityV7PlayableEnvironment
             RenderSettings.sun = key;
         }
         // Broad neutral fill keeps the elevated-road shadows and building
-        // undersides readable; warm dusk light preserves material hue differences.
+        // undersides readable without shifting the road towards green.
         if (fill != null)
         {
             fill.enabled = high;

@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: OE_RoadDeck
-  m_Shader: {fileID: 4800000, guid: 44ea82839bbbf2c4683447bdda030ca4, type: 3}
+  m_Shader: {fileID: 4800000, guid: 31768b732c774834ea973cb13cc6ea77, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -35,10 +35,10 @@ Material:
     m_Floats:
     - _DetailStrength: 0
     - _Glossiness: 0.16
-    - _Grain: 0.09
+    - _Grain: 0.025
     - _Metallic: 0
     - _PanelScale: 0.28
     - _Smoothness: 0.18
     m_Colors:
-    - _Color: {r: 0.5568628, g: 0.6, b: 0.6745098, a: 1}
+    - _Color: {r: 0.46666667, g: 0.5058824, b: 0.5529412, a: 1}
   m_BuildTextureStacks: []

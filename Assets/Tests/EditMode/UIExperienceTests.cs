@@ -347,7 +347,7 @@ public sealed class UIExperienceTests
             + "后续更新看到了这局观察不会带到下一局重新已经全亮没有形成遇到问题"
             + "本局结果整理变化同样不足当前保持不变原本认为压力偏向开始仍可能"
             + "伤势再受伤即出局恢复中"
-            + "《影迹》过去正在追上你米回声现身上一局学到×";
+            + "《影迹回声》过去正在追上你米回声现身上一局学到×";
         foreach (char character in copy)
             Assert.IsTrue(font.HasCharacter(character), "UI font is missing: " + character);
     }
@@ -418,9 +418,9 @@ public sealed class UIExperienceTests
             new Vector2(180f, 56f), false, false).y);
         Assert.AreEqual(62f, WorldStyler.GetCameraFieldOfView(true));
         Assert.AreEqual(56f, WorldStyler.GetCameraFieldOfView(false));
-        Assert.AreEqual(new Vector3(0f, 3.75f, -6.3f),
+        Assert.AreEqual(new Vector3(0f, 5.4f, -12f),
             WorldStyler.GetCameraOffset(true));
-        Assert.AreEqual(new Vector3(0f, 3.85f, -6.45f),
+        Assert.AreEqual(new Vector3(0f, 4.2f, -10.5f),
             WorldStyler.GetCameraOffset(false));
     }
 

@@ -1,5 +1,25 @@
 using UnityEngine;
 
+public enum CameraViewHeight
+{
+    Low = 0,
+    High = 1
+}
+
+public static class CameraViewSettings
+{
+    public const string PreferenceKey = "CameraViewHeight";
+
+    public static CameraViewHeight Current => Normalize(
+        PlayerPrefs.GetInt(PreferenceKey, (int)CameraViewHeight.Low));
+
+    public static CameraViewHeight Normalize(int value)
+    {
+        return value == (int)CameraViewHeight.High
+            ? CameraViewHeight.High : CameraViewHeight.Low;
+    }
+}
+
 public class CameraFollow : MonoBehaviour
 {
     [Header("Follow")]
@@ -89,9 +109,31 @@ public class CameraFollow : MonoBehaviour
         forward.Normalize();
         Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
 
-        Vector3 worldOffset = forward * offset.z
-            + Vector3.up * offset.y
-            + right * offset.x;
+        // A lane change moves the runner inside the frame. Following its full
+        // lateral offset hides the opposite lane (and its echo) on a phone.
+        if (_pc != null)
+            followAnchor = ResolveTrackAnchor(followAnchor, forward,
+                _pc.RenderedLateralOffset);
+
+        CameraViewHeight viewHeight = CameraViewSettings.Current;
+        float aspect = _camera != null ? _camera.aspect : 1f;
+        float lookAhead = ResolveLookAhead(viewHeight, aspect);
+        SampleExternallyOwnedFieldOfView();
+        Vector3 viewOffset = ResolveLaneFramingOffset(
+            ResolveViewOffset(offset, viewHeight), aspect,
+            _hasBaseFieldOfView ? _baseFieldOfView : 62f,
+            _pc != null ? _pc.laneDistance : TrackGeometryStandards.LaneSpacing,
+            lookAhead);
+        if (GameManager.Instance != null
+            && GameManager.Instance.State == GameState.Menu)
+        {
+            // Present the same runner and city above the home action dock.
+            viewOffset = new Vector3(0f, 2.9f, -8.8f);
+            lookAhead = 2f;
+        }
+        Vector3 worldOffset = forward * viewOffset.z
+            + Vector3.up * viewOffset.y
+            + right * viewOffset.x;
         Vector3 feedbackOffset = reducedMotion
             ? Vector3.zero
             : ResolveMotionOffset(
@@ -106,13 +148,14 @@ public class CameraFollow : MonoBehaviour
             + UpdateActionPulseOffset(right, reducedMotion);
         transform.position += _appliedTransientOffset;
 
-        // Look at player center (above the track), not model center.
-        Vector3 lookTarget = followAnchor + forward * 5f;
-        Quaternion targetRot = Quaternion.LookRotation(
-            lookTarget - transform.position);
-        transform.rotation = Quaternion.Slerp(
-            transform.rotation, targetRot,
-            Time.deltaTime * smoothSpeed);
+        // Position already eases through a corner. A second, independent yaw
+        // lag aimed along the new road can throw the runner out of the frame.
+        // Aim along the current boom so its anchor stays centered throughout.
+        Vector3 aimForward = Vector3.ProjectOnPlane(
+            followAnchor - transform.position, Vector3.up);
+        if (aimForward.sqrMagnitude < 0.0001f) aimForward = forward;
+        Vector3 lookTarget = followAnchor + aimForward.normalized * lookAhead;
+        transform.rotation = Quaternion.LookRotation(lookTarget - transform.position);
 
         UpdateFieldOfView(reducedMotion, Time.unscaledDeltaTime);
     }
@@ -356,8 +399,59 @@ public class CameraFollow : MonoBehaviour
     {
         if (isJumping)
             targetPosition.y = Mathf.Lerp(
-                groundedY, targetPosition.y, 0.35f);
+                groundedY, targetPosition.y, 0.12f);
         return targetPosition;
+    }
+
+    public static Vector3 ResolveViewOffset(
+        Vector3 baseOffset, CameraViewHeight viewHeight)
+    {
+        if (viewHeight == CameraViewHeight.High)
+            baseOffset.y += 1.25f;
+        return baseOffset;
+    }
+
+    public static Vector3 ResolveTrackAnchor(Vector3 playerAnchor,
+        Vector3 forward, float renderedLateralOffset)
+    {
+        Vector3 flatForward = Vector3.ProjectOnPlane(forward, Vector3.up);
+        if (flatForward.sqrMagnitude < 0.0001f) flatForward = Vector3.forward;
+        Vector3 right = Vector3.Cross(Vector3.up, flatForward.normalized);
+        return playerAnchor - right * renderedLateralOffset;
+    }
+
+    public static float ResolveLookAhead(CameraViewHeight viewHeight,
+        float aspect = 0.5f)
+    {
+        if (aspect >= 1f)
+            return viewHeight == CameraViewHeight.High ? 8f : 6f;
+        return viewHeight == CameraViewHeight.High ? 20f : 16f;
+    }
+
+    public static Vector3 ResolveLaneFramingOffset(Vector3 viewOffset,
+        float aspect, float verticalFov, float laneDistance, float lookAhead)
+    {
+        // Reserve a body-width margin on both outer lanes, including a nearby
+        // echo 2.5m behind and its jump. Fit to the actual camera viewport, not
+        // Screen dimensions, so safe areas and portrait render targets work.
+        // The envelope is fixed for a viewport: an echo changing lanes/gap
+        // must not make the camera zoom in and out during play.
+        float halfWidth = Mathf.Max(0f, laneDistance) + 0.65f;
+        float halfFov = Mathf.Clamp(verticalFov, 30f, 90f) * 0.5f * Mathf.Deg2Rad;
+        float requiredDepth = halfWidth
+            / (Mathf.Tan(halfFov) * Mathf.Max(0.3f, aspect) * 0.92f);
+        float distance = Mathf.Max(0.1f, -viewOffset.z);
+        for (int iteration = 0; iteration < 5; iteration++)
+        {
+            float pitch = Mathf.Atan2(viewOffset.y, distance + lookAhead);
+            float depth = (distance - 3.1f) * Mathf.Cos(pitch)
+                + (viewOffset.y - 5f) * Mathf.Sin(pitch);
+            if (depth >= requiredDepth) break;
+            distance += (requiredDepth - depth) / Mathf.Cos(pitch);
+        }
+        viewOffset.x = 0f;
+        viewOffset.z = -distance;
+        return viewOffset;
     }
 
     public static Vector3 ResolveMotionOffset(

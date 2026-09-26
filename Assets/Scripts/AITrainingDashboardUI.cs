@@ -91,23 +91,27 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         bool compactPortrait = UILayoutRules.IsCompactPortrait(
             Screen.width, Screen.height);
         Vector2 launcherAnchor = compactPortrait
-            ? new Vector2(0.78f, 0.93f)
+            ? new Vector2(0.82f, 0.845f)
             : new Vector2(0.90f, 0.91f);
         Vector2 launcherSize = compactPortrait
-            ? UILayoutRules.GetHomeNavigationSize(true, true)
+            ? new Vector2(240f, 104f)
             : new Vector2(220f, 58f);
         Button launcher = RuntimePanelFactory.Button("AITrainingLauncher", parent,
             "回声报告", launcherAnchor, launcherSize,
-            RuntimePanelFactory.Raised, compactPortrait ? 34 : 26);
+            RuntimePanelFactory.Raised, compactPortrait ? 29 : 26);
         launcher.onClick.AddListener(Open);
         _launcher = launcher.gameObject;
 
         _panel = RuntimePanelFactory.PanelObject("AITrainingDashboard", parent,
             new Vector2(0.5f, 0.5f), compactPortrait
-                ? new Vector2(930f, 1500f)
+                ? new Vector2(940f, 1000f)
                 : new Vector2(1050f, 700f),
             RuntimePanelFactory.Panel);
         _panelRect = _panel.GetComponent<RectTransform>();
+        GameObject titleRule = RuntimePanelFactory.PanelObject("TitleRule",
+            _panel.transform, new Vector2(0.055f, 0.91f),
+            new Vector2(8f, 64f), EchoRunUITheme.PageEcho);
+        titleRule.GetComponent<Image>().raycastTarget = false;
         Text title = RuntimePanelFactory.Text("Title", _panel.transform,
             "回声报告", compactPortrait ? 44 : 40, TextAnchor.MiddleLeft,
             RuntimePanelFactory.TextPrimary);
@@ -122,16 +126,16 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
             compactPortrait ? 30 : 26, TextAnchor.UpperLeft,
             RuntimePanelFactory.TextPrimary);
         _metricsRect = _metrics.rectTransform;
-        _metrics.lineSpacing = 1.25f;
+        _metrics.lineSpacing = 1.12f;
         RuntimePanelFactory.Place(_metrics.rectTransform,
-            compactPortrait ? new Vector2(0.5f, 0.68f) : new Vector2(0.34f, 0.59f),
-            compactPortrait ? new Vector2(780f, 500f) : new Vector2(580f, 300f),
+            compactPortrait ? new Vector2(0.5f, 0.72f) : new Vector2(0.34f, 0.59f),
+            compactPortrait ? new Vector2(760f, 330f) : new Vector2(580f, 300f),
             Vector2.zero);
 
         GameObject insight = RuntimePanelFactory.PanelObject("Insight", _panel.transform,
-            compactPortrait ? new Vector2(0.5f, 0.38f) : new Vector2(0.5f, 0.29f),
-            compactPortrait ? new Vector2(780f, 280f) : new Vector2(900f, 150f),
-            EchoRunUITheme.Surface);
+            compactPortrait ? new Vector2(0.5f, 0.37f) : new Vector2(0.5f, 0.29f),
+            compactPortrait ? new Vector2(780f, 390f) : new Vector2(900f, 150f),
+            EchoRunUITheme.PageRaised);
         _insightRect = insight.GetComponent<RectTransform>();
         _summary = RuntimePanelFactory.Text("Summary", insight.transform, "",
             compactPortrait ? 29 : 25, TextAnchor.MiddleLeft,
@@ -251,10 +255,10 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         EchoMenuViewData view =
             EchoRunPresentation.BuildSingleContractMenu(identity);
         metrics = identity == null
-            ? "尚未生成回声\n\n" + view.learned
-            : view.generation + "\n\n" + view.learned;
+            ? "尚未生成回声\n" + view.learned
+            : view.generation + "\n" + view.learned;
         summary = "本轮规则\n" + view.rule
-                  + "\n\n下一局目标\n" + view.objective;
+                  + "\n下一局目标\n" + view.objective;
     }
 
     private void ConfirmReset()
@@ -326,44 +330,42 @@ public sealed class AITrainingDashboardUI : MonoBehaviour
         bool portrait = UILayoutRules.IsCompactPortrait(Screen.width, Screen.height);
         EchoRunAccessibility.SetBaseFontSize(
             _titleRect.GetComponent<Text>(), portrait ? 44 : 40);
-        EchoRunAccessibility.SetBaseFontSize(_metrics, portrait ? 30 : 26);
-        EchoRunAccessibility.SetBaseFontSize(_summary, portrait ? 29 : 25);
+        EchoRunAccessibility.SetBaseFontSize(_metrics, portrait ? 36 : 26);
+        EchoRunAccessibility.SetBaseFontSize(_summary, portrait ? 32 : 25);
         EchoRunAccessibility.SetBaseFontSize(_resetHint, portrait ? 22 : 19);
         SetButtonBaseFont(_resetButton, portrait ? 28 : 22);
         SetButtonBaseFont(_closeButton, portrait ? 28 : 22);
         Vector2 launcherSize = RuntimePanelFactory.TouchButtonSize(
-            portrait ? UILayoutRules.GetHomeNavigationSize(true, true) : new Vector2(220f, 58f),
+            portrait ? new Vector2(240f, 104f) : new Vector2(220f, 58f),
             portrait);
         if (_launcher != null)
         {
             RuntimePanelFactory.Place(_launcher.GetComponent<RectTransform>(),
-                // The lower portrait surface owns the start action and control
-                // hint; keep this secondary entry beside the title.
-                portrait ? new Vector2(0.78f, 0.93f) : new Vector2(0.90f, 0.91f),
+                portrait ? new Vector2(0.82f, 0.845f) : new Vector2(0.90f, 0.91f),
                 launcherSize, Vector2.zero);
             Text launcherLabel = _launcher.GetComponentInChildren<Text>();
-            if (launcherLabel != null) launcherLabel.fontSize = portrait ? 34 : 26;
-            SetButtonBaseFont(_launcher.GetComponent<Button>(), portrait ? 34 : 26);
+            if (launcherLabel != null) launcherLabel.fontSize = portrait ? 29 : 26;
+            SetButtonBaseFont(_launcher.GetComponent<Button>(), portrait ? 29 : 26);
         }
         _panelRect.sizeDelta = portrait
-            ? new Vector2(900f, 1500f)
+            ? new Vector2(940f, 1000f)
             : new Vector2(1050f, 720f);
         RuntimePanelFactory.Place(_titleRect,
             portrait ? new Vector2(0.08f, 0.93f) : new Vector2(0.08f, 0.90f),
             portrait ? new Vector2(500f, 90f) : new Vector2(430f, 70f),
             Vector2.zero);
         RuntimePanelFactory.Place(_metricsRect,
-            portrait ? new Vector2(0.5f, 0.70f) : new Vector2(0.26f, 0.60f),
-            portrait ? new Vector2(760f, 430f) : new Vector2(400f, 310f),
+            portrait ? new Vector2(0.5f, 0.71f) : new Vector2(0.26f, 0.60f),
+            portrait ? new Vector2(790f, 200f) : new Vector2(400f, 310f),
             Vector2.zero);
         RuntimePanelFactory.Place(_insightRect,
-            portrait ? new Vector2(0.5f, 0.36f) : new Vector2(0.69f, 0.54f),
-            portrait ? new Vector2(780f, 440f) : new Vector2(500f, 360f),
+            portrait ? new Vector2(0.5f, 0.405f) : new Vector2(0.69f, 0.54f),
+            portrait ? new Vector2(810f, 330f) : new Vector2(500f, 360f),
             Vector2.zero);
         RuntimePanelFactory.Stretch(_summaryRect, portrait ? 30f : 26f);
         RuntimePanelFactory.Place(_resetHintRect,
-            portrait ? new Vector2(0.5f, 0.16f) : new Vector2(0.27f, 0.09f),
-            portrait ? new Vector2(760f, 88f) : new Vector2(540f, 50f),
+            portrait ? new Vector2(0.5f, 0.164f) : new Vector2(0.27f, 0.09f),
+            portrait ? new Vector2(790f, 64f) : new Vector2(540f, 50f),
             Vector2.zero);
         RuntimePanelFactory.Place(_resetButton.GetComponent<RectTransform>(),
             portrait ? new Vector2(0.30f, 0.07f) : new Vector2(0.67f, 0.09f),

@@ -110,7 +110,9 @@ public static class LayeredMemoryRunnerInstaller
                 saved.RecalculateBounds();
                 EditorUtility.SetDirty(saved);
             }
-            skin.sharedMesh = saved;
+            // Regenerate the fitted accessories from this source revision so a
+            // normal courier reinstall retains the reviewed clothing binding.
+            skin.sharedMesh = CourierGarmentFitRefinement.Build();
             skin.bones = mappedBones;
             skin.sharedMaterials = materials;
             skin.rootBone = model;
@@ -125,7 +127,8 @@ public static class LayeredMemoryRunnerInstaller
             File.WriteAllText(LayeredMemoryRunnerReview.Output + "/install.txt",
                 "garmentTriangles=" + triangles + "\ngarmentVertices=" + saved.vertexCount
                 + "\nmaterials=" + materials.Length + "\nbones=" + mappedBones.Length
-                + "\nmesh=" + MeshPath + "\navatar=" + AssetDatabase.GetAssetPath(avatar)
+                + "\nsourceMesh=" + MeshPath + "\nmesh=" + AssetDatabase.GetAssetPath(skin.sharedMesh)
+                + "\navatar=" + AssetDatabase.GetAssetPath(avatar)
                 + "\ncontroller=" + AssetDatabase.GetAssetPath(controller)
                 + "\nExisting scene renderer, skeleton, head, hands and gameplay components retained.\n");
             Debug.Log("MEMORY_COURIER_INSTALL_OK triangles=" + triangles + " materials=" + materials.Length);

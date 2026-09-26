@@ -16,13 +16,12 @@ public static class AsyncEchoPanelPrefabBuilder
         _font = AssetDatabase.LoadAssetAtPath<Font>("Assets/Resources/Fonts/EchoRunSansSC-Regular.otf");
         if (_font == null) throw new System.InvalidOperationException("The bundled CJK UI font is required.");
         _round = LoadRounded();
-        // This interface deliberately has no poster, hero illustration, or optional art dependency.
         GameObject root = Box("AsyncEchoSheet", null, AsyncEchoPanelView.Backdrop, false);
         try
         {
             var view = root.AddComponent<AsyncEchoPanelView>();
             Stretch((RectTransform)root.transform);
-            RectTransform frame = (RectTransform)Box("Frame", root.transform, AsyncEchoPanelView.Surface).transform;
+            RectTransform frame = (RectTransform)Box("Frame", root.transform, Color.clear, false).transform;
             frame.anchorMin = frame.anchorMax = new Vector2(.5f, .5f);
             frame.sizeDelta = new Vector2(1016, 1320);
             view.frame = frame;
@@ -35,14 +34,16 @@ public static class AsyncEchoPanelPrefabBuilder
             close.sizeDelta = new Vector2(144, 104);
             close.anchoredPosition = new Vector2(-32, -20);
 
-            GameObject tabs = Box("Tabs", frame, AsyncEchoPanelView.Backdrop);
-            Top((RectTransform)tabs.transform, 32, 136, 32, 108);
-            view.challengeTab = Button("AsyncEchoChallengeTab", tabs.transform, "好友邀请", AsyncEchoPanelView.Selected, AsyncEchoPanelView.Foreground, 36);
+            GameObject tabs = Box("Tabs", frame, Color.clear, false);
+            Top((RectTransform)tabs.transform, 32, 136, 32, 100);
+            view.challengeTab = Button("AsyncEchoChallengeTab", tabs.transform, "好友邀请", Color.clear, AsyncEchoPanelView.Foreground, 36);
             view.boardTab = Button("AsyncEchoBoard", tabs.transform, "挑战榜", Color.clear, AsyncEchoPanelView.Muted, 36);
             Half((RectTransform)view.challengeTab.transform, 0, 6);
             Half((RectTransform)view.boardTab.transform, 1, 6);
-            view.challengeTabFill = view.challengeTab.GetComponent<Image>();
-            view.boardTabFill = view.boardTab.GetComponent<Image>();
+            view.challengeTabFill = TabRule(view.challengeTab.transform);
+            view.boardTabFill = TabRule(view.boardTab.transform);
+            view.challengeTabFill.color = AsyncEchoPanelView.Echo;
+            view.boardTabFill.color = Color.clear;
 
             RectTransform challenge = Rect("ChallengePage", frame);
             PageBounds(challenge);
@@ -65,7 +66,7 @@ public static class AsyncEchoPanelPrefabBuilder
             RectTransform badge = (RectTransform)generationBadge.transform;
             badge.anchorMin = badge.anchorMax = Vector2.one;
             badge.pivot = Vector2.one;
-            badge.sizeDelta = new Vector2(242, 132);
+            badge.sizeDelta = new Vector2(218, 104);
             badge.anchoredPosition = new Vector2(0, -16);
             view.generation = Label("Generation", badge, "第 1 代", 44, AsyncEchoPanelView.Foreground);
             view.generation.alignment = TextAnchor.MiddleCenter;
@@ -78,7 +79,7 @@ public static class AsyncEchoPanelPrefabBuilder
             view.invitationDescription.rectTransform.offsetMax = new Vector2(0, -170);
 
             view.actionDock = Box("ActionDock", challenge, Color.clear, false);
-            Top((RectTransform)view.actionDock.transform, 0, 346, 0, 144);
+            Top((RectTransform)view.actionDock.transform, 0, 346, 0, 236);
             view.start = Button("AsyncEchoBegin", view.actionDock.transform, "开始挑战", AsyncEchoPanelView.Primary, AsyncEchoPanelView.Ink, 46, true);
             view.offline = Button("AsyncEchoOffline", view.actionDock.transform, "先跑单机", AsyncEchoPanelView.Raised, AsyncEchoPanelView.Foreground, 36);
             view.ArrangeActions(true);
@@ -99,7 +100,7 @@ public static class AsyncEchoPanelPrefabBuilder
             view.publishDetails = Rect("PublishActions", view.publishCard.transform).gameObject;
             Height(view.publishDetails, 128);
             view.publish = Button("AsyncEchoPublish", view.publishDetails.transform, "更新影子", AsyncEchoPanelView.Selected, AsyncEchoPanelView.Foreground, 34);
-            view.share = Button("AsyncEchoShare", view.publishDetails.transform, "分享卡片", AsyncEchoPanelView.Echo, AsyncEchoPanelView.Ink, 34);
+            view.share = Button("AsyncEchoShare", view.publishDetails.transform, "分享卡片", AsyncEchoPanelView.Echo, AsyncEchoPanelView.Surface, 34);
             Half((RectTransform)view.publish.transform, 0, 0);
             Half((RectTransform)view.share.transform, 1, 0);
             view.publishDetails.SetActive(false);
@@ -272,6 +273,18 @@ public static class AsyncEchoPanelPrefabBuilder
     { r.anchorMin = new Vector2(0, 1); r.anchorMax = Vector2.one; r.pivot = new Vector2(.5f, 1); r.offsetMin = new Vector2(left, -top-height); r.offsetMax = new Vector2(-right, -top); }
     private static void Half(RectTransform r, int column, float pad)
     { r.anchorMin = new Vector2(column * .5f, 0); r.anchorMax = new Vector2((column + 1) * .5f, 1); r.offsetMin = new Vector2(pad + (column == 1 ? 10 : 0), pad); r.offsetMax = new Vector2(-pad - (column == 0 ? 10 : 0), -pad); }
+
+    private static Image TabRule(Transform parent)
+    {
+        GameObject rule = Box("ActiveRule", parent, AsyncEchoPanelView.Echo, false);
+        Image image = rule.GetComponent<Image>();
+        image.raycastTarget = false;
+        RectTransform rect = (RectTransform)rule.transform;
+        rect.anchorMin = rect.anchorMax = new Vector2(.5f, 0);
+        rect.sizeDelta = new Vector2(190f, 7f);
+        rect.anchoredPosition = new Vector2(0, 4f);
+        return image;
+    }
 
     private static Sprite LoadRounded()
     {

@@ -17,17 +17,18 @@ public sealed class AsyncEchoPanelView : MonoBehaviour
     public AsyncEchoLeaderboardRow rowTemplate;
     private readonly List<AsyncEchoLeaderboardRow> _rows = new List<AsyncEchoLeaderboardRow>();
     private bool _showBoard, _publishingExpanded, _fitting;
+    private bool _paletteApplied;
 
     // One project palette; the platform UI does not invent another theme.
-    public static Color Backdrop => EchoRunUITheme.Backdrop;
-    public static Color Surface => EchoRunUITheme.Surface;
-    public static Color Raised => EchoRunUITheme.SurfaceRaised;
-    public static Color Selected => EchoRunUITheme.SurfaceSelected;
+    public static Color Backdrop => EchoRunUITheme.PageBackdrop;
+    public static Color Surface => EchoRunUITheme.PageSurface;
+    public static Color Raised => EchoRunUITheme.PageRaised;
+    public static Color Selected => EchoRunUITheme.PageSelected;
     public static Color Primary => EchoRunUITheme.ActionAccent;
-    public static Color Foreground => EchoRunUITheme.TextPrimary;
-    public static Color Muted => EchoRunUITheme.TextMuted;
-    public static Color Echo => EchoRunUITheme.Echo;
-    public static Color Danger => EchoRunUITheme.Danger;
+    public static Color Foreground => EchoRunUITheme.PageInk;
+    public static Color Muted => EchoRunUITheme.PageMuted;
+    public static Color Echo => EchoRunUITheme.PageEcho;
+    public static Color Danger => EchoRunUITheme.PageDanger;
     public static Color Ink => EchoRunUITheme.Ink;
 
     public void ShowBoard(bool board)
@@ -36,8 +37,8 @@ public sealed class AsyncEchoPanelView : MonoBehaviour
         _showBoard = board;
         challengePage.SetActive(!board);
         boardPage.SetActive(board);
-        challengeTabFill.color = board ? Color.clear : Selected;
-        boardTabFill.color = board ? Selected : Color.clear;
+        challengeTabFill.color = board ? Color.clear : Echo;
+        boardTabFill.color = board ? Echo : Color.clear;
         challengeTab.GetComponentInChildren<Text>().color = board ? Muted : Foreground;
         boardTab.GetComponentInChildren<Text>().color = board ? Foreground : Muted;
         if (changed)
@@ -67,21 +68,21 @@ public sealed class AsyncEchoPanelView : MonoBehaviour
     {
         var primary = (RectTransform)start.transform;
         var solo = (RectTransform)offline.transform;
-        primary.anchorMin = Vector2.zero;
-        primary.anchorMax = new Vector2(.64f, 1);
+        primary.anchorMin = new Vector2(0, .44f);
+        primary.anchorMax = Vector2.one;
         primary.offsetMin = Vector2.zero;
-        primary.offsetMax = new Vector2(-12, 0);
-        solo.anchorMin = new Vector2(hasChallenge ? .64f : 0, 0);
-        solo.anchorMax = Vector2.one;
-        solo.offsetMin = new Vector2(hasChallenge ? 12 : 0, 0);
+        primary.offsetMax = Vector2.zero;
+        solo.anchorMin = Vector2.zero;
+        solo.anchorMax = hasChallenge ? new Vector2(1, .42f) : Vector2.one;
+        solo.offsetMin = Vector2.zero;
         solo.offsetMax = Vector2.zero;
-        offline.GetComponent<Image>().color = hasChallenge ? Raised : Primary;
+        offline.GetComponent<Image>().color = hasChallenge ? Color.clear : Primary;
         offline.GetComponentInChildren<Text>().color = hasChallenge ? Foreground : Ink;
     }
 
     public void SetInvitationTone(bool ready, bool loading, bool failed)
     {
-        Color tone = failed ? Danger : ready ? Primary : Echo;
+        Color tone = failed ? Danger : Echo;
         invitationRule.color = tone;
         invitationStatus.color = tone;
         generation.color = ready ? Foreground : Muted;
@@ -133,8 +134,47 @@ public sealed class AsyncEchoPanelView : MonoBehaviour
 
     private void OnEnable()
     {
+        ApplyPagePalette();
         EchoRunAccessibility.ApplyToHierarchy(transform);
         FitFrame();
+    }
+
+    // Existing serialized sheets carry the previous navy palette. Retint them
+    // when opened so a code update and an editor prefab rebuild look the same.
+    private void ApplyPagePalette()
+    {
+        if (_paletteApplied) return;
+        _paletteApplied = true;
+        foreach (Graphic graphic in GetComponentsInChildren<Graphic>(true))
+        {
+            Color source = graphic.color;
+            Color32 old = source;
+            Color target;
+            if (SameRgb(old, EchoRunUITheme.Backdrop))
+                target = graphic is Text ? Ink : Backdrop;
+            else if (SameRgb(old, EchoRunUITheme.Surface)) target = Surface;
+            else if (SameRgb(old, EchoRunUITheme.SurfaceRaised)) target = Raised;
+            else if (SameRgb(old, EchoRunUITheme.SurfaceSelected)) target = Selected;
+            else if (SameRgb(old, EchoRunUITheme.TextPrimary)) target = Foreground;
+            else if (SameRgb(old, EchoRunUITheme.TextMuted)) target = Muted;
+            else if (SameRgb(old, EchoRunUITheme.Echo)) target = Echo;
+            else if (SameRgb(old, EchoRunUITheme.Danger)) target = Danger;
+            else continue;
+            target.a = source.a;
+            graphic.color = target;
+        }
+        if (share != null)
+        {
+            Text shareLabel = share.GetComponentInChildren<Text>();
+            if (shareLabel != null) shareLabel.color = Surface;
+        }
+    }
+
+    private static bool SameRgb(Color32 actual, Color expected)
+    {
+        Color32 sample = expected;
+        return actual.r == sample.r && actual.g == sample.g
+            && actual.b == sample.b;
     }
 
     private void OnRectTransformDimensionsChange() { FitFrame(); }
@@ -147,15 +187,23 @@ public sealed class AsyncEchoPanelView : MonoBehaviour
         {
             Rect available = ((RectTransform)transform).rect;
             bool large = Application.isPlaying && EchoRunAccessibility.LargeText;
-            float desiredHeight = (large ? 1400f : 1320f) + (!_showBoard && _publishingExpanded ? 180f : 0f);
-            frame.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, Mathf.Min(1160f, Mathf.Max(0f, available.width - 64f)));
-            frame.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, Mathf.Min(desiredHeight, Mathf.Max(0f, available.height - 48f)));
-            float summaryHeight = large ? 386f : 330f;
-            float actionHeight = large ? 160f : 144f;
-            Top(invitationSummary, 0, summaryHeight);
-            Top((RectTransform)actionDock.transform, summaryHeight + 16f, actionHeight);
+            bool portrait = available.height > available.width;
+            float desiredHeight = portrait ? available.height - 32f
+                : (large ? 1400f : 1320f);
+            frame.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal,
+                Mathf.Min(portrait ? available.width - 28f : 1160f,
+                    Mathf.Max(0f, available.width - 28f)));
+            frame.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical,
+                Mathf.Min(desiredHeight, Mathf.Max(0f, available.height - 32f)));
+            float summaryTop = 0f;
+            float summaryHeight = large ? 370f : 300f;
+            float actionHeight = portrait ? 236f : 144f;
+            Top(invitationSummary, summaryTop, summaryHeight);
+            Top((RectTransform)actionDock.transform,
+                summaryTop + summaryHeight + 12f, actionHeight);
             RectTransform scroll = (RectTransform)challengeScroll.transform;
-            scroll.offsetMax = new Vector2(0, -summaryHeight - actionHeight - 36f);
+            scroll.offsetMax = new Vector2(0,
+                -summaryTop - summaryHeight - actionHeight - 28f);
         }
         finally { _fitting = false; }
     }

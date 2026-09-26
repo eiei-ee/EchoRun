@@ -79,11 +79,11 @@ public sealed class EchoRunnerHeroVisualTests
         {
             Color body = AIShadowRunner.ResolveGhostBodyColor(
                 false, false, 0f);
-            // The echo remains translucent but has a readable lilac body,
-            // rather than disappearing into the blue street except at its rim.
+            // The current digital-echo palette uses a translucent cyan body.
+            // Keep the body visible, with a cool hue distinct from the runner.
             Assert.That(body.a, Is.InRange(0.30f, 0.60f));
             Assert.Greater(body.b, body.r);
-            Assert.Greater(body.r, body.g);
+            Assert.Greater(body.g, body.r);
             Assert.AreEqual(
                 AIShadowRunner.ResolveGhostBodyColor(false, true, 0f),
                 AIShadowRunner.ResolveGhostBodyColor(false, true, 17f));

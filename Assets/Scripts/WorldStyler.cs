@@ -83,6 +83,7 @@ public class WorldStyler : MonoBehaviour
     private Light _keyLight;
     private Light _fillLight;
     private Vector2Int _lastCameraScreenSize;
+    private GameObject _homeCityPreview;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeInstance()
@@ -120,11 +121,40 @@ public class WorldStyler : MonoBehaviour
 
         BuildStartDeck();
         StyleCharacter();
+        StartCoroutine(CreateHomeCityPreview());
     }
 
     void Update()
     {
         ApplyCameraLayout(false);
+        if (_homeCityPreview != null)
+        {
+            bool visible = GameManager.Instance != null && GameManager.Instance.State == GameState.Menu;
+            if (_homeCityPreview.activeSelf != visible) _homeCityPreview.SetActive(visible);
+        }
+    }
+
+    private System.Collections.IEnumerator CreateHomeCityPreview()
+    {
+        // The menu streets have no collision and disappear before the live
+        // track starts using its own pool. Anchor them to the physical floor,
+        // not the first animation pose: the runner can still be settling.
+        yield return null;
+        GameObject prefab = Resources.Load<GameObject>("Art/Menu/CityHomePreview");
+        if (prefab == null) yield break;
+        _homeCityPreview = Instantiate(prefab);
+        _homeCityPreview.name = "HomeCityPreview";
+        PlayerController player = FindObjectOfType<PlayerController>();
+        if (player != null && Physics.Raycast(player.transform.position + Vector3.up,
+                Vector3.down, out RaycastHit ground, 10f, player.groundLayer,
+                QueryTriggerInteraction.Ignore))
+        {
+            // The authored deck top is local Y=0.10. Leave a small separation
+            // from the existing floor to avoid coincident surfaces.
+            _homeCityPreview.transform.position = Vector3.up * (ground.point.y - .08f);
+        }
+        _homeCityPreview.SetActive(GameManager.Instance != null
+            && GameManager.Instance.State == GameState.Menu);
     }
 
     private void ApplyCameraLayout(bool force)
@@ -157,8 +187,8 @@ public class WorldStyler : MonoBehaviour
     public static Vector3 GetCameraOffset(bool portrait)
     {
         return portrait
-            ? new Vector3(0f, 3.75f, -6.3f)
-            : new Vector3(0f, 3.85f, -6.45f);
+            ? new Vector3(0f, 5.4f, -12f)
+            : new Vector3(0f, 4.2f, -10.5f);
     }
 
     public void DecorateSegment(GameObject segment, TrackSegmentType segmentType,

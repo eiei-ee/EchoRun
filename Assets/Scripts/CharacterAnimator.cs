@@ -427,7 +427,8 @@ public class CharacterAnimator : MonoBehaviour
             {
                 _animator.CrossFadeInFixedTime(
                     targetState,
-                    Mathf.Max(0.01f, authoredTransitionDuration),
+                    ResolveAuthoredTransitionDuration(
+                        _activeAuthoredState, targetState),
                     0,
                     0f);
             }
@@ -446,6 +447,19 @@ public class CharacterAnimator : MonoBehaviour
         _animator.speed = targetState == RunState
             ? Mathf.Clamp(speed / 10f, 0.85f, 1.4f)
             : 1f;
+    }
+
+    private float ResolveAuthoredTransitionDuration(int previousState, int targetState)
+    {
+        // Give the authored landing/recovery a few frames to settle instead of
+        // snapping a compressed jump or slide directly into a full run stride.
+        // These are animation blends only; action and collider clocks stay owned
+        // by PlayerController / AIShadowRunner.
+        float minimumDuration = targetState == IdleState ? 0.18f
+            : targetState == RunState && previousState == JumpState ? 0.14f
+            : targetState == RunState && previousState == SlideState ? 0.12f
+            : 0.08f;
+        return Mathf.Max(minimumDuration, authoredTransitionDuration);
     }
 
     private void ApplyAuthoredSlideMotion(
@@ -511,41 +525,37 @@ public class CharacterAnimator : MonoBehaviour
     private void StabilizeAuthoredRunPose()
     {
         if (!stabilizeAuthoredRun) return;
+        // Retain the weight transfer from the authored clip. The old treatment
+        // zeroed lateral travel and roll, which made the torso a rigid pole over
+        // two animated legs. Bounds contain the silhouette without flattening
+        // the original motion into a procedural cycle.
         ShapeAuthoredCoreBone(
-            hipsTransform, _hipsBasePos, _hipsBaseRot, 0f, 8f, 0f, 1f);
+            hipsTransform, _hipsBasePos, _hipsBaseRot, 0f, 8f, 4f, 0.035f);
         ShapeAuthoredCoreBone(
             bodyTransform, _bodyBasePos, _bodyBaseRot,
-            runSpineLean, 12f, 0f, 1f);
+            runSpineLean, 12f, 5f, 0.018f);
 
-        float phase = GetAuthoredRunPhase();
-        float leftRecovery = 0.5f - 0.5f * Mathf.Cos(phase);
-        float rightRecovery = 1f - leftRecovery;
-        AddRunningKneeFlex(
-            leftLowerLeg, _leftLowerLegBaseRot, leftRecovery);
-        AddRunningKneeFlex(
-            rightLowerLeg, _rightLowerLegBaseRot, rightRecovery);
+        PreserveRunningKneeFlex(leftLowerLeg, _leftLowerLegBaseRot);
+        PreserveRunningKneeFlex(rightLowerLeg, _rightLowerLegBaseRot);
 
         AlignRunningFootForward(leftFoot, _leftToes, 7f);
         AlignRunningFootForward(rightFoot, _rightToes, 7f);
     }
 
-    private float GetAuthoredRunPhase()
-    {
-        if (_animator == null) return _runPhase;
-        AnimatorStateInfo state = _animator.GetCurrentAnimatorStateInfo(0);
-        return state.normalizedTime * Mathf.PI * 2f;
-    }
-
     private static void ShapeAuthoredCoreBone(
         Transform bone, Vector3 basePosition, Quaternion baseRotation,
         float targetLean, float yawLimit, float rollLimit,
-        float horizontalCentering)
+        float maximumHorizontalTravel)
     {
         if (bone == null) return;
 
         Vector3 position = bone.localPosition;
-        position.x = Mathf.Lerp(
-            position.x, basePosition.x, horizontalCentering);
+        float parentScale = bone.parent != null
+            ? bone.parent.TransformVector(Vector3.right).magnitude : 1f;
+        float localTravel = maximumHorizontalTravel
+            / Mathf.Max(0.0001f, parentScale);
+        position.x = basePosition.x + Mathf.Clamp(
+            position.x - basePosition.x, -localTravel, localTravel);
         bone.localPosition = position;
 
         Quaternion relativeRotation =
@@ -564,17 +574,17 @@ public class CharacterAnimator : MonoBehaviour
         bone.localRotation = baseRotation * Quaternion.Euler(relativeEuler);
     }
 
-    private static void AddRunningKneeFlex(
-        Transform lowerLeg, Quaternion baseRotation, float recovery)
+    private static void PreserveRunningKneeFlex(
+        Transform lowerLeg, Quaternion baseRotation)
     {
         if (lowerLeg == null) return;
 
         Vector3 relativeEuler = SignedEuler(
             Quaternion.Inverse(baseRotation) * lowerLeg.localRotation);
-        float authoredBend = Mathf.Max(0f, -relativeEuler.x);
-        float addedBend = Mathf.Lerp(3f, 11f, recovery);
-        relativeEuler.x = -Mathf.Clamp(
-            Mathf.Max(authoredBend, 12f) + addedBend, 15f, 105f);
+        // A support leg needs to extend, then fold during recovery. Forcing both
+        // knees to remain bent erased the clip's contact phase and shortened its
+        // stride. Only guard retargeting extremes; keep ordinary authored angles.
+        relativeEuler.x = Mathf.Clamp(relativeEuler.x, -120f, 5f);
         lowerLeg.localRotation =
             baseRotation * Quaternion.Euler(relativeEuler);
     }

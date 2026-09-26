@@ -6,14 +6,12 @@ public static class RuntimePanelFactory
     private static Font _font;
     private static Sprite _roundedSprite;
 
-    public static readonly Color Panel = EchoRunUITheme.WithAlpha(
-        EchoRunUITheme.Backdrop, 0.98f);
-    public static readonly Color Raised = EchoRunUITheme.WithAlpha(
-        EchoRunUITheme.SurfaceRaised, 0.98f);
-    public static readonly Color Action = EchoRunUITheme.RouteCyanDark;
-    public static readonly Color Reward = EchoRunUITheme.Reward;
-    public static readonly Color TextPrimary = EchoRunUITheme.TextPrimary;
-    public static readonly Color TextMuted = EchoRunUITheme.TextMuted;
+    public static readonly Color Panel = EchoRunUITheme.PageSurface;
+    public static readonly Color Raised = EchoRunUITheme.PageRaised;
+    public static readonly Color Action = EchoRunUITheme.PageSelected;
+    public static readonly Color Reward = EchoRunUITheme.PageEcho;
+    public static readonly Color TextPrimary = EchoRunUITheme.PageInk;
+    public static readonly Color TextMuted = EchoRunUITheme.PageMuted;
 
     public static GameObject PanelObject(string name, Transform parent,
         Vector2 anchor, Vector2 size, Color color)
@@ -28,6 +26,8 @@ public static class RuntimePanelFactory
         Image image = go.GetComponent<Image>();
         image.color = color;
         ApplyRounded(image);
+        if (Mathf.Min(size.x, size.y) >= 48f)
+            UIEdgeTreatment.Surface(image, EchoRunUITheme.PageRule);
         return go;
     }
 
@@ -44,6 +44,7 @@ public static class RuntimePanelFactory
         text.color = color;
         text.resizeTextForBestFit = false;
         text.supportRichText = true;
+        text.raycastTarget = false;
         EchoRunAccessibility.Prepare(text);
         return text;
     }
@@ -54,18 +55,13 @@ public static class RuntimePanelFactory
         if (UsesTouchLayout()) size.y = Mathf.Max(size.y, 104f);
         GameObject go = PanelObject(name, parent, anchor, size, color);
         Button button = go.AddComponent<Button>();
+        UIEdgeTreatment.Surface(go.GetComponent<Image>(),
+            EchoRunUITheme.PageRule, true);
         Text text = Text("Label", go.transform, label, fontSize,
             TextAnchor.MiddleCenter, TextPrimary);
         text.fontStyle = FontStyle.Bold;
         Stretch(text.rectTransform);
-        ColorBlock states = button.colors;
-        states.normalColor = Color.white;
-        states.highlightedColor = new Color(1.08f, 1.08f, 1.08f, 1f);
-        states.pressedColor = new Color(0.76f, 0.84f, 0.88f, 1f);
-        states.selectedColor = states.highlightedColor;
-        states.disabledColor = new Color(0.48f, 0.52f, 0.56f, 0.75f);
-        states.fadeDuration = 0.08f;
-        button.colors = states;
+        UIEdgeTreatment.ButtonStates(button);
         button.onClick.AddListener(() => AudioManager.Instance?.PlayUIClick());
         return button;
     }

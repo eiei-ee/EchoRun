@@ -32,11 +32,12 @@ public sealed class AsyncEchoPanel : MonoBehaviour
         // Optional presentation assets cannot prevent the single-player game starting.
         if (prefab == null) { enabled = false; return; }
         _entry = RuntimePanelFactory.Button("AsyncEchoEntry", transform, "好友挑战",
-            Vector2.one, new Vector2(246, 112), AsyncEchoPanelView.Selected, 32);
+            Vector2.one, new Vector2(234, 104),
+            EchoRunUITheme.WithAlpha(AsyncEchoPanelView.Surface, 0.88f), 30);
         _entry.GetComponentInChildren<Text>().fontStyle = FontStyle.Normal;
         var entryRect = (RectTransform)_entry.transform;
         entryRect.pivot = Vector2.one;
-        entryRect.anchoredPosition = new Vector2(-18, -18);
+        entryRect.anchoredPosition = new Vector2(-24, -52);
         _entry.onClick.AddListener(Open);
         _view = Instantiate(prefab, transform, false);
         _view.name = "AsyncEchoSheet";

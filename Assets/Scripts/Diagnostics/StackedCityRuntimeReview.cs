@@ -35,6 +35,10 @@ public sealed class StackedCityRuntimeReview : MonoBehaviour
     private float started, playingStarted = -1f, nextAudit, nextClearanceAudit;
     private float pendingTurnCapture = -1f;
     private string pendingTurnName;
+    private bool reviewCameraPolish;
+    private float cameraTurnStarted = -1f;
+    private int cameraTurnFrame;
+    private readonly float[] cameraTurnTimes = { .05f, .15f, .3f, .6f, 1f };
     private int frames, turns, missingRoadFrames, missingLowerFrames, missingUpperFrames;
     private int lowerBlockCount, upperBlockCount, disabledHazards, captureIndex;
     private int vehicleMotionFrames, vehiclePositionChanges, geometryAudits, clearanceViolations;
@@ -79,6 +83,7 @@ public sealed class StackedCityRuntimeReview : MonoBehaviour
         review.reviewFinishGate = Array.IndexOf(arguments, FinishGateArgument) >= 0;
         review.reviewOrangeArt = Array.IndexOf(arguments, "-echo-orange-art-review") >= 0;
         review.preserveRunnerArtPalette = Array.IndexOf(arguments, "-echo-runner-art-review") >= 0;
+        review.reviewCameraPolish = Array.IndexOf(arguments, "-echo-camera-polish-review") >= 0;
         review.reviewOrangeArt |= review.preserveRunnerArtPalette;
         // Finish review owns one complete natural course, not the 500 m reload phases.
         review.reviewReload = !review.reviewFinishGate && Array.IndexOf(arguments, ReloadArgument) >= 0;
@@ -185,6 +190,8 @@ public sealed class StackedCityRuntimeReview : MonoBehaviour
                 string direction = Vector3.Cross(previousForward, forward).y < 0f ? "left" : "right";
                 pendingTurnName = "turn-" + turns + "-" + direction + "-after-0.3s";
                 pendingTurnCapture = now + .3f;
+                cameraTurnStarted = now;
+                cameraTurnFrame = 0;
             }
             previousForward = forward;
         }
@@ -192,6 +199,15 @@ public sealed class StackedCityRuntimeReview : MonoBehaviour
         {
             Capture(pendingTurnName);
             pendingTurnCapture = -1f;
+        }
+        if (reviewCameraPolish && cameraTurnStarted >= 0f
+            && cameraTurnFrame < cameraTurnTimes.Length
+            && now - cameraTurnStarted >= cameraTurnTimes[cameraTurnFrame])
+        {
+            EchoVisualCaptureProbe.CaptureOffscreen(Path.Combine(directory,
+                "camera-turn-" + turns + "-" + cameraTurnTimes[cameraTurnFrame]
+                    .ToString("0.00", CultureInfo.InvariantCulture) + "s.png"));
+            cameraTurnFrame++;
         }
         if (captureIndex < distances.Length && gm.Distance >= distances[captureIndex])
         {

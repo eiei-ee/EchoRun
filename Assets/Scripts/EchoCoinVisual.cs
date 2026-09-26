@@ -6,6 +6,7 @@ public sealed class EchoCoinVisual : MonoBehaviour
     private const string FormalVisualPath =
         "Art/Pickups/MemoryPulseShard_B";
     private const string MaterialPath = "Materials/EchoCollectible";
+    private const float PresentationScale = 0.72f;
     private static readonly int ContractMarkerId =
         Shader.PropertyToID("_ContractMarker");
     private static Mesh _formalMesh;
@@ -25,7 +26,9 @@ public sealed class EchoCoinVisual : MonoBehaviour
         filter.sharedMesh = GetFormalMesh();
         transform.localPosition = Vector3.zero;
         transform.localRotation = _formalRotation;
-        transform.localScale = _formalScale;
+        // Scale the authored mesh only; collection triggers and route spacing
+        // retain their gameplay size and positions.
+        transform.localScale = _formalScale * PresentationScale;
         _renderer.sharedMaterial = GetOrCreateMaterial();
         _renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         _renderer.receiveShadows = false;

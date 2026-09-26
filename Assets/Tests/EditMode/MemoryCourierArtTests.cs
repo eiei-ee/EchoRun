@@ -22,7 +22,7 @@ public sealed class MemoryCourierArtTests
             baked = new Mesh();
             Transform model = GameObject.Find("player").transform.Find("CharacterModel");
             var skin = model.Find("OrangeEchoOutfit/OE_OrangeEchoClothing").GetComponent<SkinnedMeshRenderer>();
-            Assert.AreEqual("Assets/Art/LayeredMemory/Meshes/MemoryCourierClothing.asset",
+            Assert.AreEqual("Assets/Art/LayeredMemory/Meshes/MemoryCourierClothing_Fitted.asset",
                 AssetDatabase.GetAssetPath(skin.sharedMesh));
             Assert.AreEqual(6, skin.sharedMaterials.Length);
             Assert.IsTrue(skin.sharedMaterials.All(m => AssetDatabase.GetAssetPath(m)

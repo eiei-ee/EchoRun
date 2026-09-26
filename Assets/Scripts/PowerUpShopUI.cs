@@ -110,7 +110,7 @@ public sealed class PowerUpShopUI : MonoBehaviour
         float y = 0.75f - index * 0.17f;
         GameObject row = RuntimePanelFactory.PanelObject("Item_" + id, _panel.transform,
             new Vector2(0.5f, y), new Vector2(1000f, 100f),
-            EchoRunUITheme.WithAlpha(EchoRunUITheme.Surface, 0.97f));
+            EchoRunUITheme.PageRaised);
         _rows[index] = row.GetComponent<RectTransform>();
 
         string[] glyphs = { "盾", "磁", "×2", "速" };
