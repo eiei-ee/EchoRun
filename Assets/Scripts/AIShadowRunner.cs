@@ -2805,6 +2805,10 @@ public class AIShadowRunner : MonoBehaviour
                 }
                 else
                 {
+                    // The old jump can finish and the next begin in one Update.
+                    // Supply its real phase without touching slide or lane feedback.
+                    if (_ghostJumpTimer > 0f)
+                        _ghostAnimator.SetExternalJumpPhase(jumpProgress);
                     _ghostAnimator.ApplyExternalMotion(
                         _ghostJumpTimer > 0f, _ghostSlideTimer > 0f,
                         _ghostForward, animationSpeed, Time.deltaTime);

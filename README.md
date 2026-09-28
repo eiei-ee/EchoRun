@@ -97,6 +97,8 @@ AIShadowRunner 使用纯 C# 在线多分类行为克隆模型。输入包含玩�
 
 ## 第三方资源
 
+当前开发分支的 Jump/Land 动画依赖需自行取得许可的第三方素材，源文件及衍生动画不包含在公开仓库中。新 checkout 必须按 [当前人物动作的依赖与重建步骤](docs/RunnerMotionDependencies.md) 导入并生成素材，才能还原 2026-09-28 暂定版本；仅克隆仓库不能复现该版本的完整动作。
+
 界面中文字体使用项目专用的 EchoRun Sans SC 子集；它派生自 Noto Sans CJK SC 2.004，并按 SIL Open Font License 1.1 分发。许可证和可复现来源见 `Assets/Resources/Fonts/OFL.txt`、`THIRD_PARTY_NOTICES.md` 与 `Tools/Fonts/`。
 
 ## 本地开发

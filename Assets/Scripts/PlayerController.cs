@@ -7,8 +7,8 @@ public class PlayerController : MonoBehaviour
     public float laneSwitchSpeed = 20f;
 
     [Header("Jump")]
-    public float jumpHeight = 3f;
-    public float jumpDuration = 0.9f;
+    public float jumpHeight = 2.4f;
+    public float jumpDuration = 0.78f;
 
     [Header("Slide")]
     public float slideDuration = 0.8f;

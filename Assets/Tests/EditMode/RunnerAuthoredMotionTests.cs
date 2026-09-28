@@ -24,8 +24,8 @@ public sealed class RunnerAuthoredMotionTests
             animator.applyRootMotion = false;
             animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
             animator.Rebind();
-            animator.Update(0f);
-
+            // Match the scene's Awake ordering: cache the rig reference before
+            // Animator evaluates the replaceable presentation Idle clip.
             CharacterAnimator driver = model.AddComponent<CharacterAnimator>();
             driver.useHumanoidRig = true;
             typeof(CharacterAnimator).GetField("_initialized",
@@ -43,6 +43,7 @@ public sealed class RunnerAuthoredMotionTests
             Quaternion rootRotation = model.transform.rotation;
             int retainedSamples = 0;
 
+            animator.Update(0f);
             driver.ApplyExternalMotion(false, false, Vector3.forward, 10f, 0f);
             for (int sample = 0; sample < 24; sample++)
             {

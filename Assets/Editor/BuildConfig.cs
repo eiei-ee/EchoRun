@@ -548,7 +548,19 @@ public class BuildConfig
             throw new BuildFailedException(
                 "WeChat Build Profile GPU-skinning setting is missing.");
 
+        // Existing profiles retain their own settings; CreatePlayerSettingsFromGlobal
+        // only initializes profiles that do not already have PlayerSettings.
+        SerializedProperty splashScreen =
+            serializedSettings.FindProperty("m_ShowUnitySplashScreen");
+        SerializedProperty splashLogo =
+            serializedSettings.FindProperty("m_ShowUnitySplashLogo");
+        if (splashScreen == null || splashLogo == null)
+            throw new BuildFailedException(
+                "WeChat Build Profile splash settings are missing.");
+
         gpuSkinning.boolValue = false;
+        splashScreen.boolValue = false;
+        splashLogo.boolValue = false;
         serializedSettings.ApplyModifiedPropertiesWithoutUndo();
 
         // BuildProfile serializes its PlayerSettings as YAML lines. Updating the
@@ -560,24 +572,40 @@ public class BuildConfig
         SerializedProperty settingsLines =
             settingsYaml?.FindPropertyRelative("m_Settings");
         bool updatedGpuSkinning = false;
+        bool updatedSplashScreen = false;
+        bool updatedSplashLogo = false;
         if (settingsLines != null && settingsLines.isArray)
         {
             for (int i = 0; i < settingsLines.arraySize; i++)
             {
                 SerializedProperty line = settingsLines.GetArrayElementAtIndex(i)
                     .FindPropertyRelative("line");
-                if (line == null || !line.stringValue.Contains("gpuSkinning:"))
-                    continue;
+                if (line == null) continue;
 
-                line.stringValue = "| gpuSkinning: 0";
-                updatedGpuSkinning = true;
-                break;
+                if (line.stringValue.Contains("gpuSkinning:"))
+                {
+                    line.stringValue = "| gpuSkinning: 0";
+                    updatedGpuSkinning = true;
+                }
+                else if (line.stringValue.Contains("m_ShowUnitySplashScreen:"))
+                {
+                    line.stringValue = "| m_ShowUnitySplashScreen: 0";
+                    updatedSplashScreen = true;
+                }
+                else if (line.stringValue.Contains("m_ShowUnitySplashLogo:"))
+                {
+                    line.stringValue = "| m_ShowUnitySplashLogo: 0";
+                    updatedSplashLogo = true;
+                }
             }
         }
 
         if (!updatedGpuSkinning)
             throw new BuildFailedException(
                 "WeChat Build Profile serialized GPU-skinning setting is missing.");
+        if (!updatedSplashScreen || !updatedSplashLogo)
+            throw new BuildFailedException(
+                "WeChat Build Profile serialized splash settings are missing.");
 
         serializedProfile.ApplyModifiedPropertiesWithoutUndo();
     }
@@ -793,8 +821,8 @@ public class BuildConfig
         PlayerSettings.SetIconsForTargetGroup(
             BuildTargetGroup.Standalone, icons, IconKind.Application);
 
-        PlayerSettings.SplashScreen.show = true;
-        PlayerSettings.SplashScreen.showUnityLogo = true;
+        PlayerSettings.SplashScreen.show = false;
+        PlayerSettings.SplashScreen.showUnityLogo = false;
         PlayerSettings.SplashScreen.background = background;
         PlayerSettings.SplashScreen.backgroundPortrait = null;
         PlayerSettings.SplashScreen.backgroundColor =

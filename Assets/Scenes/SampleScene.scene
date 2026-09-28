@@ -204,8 +204,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   laneDistance: 3
   laneSwitchSpeed: 20
-  jumpHeight: 3
-  jumpDuration: 0.9
+  jumpHeight: 2.4
+  jumpDuration: 0.78
   slideDuration: 0.8
   slideColliderHeight: 1
   groundLayer:
@@ -1298,7 +1298,7 @@ SkinnedMeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 257d30c435953d04d9f431256ad5de93, type: 2}
+  - {fileID: 2100000, guid: 18a098accc7531a47aac2126566cad3e, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -3153,12 +3153,12 @@ SkinnedMeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 0d504e906fef3ab4691ae16226bca793, type: 2}
-  - {fileID: 2100000, guid: f374177295f2862408bffe92af53654a, type: 2}
-  - {fileID: 2100000, guid: a74d4dcdbb1e599468b20aba13739a56, type: 2}
-  - {fileID: 2100000, guid: 2cf83d2acf981a5498c22baa03fd5e8b, type: 2}
-  - {fileID: 2100000, guid: 0dc04d6ab541d094e819e3b15e07d857, type: 2}
-  - {fileID: 2100000, guid: f8848812c9339b84d831ffae106e95f5, type: 2}
+  - {fileID: 2100000, guid: ef09add4bd39b7742a7ade0999dc4234, type: 2}
+  - {fileID: 2100000, guid: 2e9c1a5379dd09f47805671d95f3ef8f, type: 2}
+  - {fileID: 2100000, guid: bf3361c3caebdf94497f994fc6d69d44, type: 2}
+  - {fileID: 2100000, guid: 0478be376c180114f9f41a1b879b3c9e, type: 2}
+  - {fileID: 2100000, guid: ddcc8e454d6bfee44b02f0bd4880a373, type: 2}
+  - {fileID: 2100000, guid: 484a5917b5194fe4ca5b5f517e92ced9, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -3183,7 +3183,7 @@ SkinnedMeshRenderer:
   m_Quality: 0
   m_UpdateWhenOffscreen: 0
   m_SkinnedMotionVectors: 1
-  m_Mesh: {fileID: 4300000, guid: 9c0b9a58c8b185d42b1a8e25d69613aa, type: 2}
+  m_Mesh: {fileID: 4300000, guid: d680234f8063c094e9769c7cc516cded, type: 2}
   m_Bones:
   - {fileID: 206173979}
   - {fileID: 206173978}

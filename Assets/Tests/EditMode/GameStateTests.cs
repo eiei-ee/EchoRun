@@ -14,13 +14,13 @@ public class GameStateTests
         public int generation;
     }
 
-    private readonly List<GameObject> _objects = new List<GameObject>();
+    private readonly List<Object> _objects = new List<Object>();
 
     [TearDown]
     public void TearDown()
     {
         Time.timeScale = 1f;
-        foreach (GameObject go in _objects)
+        foreach (Object go in _objects)
             if (go != null)
                 Object.DestroyImmediate(go);
         _objects.Clear();
@@ -1230,18 +1230,45 @@ public class GameStateTests
         Assert.IsNotNull(controller,
             "The ExoGray model must use an authored Animator Controller.");
 
+        Assert.Greater(controller.layers.Length, 0);
+        AnimatorState idleState = null;
+        AnimatorState runState = null;
+        AnimatorState jumpState = null;
+        AnimatorState landState = null;
+        AnimatorState slideState = null;
+        foreach (ChildAnimatorState child in
+                 controller.layers[0].stateMachine.states)
+        {
+            if (child.state.name == "Idle") idleState = child.state;
+            if (child.state.name == "Run") runState = child.state;
+            if (child.state.name == "Jump") jumpState = child.state;
+            if (child.state.name == "Land") landState = child.state;
+            if (child.state.name == "Slide") slideState = child.state;
+        }
+        Assert.IsNotNull(idleState);
+        Assert.IsNotNull(runState);
+        Assert.IsNotNull(jumpState);
+        Assert.IsNotNull(landState);
+        Assert.IsNotNull(slideState);
+
         AnimationClip run = System.Array.Find(
             controller.animationClips, clip => clip.name == "HumanRun");
         AnimationClip idle = System.Array.Find(
-            controller.animationClips, clip => clip.name == "HumanIdle");
-        AnimationClip falling = System.Array.Find(
-            controller.animationClips, clip => clip.name == "HumanFalling");
+            controller.animationClips, clip => clip.name == "RunnerReadyIdle");
+        AnimationClip falling = jumpState.motion as AnimationClip;
+        AnimationClip land = landState.motion as AnimationClip;
         AnimationClip slide = System.Array.Find(
             controller.animationClips,
             clip => clip.name == "EchoRunSlideLow_Candidate1");
         Assert.IsNotNull(run);
         Assert.IsNotNull(idle);
         Assert.IsNotNull(falling);
+        Assert.IsNotNull(land);
+        Assert.IsTrue(idle.isHumanMotion);
+        Assert.IsTrue(falling.isHumanMotion);
+        Assert.IsTrue(land.isHumanMotion);
+        Assert.IsFalse(falling.isLooping);
+        Assert.IsFalse(land.isLooping);
         Assert.IsNotNull(slide);
         Assert.IsTrue(run.isHumanMotion);
         Assert.IsTrue(slide.isHumanMotion);
@@ -1250,22 +1277,6 @@ public class GameStateTests
         Assert.IsTrue(run.isLooping,
             "The authored running clip must loop without procedural resets.");
 
-        AnimatorState idleState = null;
-        AnimatorState runState = null;
-        AnimatorState jumpState = null;
-        AnimatorState slideState = null;
-        foreach (ChildAnimatorState child in
-                 controller.layers[0].stateMachine.states)
-        {
-            if (child.state.name == "Idle") idleState = child.state;
-            if (child.state.name == "Run") runState = child.state;
-            if (child.state.name == "Jump") jumpState = child.state;
-            if (child.state.name == "Slide") slideState = child.state;
-        }
-        Assert.IsNotNull(idleState);
-        Assert.IsNotNull(runState);
-        Assert.IsNotNull(jumpState);
-        Assert.IsNotNull(slideState);
         Assert.AreEqual(
             "Assets/Animations/HumanMotion/HumanRunForwards.fbx",
             AssetDatabase.GetAssetPath(runState.motion),
@@ -1279,6 +1290,18 @@ public class GameStateTests
             "Run Foot IK must keep support feet planted during the stride.");
         Assert.IsFalse(jumpState.iKOnFeet,
             "Jump Foot IK must stay off while the player is airborne.");
+        Assert.IsTrue(jumpState.timeParameterActive);
+        Assert.AreEqual("RunnerJumpPhase", jumpState.timeParameter,
+            "Jump pose must follow the physical jump phase.");
+        Assert.IsFalse(landState.iKOnFeet,
+            "Land Foot IK must not reshape the authored contact and recovery.");
+        Assert.IsFalse(landState.timeParameterActive,
+            "Land must play forward after the physical jump phase reaches its end.");
+        Assert.IsFalse(landState.speedParameterActive,
+            "The landing duration must not change with a controller speed parameter.");
+        Assert.Greater(landState.speed, 0f);
+        Assert.AreEqual(.16f, land.length / landState.speed, .002f,
+            "The landing clip must fit the driver's 0.16-second recovery window.");
         Assert.IsFalse(slideState.iKOnFeet,
             "Slide Foot IK must not pull the authored low pose upward.");
     }
@@ -1536,7 +1559,26 @@ public class GameStateTests
         GameObject model = Object.Instantiate(modelAsset);
         _objects.Add(model);
         Animator animator = model.GetComponent<Animator>();
-        animator.runtimeAnimatorController = controller;
+        // This test intentionally exercises the legacy procedural fallback,
+        // whose reference was authored against HumanIdle. Keep that fixture
+        // fixed while production uses the separately tested authored Slide.
+        var authoredController = controller as AnimatorController;
+        Assert.IsNotNull(authoredController);
+        AnimatorState idleState = System.Array.Find(
+            authoredController.layers[0].stateMachine.states,
+            child => child.state.name == "Idle").state;
+        Assert.IsNotNull(idleState);
+        AnimationClip currentIdle = idleState.motion as AnimationClip;
+        AnimationClip legacyIdle = System.Array.Find(
+            AssetDatabase.LoadAllAssetsAtPath(
+                "Assets/Animations/HumanMotion/HumanIdle.fbx"),
+            asset => asset is AnimationClip && asset.name == "HumanIdle") as AnimationClip;
+        Assert.IsNotNull(currentIdle);
+        Assert.IsNotNull(legacyIdle);
+        var legacyFixture = new AnimatorOverrideController(controller);
+        _objects.Add(legacyFixture);
+        legacyFixture[currentIdle] = legacyIdle;
+        animator.runtimeAnimatorController = legacyFixture;
         animator.applyRootMotion = false;
         animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
         animator.Rebind();
@@ -2442,14 +2484,16 @@ public class GameStateTests
             2, RunDifficultyLevel.Intense));
     }
 
-    [TestCase(RunDifficultyLevel.Relaxed)]
-    [TestCase(RunDifficultyLevel.Standard)]
-    [TestCase(RunDifficultyLevel.Intense)]
+    [TestCase(RunDifficultyLevel.Relaxed, 0.78f)]
+    [TestCase(RunDifficultyLevel.Standard, 0.78f)]
+    [TestCase(RunDifficultyLevel.Intense, 0.78f)]
+    [TestCase(RunDifficultyLevel.Relaxed, 0.9f)]
+    [TestCase(RunDifficultyLevel.Standard, 0.9f)]
+    [TestCase(RunDifficultyLevel.Intense, 0.9f)]
     public void EveryRunDifficultyKeepsItsDeclaredActionRecoveryWindow(
-        RunDifficultyLevel level)
+        RunDifficultyLevel level, float jumpDuration)
     {
         const float speed = 24f;
-        const float jumpDuration = 0.9f;
         float recovery = RunDifficultySettings.ObstacleRecoverySeconds(level);
         float spacing = TrackSpawnRules.MinimumObstacleRowSpacing(
             speed, jumpDuration, 20f, recovery);

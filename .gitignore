@@ -65,3 +65,8 @@ google-services.json
 *.apk
 *.aab
 *.ipa
+# Free commercial-use motion evaluation assets. Their license does not allow
+# redistributing reusable source clips in this public repository.
+/ArtSource/AnimationReferences/KevinBasicPrivate/
+/Assets/Animations/HumanMotion/KevinBasicPrivate/
+/Assets/Animations/HumanMotion/KevinBasicPrivate.meta

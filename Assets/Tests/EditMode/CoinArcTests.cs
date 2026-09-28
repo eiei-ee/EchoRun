@@ -3,11 +3,11 @@ using UnityEngine;
 
 public class CoinArcTests
 {
-    [Test]
-    public void JumpRewardCoinsFollowThePlayerJumpHeight()
+    [TestCase(2.4f)]
+    [TestCase(3f)]
+    public void JumpRewardCoinsFollowThePlayerJumpHeight(float jumpHeight)
     {
         const float groundCoinHeight = 1f;
-        const float jumpHeight = 3f;
 
         Assert.AreEqual(groundCoinHeight,
             TrackSpawnRules.JumpCoinHeight(

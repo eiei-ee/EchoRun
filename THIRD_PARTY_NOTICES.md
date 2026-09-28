@@ -64,3 +64,47 @@ license. GitHub's read-only `refs/pull/1/head` still exposes the pre-rewrite PR
 commit `1f03857`; ordinary Git pushes cannot delete this special reference.
 Removing that backend reference requires GitHub Support. See the current
 [release-candidate audit](docs/releases/v0.2.0-alpha.1-audit.md).
+
+## Runner motion sources and local-only dependencies
+
+### Quaternius contribution to ReadyIdle
+
+`Assets/Animations/HumanMotion/RunnerAthletic/RunnerReadyIdle.anim` is generated
+from the Quaternius **Universal Animation Library Standard** Idle motion and the
+existing `Assets/Animations/HumanMotion/HumanIdle.fbx` support pose. The
+[author's pack](https://quaternius.com/packs/universalanimationlibrary.html)
+contains a **CC0 1.0 Universal** license. The unmodified license is retained at
+`Assets/Animations/HumanMotion/Quaternius/License.txt`. The HumanIdle contribution
+remains subject to the Unity Companion License recorded above and included at
+`Assets/ThirdParty/UnityStandardAssets`; the combined clip must not be described
+as wholly original MIT-only animation data.
+
+The included `RunnerAthleticClipAuthor.cs` recipe can regenerate the public
+athletic clips when its documented source inputs are present. Any included
+`RunnerRunningJump.anim` or `RunnerRunningLand.anim` uses the same Quaternius
+library and existing Unity Standard Assets reference/support data. These are
+earlier candidates, not the accepted local FlowFit jump/landing bindings.
+
+### Human Basic Motions FREE: required but not redistributed
+
+The accepted local `RunnerFlowFitJump` and `RunnerFlowFitLand` motions are derived
+from **Human Basic Motions FREE** by Kevin Iglesias and the existing Unity
+Standard Assets running motion. Obtain the private source directly from the
+[author's download page](https://kevdev.itch.io/basic-motions-free) and review the
+[author's license section](https://www.keviniglesias.com/#license). The terms
+recorded when the project acquired the asset on 2026-09-26 identify the Standard
+Unity Asset Store EULA, including free downloads, and restrict distribution of
+reusable standalone assets. Free download does not grant the repository an MIT
+relicensing or reusable-source redistribution right.
+
+The original package, extracted model/FBX/mask files and generated reusable Flow
+animation clips are therefore excluded from this public repository, including
+their private `.meta` files. Each developer must obtain a permitted copy and
+perform the local setup. Game-product distribution remains subject to the
+applicable asset terms; this notice does not grant additional rights.
+
+The committed controller records the accepted private Jump/Land references. A
+fresh checkout is **not animation-complete** without that local setup; there is
+no automatic fallback. The project-authored recipe is included without the
+private motion curves. See [Runner motion dependencies and setup](docs/RunnerMotionDependencies.md)
+for exact inputs, helper methods, reconstruction steps and verification limits.

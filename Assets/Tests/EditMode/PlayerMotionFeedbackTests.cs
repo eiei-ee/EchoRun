@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Reflection;
 using NUnit.Framework;
+using UnityEditor;
 using UnityEngine;
 
 public class PlayerMotionFeedbackTests
@@ -93,11 +94,12 @@ public class PlayerMotionFeedbackTests
         var signals = new List<PlayerActionSignal>();
         player.ActionRaised += signals.Add;
 
+        float duration = player.jumpDuration;
         InvokePrivate(player, "BeginJump");
-        SetPrivateField(player, "_jumpTimer", 0.87f);
+        SetPrivateField(player, "_jumpTimer", duration - 0.03f);
         InvokePrivate(player, "UpdateJumpVelocity", Vector3.zero, 0.02f);
         Assert.AreEqual(1, signals.Count,
-            "The jump must remain active before its 0.9 second endpoint.");
+            "The jump must remain active before its configured endpoint.");
 
         InvokePrivate(player, "UpdateJumpVelocity", Vector3.zero, 0.02f);
         InvokePrivate(player, "UpdateJumpVelocity", Vector3.zero, 0.02f);
@@ -106,8 +108,95 @@ public class PlayerMotionFeedbackTests
         Assert.AreEqual(PlayerActionEdge.JumpStarted, signals[0].Edge);
         Assert.AreEqual(PlayerActionEdge.Landed, signals[1].Edge);
         Assert.AreEqual(signals[0].ActionId, signals[1].ActionId);
-        Assert.AreEqual(0.9f, signals[1].Duration, 0.0001f);
+        Assert.AreEqual(duration, signals[1].Duration, 0.0001f);
         Assert.IsFalse(signals[1].Motion.IsJumping);
+    }
+
+    [TestCase(0.78f, 0.02f)]
+    [TestCase(0.78f, 1f / 60f)]
+    [TestCase(0.9f, 0.02f)]
+    public void JumpClockEndsWithinOneFixedStepAndEmitsOneLanding(
+        float duration, float fixedStep)
+    {
+        PlayerController player = CreatePlayer(out _, out _);
+        player.jumpDuration = duration;
+        var signals = new List<PlayerActionSignal>();
+        player.ActionRaised += signals.Add;
+        InvokePrivate(player, "BeginJump");
+
+        double elapsed = 0d;
+        int maxSteps = Mathf.CeilToInt(duration / fixedStep) + 2;
+        for (int step = 0; step < maxSteps && player.IsJumping; step++)
+        {
+            InvokePrivate(player, "UpdateJumpVelocity", Vector3.zero, fixedStep);
+            elapsed += fixedStep;
+            if (elapsed < duration - 0.00001d)
+                Assert.IsTrue(player.IsJumping, "A shortened jump must not land before its action clock ends.");
+        }
+
+        Assert.IsFalse(player.IsJumping);
+        Assert.That(elapsed, Is.InRange(duration - 0.00001d, duration + fixedStep + 0.00001d),
+            "Floating-point accumulation may defer contact by at most one physics step.");
+        InvokePrivate(player, "UpdateJumpVelocity", Vector3.zero, fixedStep);
+        InvokePrivate(player, "UpdateJumpVelocity", Vector3.zero, fixedStep);
+        Assert.AreEqual(2, signals.Count, "Repeated ground updates must not emit duplicate landing events.");
+        Assert.AreEqual(PlayerActionEdge.JumpStarted, signals[0].Edge);
+        Assert.AreEqual(PlayerActionEdge.Landed, signals[1].Edge);
+        Assert.AreEqual(signals[0].ActionId, signals[1].ActionId);
+        Assert.AreEqual(duration, signals[1].Duration, 0.0001f);
+    }
+
+    [TestCase(10f, 0.3f)]
+    [TestCase(10f, 0.5f)]
+    [TestCase(10f, 0.7f)]
+    [TestCase(24f, 0.3f)]
+    [TestCase(24f, 0.5f)]
+    [TestCase(24f, 0.7f)]
+    public void CurrentJumpClearsTheAuthoredGroundObstacleAcrossItsFullDepth(
+        float speed, float crossingPhase)
+    {
+        PlayerController player = CreatePlayer(out CapsuleCollider capsule, out Rigidbody body);
+        const float fixedStep = 0.02f;
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Obstacle_High.prefab");
+        Assert.IsNotNull(prefab);
+        GameObject obstacleObject = Object.Instantiate(prefab);
+        _objects.Add(obstacleObject);
+        // Runtime names are counterintuitive: High is the ground obstacle to
+        // jump over; Low is the overhead bar to slide under. Use the real prefab.
+        Obstacle obstacle = obstacleObject.GetComponent<Obstacle>();
+        Assert.AreEqual(ObstacleType.High, obstacle.type);
+        BoxCollider obstacleCollider = obstacleObject.GetComponent<BoxCollider>();
+        Assert.IsNotNull(obstacleCollider);
+        obstacleObject.transform.position = new Vector3(0f, 1f,
+            speed * player.jumpDuration * crossingPhase);
+        Physics.SyncTransforms();
+        Bounds obstacleBounds = obstacleCollider.bounds;
+        InvokePrivate(player, "BeginJump");
+
+        int overlappingSamples = 0;
+        int maxSteps = Mathf.CeilToInt(player.jumpDuration / fixedStep) + 2;
+        for (int step = 0; step < maxSteps && player.IsJumping; step++)
+        {
+            // Integrate the real controller's returned velocity, so this test
+            // checks its action clock and movement rather than a copied arc.
+            Vector3 velocity = (Vector3)InvokePrivate(player, "UpdateJumpVelocity",
+                Vector3.forward * speed, fixedStep);
+            body.position += velocity * fixedStep;
+            player.transform.position = body.position;
+            Physics.SyncTransforms();
+            Bounds bounds = capsule.bounds;
+            if (bounds.max.z < obstacleBounds.min.z || bounds.min.z > obstacleBounds.max.z) continue;
+            overlappingSamples++;
+            Assert.That(bounds.min.y - obstacleBounds.max.y, Is.GreaterThan(0.05f),
+                "The shorter jump must physically clear the whole obstacle, not rely on a passed-front exception.");
+            ObstacleContactEvaluation evaluation = ObstacleContactRules.Evaluate(
+                obstacle.type, bounds, obstacleBounds, player.IsJumping, false, Vector3.forward);
+            Assert.AreEqual(ObstacleContactOutcome.Pass, evaluation.outcome);
+            Assert.AreEqual(ObstacleContactReason.HighClearance, evaluation.reason);
+        }
+        Assert.Greater(overlappingSamples, 0, "The trajectory must actually cross the prefab's horizontal bounds.");
+        Assert.Greater(capsule.bounds.min.z, obstacleBounds.max.z,
+            "The complete capsule must pass beyond the obstacle before the jump finishes.");
     }
 
     [Test]

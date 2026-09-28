@@ -80,6 +80,14 @@ public class CharacterAnimator : MonoBehaviour
     private float _feedbackSlide01;
     private float _feedbackLateralVelocity;
     private float _visualLaneLean;
+    private RuntimeAnimatorController _phaseMotionController;
+    private bool _hasPhaseDrivenAirMotion;
+    private bool _phaseJumpFeedbackFresh;
+    private float _phaseRenderedPlayerJump01 = -1f;
+    private bool _phaseWasJumping;
+    private bool _phaseLandingActive;
+    private bool _phaseLandingExit;
+    private float _phaseLandingElapsed;
     private Transform[] _authoredBlendBones;
     private Vector3[] _authoredBlendPositions;
     private Quaternion[] _authoredBlendRotations;
@@ -115,6 +123,11 @@ public class CharacterAnimator : MonoBehaviour
     private static readonly int RunState = Animator.StringToHash("Run");
     private static readonly int JumpState = Animator.StringToHash("Jump");
     private static readonly int SlideState = Animator.StringToHash("Slide");
+    private static readonly int LandState = Animator.StringToHash("Land");
+    private static readonly int RunnerJumpPhase = Animator.StringToHash("RunnerJumpPhase");
+    private const float AuthoredLandingDuration = 0.16f;
+    private const float AuthoredLandingEntry = 0.04f;
+    private const float AuthoredLandingExit = 0.07f;
 
     private void Awake()
     {
@@ -227,6 +240,7 @@ public class CharacterAnimator : MonoBehaviour
         if (_gm == null || _gm.State != GameState.Playing
             || _gm.IsDeathSequence)
         {
+            ResetPhaseDrivenAirMotion();
             if (CanUseAuthoredAnimations())
             {
                 ResumeAuthoredMotion();
@@ -273,14 +287,63 @@ public class CharacterAnimator : MonoBehaviour
     public void SetMotionFeedback(
         float jump01, float slide01, float lateralVelocity)
     {
+        // The explicit ghost overload can supply feedback before its first
+        // ApplyMotion call; discover the rig before caching this fresh phase.
+        Initialize();
         _hasMotionFeedback = true;
         _feedbackJump01 = Mathf.Clamp01(jump01);
         _feedbackSlide01 = Mathf.Clamp01(slide01);
         _feedbackLateralVelocity = lateralVelocity;
+        bool phaseMotion = CanUsePhaseDrivenAirMotion();
+        _phaseJumpFeedbackFresh = true;
+        _phaseRenderedPlayerJump01 = -1f;
+        // Player feedback arrives in Update, before Animator evaluation. Do not
+        // write zero on landing: the outgoing Jump pose must retain its last
+        // airborne phase while Land blends in.
+        if (!_externalDriver && _player != null && _player.IsJumping
+            && phaseMotion)
+        {
+            // PlayerController renders its Rigidbody between the previous and
+            // current physics steps. Sample the limbs in that same time window.
+            // Cache this Update value so LateUpdate cannot restore the raw step.
+            _phaseRenderedPlayerJump01 = ResolveInterpolatedPlayerJumpPhase(
+                _feedbackJump01, _player.jumpDuration, Time.fixedDeltaTime,
+                Time.time - Time.fixedTime);
+            _animator.SetFloat(RunnerJumpPhase,
+                Mathf.Min(_phaseRenderedPlayerJump01, 0.999f));
+        }
+    }
+
+    public static float ResolveInterpolatedPlayerJumpPhase(
+        float authoritativePhase, float duration, float fixedStep,
+        float timeSinceFixedStep)
+    {
+        float step = Mathf.Max(0f, fixedStep);
+        float elapsed = Mathf.Clamp(timeSinceFixedStep, 0f, step);
+        // The authoritative phase remains untouched. Bounds handle the first
+        // jump frame and suspended/clamped frame clocks without extrapolation.
+        return Mathf.Clamp01(Mathf.Clamp01(authoritativePhase)
+            - (step - elapsed) / Mathf.Max(0.2f, duration));
+    }
+
+    /// <summary>
+    /// Supplies only the authoritative jump phase for an externally driven rig.
+    /// Consecutive AI jumps can share a rendered jumping=true frame, so their
+    /// visual phase cannot infer a new action solely from a boolean edge.
+    /// Legacy controllers and slide/lateral feedback remain unchanged.
+    /// </summary>
+    public void SetExternalJumpPhase(float jump01)
+    {
+        Initialize();
+        if (!CanUsePhaseDrivenAirMotion()) return;
+        _feedbackJump01 = Mathf.Clamp01(jump01);
+        _phaseJumpFeedbackFresh = true;
+        _phaseRenderedPlayerJump01 = -1f;
     }
 
     public void ClearMotionFeedback()
     {
+        ResetPhaseDrivenAirMotion();
         _hasMotionFeedback = false;
         _feedbackJump01 = 0f;
         _feedbackSlide01 = 0f;
@@ -348,6 +411,7 @@ public class CharacterAnimator : MonoBehaviour
         {
             if (isSliding)
             {
+                ResetPhaseDrivenAirMotion();
                 if (useAuthoredSlide && _animator.HasState(0, SlideState))
                 {
                     ResumeAuthoredMotion();
@@ -358,6 +422,11 @@ public class CharacterAnimator : MonoBehaviour
                     FreezeAuthoredSlideBase();
                     ApplySlidePose(slidePhase);
                 }
+            }
+            else if (CanUsePhaseDrivenAirMotion())
+            {
+                ResumeAuthoredMotion();
+                ApplyPhaseDrivenAirMotion(isJumping, jumpDuration, speed, deltaTime);
             }
             else if (!isJumping)
             {
@@ -388,6 +457,104 @@ public class CharacterAnimator : MonoBehaviour
         return useAuthoredAnimations
             && _animator != null
             && _animator.runtimeAnimatorController != null;
+    }
+
+    private bool CanUsePhaseDrivenAirMotion()
+    {
+        if (!CanUseAuthoredAnimations()) return false;
+        RuntimeAnimatorController controller = _animator.runtimeAnimatorController;
+        if (_phaseMotionController != controller)
+        {
+            _phaseMotionController = controller;
+            _hasPhaseDrivenAirMotion = false;
+            ResetPhaseDrivenAirMotion();
+            if (_animator.HasState(0, LandState))
+            {
+                foreach (AnimatorControllerParameter parameter in _animator.parameters)
+                    if (parameter.nameHash == RunnerJumpPhase
+                        && parameter.type == AnimatorControllerParameterType.Float)
+                    {
+                        _hasPhaseDrivenAirMotion = true;
+                        break;
+                    }
+            }
+        }
+        return _hasPhaseDrivenAirMotion;
+    }
+
+    private void ResetPhaseDrivenAirMotion()
+    {
+        _phaseJumpFeedbackFresh = false;
+        _phaseRenderedPlayerJump01 = -1f;
+        _phaseWasJumping = false;
+        _phaseLandingActive = false;
+        _phaseLandingExit = false;
+        _phaseLandingElapsed = 0f;
+    }
+
+    private void ApplyPhaseDrivenAirMotion(
+        bool isJumping, float jumpDuration, float speed, float deltaTime)
+    {
+        bool freshFeedback = _phaseJumpFeedbackFresh;
+        float renderedPlayerPhase = _phaseRenderedPlayerJump01;
+        _phaseJumpFeedbackFresh = false;
+        _phaseRenderedPlayerJump01 = -1f;
+        if (isJumping)
+        {
+            _phaseLandingActive = false;
+            _phaseLandingExit = false;
+            _phaseLandingElapsed = 0f;
+            _phaseWasJumping = true;
+            float phase = freshFeedback ? _feedbackJump01
+                : Mathf.Clamp01(_jumpTime / jumpDuration);
+            if (freshFeedback && !_externalDriver && renderedPlayerPhase >= 0f)
+                phase = renderedPlayerPhase;
+            // A ghost can switch from explicit replay feedback to its own timer.
+            // Seed that fallback from authoritative time, never the player's
+            // delayed display sample; this preserves the existing external path.
+            if (freshFeedback) _jumpTime = _feedbackJump01 * jumpDuration;
+            _animator.SetFloat(RunnerJumpPhase, Mathf.Min(phase, 0.999f));
+            ApplyAuthoredMotion(true, speed, false);
+            return;
+        }
+
+        if (_phaseWasJumping)
+        {
+            _phaseWasJumping = false;
+            _phaseLandingActive = true;
+            _phaseLandingElapsed = 0f;
+            // Land contains a short fitted contact/recovery window. Keeping the
+            // Animator at 1 preserves the fixed-second entry/exit blend windows.
+            _animator.speed = 1f;
+            _animator.CrossFadeInFixedTime(LandState, AuthoredLandingEntry, 0, 0f);
+            _animator.Update(0f);
+            _activeAuthoredState = LandState;
+            return;
+        }
+
+        if (_phaseLandingActive)
+        {
+            _phaseLandingElapsed += Mathf.Max(0f, deltaTime);
+            _animator.speed = 1f;
+            if (_phaseLandingElapsed < AuthoredLandingDuration) return;
+            _phaseLandingActive = false;
+            _phaseLandingExit = true;
+            _animator.CrossFadeInFixedTime(RunState, AuthoredLandingExit, 0, 0f);
+            _animator.Update(0f);
+            _activeAuthoredState = RunState;
+        }
+
+        ApplyAuthoredMotion(false, speed, false);
+        if (_phaseLandingExit)
+        {
+            if (_animator.IsInTransition(0))
+            {
+                _animator.speed = 1f;
+                return; // Do not apply run-only bone shaping to the outgoing Land.
+            }
+            _phaseLandingExit = false;
+        }
+        StabilizeAuthoredRunPose();
     }
 
     private void FreezeAuthoredSlideBase()

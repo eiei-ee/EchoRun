@@ -52,7 +52,8 @@ public class VisualFoundationTests
             Assert.AreSame(icon, platformIcon);
 
         Assert.AreSame(background, PlayerSettings.SplashScreen.background);
-        Assert.IsTrue(PlayerSettings.SplashScreen.show);
+        Assert.IsFalse(PlayerSettings.SplashScreen.show);
+        Assert.IsFalse(PlayerSettings.SplashScreen.showUnityLogo);
         PlayerSettings.SplashScreenLogo[] logos =
             PlayerSettings.SplashScreen.logos;
         Assert.AreEqual(1, logos.Length);
