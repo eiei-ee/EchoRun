@@ -32,9 +32,10 @@ public static class InstallEchoRunnerPhaseOne
     private static readonly float[] SegmentPositions =
         { 0.18f, 0f, -0.18f };
 
-    [MenuItem("Tools/Echo Runner/Install Phase One Hero Visuals")]
+    [MenuItem("Tools/Echo Runner/Legacy/Install Phase One Hero Visuals")]
     public static void Install()
     {
+        if (!LegacyRunnerInstallGuard.Allow("InstallEchoRunnerPhaseOne.Install")) return;
         if (!Application.isBatchMode &&
             !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
         {
@@ -44,7 +45,7 @@ public static class InstallEchoRunnerPhaseOne
 
         GameObject spinePrefab = BuildMemorySpinePrefab();
         GameObject shadowPrefab = BuildContactShadowPrefab();
-        ConfigureModelMaterials();
+        ConfigureModelMaterialsUnchecked();
 
         Scene scene = EditorSceneManager.OpenScene(
             ScenePath, OpenSceneMode.Single);
@@ -89,8 +90,14 @@ public static class InstallEchoRunnerPhaseOne
         Debug.Log("ECHO_RUNNER_PHASE_ONE_INSTALL_OK");
     }
 
-    [MenuItem("Tools/Echo Runner/Refresh Phase One Materials")]
+    [MenuItem("Tools/Echo Runner/Legacy/Refresh Phase One Materials")]
     public static void ConfigureModelMaterials()
+    {
+        if (!LegacyRunnerInstallGuard.Allow("InstallEchoRunnerPhaseOne.ConfigureModelMaterials")) return;
+        ConfigureModelMaterialsUnchecked();
+    }
+
+    private static void ConfigureModelMaterialsUnchecked()
     {
         string[] guids = AssetDatabase.FindAssets(
             "t:Material", new[] { ExoMaterialFolder });

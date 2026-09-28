@@ -2,7 +2,7 @@ name: Three-platform Tuanjie CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, codex/single-contract-prototype]
   workflow_dispatch:
 
 env:
@@ -11,166 +11,94 @@ env:
 
 permissions:
   contents: read
-  checks: write
 
+# One trusted self-hosted editor session at a time, including different branches.
 concurrency:
-  group: tuanjie-ci-${{ github.ref }}
+  group: tuanjie-ci
   cancel-in-progress: false
 
 jobs:
   tests:
     name: ${{ matrix.testMode }} tests
     runs-on: [self-hosted, Windows, X64, tuanjie]
-    timeout-minutes: 35
+    timeout-minutes: 55
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix:
         testMode: [EditMode, PlayMode]
-
+    defaults:
+      run:
+        shell: powershell
+        working-directory: ci-project
     steps:
-      - name: Checkout
+      - name: Checkout disposable CI project
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-          clean: false
+          clean: true
+          # Leave the previous root checkout/private assets untouched during migration.
+          path: ci-project
 
-      - name: Verify Tuanjie Editor
-        shell: powershell
-        run: |
-          if (-not (Test-Path -LiteralPath $env:TUANJIE_EDITOR)) {
-            throw "Tuanjie Editor not found: $env:TUANJIE_EDITOR"
-          }
-          $version = (Get-Item -LiteralPath $env:TUANJIE_EDITOR).VersionInfo.FileVersion
-          Write-Host "Using Tuanjie Editor $version"
+      - name: Restore licensed motion and rebuild current bindings
+        run: ./Tools/CI/Invoke-TuanjieCI.ps1 -Mode Prepare -Workspace (Get-Location).Path
 
       - name: Run ${{ matrix.testMode }} tests
-        shell: powershell
-        run: |
-          if (Test-Path -LiteralPath artifacts) {
-            Remove-Item -LiteralPath artifacts -Recurse -Force
-          }
-          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
-          $resultPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/${{ matrix.testMode }}-results.xml"
-          $logPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/${{ matrix.testMode }}.log"
+        run: ./Tools/CI/Invoke-TuanjieCI.ps1 -Mode '${{ matrix.testMode }}' -Workspace (Get-Location).Path
 
-          $arguments = @(
-            "-batchmode",
-            "-nographics",
-            "-projectPath", $env:GITHUB_WORKSPACE,
-            "-runTests",
-            "-testPlatform", "${{ matrix.testMode }}",
-            "-testResults", $resultPath,
-            "-logFile", $logPath
-          )
-          $process = Start-Process `
-            -FilePath $env:TUANJIE_EDITOR `
-            -ArgumentList $arguments `
-            -Wait `
-            -PassThru
-
-          $exitCode = $process.ExitCode
-          if (Test-Path -LiteralPath $logPath) {
-            Get-Content -LiteralPath $logPath -Tail 250
-          }
-          if ($exitCode -ne 0) {
-            throw "${{ matrix.testMode }} tests failed with exit code $exitCode."
-          }
-          if (-not (Test-Path -LiteralPath $resultPath)) {
-            throw "Tuanjie did not produce $resultPath."
-          }
-
-      - name: Upload test results
+      - name: Upload test logs and XML only
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: test-results-${{ matrix.testMode }}
-          path: artifacts
+          path: ci-project/artifacts
           if-no-files-found: warn
 
   build:
     name: Build ${{ matrix.name }}
     needs: tests
     runs-on: [self-hosted, Windows, X64, tuanjie]
-    timeout-minutes: 90
+    timeout-minutes: 110
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix:
         include:
           - name: WebGL
-            method: BuildConfig.BuildWebGL
             artifact: Builds/WebGL
           - name: Windows
-            method: BuildConfig.BuildWindows
             artifact: Builds/Windows
           - name: Android
-            method: BuildConfig.BuildAndroid
             artifact: Builds/Android
-
+    defaults:
+      run:
+        shell: powershell
+        working-directory: ci-project
     steps:
-      - name: Checkout
+      - name: Checkout disposable CI project
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-          clean: false
+          clean: true
+          path: ci-project
 
-      - name: Verify Tuanjie Editor
-        shell: powershell
-        run: |
-          if (-not (Test-Path -LiteralPath $env:TUANJIE_EDITOR)) {
-            throw "Tuanjie Editor not found: $env:TUANJIE_EDITOR"
-          }
+      - name: Restore licensed motion and rebuild current bindings
+        run: ./Tools/CI/Invoke-TuanjieCI.ps1 -Mode Prepare -Workspace (Get-Location).Path
 
       - name: Build ${{ matrix.name }}
-        shell: powershell
-        run: |
-          $artifactPath = Join-Path $env:GITHUB_WORKSPACE "${{ matrix.artifact }}"
-          if (Test-Path -LiteralPath $artifactPath) {
-            Remove-Item -LiteralPath $artifactPath -Recurse -Force
-          }
-          if (Test-Path -LiteralPath artifacts) {
-            Remove-Item -LiteralPath artifacts -Recurse -Force
-          }
-          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
-          $logPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/build-${{ matrix.name }}.log"
-
-          $arguments = @(
-            "-quit",
-            "-batchmode",
-            "-nographics",
-            "-projectPath", $env:GITHUB_WORKSPACE,
-            "-executeMethod", "${{ matrix.method }}",
-            "-logFile", $logPath
-          )
-          $process = Start-Process `
-            -FilePath $env:TUANJIE_EDITOR `
-            -ArgumentList $arguments `
-            -Wait `
-            -PassThru
-
-          $exitCode = $process.ExitCode
-          if (Test-Path -LiteralPath $logPath) {
-            Get-Content -LiteralPath $logPath -Tail 250
-          }
-          if ($exitCode -ne 0) {
-            throw "${{ matrix.name }} build failed with exit code $exitCode."
-          }
-          if (-not (Test-Path -LiteralPath $artifactPath)) {
-            throw "Tuanjie did not produce ${{ matrix.artifact }}."
-          }
+        run: ./Tools/CI/Invoke-TuanjieCI.ps1 -Mode '${{ matrix.name }}' -Workspace (Get-Location).Path
 
       - name: Upload ${{ matrix.name }} build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: EchoRun-${{ matrix.name }}
-          path: ${{ matrix.artifact }}
+          path: ci-project/${{ matrix.artifact }}
           if-no-files-found: error
 
-      - name: Upload build log
+      - name: Upload build and setup logs only
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: build-log-${{ matrix.name }}
-          path: artifacts
+          path: ci-project/artifacts
           if-no-files-found: warn

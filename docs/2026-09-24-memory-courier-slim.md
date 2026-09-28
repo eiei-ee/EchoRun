@@ -1,5 +1,9 @@
 # 记忆信使轮廓收形
 
+> **历史记录（2026-09-24），不作为当前版本的恢复步骤。** 当前人物已采用 Athlete 网格，Jump / Land 已采用后续 Flow 动作；当前依赖与恢复流程见 [RunnerMotionDependencies.md](RunnerMotionDependencies.md)。下文保留当时的尺寸、验证结果、命令和原路径，不代表当前版本状态。旧 `TestResults` 产物先归档，后于 2026-09-28 按用户要求清理；不保证历史构建和中间截图仍可查阅，存留说明见 [RepositoryOrganization.md](RepositoryOrganization.md)。
+>
+> `LayeredMemoryRunnerInstaller.InstallAndCapture` 属于旧版服装安装流程，该安装器已于 2026-09-28 删除，可从 Git 历史查阅。下文命令仅记录当时的制作过程，当前仓库不再提供该入口；当前人物和动画恢复请使用 [RunnerMotionDependencies.md](RunnerMotionDependencies.md) 所述流程，不要执行历史安装步骤。
+
 用户指出上一版人物仍然臃肿。实机侧后视图显示，圆厚袖管、直筒外套、宽裤腿和突出的背包共同放大了体积。这次直接重塑服装截面与装备厚度，保留已确定的城市与人物配色。
 
 ## 修改
@@ -10,7 +14,7 @@
 - 领口保留覆盖余量，袜口在原小腿与脚部骨骼间过渡，避免衣鞋之间露缝。
 - 原头脸、手部、身高、骨架、动画和脚长保持原样。此轮没有修改游戏控制、碰撞、AI、存档、界面或场景设计。
 
-下列尺寸直接测量同一坐标系下的 Blender 源网格截面，不是屏幕像素或人物整体缩放。原件保存在 `TestResults/LayeredMemoryRunnerSlim-20260924/Baseline/`；生成器将当前测量写入 `courier-manifest.json`。
+下列尺寸直接测量同一坐标系下的 Blender 源网格截面，不是屏幕像素或人物整体缩放。原件当时保存在 `TestResults/LayeredMemoryRunnerSlim-20260924/Baseline/`；该历史中间产物已在 2026-09-28 清理。生成器将测量写入 `courier-manifest.json`。
 
 | 部位 | 前一版 | 收形后 | 减少 |
 | --- | ---: | ---: | ---: |

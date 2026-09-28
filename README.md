@@ -1,5 +1,7 @@
 # ECHO//RUN：AI 回声竞速
 
+当前开发入口：[仓库与本机资料索引](docs/RepositoryOrganization.md) · [分支与 CI](docs/RepositoryWorkflow.md) · [已知问题](docs/KnownIssues.md)。历史公开试玩与当前暂定人物版本的验证记录分别维护。
+
 [![Three-platform Tuanjie CI](https://github.com/eiei-ee/EchoRun/actions/workflows/three-platform-ci.yml/badge.svg)](https://github.com/eiei-ee/EchoRun/actions/workflows/three-platform-ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/eiei-ee/EchoRun?include_prereleases)](https://github.com/eiei-ee/EchoRun/releases/tag/v0.2.0-alpha.1)
@@ -109,6 +111,8 @@ AIShadowRunner 使用纯 C# 在线多分类行为克隆模型。输入包含玩�
 ```
 
 完整环境、测试和构建命令见 [docs/BUILDING.md](docs/BUILDING.md)。
+
+当前开发分支、CI 范围与私有动画依赖的 runner 配置见 [仓库工作流程](docs/RepositoryWorkflow.md)。
 
 ## 开源协作 / Open-source collaboration
 

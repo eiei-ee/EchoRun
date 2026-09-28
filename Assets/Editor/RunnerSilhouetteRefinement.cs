@@ -229,9 +229,10 @@ public static class RunnerSilhouetteRefinement
         }
     }
 
-    [MenuItem("Tools/Echo Runner/Athlete Candidate/Restore Original Appearance")]
+    [MenuItem("Tools/Echo Runner/Legacy/Restore Pre Athlete Appearance")]
     public static void Restore()
     {
+        if (!LegacyRunnerInstallGuard.Allow("RunnerSilhouetteRefinement.Restore")) return;
         Require(!EditorApplication.isPlayingOrWillChangePlaymode && File.Exists(BackupPath), "Need Edit mode and saved original binding.");
         Scene scene = OpenTarget();
         Transform model = FindModel(scene);

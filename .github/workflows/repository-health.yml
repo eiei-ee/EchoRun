@@ -2,9 +2,9 @@ name: Repository health
 
 on:
   push:
-    branches: [master]
+    branches: [master, 'codex/**']
   pull_request:
-    branches: [master]
+    branches: [master, 'codex/**']
 
 permissions:
   contents: read
@@ -36,6 +36,8 @@ jobs:
             docs/ARCHITECTURE.md
             docs/BUILDING.md
             docs/ROADMAP.md
+            docs/RepositoryWorkflow.md
+            docs/RunnerMotionDependencies.md
           )
 
           for path in "${required[@]}"; do
@@ -57,3 +59,21 @@ jobs:
             echo "Generated editor or build output is tracked."
             exit 1
           fi
+
+          if git ls-files | grep -E '(^|/)KevinBasicPrivate(/|\.meta$)' >/dev/null; then
+            echo "Private reusable motion source or generated clips are tracked."
+            exit 1
+          fi
+
+  ci-scripts:
+    name: CI script checks without private assets
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Parse scripts and exercise restore safety with synthetic fixtures
+        shell: powershell
+        run: ./Tools/CI/Test-CIScripts.ps1

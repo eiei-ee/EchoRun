@@ -41,6 +41,7 @@ artifacts/
 /*PlayMode.xml
 /TestResults*.xml
 /TestResults/
+/LocalArchive/
 __pycache__/
 *.blend[0-9]
 

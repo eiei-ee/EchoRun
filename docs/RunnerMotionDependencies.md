@@ -169,3 +169,12 @@ path and one existing turn-scene camera-clearance failure. Those results were
 obtained with the licensed local assets present; they are not a clean-checkout
 test result and do not claim the entire suite is green. Fresh reconstruction and
 phone acceptance remain separate verification steps.
+
+After the 2026-09-28 repository organization, the full EditMode run passed
+**917/918** checks, with zero skipped. The three garment tests now verify the
+accepted Athlete mesh and actual deformation, including phase-driven Jump
+sampling; five legacy-installer protection tests were added. The remaining
+turn-scene camera-clearance failure is documented in
+[KnownIssues.md](KnownIssues.md). That run compiled the current project with the
+local licensed assets present; it is still not a clean CI reconstruction or a
+new phone acceptance result.

@@ -1,8 +1,9 @@
-// Final unified author: the selected V4 ReadyIdle plus V3 RunningJump/RunningLand.
-// Copy THIS file over Assets/Editor/RunnerAthleticClipAuthor.cs; never install
-// both sources together because they intentionally expose the same class/API.
-// One invocation writes all three independent clips. Ready support is old
-// HumanIdle .65 + Quaternius Idle .35; the V3 Jump/Land authoring is unchanged.
+// Canonical authoring source. Only its V4 RunnerReadyIdle is used by the
+// accepted runner; V3 RunnerRunningJump/RunnerRunningLand are historical candidates.
+// BuildCandidates still writes all three independent clips for reconstruction,
+// but does not bind them. Current Jump/Land come from RunnerFlowJumpAuthor;
+// see docs/RunnerMotionDependencies.md before rebuilding the accepted motions.
+// Ready support is HumanIdle .65 + Quaternius Idle .35.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -83,7 +84,7 @@ public static class RunnerAthleticClipAuthor
         Debug.Log("RUNNER_ATHLETIC_SOURCE_INSPECTED " + Report + "/source-curves.txt");
     }
 
-    [MenuItem("Tools/Echo Runner/Athletic Clips/Build Final Three Clips")]
+    [MenuItem("Tools/Echo Runner/Athletic Clips/Rebuild Ready Idle And Historical Jump Land Candidates")]
     public static void BuildCandidates()
     {
         Require(!EditorApplication.isPlayingOrWillChangePlaymode, "Leave Play mode before authoring clips.");
